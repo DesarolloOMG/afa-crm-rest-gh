@@ -1080,8 +1080,8 @@ class DocumentoService
                                             break;
                                     }
 
-                                    #230125 si es shopify, se resta el cupon
-                                    if ($info_documento->marketplace == 'SHOPIFY'){
+                                    #280125 si el cupon es mayor a 0, se resta el cupon
+                                    if ($info_documento->mkt_coupon > 0){
                                         $total_documento -= $info_documento->mkt_coupon;
                                     }
 

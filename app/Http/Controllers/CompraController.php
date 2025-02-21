@@ -46,16 +46,15 @@ class CompraController extends Controller
 
         $data->serie_documento = (property_exists($data, "serie_documento")) ? $data->serie_documento : "";
 
-        $existe_documento = DB::select("SELECT
-                                            factura_folio
-                                        FROM documento
-                                        INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                        INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-                                        WHERE documento.id_tipo = 1
-                                        AND factura_folio = '" . TRIM($data->folio) . "'
-                                        AND factura_serie = '" . TRIM($data->serie_documento) . "'
-                                        AND documento.id_almacen_principal_empresa = " . (int) $data->almacen . "
-                                        AND documento_entidad.rfc = '" . $data->proveedor->rfc . "'");
+        $existe_documento = DB::table('documento')
+            ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+            ->where('documento.id_tipo', 1)
+            ->where('factura_folio', trim($data->folio))
+            ->where('factura_serie', trim($data->serie_documento))
+            ->where('documento.id_almacen_principal_empresa', (int) $data->almacen)
+            ->where('documento_entidad.rfc', $data->proveedor->rfc)
+            ->select('factura_folio')
+            ->get();
 
         if (!empty($existe_documento)) {
             return response()->json([
@@ -68,20 +67,16 @@ class CompraController extends Controller
             $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data->proveedor->rfc . "' AND tipo = 2");
 
             if (empty($existe_entidad)) {
-                $entidad = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => $data->proveedor->id,
-                    'tipo' => 2,
-                    'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
-                    'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
-                    'telefono' => !empty($data->proveedor->telefono) && !is_null($data->proveedor->telefono) ? $data->proveedor->telefono : "",
-                    'correo' => !empty($data->proveedor->email) && !is_null($data->proveedor->email) ? $data->proveedor->email : ""
+                return response()->json([
+                    'code' => 404,
+                    'message' => 'No existe el proveedor en la base de datos, por favor verifique que el RFC ingresado sea correcto. Si el RFC es correcto, contacte al administrador del sistema para que se agregue al sistema.'
                 ]);
             } else {
                 $entidad = $existe_entidad[0]->id;
             }
         } else {
+            //Preguntar
             $entidad = DB::table('documento_entidad')->insertGetId([
-                'id_erp' => $data->proveedor->id,
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
                 'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
@@ -100,6 +95,7 @@ class CompraController extends Controller
                 'id_moneda' => $data->moneda,
                 'id_paqueteria' => 6,
                 'id_fase' => 100,
+                'id_entidad' => $entidad,
                 'factura_serie' => $data->serie_documento,
                 'factura_folio' => $data->folio,
                 'tipo_cambio' => $data->tipo_cambio,
@@ -110,11 +106,6 @@ class CompraController extends Controller
                 'pedimento' => json_encode($data->pedimento),
                 'uuid' => (array_key_exists("uuid", $data)) ? $data->uuid : 'N/A',
                 'expired_at' => $data->fecha
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_documento'  => $documento,
-                'id_entidad'    => $entidad
             ]);
 
             foreach ($data->productos as $producto) {
@@ -346,8 +337,7 @@ class CompraController extends Controller
 
         $informacion = DB::table("documento")
             ->select("documento.id_almacen_principal_empresa", "empresa.bd", "documento_entidad.rfc", "documento_entidad.razon_social")
-            ->join("documento_entidad_re", "documento.id", "documento_entidad_re.id_documento")
-            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
             ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
             ->where("documento.id", $documento->documento)
@@ -434,9 +424,9 @@ class CompraController extends Controller
 
         $proveedor = DB::select("SELECT
                                     documento_entidad.*
-                                FROM documento_entidad_re
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-                                WHERE documento_entidad_re.id_documento = " . $informacion->id . "");
+                                FROM documento
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
+                                WHERE documento.id = " . $informacion->id . "");
 
         if (empty($proveedor)) {
             return response()->json([
@@ -505,8 +495,7 @@ class CompraController extends Controller
         $existe_documento = DB::select("SELECT
                                             factura_folio
                                         FROM documento
-                                        INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                        INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                        INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                         WHERE documento.id_tipo = 1
                                         AND documento.factura_folio = '" . TRIM($data->folio) . "'
                                         AND documento.factura_serie = '" . TRIM($data->serie_documento) . "'
@@ -542,7 +531,6 @@ class CompraController extends Controller
 
             if (empty($existe_entidad)) {
                 $entidad = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => $data->proveedor->id,
                     'tipo' => 2,
                     'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
                     'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
@@ -554,7 +542,6 @@ class CompraController extends Controller
             }
         } else {
             $entidad = DB::table('documento_entidad')->insertGetId([
-                'id_erp' => $data->proveedor->id,
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
                 'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
@@ -571,15 +558,12 @@ class CompraController extends Controller
             'factura_serie'                 => $data->serie_documento,
             'factura_folio'                 => $data->folio,
             'tipo_cambio'                   => $data->tipo_cambio,
+            'id_entidad'                    => $entidad,
             'referencia'                    => 'N/A',
             'observacion'                   => 'N/A',
             'info_extra'                    => 'N/A',
             'comentario'                    => $data->metodo_pago,
             'expired_at'                    => $data->fecha
-        ]);
-
-        DB::table('documento_entidad_re')->where(['id_documento' => $data->documento])->update([
-            'id_entidad'    => $entidad
         ]);
 
         $movimientos_documento = DB::select("SELECT id, id_modelo, cantidad, 0 AS editado FROM movimiento WHERE id_documento = " . $data->documento . "");
@@ -676,10 +660,10 @@ class CompraController extends Controller
         }
 
         try {
-            $proveedor_data = DB::table("documento_entidad")
+            $proveedor_data = DB::table("documento")
                 ->select("documento_entidad.rfc", "documento_entidad.id_erp")
-                ->join("documento_entidad_re", "documento_entidad.id", "=", "documento_entidad_re.id_entidad")
-                ->where("documento_entidad_re.id_documento", $data->documento)
+                ->join("documento_entidad", "documento_entidad.id", "=", "documento.id_entidad")
+                ->where("documento.id", $data->documento)
                 ->first();
 
             $proveedor_documento = ($proveedor_data->rfc == 'XEXX010101000') ? $proveedor_data->id_erp : $proveedor_data->rfc;
@@ -1087,61 +1071,6 @@ class CompraController extends Controller
         ]);
     }
 
-
-//    public function compra_compra_pendiente_confirmar(Request $request)
-//    {
-//        $documento = $request->input('documento');
-//        $series = json_decode($request->input('series'));
-//        $array  = array();
-//        $proveedor = DB::select("SELECT id_entidad FROM documento_entidad_re WHERE id_documento = " . $documento . "")[0]->id_entidad;
-//
-//        foreach ($series as $serie) {
-//            $apos = `'`;
-//            //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//            if (str_contains($serie->serie, $apos)) {
-//                $serie->serie = addslashes($serie->serie);
-//            }
-//
-//            $object = new \stdClass();
-//
-//            $existe = DB::select("SELECT
-//                                    producto.id,
-//                                    producto.status,
-//                                    producto.id_almacen,
-//                                    documento.id_tipo,
-//                                    documento.id_almacen_principal_empresa
-//                                FROM documento
-//                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-//                                INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-//                                WHERE producto.serie = '" . TRIM($serie->serie) . "'
-//                                AND movimiento.id_documento != " . $documento . "");
-//
-//            $object->serie = $serie;
-//
-//            if (empty($existe)) {
-//                $object->status = 1;
-//
-//                array_push($array, $object);
-//            } else {
-//                if (!$existe[0]->status) {
-//                    $object->status = 1;
-//
-//                    array_push($array, $object);
-//                } else {
-//                    $object->status = 1;
-//
-//                    array_push($array, $object);
-//                }
-//            }
-//        }
-//
-//        return response()->json([
-//            'code'  => 200,
-//            'series'    => $array
-//        ]);
-//    }
-
     public function compra_compra_pendiente_guardar(Request $request)
     {
         $data = json_decode($request->input('data'));
@@ -1165,7 +1094,7 @@ class CompraController extends Controller
             ]);
         }
 
-        $proveedor = DB::select("SELECT id_entidad FROM documento_entidad_re WHERE id_documento = " . $data->documento . "")[0]->id_entidad;
+        $proveedor = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento . "")[0]->id_entidad;
 
         foreach ($data->productos as $producto) {
             if ($producto->serie) {
@@ -1278,8 +1207,7 @@ class CompraController extends Controller
                                         documento.factura_folio,
                                         documento_entidad.razon_social
                                     FROM documento
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $data->documento . "");
 
         if (!empty($info_compra)) {
@@ -1991,7 +1919,6 @@ class CompraController extends Controller
 
             if (empty($existe_entidad)) {
                 $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => $data->proveedor->id,
                     'tipo' => 2,
                     'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
                     'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
@@ -2003,7 +1930,6 @@ class CompraController extends Controller
             }
         } else {
             $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                'id_erp' => $data->proveedor->id,
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
                 'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
@@ -2024,17 +1950,13 @@ class CompraController extends Controller
             'id_marketplace_area' => 1,
             'id_usuario' => $auth->id,
             'id_fase' => 606,
+            'id_entidad' => $proveedor_id,
             'tipo_cambio' => $data->tipo_cambio,
             'observacion' => implode(',', $data->documentos),
             'comentario' => (property_exists($data, "extranjero") && !is_null($data->extranjero)) ? $data->extranjero : "",
             'referencia' => (property_exists($data, "invoice") && !is_null($data->invoice)) ? $data->invoice : "",
             'info_extra' => json_encode($data),
             'arrived_at' => date("Y-m-d", strtotime($data->fecha_entrega))
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $proveedor_id,
-            'id_documento' => $documento
         ]);
 
         foreach ($data->productos as $producto) {
@@ -2238,7 +2160,7 @@ class CompraController extends Controller
             ]);
         }
 
-        DB::table('documento_entidad_re')->where(['id_documento' => $data->id])->update([
+        DB::table('documento')->where(['id' => $data->id])->update([
             'id_entidad'    => $proveedor_id
         ]);
 
@@ -2430,7 +2352,7 @@ class CompraController extends Controller
             }
         }
 
-        $proveedor = DB::select("SELECT id_entidad FROM documento_entidad_re WHERE id_documento = " . $data->id . "")[0]->id_entidad;
+        $proveedor = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->id . "")[0]->id_entidad;
 
         foreach ($data->productos as $producto) {
             if ($producto->serie) {
@@ -2850,9 +2772,9 @@ class CompraController extends Controller
             ]);
         }
 
-        $entidad_documento = DB::table("documento_entidad_re")
+        $entidad_documento = DB::table("documento")
             ->select("id_entidad")
-            ->where("id_documento", $data->id)
+            ->where("id", $data->id)
             ->first();
 
         if (!$entidad_documento) {
@@ -2871,16 +2793,12 @@ class CompraController extends Controller
             'id_marketplace_area' => $informacion_documento->id_marketplace_area,
             'id_usuario' => $auth->id,
             'id_fase' => 606,
+            'id_entidad' => $entidad_documento->id_entidad,
             'tipo_cambio' => $informacion_documento->tipo_cambio,
             'observacion' => $data->id,
             'comentario' => $informacion_documento->comentario,
             'referencia' => $informacion_documento->referencia,
             'info_extra' => $informacion_documento->info_extra
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad_documento->id_entidad,
-            'id_documento' => $documento
         ]);
 
         foreach ($data->productos as $producto) {
@@ -4115,7 +4033,6 @@ class CompraController extends Controller
         if (empty($existe_proveedor)) {
             $entidad_id = DB::table('documento_entidad')->insertGetId([
                 'tipo' => 2,
-                'id_erp' => 0,
                 'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                 'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
                 'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
@@ -4131,7 +4048,6 @@ class CompraController extends Controller
         } else {
             DB::table('documento_entidad')->where(['id' => $existe_proveedor[0]->id])->update([
                 'tipo' => 2,
-                'id_erp' => 0,
                 'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                 'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
                 'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
@@ -4147,23 +4063,6 @@ class CompraController extends Controller
 
             $entidad_id = $existe_proveedor[0]->id;
         }
-
-        $entidad_data = DB::select("SELECT * FROM documento_entidad WHERE id = " . $entidad_id . "")[0];
-
-        //Fix Entidades
-
-//        $crear_entidad = DocumentoService::crearEntidad($entidad_data, $data->empresa, 2);
-
-//        if ($crear_entidad->error) {
-//            DB::table('documento_entidad')->where(['id' => $entidad_id])->delete();
-//
-//            return response()->json([
-//                'code' => 500,
-//                'message' => "No fue posible crear la entidad en el ERP, mensaje de error: " . $crear_entidad->mensaje,
-//                'raw' => property_exists($crear_entidad, "raw") ? $crear_entidad->raw : 0,
-//                'data' => property_exists($crear_entidad, "data") ? $crear_entidad->data : 0,
-//            ]);
-//        }
 
         return response()->json([
             'code' => 200,
@@ -4500,9 +4399,9 @@ class CompraController extends Controller
             $proveedor = DB::select("SELECT
                                         documento_entidad.razon_social,
                                         documento_entidad.rfc
-                                    FROM documento_entidad
-                                    INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                    WHERE documento_entidad_re.id_documento = " . $compra->id . "
+                                    FROM documento
+                                    INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                    WHERE documento.id = " . $compra->id . "
                                     AND documento_entidad.tipo = 2");
 
             $compra->proveedor = (empty($proveedor)) ? 'Sin proveedor' : $proveedor[0]->razon_social;
@@ -4625,8 +4524,7 @@ class CompraController extends Controller
                                 INNER JOIN usuario ON documento.id_usuario = usuario.id
                                 INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
                                 INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                LEFT JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                LEFT JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 WHERE documento.id_tipo = 0
                                 " . $extra_data . "
                                 GROUP BY documento.id");
@@ -4752,8 +4650,7 @@ class CompraController extends Controller
                                             FROM documento
                                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                             INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
                                             INNER JOIN moneda ON documento.id_moneda = moneda.id
                                             INNER JOIN usuario ON documento.id_usuario = usuario.id
@@ -5362,728 +5259,6 @@ class CompraController extends Controller
         return $response;
     }
 
-    //    private function ordenes_generar_pdf($documento, $auth)
-    //    {
-    //        $response = new \stdClass();
-    //
-    //        $informacion_documento = DB::select("SELECT
-    //                                                documento.id,
-    //                                                documento.info_extra,
-    //                                                documento.tipo_cambio,
-    //                                                documento.created_at,
-    //                                                documento_periodo.periodo_en,
-    //                                                documento_entidad.rfc,
-    //                                                documento_entidad.razon_social,
-    //                                                moneda.moneda,
-    //                                                usuario.firma,
-    //                                                empresa.logo_odc
-    //                                            FROM documento
-    //                                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-    //                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-    //                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-    //                                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-    //                                            INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
-    //                                            INNER JOIN moneda ON documento.id_moneda = moneda.id
-    //                                            INNER JOIN usuario ON documento.id_usuario = usuario.id
-    //                                            WHERE documento.id = " . $documento . "");
-    //
-    //        if (empty($informacion_documento)) {
-    //            $response->error = 1;
-    //            $response->mensaje = "No se encontró información del documento para generar el PDF.";
-    //
-    //            return $response;
-    //        }
-    //
-    //        $productos = DB::table("movimiento")
-    //            ->select("modelo.sku AS codigo", "modelo.np", "modelo.descripcion", "movimiento.comentario", "movimiento.cantidad", "movimiento.precio AS costo", "movimiento.cantidad", "movimiento.descuento")
-    //            ->join("modelo", "movimiento.id_modelo", "=", "modelo.id")
-    //            ->where("movimiento.id_documento", $documento)
-    //            ->get()
-    //            ->toArray();
-    //
-    //        if (empty($productos)) {
-    //            $response->error = 1;
-    //            $response->mensaje = "No se encontraron productos de la ODC.";
-    //
-    //            return $response;
-    //        }
-    //
-    //        $informacion_documento = $informacion_documento[0];
-    //        $informacion_documento->info_extra = json_decode($informacion_documento->info_extra);
-    //        $impuesto = "1." . $informacion_documento->info_extra->impuesto;
-    //
-    //
-    //        $pdf = app('FPDF');
-    //
-    //        $x = $pdf->GetX();
-    //        $y = $pdf->GetY();
-    //
-    //        $pdf->AddPage();
-    //        $pdf->SetFont('Arial', 'B', 20);
-    //        $pdf->SetTextColor(69, 90, 100);
-    //        $pdf->Cell(110, 35, "PURCHASE ORDER");
-    //
-    //        if ($informacion_documento->logo_odc != 'N/A') {
-    //            $pdf->Image($informacion_documento->logo_odc, 5, 0, 70, 25, 'png');
-    //        }
-    //
-    //        $pdf->SetFont('Arial', '', 10);
-    //        $pdf->Cell(40, 5, "Date", 1, false, 'C');
-    //        $pdf->Cell(40, 5, "P.O #", 1, false, 'C');
-    //        $pdf->Ln();
-    //
-    //        $pdf->Cell(110, 8, "");
-    //        $pdf->Cell(40, 8, date('d/m/Y', strtotime($informacion_documento->created_at)), 1, false, 'C');
-    //        $pdf->Cell(40, 8, $informacion_documento->id, 1, false, 'C');
-    //        $pdf->Ln(20);
-    //
-    //        $pdf->Cell(25, 8, "Supplier", 1, false, 'L');
-    //        $pdf->Cell(95, 8, $informacion_documento->razon_social, 1, false, 'L');
-    //        $pdf->Ln();
-    //        $pdf->Cell(95, 8, "Bill To", 1, false, 'L');
-    //        $pdf->Cell(95, 8, "Ship To", 1, false, 'L');
-    //        $pdf->Ln(8);
-    //
-    //        $billto_breaks = explode("\n", $informacion_documento->info_extra->billto);
-    //        $shipto_breaks = explode("\n", $informacion_documento->info_extra->shipto);
-    //
-    //        $current_heigth_ship_bill = 0;
-    //        $current_height_product = 38;
-    //
-    //        if (count($billto_breaks) > count($shipto_breaks)) {
-    //            foreach ($billto_breaks as $index => $billto) {
-    //                $pdf->Cell(95, 5, substr($billto, 0, 50), 'LR', false, 'L');
-    //                $pdf->Cell(95, 5, isset($shipto_breaks[$index]) ? substr($shipto_breaks[$index], 0, 50) : '', 'LR', false, 'L');
-    //                $pdf->Ln();
-    //
-    //                $current_heigth_ship_bill += 5;
-    //                $current_height_product += 5;
-    //            }
-    //        } else {
-    //            foreach ($shipto_breaks as $index => $shipto) {
-    //                $pdf->Cell(95, 5, isset($billto_breaks[$index]) ? substr($billto_breaks[$index], 0, 50) : '', 'LR', false, 'L');
-    //                $pdf->Cell(95, 5, substr($shipto, 0, 50), 'LR', false, 'L');
-    //                $pdf->Ln();
-    //
-    //                $current_heigth_ship_bill += 5;
-    //                $current_height_product += 5;
-    //            }
-    //        }
-    //
-    //        $pdf->Cell(95, 30 - $current_heigth_ship_bill, '', 'LBR', false, 'L');
-    //        $pdf->Cell(95, 30 - $current_heigth_ship_bill, '', 'LBR', false, 'L');
-    //        $pdf->Ln(5);
-    //
-    //        $pdf->Cell(38, 7, "Sales Order #", 1, false, 'C');
-    //        $pdf->Cell(38, 7, "Terms", 1, false, 'C');
-    //        $pdf->Cell(38, 7, "Rep", 1, false, 'C');
-    //        $pdf->Cell(38, 7, "Currency / Rate", 1, false, 'C');
-    //        $pdf->Cell(38, 7, "Incoterm", 1, false, 'C');
-    //        $pdf->Ln();
-    //
-    //        $nombre_exploded = explode(" ", $auth->nombre);
-    //
-    //        $pdf->Cell(38, 12, $informacion_documento->info_extra->invoice, 1, false, 'C');
-    //        $pdf->Cell(38, 12, substr($informacion_documento->periodo_en, 0, 10), 1, false, 'C');
-    //        $pdf->Cell(38, 12, substr($nombre_exploded[0], 0, 1) . (count($nombre_exploded) > 1 ? substr($nombre_exploded[1], 0, 1) : ""), 1, false, 'C');
-    //        $pdf->Cell(38, 12, $informacion_documento->moneda . " / " . $informacion_documento->tipo_cambio, 1, false, 'C');
-    //        $pdf->Cell(38, 12, $informacion_documento->info_extra->fob, 1, false, 'C');
-    //        $pdf->Ln(15);
-    //
-    //        $product_qty_height = 10;
-    //        $product_code_height = 25;
-    //        $product_description_height = 81;
-    //        $product_cost_height = 24;
-    //        $product_discount_height = 25;
-    //        $product_total_height = 25;
-    //
-    //        $pdf->Cell($product_qty_height, 7, "Qty", 1, false, 'C');
-    //        $pdf->Cell($product_code_height, 7, "Item Code", 1, false, 'C');
-    //        $pdf->Cell($product_description_height, 7, "Description", 1, false, 'C');
-    //        $pdf->Cell($product_cost_height, 7, "Price Each", 1, false, 'C');
-    //        $pdf->Cell($product_discount_height, 7, "Discount", 1, false, 'C');
-    //        $pdf->Cell($product_total_height, 7, "Amount", 1, false, 'C');
-    //        $pdf->Ln();
-    //
-    //        $current_height_product += 35;
-    //
-    //        $total = 0;
-    //        $total_discount = 0;
-    //
-    //        $pdf->SetFont('Arial', '', 6);
-    //
-    //        foreach ($productos as $producto) {
-    //            $producto->descripcion =
-    //                iconv('UTF-8', 'ISO-8859-1', $producto->comentario);
-    //            //Separar en un arreglo los saltos de linea de la descripción
-    //            $descripciones = explode("\n", $producto->descripcion);
-    //
-    //            if (count($descripciones) > 3) {
-    //                $pdf->Cell($product_qty_height, 5, $producto->cantidad, 'LR', false, 'C');
-    //                $pdf->Cell($product_code_height, 5, substr($producto->codigo, 0, 20), 'LR', false, 'C');
-    //                $pdf->Cell($product_description_height, 5, substr($descripciones[0], 0, 60), 'LR', false, 'L'); // Imprimir el primero
-    //                $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Cell($product_total_height, 5, "$ " . number_format((float) $producto->cantidad * (float) $producto->costo, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Ln();
-    //                $pivoteD = 60;
-    //
-    //                if(strlen($descripciones[0]) > 60) {
-    //                    $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_code_height, 5, substr($producto->np, 0, 10), 'LR', false, 'C');
-    //                    $pdf->Cell($product_description_height, 5, substr($descripciones[0], $pivoteD, 60), 'LR', false, 'L'); // Imprimir el segundo
-    //                    $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Ln();
-    //                } else {
-    //                    //Eliminamos el elemento del registro
-    //                    array_shift($descripciones);
-    //                    $current_height_product += 5;
-    //
-    //                    $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_code_height, 5, substr($producto->np, 0, 10), 'LR', false, 'C');
-    //                    $pdf->Cell($product_description_height, 5, $descripciones[0] ? substr($descripciones[0],0,60) : '', 'LR', false, 'L'); // Imprimir el segundo
-    //                    $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Ln();
-    //                }
-    //
-    //                //Eliminamos el elemento del registro
-    //                array_shift($descripciones);
-    //                $current_height_product += 5;
-    //                // Lo de arriba se hace ya que se tiene que tener un espacio para el sku y el np ^^
-    //
-    //                //A partir de acá se recorren todos los renglones extra de la descripción
-    //                foreach ($descripciones as $key => $value) {
-    //                    if (strlen($value) > 60) {
-    //                        $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_code_height, 5, '', 'LR', false, 'C');
-    //                        $pdf->Cell($product_description_height, 5, substr($value, $pivoteD, 60), 'LR', false, 'L');
-    //                        $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Ln();
-    //                        $pivoteD = $pivoteD + 60;
-    //                    } else {
-    //                        $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_code_height, 5, '', 'LR', false, 'C');
-    //                        $pdf->Cell($product_description_height, 5, $value, 'LR', false, 'L');
-    //                        $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                        $pdf->Ln();
-    //                    }
-    //                    $current_height_product += 5;
-    //                }
-    //            }
-    //            if (count($descripciones) <= 3) {
-    //                iconv('UTF-8', 'ISO-8859-1', $producto->comentario);
-    //                $largo_descripcion = strlen($producto->descripcion);
-    //
-    //                $pivote = 120;
-    //
-    //                $pdf->Cell($product_qty_height, 5, $producto->cantidad, 'LR', false, 'C');
-    //                $pdf->Cell($product_code_height, 5, substr($producto->codigo, 0, 20), 'LR', false, 'C');
-    //                $pdf->Cell($product_description_height, 5, substr($producto->descripcion, 0, 60), 'LR', false, 'C');
-    //                $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Cell($product_total_height, 5, "$ " . number_format((float) $producto->cantidad * (float) $producto->costo, 2, '.', ','), 'LR', false, 'C');
-    //                $pdf->Ln();
-    //
-    //                $current_height_product += 5;
-    //
-    //                if ($largo_descripcion > 60) {
-    //                    $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_code_height, 5, substr($producto->np, 0, 10), 'LR', false, 'C');
-    //                    $pdf->Cell($product_description_height, 5, substr($producto->descripcion, 60, 60), 'LR', false, 'C');
-    //                    $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Ln();
-    //
-    //                    $current_height_product += 5;
-    //                }
-    //                while ($largo_descripcion > $pivote) {
-    //
-    //                    $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_code_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_description_height, 5, substr($producto->descripcion, $pivote, 60), 'LR', false, 'C');
-    //                    $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //                    $pdf->Ln();
-    //
-    //                    $current_height_product += 5;
-    //                    $pivote = $pivote + 60;
-    //                }
-    //            }
-    //            //            if ($producto->np != 'N/A') {
-    //            //                $pdf->Cell($product_qty_height, 5, "", 'LR', false, 'C');
-    //            //                $pdf->Cell($product_code_height, 5, "", 'LR', false, 'C');
-    //            //                $pdf->Cell($product_description_height, 5, $producto->np, 'LR', false, 'C');
-    //            //                $pdf->Cell($product_cost_height, 5, "", 'LR', false, 'C');
-    //            //                $pdf->Cell($product_discount_height, 5, "", 'LR', false, 'C');
-    //            //                $pdf->Cell($product_total_height, 5, "", 'LR', false, 'C');
-    //            //                $pdf->Ln();
-    //            //
-    //            //                $current_height_product += 5;
-    //            //            }
-    //
-    //            //            if ($current_height_product >= 260) {
-    //            //                $pdf->Cell($product_qty_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Cell($product_code_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Cell($product_description_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Cell($product_cost_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Cell($product_discount_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Cell($product_total_height, 5, "", 'LRB', false, 'C');
-    //            //                $pdf->Ln();
-    //            //
-    //            //                # $pdf->addPage();
-    //            //
-    //            //                $pdf->Cell($product_qty_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Cell($product_code_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Cell($product_description_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Cell($product_cost_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Cell($product_discount_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Cell($product_total_height, 5, "", 'LRT', false, 'C');
-    //            //                $pdf->Ln();
-    //            //
-    //            //                # $current_height_product = 5;
-    //            //            }
-    //
-    //            $total += (float) $producto->cantidad * (float) $producto->costo;
-    //            $total_discount += $producto->descuento > 0 ? (($producto->cantidad * (float) $producto->costo) * $producto->descuento / 100) : 0;
-    //        }
-    //
-    //        $total = $total * (float) $impuesto;
-    //
-    //        $pdf->Cell($product_qty_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Cell($product_code_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Cell($product_description_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Cell($product_cost_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Cell($product_discount_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Cell($product_total_height, 10, "", 'LBR', false, 'C');
-    //        $pdf->Ln(15);
-    //
-    //        $current_height_product += 15;
-    //
-    //        $pdf->SetFont('Arial', '', 10);
-    //
-    //        $pdf->Cell(130, 7, "Thanks you for your business", 1, false, 'L');
-    //        $pdf->SetFont('Arial', 'B', 10);
-    //        $pdf->Cell(30, 7, "Subtotal", "TLB", false, 'R');
-    //        $pdf->Cell(30, 7, "$ " . number_format($total / (float) $impuesto, 2, '.', ','), "TRB", false, 'L');
-    //        $pdf->SetFont('Arial', '', 10);
-    //        $pdf->Ln();
-    //        $current_height_product += 5;
-    //
-    //        $pdf->Cell(130, 7, "Special Comments ", 1, false, 'L');
-    //        $pdf->SetFont('Arial', 'B', 10);
-    //        $pdf->Cell(30, 7, "Tax", "TLB", false, 'R');
-    //        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float) $impuesto), 2, '.', ','), "TRB", false, 'L');
-    //        $pdf->SetFont('Arial', '', 10);
-    //        $pdf->Ln();
-    //        $current_height_product += 5;
-    //
-    //        $pdf->SetFont('Arial', '', 8);
-    //        $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 0, 90), 0, false, 'L');
-    //        $pdf->SetFont('Arial', 'B', 10);
-    //        $pdf->Cell(30, 7, "Total", "TLB", false, 'R');
-    //        $pdf->Cell(30, 7, "$ " . number_format($total, 2, '.', ','), "TRB", false, 'L');
-    //        $pdf->SetFont('Arial', '', 10);
-    //        $pdf->Ln();
-    //        $current_height_product += 5;
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 90) {
-    //            $pdf->SetFont('Arial', '', 8);
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 90, 90), 0, false, 'L');
-    //            $pdf->SetFont('Arial', 'B', 10);
-    //            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    //            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    //            $pdf->SetFont('Arial', '', 10);
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        } else {
-    //            $pdf->Cell(130, 7, "", 0, false, 'L');
-    //            $pdf->SetFont('Arial', 'B', 10);
-    //            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    //            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    //            $pdf->SetFont('Arial', '', 10);
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 180) {
-    //            $pdf->SetFont('Arial', '', 8);
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 180, 90), 0, false, 'L');
-    //            $pdf->SetFont('Arial', 'B', 10);
-    //            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    //            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    //            $pdf->SetFont('Arial', '', 10);
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        } else {
-    //            $pdf->Cell(130, 7, "", 0, false, 'L');
-    //            $pdf->SetFont('Arial', 'B', 10);
-    //            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    //            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    //            $pdf->SetFont('Arial', '', 10);
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 270) {
-    //            $pdf->SetFont('Arial', '', 8);
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 270, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 360) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 360, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 450) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 450, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 540) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 540, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 630) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 630, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 720) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 720, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 810) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 810, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 900) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 900, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 990) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 990, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 1080) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1080, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if (strlen($informacion_documento->info_extra->comentarios) > 1170) {
-    //            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1170, 90), 0, false, 'L');
-    //            $pdf->Ln();
-    //            $current_height_product += 5;
-    //        }
-    //
-    //        if ($informacion_documento->firma != 'N/A') {
-    //            $pdf->SetFont('Arial', '', 10);
-    //            $pdf->SetXY(90, 250); // position of text3
-    //            $pdf->Write(0, 'Authorized By');
-    //
-    //            $pdf->Image($informacion_documento->firma, 50, 250, 100, 40, 'png');
-    //        }
-    //
-    //        $pdf_name   = uniqid() . ".pdf";
-    //        $pdf_data   = $pdf->Output($pdf_name, 'S');
-    //        $file_name  = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
-    //
-    //        $response->error = 0;
-    //        $response->data = base64_encode($pdf_data);
-    //        $response->name = $file_name;
-    //
-    //        return $response;
-    ////        //Aqui empieza la informacion extra del documento
-    ////        $informacion_documento->info_extra->comentarios =
-    ////            iconv('UTF-8', 'ISO-8859-1', $informacion_documento->info_extra->comentarios);
-    ////
-    ////        $comentarios = explode("\n", $informacion_documento->info_extra->comentarios);
-    ////
-    ////        if (count($comentarios) > 2) {
-    ////            $pdf->SetFont('Arial', '', 8);
-    ////            $pdf->Cell(130, 7, substr($comentarios[0], 0, 90), 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Total", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////
-    ////            if (strlen($comentarios[0]) > 90) {
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, substr($comentarios[0], 90, 90), 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            } else {
-    ////                //Eliminamos el elemento del registro
-    ////                array_shift($comentarios);
-    ////                $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            }
-    ////
-    ////            if (strlen($comentarios[0]) > 180) {
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, substr($comentarios[0], 180, 90), 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            } else {
-    ////                //Eliminamos el elemento del registro
-    ////                array_shift($comentarios);
-    ////                $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            }
-    ////            foreach ($comentarios as $key => $value) {
-    ////
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, $value, 0, false, 'L');
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            }
-    ////        }
-    ////
-    ////        if (count($comentarios) <= 2) {
-    ////            $pdf->SetFont('Arial', '', 8);
-    ////            $pdf->Cell(130, 7, substr($comentarios[0], 0, 90), 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Total", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////
-    ////            if (strlen($comentarios[0]) > 90) {
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, substr($comentarios[0], 90, 90), 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            } else {
-    ////                //Eliminamos el elemento del registro
-    ////                array_shift($comentarios);
-    ////                $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            }
-    ////
-    ////            if (strlen($comentarios[0]) > 180) {
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, substr($comentarios[0], 180, 90), 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            } else {
-    ////                //Eliminamos el elemento del registro
-    ////                array_shift($comentarios);
-    ////                $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////                $pdf->SetFont('Arial', 'B', 10);
-    ////                $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////                $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////                $pdf->SetFont('Arial', '', 10);
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////            }
-    ////
-    ////            $pivote2 = 270;
-    ////
-    ////            while (strlen($comentarios[0]) > $pivote2) {
-    ////
-    ////                $pdf->SetFont('Arial', '', 8);
-    ////                $pdf->Cell(130, 7, substr($comentarios[0], $pivote2, 90), 0, false, 'L');
-    ////                $pdf->Ln();
-    ////                $current_height_product += 5;
-    ////
-    ////                $current_height_product += 5;
-    ////                $pivote2 = $pivote2 + 90;
-    ////            }
-    ////        }
-    //
-    //
-    ////        $pdf->SetFont('Arial', '', 8);
-    ////        $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 0, 90), 0, false, 'L');
-    ////        $pdf->SetFont('Arial', 'B', 10);
-    ////        $pdf->Cell(30, 7, "Total", "TLB", false, 'R');
-    ////        $pdf->Cell(30, 7, "$ " . number_format($total, 2, '.', ','), "TRB", false, 'L');
-    ////        $pdf->SetFont('Arial', '', 10);
-    ////        $pdf->Ln();
-    ////        $current_height_product += 5;
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 90) {
-    ////            $pdf->SetFont('Arial', '', 8);
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 90, 90), 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        } else {
-    ////            $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 180) {
-    ////            $pdf->SetFont('Arial', '', 8);
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 180, 90), 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        } else {
-    ////            $pdf->Cell(130, 7, "", 0, false, 'L');
-    ////            $pdf->SetFont('Arial', 'B', 10);
-    ////            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-    ////            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 270) {
-    ////            $pdf->SetFont('Arial', '', 8);
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 270, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 360) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 360, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 450) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 450, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 540) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 540, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 630) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 630, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 720) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 720, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 810) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 810, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 900) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 900, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 990) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 990, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 1080) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1080, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    ////
-    ////        if (strlen($informacion_documento->info_extra->comentarios) > 1170) {
-    ////            $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1170, 90), 0, false, 'L');
-    ////            $pdf->Ln();
-    ////            $current_height_product += 5;
-    ////        }
-    //
-    ////        if ($informacion_documento->firma != 'N/A') {
-    ////            $pdf->SetFont('Arial', '', 10);
-    ////            $pdf->SetXY(90, 250); // position of text3
-    ////            $pdf->Write(0, 'Authorized By');
-    ////
-    ////            $pdf->Image($informacion_documento->firma, 50, 250, 100, 40, 'png');
-    ////        }
-    ////
-    ////        $pdf_name   = uniqid() . ".pdf";
-    ////        $pdf_data   = $pdf->Output($pdf_name, 'S');
-    ////        $file_name  = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
-    ////
-    ////        $response->error = 0;
-    ////        $response->data = base64_encode($pdf_data);
-    ////        $response->name = $file_name;
-    ////
-    ////        return $response;
-    //    }
-
     private function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id)
     {
         $info_compra = DB::select("SELECT
@@ -6094,8 +5269,7 @@ class CompraController extends Controller
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
 
         $info_compra = $info_compra[0];

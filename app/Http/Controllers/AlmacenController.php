@@ -39,48 +39,6 @@ use App\Models\Enums\DocumentoEntidadTipo;
 
 class AlmacenController extends Controller
 {
-    /* Almacen > Picking */
-    /*public function almacen_picking_data(Request $request)
-    {
-        $auth = json_decode($request->auth);
-
-        $ventas = $this->picking_packing_raw_data("AND documento.problema = 0 AND documento.picking = 0 AND documento.id_almacen_principal_empresa != 34 AND usuario_empresa.id_usuario = " . $auth->id . "");
-
-        return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas
-        ]);
-    }
-
-    public function almacen_picking_venta($documento, Request $request)
-    {
-        $auth = json_decode($request->auth);
-
-        $etiqueta_impresa = DB::select("SELECT id FROM documento WHERE id = " . $documento . " AND picking = 1");
-
-        if (!empty($etiqueta_impresa)) {
-            $ventas = $this->picking_packing_raw_data("AND documento.problema = 0 AND documento.picking = 0 AND documento.id_almacen_principal_empresa != 34 AND usuario_empresa.id_usuario = " . $auth->id . "");
-
-            return response()->json([
-                'code'  => 500,
-                'ventas'    => $ventas
-            ]);
-        }
-
-        DB::table('documento')->where(['id' => $documento])->update([
-            'picking' => 1,
-            'picking_by' => $auth->id,
-            'picking_date' => date('Y-m-d H:i:s')
-        ]);
-
-        $ventas = $this->picking_packing_raw_data("AND documento.problema = 0 AND documento.picking = 0 AND documento.id_almacen_principal_empresa != 34 AND usuario_empresa.id_usuario = " . $auth->id . "");
-
-        return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas
-        ]);
-    }*/
-
     /* Almacen > Packing */
     public function almacen_packing_data(Request $request)
     {
@@ -122,12 +80,6 @@ class AlmacenController extends Controller
         $array = array();
 
         foreach ($series as $serie) {
-            //Aqui se quita
-            //            $apos = `'`;
-            //            //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-            //            if (str_contains($serie, $apos)) {
-            //                $serie = addslashes($serie);
-            //            }
 
             $serie = str_replace(["'", '\\'], '', $serie);
 
@@ -135,16 +87,17 @@ class AlmacenController extends Controller
 
             $object = new \stdClass();
 
-            $existe = DB::select("SELECT
-                                    producto.id
-                                FROM documento
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                WHERE producto.status = 1
-                                AND producto.serie = '" . TRIM($serie) . "'
-                                AND modelo.sku = '" . TRIM($producto) . "'");
+            $existe = DB::table('documento')
+                ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+                ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+                ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
+                ->where('producto.status', 1)
+                ->where('producto.serie', TRIM($serie))
+                ->where('modelo.sku', TRIM($producto))
+                ->select('producto.id')
+                ->get();
+
 
             $object->serie = $serie;
 
@@ -155,16 +108,16 @@ class AlmacenController extends Controller
                 if (empty($esSinonimo)) {
                     $object->status = 0;
                 } else {
-                    $existeSinonimo = DB::select("SELECT
-                                    producto.id
-                                FROM documento
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                WHERE producto.status = 1
-                                AND producto.serie = '" . TRIM($serie) . "'
-                                AND modelo.sku = '" . TRIM($esSinonimo->sku) . "'");
+                    $existeSinonimo = DB::table('documento')
+                        ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+                        ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                        ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+                        ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
+                        ->where('producto.status', 1)
+                        ->where('producto.serie', TRIM($serie))
+                        ->where('modelo.sku', TRIM($esSinonimo->sku))
+                        ->select('producto.id')
+                        ->get();
 
                     if (empty($existeSinonimo)) {
                         $object->status = 0;
@@ -175,20 +128,6 @@ class AlmacenController extends Controller
             } else {
                 $object->status = 1;
             }
-
-            //            $es_sku = DB::table('modelo')->where('sku', TRIM($serie))->first();
-            //
-            //            if (empty($es_sku)) {
-            //                $es_sinonimo = DB::table('modelo_sinonimo')->where('codigo', TRIM($serie))->first();
-            //
-            //                if (empty($es_sinonimo)) {
-            //                    $object->status = 1;
-            //                } else {
-            //                    $object->status = 0;
-            //                }
-            //            } else {
-            //                $object->status = 0;
-            //            }
 
             array_push($array, $object);
         }
@@ -203,7 +142,11 @@ class AlmacenController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->authy . "' AND status = 1");
+        $authy_user_id = DB::table('usuario')
+            ->where('authy', $data->authy)
+            ->where('status', 1)
+            ->select('id')
+            ->get();
 
         if (empty($authy_user_id)) {
             return response()->json([
@@ -244,23 +187,25 @@ class AlmacenController extends Controller
         $errores = array();
         $series_cambiadas = array();
 
-        $info_documento = DB::select("SELECT
-                                        area.area,
-                                        documento.id_fase,
-                                        documento.id_almacen_principal_empresa,
-                                        almacen.id AS id_almacen,
-                                        marketplace.marketplace,
-                                        paqueteria.paqueteria
-                                    FROM documento
-                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                                    INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                    INNER JOIN area ON marketplace_area.id_area = area.id
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE documento.id = " . $data->documento . " 
-                                    AND documento.id_tipo = 2
-                                    AND documento.status = 1");
+        $info_documento = DB::table('documento')
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('paqueteria', 'documento.id_paqueteria', '=', 'paqueteria.id')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->where('documento.id', $data->documento)
+            ->where('documento.id_tipo', 2)
+            ->where('documento.status', 1)
+            ->select(
+                'area.area',
+                'documento.id_fase',
+                'documento.id_almacen_principal_empresa',
+                'almacen.id AS id_almacen',
+                'marketplace.marketplace',
+                'paqueteria.paqueteria'
+            )
+            ->get();
 
         if (empty($info_documento)) {
             return response()->json([
@@ -293,13 +238,15 @@ class AlmacenController extends Controller
 
         if ($data->problema) {
             try {
-                $usuario_documento = DB::select("SELECT
-                                                    usuario.id AS id_usuario,
-                                                    usuario.email,
-                                                    usuario.nombre
-                                                FROM documento 
-                                                INNER JOIN usuario ON documento.id_usuario = usuario.id 
-                                                WHERE documento.id = " . $data->documento . "")[0];
+                $usuario_documento = DB::table('documento')
+                    ->join('usuario', 'documento.id_usuario', '=', 'usuario.id')
+                    ->where('documento.id', $data->documento)
+                    ->select(
+                        'usuario.id AS id_usuario',
+                        'usuario.email',
+                        'usuario.nombre'
+                    )
+                    ->first();
 
                 if ($usuario_documento->id_usuario > 1) {
                     $notificacion['titulo']     = "Pedido en problemas.";
@@ -358,33 +305,31 @@ class AlmacenController extends Controller
         }
 
         foreach ($data->productos as $producto) {
-            $movimiento = DB::select("SELECT
-                                        movimiento.id,
-                                        modelo.serie
-                                    FROM movimiento 
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                    WHERE modelo.sku = '" . trim($producto->producto) . "' 
-                                    AND id_documento = " . $data->documento . "");
+            $movimiento = DB::table('movimiento')
+                ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                ->where('modelo.sku', trim($producto->producto))
+                ->where('id_documento', $data->documento)
+                ->select(
+                    'movimiento.id',
+                    'modelo.serie'
+                )
+                ->get();
 
             if (!empty($movimiento)) {
                 if ($movimiento[0]->serie) {
                     foreach ($producto->series as $serie) {
-                        //Aqui se quita
-                        //                        $apos = `'`;
-                        //                        //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                        //                        if (str_contains($serie, $apos)) {
-                        //                            $serie = addslashes($serie);
-                        //                        }
                         $serie = str_replace(["'", '\\'], '', $serie);
-                        $existe = DB::select("SELECT
-                                                producto.id,
-                                                modelo.sku
-                                            FROM documento
-                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                            INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE producto.serie = '" . $serie . "'");
+                        $existe = DB::table('documento')
+                            ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+                            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                            ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+                            ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
+                            ->where('producto.serie', $serie)
+                            ->select(
+                                'producto.id',
+                                'modelo.sku'
+                            )
+                            ->get();
 
                         if (empty($existe)) {
                             $serie_nueva = DB::table('producto')->insertGetId([
@@ -436,7 +381,11 @@ class AlmacenController extends Controller
         }
 
         if (!empty($errores)) {
-            $movimientos = DB::select("SELECT movimiento.id FROM documento INNER JOIN movimiento ON documento.id = movimiento.id_documento WHERE documento.id = " . $data->documento . "");
+            $movimientos = DB::table('documento')
+                ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+                ->where('documento.id', $data->documento)
+                ->select('movimiento.id')
+                ->get();
 
             foreach ($movimientos as $movimiento) {
                 DB::table('movimiento_producto')->where(['id_movimiento' => $movimiento->id])->delete();
@@ -554,12 +503,12 @@ class AlmacenController extends Controller
             ->toArray();
 
         $documento_info = DB::table('documento')->where('id', $documento)->first();
-        $tiene_series = DB::select('
-                                        SELECT producto.*
-                                        FROM movimiento_producto
-                                        INNER JOIN movimiento ON movimiento.id = movimiento_producto.id_movimiento
-                                        INNER JOIN producto ON producto.id = movimiento_producto.id_producto
-                                        WHERE movimiento.id_documento =' . $documento);
+        $tiene_series = DB::table('movimiento_producto')
+            ->join('movimiento', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+            ->join('producto', 'producto.id', '=', 'movimiento_producto.id_producto')
+            ->where('movimiento.id_documento', $documento)
+            ->select('producto.*')
+            ->get();
 
         //El pedido ya fue surtido por alguien
         if ($documento_info->packing_by != 0) {
@@ -592,8 +541,6 @@ class AlmacenController extends Controller
                         'id_usuario' => 1,
                         'seguimiento' => "Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas."
                     ]);
-
-                    // CorreoService::cambioDeFase($documento, "Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas.");
 
                     return response()->json([
                         "code" => 500,
@@ -691,34 +638,36 @@ class AlmacenController extends Controller
             }
         }
 
-        $informacion = DB::select("SELECT
-                                    documento.id,
-                                    documento.status,
-                                    documento.id_fase,
-                                    documento.id_usuario,
-                                    documento.picking,
-                                    documento.pagado,
-                                    documento.shipping_null,
-                                    documento.id_marketplace_area,
-                                    documento.id_periodo,
-                                    documento.documento_extra,
-                                    paqueteria.paqueteria,
-                                    paqueteria.guia,
-                                    empresa.empresa,
-                                    almacen.almacen,
-                                    empresa_almacen.id AS almacen_id,
-                                    marketplace_area.publico,
-                                    area.area,
-                                    marketplace.marketplace
-                                FROM documento
-                                INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                INNER JOIN area ON marketplace_area.id_area = area.id
-                                INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                WHERE documento.id = " . $documento . "");
+        $informacion = DB::table('documento')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->join('paqueteria', 'documento.id_paqueteria', '=', 'paqueteria.id')
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->where('documento.id', $documento)
+            ->select(
+                'documento.id',
+                'documento.status',
+                'documento.id_fase',
+                'documento.id_usuario',
+                'documento.picking',
+                'documento.pagado',
+                'documento.shipping_null',
+                'documento.id_marketplace_area',
+                'documento.id_periodo',
+                'documento.documento_extra',
+                'paqueteria.paqueteria',
+                'paqueteria.guia',
+                'empresa.empresa',
+                'almacen.almacen',
+                'empresa_almacen.id AS almacen_id',
+                'marketplace_area.publico',
+                'area.area',
+                'marketplace.marketplace'
+            )
+            ->get();
 
         if (empty($informacion)) {
             return response()->json([
@@ -830,32 +779,37 @@ class AlmacenController extends Controller
             }
         }
 
-        $contiene_servicios = DB::select("SELECT
-                                                modelo.id,
-                                                modelo.sku,
-                                                modelo.descripcion,
-                                                modelo.serie,
-                                                movimiento.cantidad
-                                            FROM movimiento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id_documento = " . $documento . "
-                                            AND modelo.id_tipo IN (2, 4)");
+        $contiene_servicios = DB::table('movimiento')
+            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+            ->where('movimiento.id_documento', $documento)
+            ->whereIn('modelo.id_tipo', [2, 4])
+            ->select(
+                'modelo.id',
+                'modelo.sku',
+                'modelo.descripcion',
+                'modelo.serie',
+                'movimiento.cantidad'
+            )
+            ->get();
 
         $informacion->con_servicios = empty($contiene_servicios) ? 0 : 1;
 
-        $informacion->productos = DB::select("SELECT
-                                                modelo.id,
-                                                modelo.sku,
-                                                modelo.descripcion,
-                                                modelo.serie,
-                                                movimiento.cantidad
-                                            FROM movimiento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id_documento = " . $documento . "
-                                            AND modelo.id_tipo NOT IN (2, 4)");
+        $informacion->productos = DB::table('movimiento')
+            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+            ->where('movimiento.id_documento', $documento)
+            ->whereNotIn('modelo.id_tipo', [2, 4])
+            ->select(
+                'modelo.id',
+                'modelo.sku',
+                'modelo.descripcion',
+                'modelo.serie',
+                'movimiento.cantidad'
+            )->get();
 
         if (empty($informacion->productos) && !$informacion->con_servicios) {
-            $vendedor = DB::select("SELECT nombre FROM usuario WHERE id = " . $informacion->id_usuario . "")[0]->nombre;
+            $vendedor = DB::table('usuario')
+                ->where('id', $informacion->id_usuario)
+                ->value('nombre');
 
             return response()->json([
                 "code" => 500,
@@ -871,12 +825,14 @@ class AlmacenController extends Controller
                 ->pluck("codigo");
         }
 
-        $informacion->seguimiento = DB::select("SELECT
-                                                    seguimiento.*, 
-                                                    usuario.nombre 
-                                                FROM seguimiento 
-                                                INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                WHERE id_documento = " . $documento . "");
+        $informacion->seguimiento = DB::table('seguimiento')
+            ->join('usuario', 'seguimiento.id_usuario', '=', 'usuario.id')
+            ->where('id_documento', $documento)
+            ->select(
+                'seguimiento.*',
+                'usuario.nombre'
+            )
+            ->get();
 
         return response()->json([
             "code" => 200,
@@ -2624,29 +2580,27 @@ class AlmacenController extends Controller
 
         if (!empty($data->cliente->rfc)) {
             if (strpos(TRIM($data->cliente->rfc), 'XAXX0101010') === false) {
-                $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
+                $existe_cliente = DB::table('documento_entidad')
+                    ->where('rfc', trim($data->cliente->rfc))
+                    ->where('tipo', 1)
+                    ->value('id');
 
                 if (empty($existe_cliente)) {
-                    $entidad = DB::table('documento_entidad')->insertGetId([
-                        'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
-                        'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                        'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                        'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                        'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                        'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
+                    return response()->json([
+                        'code'  => 404,
+                        'message'   => "El RFC ingresado no existe en la base de datos." . self::logVariableLocation()
                     ]);
                 } else {
                     $entidad = $existe_cliente[0]->id;
 
                     DB::table('documento_entidad')->where(['id' => $entidad])->update([
-                        'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
                         'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                         'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8'))
                     ]);
                 }
             } else {
+                //Preguntar
                 $entidad = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
                     'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                     'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                     'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
@@ -2655,7 +2609,9 @@ class AlmacenController extends Controller
                 ]);
             }
         } else {
-            $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE RFC = 'SISTEMAOMG'");
+            $existe_entidad = DB::table('documento_entidad')
+                ->where('RFC', 'SISTEMAOMG')
+                ->value('id');
 
             if (empty($existe_entidad)) {
                 $entidad = DB::table('documento_entidad')->insertGetId([
@@ -2664,7 +2620,7 @@ class AlmacenController extends Controller
                     'rfc'           => 'SISTEMAOMG'
                 ]);
             } else {
-                $entidad = $existe_entidad[0]->id;
+                $entidad = $existe_entidad;
             }
         }
 
@@ -2676,17 +2632,6 @@ class AlmacenController extends Controller
                     'code'  => 400,
                     'message' => "No existe el producto en la base de datos"
                 ]);
-//                DB::table('modelo')->insertGetId([
-//                    'id_tipo' => 1,
-//                    'sku' => $producto->sku,
-//                    'descripcion' => $producto->descripcion,
-//                    'costo' => $producto->costo,
-//                    'alto' => $producto->alto,
-//                    'ancho' => $producto->ancho,
-//                    'largo' => $producto->largo,
-//                    'peso' => $producto->peso,
-//                    'serie' => $producto->serie
-//                ]);
             }
         }
 
@@ -2695,6 +2640,7 @@ class AlmacenController extends Controller
             'id_almacen_secundario_empresa' => $data->almacen_salida,
             'id_tipo' => 9,
             'id_periodo' => 1,
+            'id_entidad' => $entidad,
             'id_cfdi' => 1,
             'id_marketplace_area' => $data->marketplace,
             'id_usuario' => $auth->id,
@@ -2706,11 +2652,6 @@ class AlmacenController extends Controller
             'referencia' => 'N/A',
             'info_extra' => json_encode($data->informacion_adicional),
             'observacion' => $data->observacion
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_documento'  => $documento,
-            'id_entidad'    => $entidad
         ]);
 
         DB::table('seguimiento')->insert([
@@ -3305,7 +3246,9 @@ class AlmacenController extends Controller
             'observacion' => $data->observacion . " - Documento creado a partir de la solicitud de transferencia No. " . $data->id,
         ]);
 
-        $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE RFC = 'SISTEMAOMG'");
+        $existe_entidad = DB::table('documento_entidad')
+            ->where('RFC', '=', 'SISTEMAOMG')
+            ->value('id');
 
         if (empty($existe_entidad)) {
             $entidad = DB::table('documento_entidad')->insertGetId([
@@ -3314,11 +3257,10 @@ class AlmacenController extends Controller
                 'rfc' => 'SISTEMAOMG'
             ]);
         } else {
-            $entidad = $existe_entidad[0]->id;
+            $entidad = $existe_entidad;
         }
 
-        DB::table('documento_entidad_re')->insert([
-            'id_documento' => $documento,
+        DB::table('documento')->where('id', $documento)->update([
             'id_entidad' => $entidad
         ]);
 
@@ -3598,25 +3540,26 @@ class AlmacenController extends Controller
         $auth = json_decode($request->auth);
         $total = 0;
 
-        $informacion_documento = DB::select("SELECT
-                                                documento.id_almacen_principal_empresa,
-                                                documento.id_almacen_secundario_empresa,
-                                                documento.id_usuario,
-                                                documento.observacion,
-                                                documento.created_at,
-                                                empresa.rfc,
-                                                empresa.bd,
-                                                empresa.empresa,
-                                                empresa.logo,
-                                                documento_entidad.razon_social,
-                                                documento_direccion.*
-                                            FROM documento
-                                            INNER JOIN documento_direccion ON documento.id = documento_direccion.id_documento
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-                                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                            WHERE documento.id = " . $documento . "");
+        $informacion_documento = DB::table('documento')
+            ->join('documento_direccion', 'documento.id', '=', 'documento_direccion.id_documento')
+            ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+            ->where('documento.id', $documento)
+            ->select(
+                'documento.id_almacen_principal_empresa',
+                'documento.id_almacen_secundario_empresa',
+                'documento.id_usuario',
+                'documento.observacion',
+                'documento.created_at',
+                'empresa.rfc',
+                'empresa.bd',
+                'empresa.empresa',
+                'empresa.logo',
+                'documento_entidad.razon_social',
+                'documento_direccion.*'
+            )
+            ->get();
 
         if (empty($informacion_documento)) {
             return response()->json([
@@ -4264,7 +4207,9 @@ class AlmacenController extends Controller
                 'observacion'                   => $data->prestado_a,
             ]);
 
-            $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE RFC = 'SISTEMAOMG'");
+            $existe_entidad = DB::table('documento_entidad')
+                ->where('RFC', 'SISTEMAOMG')
+                ->value('id');
 
             if (empty($existe_entidad)) {
                 $entidad = DB::table('documento_entidad')->insertGetId([
@@ -4273,12 +4218,11 @@ class AlmacenController extends Controller
                     'rfc'           => 'SISTEMAOMG'
                 ]);
             } else {
-                $entidad = $existe_entidad[0]->id;
+                $entidad = $existe_entidad;
             }
 
-            DB::table('documento_entidad_re')->insert([
-                'id_documento'  => $documento,
-                'id_entidad'    => $entidad
+            DB::table('documento')->where('id', $documento)->update([
+                'id_entidad' => $entidad
             ]);
 
             DB::table('seguimiento')->insert([
@@ -4530,9 +4474,8 @@ class AlmacenController extends Controller
             $entidad = $existe_entidad[0]->id;
         }
 
-        DB::table('documento_entidad_re')->insert([
-            'id_documento'  => $documento,
-            'id_entidad'    => $entidad
+        DB::table('documento')->where('id', $documento)->update([
+            'id_entidad' => $entidad
         ]);
 
         DB::table('seguimiento')->insert([
@@ -5033,72 +4976,82 @@ class AlmacenController extends Controller
 
     private function picking_packing_raw_data($extra_data = "")
     {
-        $ventas_re = array();
+        $ventas_re = [];
 
-        $ventas = DB::select("SELECT 
-                                area.area, 
-                                almacen.almacen,
-                                documento.id,
-                                documento.no_venta,
-                                documento.id_marketplace_area,
-                                documento.id_almacen_principal_empresa AS almacen_empresa,
-                                documento.mkt_total,
-                                documento.documento_extra,
-                                documento.referencia,
-                                documento.problema,
-                                documento.pagado,
-                                documento.id_periodo,
-                                documento.created_at, 
-                                documento_entidad.razon_social AS cliente,
-                                empresa_almacen.id AS id_almacen,
-                                paqueteria.paqueteria,
-                                paqueteria.guia AS contiene_guia,
-                                marketplace.marketplace, 
-                                marketplace_area.publico,
-                                usuario.nombre AS usuario
-                            FROM documento
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN usuario_empresa ON empresa_almacen.id_empresa = usuario_empresa.id_empresa
-                            INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                            INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-                            INNER JOIN usuario ON documento.id_usuario = usuario.id
-                            INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                            INNER JOIN area ON marketplace_area.id_area = area.id
-                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            WHERE documento.id_fase = 3
-                            AND documento.status = 1
-                            AND documento.id_tipo = 2
-                            AND documento.autorizado = 1
-                            " . $extra_data . "
-                            ORDER BY documento.created_at ASC");
+        $ventas = DB::table('documento')
+            ->select(
+                'area.area',
+                'almacen.almacen',
+                'documento.id',
+                'documento.no_venta',
+                'documento.id_marketplace_area',
+                'documento.id_almacen_principal_empresa AS almacen_empresa',
+                'documento.mkt_total',
+                'documento.documento_extra',
+                'documento.referencia',
+                'documento.problema',
+                'documento.pagado',
+                'documento.id_periodo',
+                'documento.created_at',
+                'documento_entidad.razon_social AS cliente',
+                'empresa_almacen.id AS id_almacen',
+                'paqueteria.paqueteria',
+                'paqueteria.guia AS contiene_guia',
+                'marketplace.marketplace',
+                'marketplace_area.publico',
+                'usuario.nombre AS usuario'
+            )
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('usuario_empresa', 'empresa_almacen.id_empresa', '=', 'usuario_empresa.id_empresa')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('paqueteria', 'documento.id_paqueteria', '=', 'paqueteria.id')
+            ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+            ->join('usuario', 'documento.id_usuario', '=', 'usuario.id')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->where('documento.id_fase', 3)
+            ->where('documento.status', 1)
+            ->where('documento.id_tipo', 2)
+            ->where('documento.autorizado', 1)
+            ->orderBy('documento.created_at', 'ASC');
+
+        // Si existe extra_data, agregar partes RAW adicionales a la consulta
+        if (!empty($extra_data)) {
+            $ventas->whereRaw($extra_data);
+        }
+
+        $ventas = $ventas->get();
 
         foreach ($ventas as $index => $venta) {
             if ($venta->publico == 0 && $venta->pagado == 0 && $venta->id_periodo == 1) {
                 unset($ventas[$index]);
-
                 continue;
             }
 
-            $venta->productos = DB::select("SELECT 
-                                    modelo.serie,
-                                    modelo.sku, 
-                                    modelo.descripcion, 
-                                    movimiento.cantidad,
-                                    ROUND((movimiento.precio * 1.16), 2) AS total
-                                FROM movimiento 
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                WHERE id_documento = " . $venta->id . "");
+            $venta->productos = DB::table('movimiento')
+                ->select(
+                    'modelo.serie',
+                    'modelo.sku',
+                    'modelo.descripcion',
+                    'movimiento.cantidad',
+                    DB::raw('ROUND((movimiento.precio * 1.16), 2) AS total')
+                )
+                ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                ->where('movimiento.id_documento', $venta->id)
+                ->get();
 
-            $venta->seguimiento = DB::select("SELECT
-                                        seguimiento.*, 
-                                        usuario.nombre 
-                                    FROM seguimiento 
-                                    INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                    WHERE id_documento = " . $venta->id . "");
+            $venta->seguimiento = DB::table('seguimiento')
+                ->select('seguimiento.*', 'usuario.nombre')
+                ->join('usuario', 'seguimiento.id_usuario', '=', 'usuario.id')
+                ->where('seguimiento.id_documento', $venta->id)
+                ->get();
 
-            $venta->archivos = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $venta->id . " AND tipo = 2 AND status = 1");
+            $venta->archivos = DB::table('documento_archivo')
+                ->where('id_documento', $venta->id)
+                ->where('tipo', 2)
+                ->where('status', 1)
+                ->get();
 
             array_push($ventas_re, $venta);
         }

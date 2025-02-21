@@ -510,13 +510,13 @@ class APIController extends Controller
                 ], 400);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 1)
+                ->where('documento.id_entidad', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -576,13 +576,12 @@ class APIController extends Controller
                 ]);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.status,
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.id_entidad', $request->auth)
+                ->select('documento.status', 'documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -640,14 +639,13 @@ class APIController extends Controller
                 ], 400);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id,
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 1)
+                ->where('documento.id_entidad', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -749,13 +747,13 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id 
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 1)
+                ->where('documento.id_entidad', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -815,18 +813,20 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existe_venta = DB::select("SELECT
-                                            documento_fase.id,
-                                            documento.referencia,
-                                            documento.status,
-                                            empresa.bd
-                                        FROM documento
-                                        INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                        INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                        INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                        INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                        WHERE documento.id = " . $documento . "
-                                        AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_venta = DB::table('documento')
+                ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+                ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->join('documento_fase', 'documento.id_fase', '=', 'documento_fase.id')
+                ->where('documento.id', $documento)
+                ->where('documento_entidad.id', $request->auth)
+                ->select(
+                    'documento_fase.id',
+                    'documento.referencia',
+                    'documento.status',
+                    'empresa.bd'
+                )
+                ->get();
 
             if (empty($existe_venta)) {
                 return response()->json([
@@ -1135,6 +1135,7 @@ class APIController extends Controller
                 'id_cfdi' => $data_cliente->id_cfdi, # Previamente registrado junto con el cliente
                 'id_usuario' => 1, # Sistema
                 'id_moneda' => $moneda, # Pesos
+                'id_entidad' => $request->auth,
                 'id_paqueteria' => $paqueteria_id,
                 'id_fase' => 1,
                 'sandbox' => 1,
@@ -1143,11 +1144,6 @@ class APIController extends Controller
                 'tipo_cambio' => $this->obtener_tipo_cambio($moneda),
                 'referencia' => $referencia,
                 'observacion' => $observaciones,
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => $request->auth,
-                'id_documento' => $documento
             ]);
 
             DB::table('documento_direccion')->insert([
@@ -1247,14 +1243,14 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 0
-                                            AND documento.sandbox = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 0)
+                ->where('documento.sandbox', 1)
+                ->where('documento_entidad.id', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -1308,15 +1304,14 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.status,
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 0
-                                            AND documento.sandbox = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 0)
+                ->where('documento.sandbox', 1)
+                ->where('documento_entidad.id', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -1362,15 +1357,14 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id,
-                                                documento.id_fase
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 0
-                                            AND documento.sandbox = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 0)
+                ->where('documento.sandbox', 1)
+                ->where('documento_entidad.id', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -1465,14 +1459,14 @@ class APIController extends Controller
                 ]);
             }
 
-            $existe_documento = DB::select("SELECT
-                                                documento.id 
-                                            FROM documento 
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            WHERE documento.id = " . $documento . "
-                                            AND documento.status = 0
-                                            AND documento.sandbox = 1
-                                            AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_documento = DB::table('documento')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 0)
+                ->where('documento.sandbox', 1)
+                ->where('documento_entidad.id', $request->auth)
+                ->select('documento.id_fase')
+                ->get();
 
             if (empty($existe_documento)) {
                 return response()->json([
@@ -1531,20 +1525,22 @@ class APIController extends Controller
                 ]);
             }
 
-            $existe_venta = DB::select("SELECT
-                                            documento_fase.id,
-                                            documento.status,
-                                            documento.referencia,
-                                            empresa.bd
-                                        FROM documento
-                                        INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                        INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                        INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                        INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                        WHERE documento.id = " . $documento . "
-                                        AND documento.status = 0
-                                        AND documento.sandbox = 1
-                                        AND documento_entidad_re.id_entidad = " . $request->auth . "");
+            $existe_venta = DB::table('documento')
+                ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+                ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+                ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+                ->join('documento_fase', 'documento.id_fase', '=', 'documento_fase.id')
+                ->where('documento.id', $documento)
+                ->where('documento.status', 0)
+                ->where('documento.sandbox', 1)
+                ->where('documento_entidad.id', $request->auth)
+                ->select(
+                    'documento_fase.id',
+                    'documento.status',
+                    'documento.referencia',
+                    'empresa.bd'
+                )
+                ->get();
 
             if (empty($existe_venta)) {
                 return response()->json([

@@ -272,7 +272,7 @@ class GeneralController extends Controller
                                                     AND empresa_almacen.id_erp = " . $almacen->almacenid . "
                                                     AND documento.id_tipo = 2
                                                     AND documento.status = 1
-                                                    AND documento.id_fase = 1")[0]->cantidad;
+                                                    AND documento.id_fase IN (1, 7)")[0]->cantidad;
 
                 $pendientes_surtir = DB::select("SELECT
                                                         IFNULL(SUM(movimiento.cantidad), 0) as cantidad
@@ -341,7 +341,7 @@ class GeneralController extends Controller
                                                     AND modelo.sku = '" . $producto->sku . "'
                                                     AND empresa.bd = " . $data->empresa . "
                                                     AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                    AND documento.id_fase = 606");
+                                                    AND documento.id_fase = 93");
 
                 $total_pendientes = 0;
 
