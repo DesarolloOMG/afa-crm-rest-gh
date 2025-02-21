@@ -454,6 +454,7 @@ class NotificacionesController extends Controller{
                 'id_marketplace_area'   => $info->id_marketplace_area,
                 'id_usuario'            => 1,
                 'id_moneda'             => 3,
+                'id_entidad'            => $entidad,
                 'id_paqueteria'         => $id_paqueteria,
                 'id_fase'               => ($fulfillment) ? 5 : 2,
                 'no_venta'              => $data->OrderNumber,
@@ -475,11 +476,6 @@ class NotificacionesController extends Controller{
                 'id_documento'  => $documento,
                 'id_usuario'    => 1,
                 'seguimiento'   => $seguimiento
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad'    => $entidad,
-                'id_documento'  => $documento
             ]);
 
             $direccion = \Httpful\Request::get('http://201.7.208.53:11903/api/adminpro/Consultas/CP/' . $data->AddressShipping->PostCode)->send();
