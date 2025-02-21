@@ -58,9 +58,9 @@ class ContabilidadController extends Controller
 
         $rfc_cliente = DB::select("SELECT
                                         documento_entidad.rfc
-                                    FROM documento_entidad
-                                    INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                    WHERE documento_entidad_re.id_documento = " . $data->documento . "")[0]->rfc;
+                                    FROM documento
+                                    INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                    WHERE documento.id = " . $data->documento . "")[0]->rfc;
         # se cambia el id clasificacion a 0 ya que no existe otro
         if (empty($existe_pago)) {
             $pago = DB::table('documento_pago')->insertGetId([
@@ -575,8 +575,7 @@ class ContabilidadController extends Controller
                                         documento_entidad.razon_social,
                                         documento_entidad.rfc
                                     FROM documento 
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . " AND documento.status = 1");
 
         if (empty($existe_venta)) {
@@ -2981,8 +2980,7 @@ class ContabilidadController extends Controller
                             INNER JOIN usuario_empresa ON empresa_almacen.id_empresa = usuario_empresa.id_empresa
                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id

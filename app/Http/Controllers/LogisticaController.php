@@ -50,8 +50,7 @@ class LogisticaController extends Controller
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                             INNER JOIN usuario_empresa ON empresa_almacen.id_empresa = usuario_empresa.id_empresa
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
@@ -445,8 +444,7 @@ class LogisticaController extends Controller
                                     documento_entidad.razon_social AS cliente,
                                     documento.id_fase
                                 FROM documento
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 WHERE documento.id = " . $documento . "
                                 AND documento.status = 1");
 
@@ -514,8 +512,7 @@ class LogisticaController extends Controller
                                         usuario.nombre,
                                         usuario.email
                                     FROM documento 
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     INNER JOIN usuario ON documento.id_usuario = usuario.id
                                     WHERE documento.id = " . $documento . "");
 
@@ -1120,8 +1117,7 @@ class LogisticaController extends Controller
                                         documento_entidad.telefono_alt,
                                         documento_entidad.correo
                                     FROM documento
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
                                     INNER JOIN documento_direccion ON documento.id = documento_direccion.id_documento
                                     WHERE documento.id = " . $documento . "

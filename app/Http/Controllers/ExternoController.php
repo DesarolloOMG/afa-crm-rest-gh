@@ -13,7 +13,6 @@ class ExternoController extends Controller{
 
         if (empty($existe_cliente)) {
             $cliente = DB::table('documento_entidad')->insertGetId([
-                'id_erp'        => trim(mb_strtoupper($data->cliente->id, 'UTF-8')),
                 'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                 'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                 'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
@@ -25,7 +24,6 @@ class ExternoController extends Controller{
             $cliente = $existe_cliente[0]->id;
 
             DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                'id_erp'        => trim(mb_strtoupper($data->cliente->id, 'UTF-8')),
                 'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                 'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                 'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
@@ -58,16 +56,12 @@ class ExternoController extends Controller{
             'id_usuario'                    => $data->usuario,
             'id_moneda'                     => $data->documento->moneda,
             'id_paqueteria'                 => $paqueteria_id,
+            'id_entidad'                    => $cliente,
             'id_fase'                       => 3,
             'no_venta'                      => $data->documento->venta,
             'tipo_cambio'                   => $data->documento->tipo_cambio,
             'referencia'                    => $data->documento->referencia,
             'observacion'                   => $data->documento->observacion
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad'    => $cliente,
-            'id_documento'  => $documento
         ]);
 
         DB::table('seguimiento')->insert([

@@ -101,6 +101,7 @@ class DeveloperController extends Controller
         try {
             DB::beginTransaction();
 
+            //Cambiar a publico general de la nueva empresa
             $documento = DB::table('documento')->insertGetId([
                 'id' => $venta->folio,
                 'id_cfdi' => $uso_cfdi->id,
@@ -117,6 +118,7 @@ class DeveloperController extends Controller
                 'observacion' => "Pedido Importado Backup",
                 'documento_extra' => $venta->documentoid,
                 'fulfillment' => 1,
+                'id_entidad' => 994414,
                 'uuid' => $venta->uuid,
                 'mkt_publicacion' => "N/A",
                 'mkt_total' => 0,
@@ -126,11 +128,6 @@ class DeveloperController extends Controller
                 'mkt_shipping_total' => 0,
                 'mkt_created_at' => $venta->fecha_timbrada,
                 'started_at' => date('Y-m-d H:i:s'),
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => 994414,
-                'id_documento' => $documento
             ]);
 
             $direccion = DB::table('documento_direccion')->insert([
@@ -215,6 +212,7 @@ class DeveloperController extends Controller
 
             $uso_cfdi = DB::table('documento_uso_cfdi')->where('codigo', $venta->uso_cfdi)->first();
 
+            //Cambiar por publico general de la nueva empresa
             $documento = DB::table('documento')->insertGetId([
                 'id' => $venta->pedido,
                 'id_cfdi' => $uso_cfdi->id,
@@ -231,6 +229,7 @@ class DeveloperController extends Controller
                 'observacion' => "Pedido Importado Backup", //null
                 'documento_extra' => $venta->id ?? "N/A", //null
                 'fulfillment' => 0, //0
+                'id_entidad' => 737184,
                 'comentario' => $venta->id ?? 0, //id
                 'mkt_publicacion' => "N/A", //null
                 'mkt_total' => $venta->total ?? 0, //current_total_price
@@ -240,12 +239,6 @@ class DeveloperController extends Controller
                 'mkt_created_at' => $venta->fecha ?? 0, //created_at
                 'mkt_user_total' => 0, //0
                 'started_at' => date('Y-m-d H:i:s'),
-            ]);
-
-            //Esto se puede cambiar por la entidad de publico general para no ir crenado nuevas
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => 737184,
-                'id_documento' => $documento
             ]);
 
             $direccion = DB::table('documento_direccion')->insert([ //shipping_address

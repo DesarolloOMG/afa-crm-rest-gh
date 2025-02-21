@@ -558,8 +558,7 @@ class GeneralController extends Controller
                                 LEFT JOIN area ON marketplace_area.id_area = area.id
                                 INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
                                 INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                LEFT JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                LEFT JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN movimiento ON documento.id = movimiento.id_documento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
                                 WHERE modelo.sku = '" . trim($data->producto) . "'
@@ -971,8 +970,7 @@ class GeneralController extends Controller
             ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
             ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
             ->join('paqueteria', 'documento.id_paqueteria', '=', 'paqueteria.id')
-            ->join('documento_entidad_re', 'documento.id', '=', 'documento_entidad_re.id_documento')
-            ->join('documento_entidad', 'documento_entidad_re.id_entidad', '=', 'documento_entidad.id')
+            ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
             ->join('usuario', 'documento.id_usuario', '=', 'usuario.id')
             ->join('documento_fase', 'documento.id_fase', '=', 'documento_fase.id')
             ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
@@ -1297,8 +1295,7 @@ class GeneralController extends Controller
                                         marketplace_area.publico,
                                         marketplace.marketplace
                                     FROM documento 
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                     INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
@@ -1790,8 +1787,7 @@ class GeneralController extends Controller
                             INNER JOIN empresa on empresa_almacen.id_empresa = empresa.id
                             INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
@@ -2622,8 +2618,7 @@ class GeneralController extends Controller
                                 INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                                 INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN movimiento ON documento.id = movimiento.id_documento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
                                 WHERE documento.status = 1
@@ -2829,8 +2824,7 @@ class GeneralController extends Controller
         }
 
         $productos = DB::table("documento")
-            ->join("documento_entidad_re", "documento.id", "documento_entidad_re.id_documento")
-            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->join("moneda", "documento.id_moneda", "=", "moneda.id")
             ->join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
             ->join("almacen", "empresa_almacen.id_almacen", "=", "almacen.id")
@@ -4901,8 +4895,7 @@ class GeneralController extends Controller
                                 documento_garantia.id AS documento_garantia_id,
                                 documento_garantia.created_at
                             FROM documento
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN documento_garantia_re ON documento.id = documento_garantia_re.id_documento
                             INNER JOIN documento_garantia ON documento_garantia_re.id_garantia = documento_garantia.id
                             INNER JOIN documento_garantia_tipo ON documento_garantia.id_tipo = documento_garantia_tipo.id
@@ -5687,8 +5680,7 @@ class GeneralController extends Controller
                             INNER JOIN empresa on empresa_almacen.id_empresa = empresa.id
                             INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
@@ -6619,10 +6611,10 @@ class GeneralController extends Controller
                                 mo.descripcion,
                                 mo.np
                             FROM documento_entidad de
-                            INNER JOIN documento_entidad_re der ON de.id = der.id_entidad
+                            INNER JOIN documento der ON de.id = der.id_entidad
                             INNER JOIN movimiento m ON der.id_documento = m.id_documento
                             INNER JOIN modelo mo ON m.id_modelo = mo.id
-                            WHERE der.id_documento = :compra AND de.tipo = 2", ['compra' => $compra]);
+                            WHERE der.id = :compra AND de.tipo = 2", ['compra' => $compra]);
 
         $filteredResults = array_filter($results, function ($result) use ($allowedProveedores) {
             return in_array($result->rfc, $allowedProveedores);
@@ -6886,8 +6878,7 @@ class GeneralController extends Controller
                                 documento_entidad.id AS cliente_id,
                                 documento_entidad.rfc
                             FROM documento
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             WHERE documento.id = $key
                             GROUP BY documento.id");
 
