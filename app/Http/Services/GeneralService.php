@@ -34,8 +34,7 @@ class GeneralService
         $informacion_cliente = DB::select("SELECT
                                         documento_entidad.*
                                     FROM documento
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
 
         if (empty($informacion_cliente)) {

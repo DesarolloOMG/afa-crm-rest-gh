@@ -225,6 +225,7 @@ class ClaroshopService
                 'id_paqueteria'                 => 1,
                 'id_fase'                       => 1,
                 'id_modelo_proveedor'           => 0,
+                'id_entidad'                    => $entidad,
                 'no_venta'                      => $venta->nopedido,
                 'tipo_cambio'                   => 1,
                 'referencia'                    => $venta->nopedido,
@@ -273,11 +274,6 @@ class ClaroshopService
             DB::table('documento_pago_re')->insert([
                 'id_documento'  => $documento,
                 'id_pago'       => $pago
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad'    => $entidad,
-                'id_documento'  => $documento
             ]);
 
             try {
@@ -677,6 +673,7 @@ class ClaroshopService
                 'id_moneda'                     => 3,
                 'id_paqueteria'                 => 3,
                 'id_fase'                       => 3,
+                'id_entidad'                    => $entidad,
                 'no_venta'                      => $venta->venta,
                 'tipo_cambio'                   => 1,
                 'referencia'                    => $venta->venta,
@@ -722,11 +719,6 @@ class ClaroshopService
                 'id_documento'  => $documento,
                 'id_usuario'    => 1,
                 'seguimiento'   => "<p>VENTA IMPORTADA MASIVAMENTE</p>"
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad'    => $entidad,
-                'id_documento'  => $documento
             ]);
 
             try {

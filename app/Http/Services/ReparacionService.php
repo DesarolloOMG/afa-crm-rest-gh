@@ -92,9 +92,9 @@ class ReparacionService
 
             $info_entidad = DB::select("SELECT
                                 documento_entidad.*
-                            FROM documento_entidad
-                            INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                            WHERE documento_entidad_re.id_documento = " . $data->documento . "
+                            FROM documento
+                            INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                            WHERE documento.id = " . $data->documento . "
                             AND documento_entidad.tipo = 1");
 
             if (empty($info_documento)) {
@@ -416,8 +416,7 @@ class ReparacionService
                                         marketplace_area.publico,
                                         marketplace.marketplace
                                     FROM documento 
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                     INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id

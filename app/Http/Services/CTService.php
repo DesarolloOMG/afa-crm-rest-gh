@@ -221,9 +221,9 @@ class CTService
         $productos_b2b = array();
         $inventario_id = "";
 
-        $informacion_entidad = DB::table("documento_entidad")
-            ->join("documento_entidad_re", "documento_entidad.id", "=", "documento_entidad_re.id_entidad")
-            ->where("documento_entidad_re.id_documento", $documento)
+        $informacion_entidad = DB::table("documento")
+            ->join("documento_entidad", "documento_entidad.id", "=", "documento.id_entidad")
+            ->where("documento.id", $documento)
             ->first();
 
         if (!$informacion_entidad) {

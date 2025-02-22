@@ -121,22 +121,14 @@ class VentaController extends Controller
             $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
 
             if (empty($existe_cliente)) {
-                $cliente = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No existe el cliente en la base de datos."
                 ]);
             } else {
                 $cliente = $existe_cliente[0]->id;
 
                 DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                    'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
                     'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                     'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                     'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
@@ -149,7 +141,6 @@ class VentaController extends Controller
             }
         } else {
             $cliente = DB::table('documento_entidad')->insertGetId([
-                'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
                 'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                 'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                 'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
@@ -188,6 +179,7 @@ class VentaController extends Controller
             'referencia' => TRIM($data->documento->referencia),
             'observacion' => TRIM($data->documento->observacion),
             'info_extra' => $data->documento->info_extra,
+            'id_entidad' => $cliente,
             'fulfillment' => $data->documento->fulfillment,
             'series_factura' => $data->documento->series_factura,
             'autorizado' => ($data->documento->baja_utilidad) ? 0 : 1,
@@ -205,11 +197,6 @@ class VentaController extends Controller
             'mkt_created_at' => $data->documento->mkt_created_at ?? 0,
             'started_at' => $data->documento->fecha_inicio,
             'shipping_null' => $data->documento->shipping_null ?? 0
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $cliente,
-            'id_documento' => $documento
         ]);
 
         DB::table('seguimiento')->insert([
@@ -761,7 +748,6 @@ class VentaController extends Controller
 
                 if (empty($existe_entidad)) {
                     $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                        'id_erp' => $data_odc->proveedor->id,
                         'tipo' => 2,
                         'razon_social' => mb_strtoupper($data_odc->proveedor->razon, 'UTF-8'),
                         'rfc' => mb_strtoupper($data_odc->proveedor->rfc, 'UTF-8'),
@@ -773,7 +759,6 @@ class VentaController extends Controller
                 }
             } else {
                 $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                    'id_erp' => $data_odc->proveedor->id,
                     'tipo' => 2,
                     'razon_social' => mb_strtoupper($data_odc->proveedor->razon, 'UTF-8'),
                     'rfc' => mb_strtoupper($data_odc->proveedor->rfc, 'UTF-8'),
@@ -790,6 +775,7 @@ class VentaController extends Controller
                 'id_marketplace_area' => 1,
                 'id_usuario' => $auth->id,
                 'id_fase' => 606,
+                'id_entidad' => $proveedor_id,
                 'tipo_cambio' => $data_odc->tipo_cambio,
                 'observacion' => implode(',', $data_odc->documentos),
                 'comentario' => (property_exists($data_odc, "extranjero") && !is_null($data_odc->extranjero)) ? $data_odc->extranjero : "",
@@ -798,68 +784,6 @@ class VentaController extends Controller
                 'arrived_at' => date("Y-m-d", strtotime($data_odc->fecha_entrega))
             ]);
 
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => $proveedor_id,
-                'id_documento' => $documento
-            ]);
-
-
-            /* Crear documento de compra */
-
-            // $entidad_documento = DB::table("documento_entidad_re")
-            //     ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
-            //     ->select("documento_entidad.*")
-            //     ->where("documento_entidad_re.id_documento", $documento_data->id)
-            //     ->first();
-
-            // $documento_compra = DB::table('documento')->insertGetId([
-            //     'id_tipo' => 1,
-            //     'id_almacen_principal_empresa' => $documento_data->id_almacen_principal_empresa,
-            //     'id_periodo' => $documento_data->id_periodo,
-            //     'id_cfdi' => $documento_data->id_cfdi,
-            //     'id_marketplace_area' => $documento_data->id_marketplace_area,
-            //     'id_usuario' => $auth->id,
-            //     'id_moneda' => $documento_data->id_moneda,
-            //     'id_paqueteria' => $documento_data->id_paqueteria,
-            //     'id_fase' => 94,
-            //     'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
-            //     'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
-            //     'factura_folio' => "N/A",
-            //     'tipo_cambio' => $documento_data->tipo_cambio,
-            //     'referencia' => "Compra creada a partir de la venta con el ID " . $documento_data->id,
-            //     'observacion' => "N/A",
-            //     'info_extra' => 'N/A',
-            //     'comentario' => "03",
-            //     'pedimento' => "N/A",
-            //     'uuid' => "N/A",
-            //     'expired_at' => date("Y-m-d H:i:s")
-            // ]);
-
-            // # Existe entidad como proveedor
-            // $proveedor_btob = DB::table("modelo_proveedor")->find($documento_data->id_modelo_proveedor);
-
-            // $existe_entidad = DB::table("documento_entidad")
-            //     ->where("rfc", $proveedor_btob->rfc)
-            //     ->where("tipo", 2)
-            //     ->first();
-
-            // if (empty($existe_entidad)) {
-            //     $entidad_id = DB::table('documento_entidad')->insertGetId([
-            //         'id_erp' => 0,
-            //         'tipo' => 2,
-            //         'razon_social' => $proveedor_btob->razon_social,
-            //         'rfc' => $proveedor_btob->rfc,
-            //         'telefono' => 'N/A',
-            //         'correo' => $proveedor_btob->correo
-            //     ]);
-            // } else {
-            //     $entidad_id = $existe_entidad->id;
-            // }
-
-            // DB::table('documento_entidad_re')->insert([
-            //     'id_documento' => $documento_compra,
-            //     'id_entidad' => $entidad_id
-            // ]);
 
             $productos_data = DB::table("movimiento")
                 ->where("id_documento", $documento_data->id)
@@ -1160,8 +1084,7 @@ class VentaController extends Controller
                                 INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                 INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
                                 INNER JOIN documento_direccion ON documento.id = documento_direccion.id_documento
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 WHERE documento_entidad.rfc = '" . $rfc . "'
                                 AND marketplace.id != 15
                                 ORDER BY documento.created_at 
@@ -1170,8 +1093,7 @@ class VentaController extends Controller
         $informacion = DB::select("SELECT
                                     documento_entidad.*
                                 FROM documento
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 WHERE documento_entidad.rfc = '" . $rfc . "' ORDER BY documento.created_at DESC LIMIT 1");
 
         return response()->json([
@@ -1600,20 +1522,9 @@ class VentaController extends Controller
             $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE RFC = '" . TRIM($data->cliente->rfc) . "' AND tipo = 1");
 
             if (empty($existe_cliente)) {
-                $entidad = DB::table('documento_entidad')->insertGetId([
-                    'tipo' => 1,
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
-
-                DB::table('documento_entidad_re')->where(['id_documento' => $data->documento->documento])->update([
-                    'id_entidad'    => $entidad
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No existe el cliente en la base de datos"
                 ]);
             } else {
                 # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
@@ -1627,12 +1538,12 @@ class VentaController extends Controller
                     'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
                 ]);
 
-                DB::table('documento_entidad_re')->where(['id_documento' => $data->documento->documento])->update([
+                DB::table('documento')->where(['id' => $data->documento->documento])->update([
                     'id_entidad'    => $existe_cliente[0]->id
                 ]);
             }
         } else {
-            $id_entidad = DB::select("SELECT id_entidad FROM documento_entidad_re WHERE id_documento = " . $data->documento->documento . "")[0]->id_entidad;
+            $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento . "")[0]->id_entidad;
 
             # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
             DB::table('documento_entidad')->where(['id' => $id_entidad])->update([
@@ -1838,27 +1749,6 @@ class VentaController extends Controller
                 //Aqui ta
                 $response = DocumentoService::crearFactura($data->documento->documento, 0, 0);
 
-                //                $movimiento = DB::table('movimiento')->where('id_documento', $data->documento->documento)->where('id_modelo', 11623)->first();
-                //                $documentoInfo = DB::table('documento')->where('id', $data->documento->documento)->first();
-                //
-                //                if (!empty($movimiento)) {
-                //                    DB::table('modelo_inventario')->insert([
-                //                        'id_modelo' => 11623,
-                //                        'id_documento' => $data->documento->documento,
-                //                        'id_almacen' => $documentoInfo->id_almacen_principal_empresa,
-                //                        'afecta_costo' => 0,
-                //                        'cantidad' => $movimiento->cantidad,
-                //                        'costo' => $movimiento->precio
-                //                    ]);
-                //
-                //                    $afecta_inventario = DB::table('modelo_costo')->where('id_modelo', 11623)->first();
-                //                    $resta_inventario = $afecta_inventario->stock - $movimiento->cantidad;
-                //
-                //                    DB::table('modelo_costo')->where(['id_modelo' => $afecta_inventario->id_modelo])->update([
-                //                        'stock' => $resta_inventario
-                //                    ]);
-                //                }
-
                 if ($response->error) {
                     DB::table('documento')->where(['id' => $data->documento->documento])->update([
                         'id_fase' => 5
@@ -1901,8 +1791,7 @@ class VentaController extends Controller
                                 INNER JOIN area ON marketplace_area.id_area = area.id
                                 INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN documento_entidad_re ON documento_entidad_re.id_documento = documento.id
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento_entidad_re.id_entidad
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
                                 LEFT JOIN documento_direccion ON documento.id = documento_direccion.id_documento
                                 WHERE documento.id = " . $documento . " 
                                 AND documento.status = 1");
@@ -2428,8 +2317,7 @@ class VentaController extends Controller
                                     usuario.nombre,
                                     usuario.email
                                 FROM documento 
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN usuario ON documento.id_usuario = usuario.id
                                 WHERE documento.id = " . $data->documento . "")[0];
 
@@ -2919,6 +2807,7 @@ class VentaController extends Controller
                         'series_factura'                => $data->documento->series_factura,
                         'autorizado'                    => ($data->documento->baja_utilidad) ? 0 : 1,
                         'anticipada'                    => 0,
+                        'id_entidad'                    => $cliente,
                         'addenda_orden_compra'          => $data->addenda->orden_compra,
                         'addenda_solicitud_pago'        => $data->addenda->solicitud_pago,
                         'addenda_tipo_documento'        => $data->addenda->tipo_documento,
@@ -2931,11 +2820,6 @@ class VentaController extends Controller
                         'mkt_total'                     => $data->documento->total,
                         'mkt_created_at'                => $data->documento->mkt_created_at,
                         'started_at'                    => $data->documento->fecha_inicio
-                    ]);
-
-                    DB::table('documento_entidad_re')->insert([
-                        'id_entidad'    => $cliente,
-                        'id_documento'  => $documento
                     ]);
 
                     DB::table('seguimiento')->insert([
@@ -3113,6 +2997,7 @@ class VentaController extends Controller
             'series_factura'                => $data->documento->series_factura,
             'autorizado'                    => ($data->documento->baja_utilidad) ? 0 : 1,
             'anticipada'                    => 0,
+            'id_entidad'                    => $cliente,
             'addenda_orden_compra'          => $data->addenda->orden_compra,
             'addenda_solicitud_pago'        => $data->addenda->solicitud_pago,
             'addenda_tipo_documento'        => $data->addenda->tipo_documento,
@@ -3126,11 +3011,6 @@ class VentaController extends Controller
             'mkt_publicacion'               => $data->documento->mkt_publicacion,
             'mkt_created_at'                => $data->documento->mkt_created_at,
             'started_at'                    => $data->documento->fecha_inicio
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad'    => $cliente,
-            'id_documento'  => $documento
         ]);
 
         DB::table('seguimiento')->insert([
@@ -3960,16 +3840,12 @@ class VentaController extends Controller
             'id_moneda' => 3,
             'id_paqueteria' => 6,
             'id_fase' => 401,
+            'id_entidad' => $entidad,
             'factura_folio' => 'N/A',
             'tipo_cambio' => 1,
             'referencia' => 'N/A',
             'info_extra' => json_encode(new \stdClass()),
             'observacion' => $data->observacion
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_documento' => $documento,
-            'id_entidad' => $entidad
         ]);
 
         DB::table('documento_direccion')->insert([
@@ -4687,8 +4563,7 @@ class VentaController extends Controller
                 "documento.mkt_publicacion",
                 "documento.created_at"
             )
-            ->join("documento_entidad_re", "documento.id", "=", "documento_entidad_re.id_documento")
-            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->join("documento_fase", "documento_fase.id", "=", "documento.id_fase")
             ->whereIn("documento.id_fase", [1, 2, 7])
             ->where("documento.status", 1)
@@ -4740,8 +4615,7 @@ class VentaController extends Controller
                 "documento.mkt_publicacion",
                 "documento.created_at"
             )
-            ->join("documento_entidad_re", "documento.id", "=", "documento_entidad_re.id_documento")
-            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->where("documento.id", $documento)
             ->first();
 
@@ -5344,8 +5218,7 @@ class VentaController extends Controller
         $informacion_cliente = DB::select("SELECT
                                         documento_entidad.*
                                     FROM documento
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
 
         if (empty($informacion_cliente)) {
@@ -5627,8 +5500,7 @@ class VentaController extends Controller
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                             INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
@@ -5831,30 +5703,30 @@ class VentaController extends Controller
 
         foreach ($pendientes as $key) {
             $key->data = Crypt::decrypt($key->data);
-            $key->info = DB::table('documento_entidad')
+            $key->info = DB::table('documento')
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
-                ->join('documento_entidad_re', 'documento_entidad.id', '=', 'documento_entidad_re.id_entidad')
-                ->where('documento_entidad_re.id_documento', $key->id_documento)
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $key->id_documento)
                 ->where('documento_entidad.tipo', 1)
                 ->get()
                 ->first();
         }
         foreach ($terminados as $key) {
             $key->data = Crypt::decrypt($key->data);
-            $key->info = DB::table('documento_entidad')
+            $key->info = DB::table('documento')
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
-                ->join('documento_entidad_re', 'documento_entidad.id', '=', 'documento_entidad_re.id_entidad')
-                ->where('documento_entidad_re.id_documento', $key->id_documento)
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $key->id_documento)
                 ->where('documento_entidad.tipo', 1)
                 ->get()
                 ->first();
         }
         foreach ($personales as $key) {
             $key->data = Crypt::decrypt($key->data);
-            $key->info = DB::table('documento_entidad')
+            $key->info = DB::table('documento')
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
-                ->join('documento_entidad_re', 'documento_entidad.id', '=', 'documento_entidad_re.id_entidad')
-                ->where('documento_entidad_re.id_documento', $key->id_documento)
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $key->id_documento)
                 ->where('documento_entidad.tipo', 1)
                 ->get()
                 ->first();
@@ -6474,8 +6346,7 @@ class VentaController extends Controller
                                             FROM documento
                                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                             INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
                                             INNER JOIN moneda ON documento.id_moneda = moneda.id
                                             INNER JOIN usuario ON documento.id_usuario = usuario.id
