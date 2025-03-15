@@ -333,7 +333,7 @@ class ShopifyService
             'id_clasificacion' => 0,
             'tipo' => 1,
             'origen_importe' => 0,
-            'destino_importe' => $total_pago - $venta_data->total_discounts, //puede ser total_price
+            'destino_importe' => $total_pago - $venta_data->total_price, //puede ser total_price
             'folio' => "",
             'entidad_origen' => 1,
             'origen_entidad' => 'XAXX010101000',

@@ -6,70 +6,117 @@ use DB;
 
 class InventarioService
 {
-    public static function importarExistencias()
+    /**
+     * Agrega o actualiza los productos al inventario
+     *
+     * @param int $id_modelo
+     * @param int $id_empresa_almacen
+     * @param int $existencia
+     * @param int $fisico
+     * @param string $comentarios
+     * @return array   [code, message]
+     */
+    public static function agregarAInventario(int $id_modelo, int $id_empresa_almacen, int $existencia, int $fisico, string $comentarios, int $id_documento = null)
     {
-        set_time_limit(0);
+        if($id_documento == null) {
+            $id = DB::table('modelo_inventario')->insertGetId([
+                'id_modelo' => $id_modelo,
+                'id_empresa_almacen' => $id_empresa_almacen,
+                'existencia' => $existencia,
+                'fisico' => $fisico,
+                'comentarios' => $comentarios,
+            ]);
+        } else {
+            self::aplicarMovimientoInventario($id_documento);
+        }
+        return ['code' => 200, 'message' => 'OK'];
+    }
 
-        $errores = array();
-        $ids_empresas = [7, 6, 2, 8, 5]; // Array con los identificadores de las empresas
-
-        foreach ($ids_empresas as $id_empresa) {
-            $url = "http://201.7.208.53:11903/api/adminpro/Consultas/ProductosV2/" . $id_empresa;
-            $productos = @json_decode(file_get_contents($url));
-
-            foreach ($productos as $producto) {
-                if($producto->tipo == 1) {
-                    $modelo = DB::table('modelo')->where('sku', $producto->sku)->first();
-
-                    if(!empty($modelo)) {
-                        foreach ($producto->existencias->almacenes as $existencia) {
-                            $empresa_almacen = DB::table('empresa_almacen')->where('id_erp', $existencia->almacenid)->first();
-                            $existe = DB::table('modelo_inventario')->where('id_modelo', $modelo->id)->where('id_empresa_almacen', $empresa_almacen->id)->first();
-
-                            if($existe) {
-                                DB::table('modelo_inventario')->where('id_modelo', $modelo->id)->where('id_empresa_almacen', $empresa_almacen->id)->update([
-                                    'existencia' => $existe->fisico
-                                ]);
-                            } else {
-                                if(!empty($empresa_almacen)) {
-                                    $mod_inv = DB::table('modelo_inventario')->insert([
-                                        'id_modelo' => $modelo->id,
-                                        'id_empresa_almacen' => $empresa_almacen->id,
-                                        'id_erp' => $existencia->almacenid,
-                                        'almacen' => $existencia->almacen,
-                                        'existencia' => $existencia->fisico,
-                                    ]);
-                                } else {
-                                    $mod_inv = DB::table('modelo_inventario')->insert([
-                                        'id_modelo' => $modelo->id,
-                                        'id_erp' => $existencia->almacenid,
-                                        'almacen' => $existencia->almacen,
-                                        'existencia' => $existencia->fisico,
-                                        'comentarios' => "No se encontro el almacen en CRM"
-                                    ]);
-                                }
-
-                                if(!$mod_inv) {
-                                    DB::table('modelo_inventario_errores')->insert([
-                                        'sku' => $producto->sku,
-                                        'almacen' => $existencia->almacen,
-                                        'existencia' => $existencia->fisico,
-                                        'comentarios' => "Error desconocido",
-                                    ]);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    public static function aplicarMovimientoInventario($idDocumento)
+    {
+        // 1. Obtenemos la información del documento
+        $infoDocumento = DB::table('documento')->where('id', $idDocumento)->first();
+        if (!$infoDocumento) {
+            // Manejar el caso de documento no encontrado
+            return ['code' => 404, 'message' => 'Documento no encontrado.'];
         }
 
-        return response()->json([
-            "code" => 200,
-            "message" => "Productos importados correctamente",
-            "errores" => $errores
-        ]);
+        // Suponiendo que en la misma tabla `documento` vienen las banderas:
+        // $infoDocumento->sumaInventario, $infoDocumento->restaInventario
+        // o bien podrías obtener el tipo con:
+        $tipoDoc = DB::table('documento_tipo')->where('id', $infoDocumento->id_tipo)->first();
+
+        // 2. Obtenemos todos los movimientos asociados al documento
+        $movimientos = DB::table('movimiento')
+            ->where('id_documento', $idDocumento)
+            ->get();
+
+        // 3. Iteramos sobre los movimientos
+        foreach ($movimientos as $mov) {
+
+            // 3.1. Buscamos si ya existe el modelo_inventario en el almacén principal
+            $modeloInventarioPrincipal = DB::table('modelo_inventario')
+                ->where('id_modelo', $mov->id_modelo)
+                ->where('id_empresa_almacen', $infoDocumento->id_almacen_principal_empresa)
+                ->first();
+
+            // 3.2. Según la configuración del documento, hacemos la lógica
+            $suma = $tipoDoc->sumaInventario == 1;
+            $resta = $tipoDoc->restaInventario == 1;
+
+            if ($suma && !$resta) {
+                // 3.2.1. Sumar inventario en el almacén principal
+                DB::table('modelo_inventario')
+                    ->where('id', $modeloInventarioPrincipal->id)
+                    ->update([
+                        'existencia' => $modeloInventarioPrincipal->existencia + $mov->cantidad
+                    ]);
+            } elseif (!$suma && $resta) {
+                // 3.3.2. Restar inventario en el almacén principal
+                DB::table('modelo_inventario')
+                    ->where('id', $modeloInventarioPrincipal->id)
+                    ->update([
+                        'existencia' => $modeloInventarioPrincipal->existencia - $mov->cantidad
+                    ]);
+            } elseif ($suma && $resta) {
+                // 3.3.3. Es un TRASPASO (suma y resta)
+
+                // A) SUMAR en el almacén principal
+                DB::table('modelo_inventario')
+                    ->where('id', $modeloInventarioPrincipal->id)
+                    ->update([
+                        'existencia' => $modeloInventarioPrincipal->existencia + $mov->cantidad
+                    ]);
+
+                // B) RESTAR en el almacén secundario
+                //   Primero buscamos si existe en el almacén secundario
+                $modeloInventarioSecundario = DB::table('modelo_inventario')
+                    ->where('id_modelo', $mov->id_modelo)
+                    ->where('id_empresa_almacen', $infoDocumento->id_almacen_secundario_empresa)
+                    ->first();
+
+                if (!$modeloInventarioSecundario) {
+                    // Si no existe, lo creamos en el secundario
+                    $idNuevoSec = DB::table('modelo_inventario')->insertGetId([
+                        'id_modelo'           => $mov->id_modelo,
+                        'id_empresa_almacen'  => $infoDocumento->id_almacen_secundario_empresa,
+                        'existencia'          => 0,
+                        'fisico'              => 0,
+                        'comentarios'         => 'Creado automáticamente (almacén secundario)',
+                    ]);
+                    $modeloInventarioSecundario = DB::table('modelo_inventario')->where('id', $idNuevoSec)->first();
+                }
+
+                // Actualizamos restando la cantidad
+                DB::table('modelo_inventario')
+                    ->where('id', $modeloInventarioSecundario->id)
+                    ->update([
+                        'existencia' => $modeloInventarioSecundario->existencia - $mov->cantidad
+                    ]);
+            }
+        }
     }
+
 
     public static function disminuirInventario($documento) {
         $movimientos = DB::table('movimiento')->where('id_documento', $documento)->get();
