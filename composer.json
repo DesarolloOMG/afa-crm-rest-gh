@@ -25,7 +25,8 @@
 		"league/flysystem": "^1.0",
 		"firebase/php-jwt": "^5.0",
 		"twilio/sdk": "^6.1",
-		"nordsoftware/lumen-cors": "^3.5"
+		"nordsoftware/lumen-cors": "^3.5",
+		"http-interop/http-factory-guzzle": "^1.2"
 	},
 	"require-dev": {
 		"fzaninotto/faker": "~1.4",
@@ -53,7 +54,8 @@
 	"config": {
 		"optimize-autoloader": true,
 		"allow-plugins": {
-			"kylekatarnls/update-helper": true
+			"kylekatarnls/update-helper": true,
+			"php-http/discovery": true
 		}
 	}
 }

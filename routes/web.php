@@ -15,17 +15,6 @@ $router->get('/', function () use ($router) {
     return date('Y-m-d H:i:s', time());
 });
 
-
-$router->group(['prefix' => 'ftp'], function () use ($router) {
-    $router->group(['prefix' => 'arome'], function () use ($router) {
-        $router->get('inventario', 'ReporteController@reporte_ftp_arome_inventario');
-    });
-
-    $router->group(['prefix' => 'cliente'], function () use ($router) {
-        $router->get('inventario', 'ReporteController@reporte_ftp_cliente_inventario');
-    });
-});
-
 # API Rest Cyberpuerta
 $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use ($router) {
     $router->group(['prefix' => 'v1'], function () use ($router) {
@@ -1155,17 +1144,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
 
         $router->get('productos', 'GeneralController@rawinfo_productos');
-
-        #Reporte para subir archivos a FTP
-        $router->group(['prefix' => 'ftp'], function () use ($router) {
-            $router->group(['prefix' => 'arome'], function () use ($router) {
-                $router->get('inventario', 'ReporteController@reporte_ftp_arome_inventario');
-            });
-
-            $router->group(['prefix' => 'cliente'], function () use ($router) {
-                $router->get('inventario', 'ReporteController@reporte_ftp_cliente_inventario');
-            });
-        });
 
         $router->group(['prefix' => 'elektra'], function () use ($router) {
             $router->get('fase/{venta}', 'RawInfoController@rawinfo_elektra_fase');
