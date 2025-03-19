@@ -7,182 +7,349 @@ use DB;
 class InventarioService
 {
     /**
-     * Agrega o actualiza los productos al inventario
+     * Procesa un documento y actualiza inventario, costo y kardex.
+     * Recibe sólo el ID del documento y se encarga de buscar su tipo, sus movimientos,
+     * y de aplicar las actualizaciones de inventario y costo según corresponda.
      *
-     * @param int $id_modelo
-     * @param int $id_empresa_almacen
-     * @param int $existencia
-     * @param int $fisico
-     * @param string $comentarios
-     * @return array   [code, message]
+     * @param int $idDocumento   ID del documento a procesar.
+     * @return \Illuminate\Http\JsonResponse   Respuesta en formato JSON con el resultado.
      */
-    public static function agregarAInventario(int $id_modelo, int $id_empresa_almacen, int $existencia, int $fisico, string $comentarios, int $id_documento = null)
+    public function aplicarMovimiento(int $idDocumento)
     {
-        if($id_documento == null) {
-            $id = DB::table('modelo_inventario')->insertGetId([
-                'id_modelo' => $id_modelo,
-                'id_empresa_almacen' => $id_empresa_almacen,
-                'existencia' => $existencia,
-                'fisico' => $fisico,
-                'comentarios' => $comentarios,
+        // Iniciamos una transacción para que si algo falla, se reviertan los cambios.
+        DB::beginTransaction();
+        try {
+            // 1. Buscamos el documento por su ID.
+            $documento = DB::table('documento')->where('id', $idDocumento)->first();
+            if (!$documento) {
+                return response()->json([
+                    'code' => 404,
+                    'message' => 'Documento no encontrado.'
+                ], 404);
+            }
+
+            // 2. Obtenemos el tipo de documento para saber qué se debe hacer (suma, resta, afecta costo, etc.).
+            $docTipo = DB::table('documento_tipo')->where('id', $documento->id_tipo)->first();
+            if (!$docTipo) {
+                return response()->json([
+                    'code' => 404,
+                    'message' => 'Tipo de documento no encontrado.'
+                ], 404);
+            }
+
+            // 3. Obtenemos los movimientos asociados al documento.
+            $movimientos = DB::table('movimiento')->where('id_documento', $idDocumento)->get();
+            if ($movimientos->isEmpty()) {
+                DB::commit();
+                return response()->json([
+                    'code'    => 200,
+                    'message' => 'No hay movimientos para este documento.'
+                ], 200);
+            }
+
+            // 4. Procesamos cada movimiento del documento.
+            foreach ($movimientos as $mov) {
+                // Si es un traspaso, se procesa de forma especial.
+                if ($docTipo->tipo == 'TRASPASO' || $docTipo->id == 5) {
+                    $this->procesarTraspaso($mov, $documento);
+                    continue; // Salimos de este ciclo y seguimos con el siguiente movimiento.
+                }
+
+                // Usamos el almacén principal del documento para las operaciones.
+                $almacen = $documento->id_almacen_principal_empresa;
+
+                // Obtenemos (o creamos) la existencia y costo para este producto en el almacén.
+                $existencia = $this->obtenerOcrearExistencia($mov->id_modelo, $almacen);
+                $costo = $this->obtenerOcrearCosto($mov->id_modelo, $almacen);
+
+                // Guardamos los valores actuales (para poder registrar en el kardex después).
+                $stockAnterior = $existencia->stock;
+                $costoPromAnterior = $costo->costo_promedio;
+
+                // Calculamos la cantidad, el precio unitario (considerando tipo de cambio) y el total.
+                $cantidad = $mov->cantidad;
+                $precioUnitario = $mov->precio * ($documento->tipo_cambio ?? 1);
+                $totalMovimiento = round($cantidad * $precioUnitario, 2);
+
+                // Inicializamos el nuevo stock con el valor actual.
+                $nuevoStock = $stockAnterior;
+
+                // Si el documento suma inventario, agregamos la cantidad.
+                if ($docTipo->sumainventario == 1) {
+                    $nuevoStock = $stockAnterior + $cantidad;
+                }
+
+                // Si el documento resta inventario, se le quita la cantidad.
+                if ($docTipo->restainventario == 1) {
+                    $nuevoStock = $stockAnterior - $cantidad;
+                    if ($nuevoStock < 0) {
+                        $nuevoStock = 0; // Nunca dejamos que el stock sea negativo.
+                    }
+                }
+
+                // Actualizamos el registro de existencia solo si hubo un cambio.
+                if ($nuevoStock != $stockAnterior) {
+                    DB::table('modelo_existencias')
+                        ->where('id', $existencia->id)
+                        ->update([
+                            'stock_anterior' => $stockAnterior,
+                            'stock'          => $nuevoStock,
+                            'updated_at'     => now()
+                        ]);
+                }
+
+                // Solo actualizamos el costo si el documento afecta el costo.
+                if ($docTipo->afectaCosto == 1) {
+                    // Calculamos el nuevo costo promedio.
+                    if ($stockAnterior <= 0) {
+                        // Si no había stock, el nuevo costo es el precio de este movimiento.
+                        $nuevoCostoPromedio = $precioUnitario;
+                    } else {
+                        $montoAnterior = $stockAnterior * $costoPromAnterior;
+                        $montoActual = $cantidad * $precioUnitario;
+                        $nuevoCostoPromedio = ($montoAnterior + $montoActual) / ($stockAnterior + $cantidad);
+                    }
+                    // Actualizamos el registro de costo solo si hay un cambio en el promedio.
+                    if ($nuevoCostoPromedio != $costoPromAnterior) {
+                        DB::table('modelo_costo')
+                            ->where('id', $costo->id)
+                            ->update([
+                                'stock_anterior' => $stockAnterior,
+                                'costo_promedio' => $nuevoCostoPromedio,
+                                'ultimo_costo'   => $costoPromAnterior, // Guardamos el costo anterior como referencia.
+                                'updated_at'     => now()
+                            ]);
+                    }
+                }
+
+                // Registramos el movimiento en el kardex.
+                $this->insertarKardex(
+                    $mov,
+                    $documento,
+                    $cantidad,
+                    $stockAnterior,
+                    ($docTipo->afectaCosto == 1 ? 1 : 0),
+                    ($docTipo->afectaCosto == 1 ? $nuevoCostoPromedio : $costoPromAnterior),
+                    $precioUnitario,
+                    $totalMovimiento
+                );
+            }
+
+            DB::commit();
+            return response()->json([
+                'code'    => 200,
+                'message' => 'Documento procesado exitosamente.'
+            ], 200);
+        } catch (\Exception $e) {
+            // Si algo falla, revertimos todos los cambios.
+            DB::rollBack();
+            return response()->json([
+                'code'    => 500,
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Busca o crea el registro de existencia (modelo_existencias) para un producto y un almacén.
+     * Si no existe, lo crea con stock en 0.
+     *
+     * @param int $idModelo          ID del producto.
+     * @param int $idEmpresaAlmacen  ID del almacén.
+     * @return object                Registro de existencia.
+     */
+    private function obtenerOcrearExistencia(int $idModelo, int $idEmpresaAlmacen)
+    {
+        $existencia = DB::table('modelo_existencias')
+            ->where('id_modelo', $idModelo)
+            ->where('id_empresa_almacen', $idEmpresaAlmacen)
+            ->first();
+
+        if (!$existencia) {
+            $id = DB::table('modelo_existencias')->insertGetId([
+                'id_modelo'          => $idModelo,
+                'id_empresa_almacen' => $idEmpresaAlmacen,
+                'stock_inicial'      => 0,
+                'stock'              => 0,
+                'stock_anterior'     => 0,
+                'created_at'         => $this->now(),
+                'updated_at'         => now()
             ]);
-        } else {
-            self::aplicarMovimientoInventario($id_documento);
+            $existencia = DB::table('modelo_existencias')->where('id', $id)->first();
         }
-        return ['code' => 200, 'message' => 'OK'];
+        return $existencia;
     }
 
-    public static function aplicarMovimientoInventario($idDocumento)
+    /**
+     * Busca o crea el registro de costo (modelo_costo) para un producto y un almacén.
+     * Si no existe, lo crea con costo en 0.
+     *
+     * @param int $idModelo          ID del producto.
+     * @param int $idEmpresaAlmacen  ID del almacén.
+     * @return object                Registro de costo.
+     */
+    private function obtenerOcrearCosto($idModelo, $idEmpresaAlmacen)
     {
-        // 1. Obtenemos la información del documento
-        $infoDocumento = DB::table('documento')->where('id', $idDocumento)->first();
-        if (!$infoDocumento) {
-            // Manejar el caso de documento no encontrado
-            return ['code' => 404, 'message' => 'Documento no encontrado.'];
+        $costo = DB::table('modelo_costo')
+            ->where('id_modelo', $idModelo)
+            ->where('id_empresa_almacen', $idEmpresaAlmacen)
+            ->first();
+
+        if (!$costo) {
+            $id = DB::table('modelo_costo')->insertGetId([
+                'id_modelo'          => $idModelo,
+                'id_empresa_almacen' => $idEmpresaAlmacen,
+                'stock_anterior'     => 0,
+                'costo_inicial'      => 0,
+                'costo_promedio'     => 0,
+                'ultimo_costo'       => 0,
+                'created_at'         => now(),
+                'updated_at'         => now()
+            ]);
+            $costo = DB::table('modelo_costo')->where('id', $id)->first();
         }
-
-        // Suponiendo que en la misma tabla `documento` vienen las banderas:
-        // $infoDocumento->sumaInventario, $infoDocumento->restaInventario
-        // o bien podrías obtener el tipo con:
-        $tipoDoc = DB::table('documento_tipo')->where('id', $infoDocumento->id_tipo)->first();
-
-        // 2. Obtenemos todos los movimientos asociados al documento
-        $movimientos = DB::table('movimiento')
-            ->where('id_documento', $idDocumento)
-            ->get();
-
-        // 3. Iteramos sobre los movimientos
-        foreach ($movimientos as $mov) {
-
-            // 3.1. Buscamos si ya existe el modelo_inventario en el almacén principal
-            $modeloInventarioPrincipal = DB::table('modelo_inventario')
-                ->where('id_modelo', $mov->id_modelo)
-                ->where('id_empresa_almacen', $infoDocumento->id_almacen_principal_empresa)
-                ->first();
-
-            // 3.2. Según la configuración del documento, hacemos la lógica
-            $suma = $tipoDoc->sumaInventario == 1;
-            $resta = $tipoDoc->restaInventario == 1;
-
-            if ($suma && !$resta) {
-                // 3.2.1. Sumar inventario en el almacén principal
-                DB::table('modelo_inventario')
-                    ->where('id', $modeloInventarioPrincipal->id)
-                    ->update([
-                        'existencia' => $modeloInventarioPrincipal->existencia + $mov->cantidad
-                    ]);
-            } elseif (!$suma && $resta) {
-                // 3.3.2. Restar inventario en el almacén principal
-                DB::table('modelo_inventario')
-                    ->where('id', $modeloInventarioPrincipal->id)
-                    ->update([
-                        'existencia' => $modeloInventarioPrincipal->existencia - $mov->cantidad
-                    ]);
-            } elseif ($suma && $resta) {
-                // 3.3.3. Es un TRASPASO (suma y resta)
-
-                // A) SUMAR en el almacén principal
-                DB::table('modelo_inventario')
-                    ->where('id', $modeloInventarioPrincipal->id)
-                    ->update([
-                        'existencia' => $modeloInventarioPrincipal->existencia + $mov->cantidad
-                    ]);
-
-                // B) RESTAR en el almacén secundario
-                //   Primero buscamos si existe en el almacén secundario
-                $modeloInventarioSecundario = DB::table('modelo_inventario')
-                    ->where('id_modelo', $mov->id_modelo)
-                    ->where('id_empresa_almacen', $infoDocumento->id_almacen_secundario_empresa)
-                    ->first();
-
-                if (!$modeloInventarioSecundario) {
-                    // Si no existe, lo creamos en el secundario
-                    $idNuevoSec = DB::table('modelo_inventario')->insertGetId([
-                        'id_modelo'           => $mov->id_modelo,
-                        'id_empresa_almacen'  => $infoDocumento->id_almacen_secundario_empresa,
-                        'existencia'          => 0,
-                        'fisico'              => 0,
-                        'comentarios'         => 'Creado automáticamente (almacén secundario)',
-                    ]);
-                    $modeloInventarioSecundario = DB::table('modelo_inventario')->where('id', $idNuevoSec)->first();
-                }
-
-                // Actualizamos restando la cantidad
-                DB::table('modelo_inventario')
-                    ->where('id', $modeloInventarioSecundario->id)
-                    ->update([
-                        'existencia' => $modeloInventarioSecundario->existencia - $mov->cantidad
-                    ]);
-            }
-        }
+        return $costo;
     }
 
-
-    public static function disminuirInventario($documento) {
-        $movimientos = DB::table('movimiento')->where('id_documento', $documento)->get();
-        $info_documento = DB::table('documento')->where('id', $documento)->first();
-
-        if(!empty($movimientos)) {
-            foreach ($movimientos as $mov) {
-                $modelo = DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                    ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->first();
-
-                if(!empty($modelo)) {
-                    DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                        ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->update([
-                        'stock' => $modelo->stock - $mov->cantidad
-                    ]);
-                }
-            }
-        }
+    /**
+     * Inserta un registro en el kardex (modelo_kardex).
+     * Aquí se guarda toda la info del movimiento, como cantidad, costo, total, stock anterior, etc.
+     *
+     * @param object $mov             Movimiento actual.
+     * @param object $documento       Documento al que pertenece el movimiento.
+     * @param int $cantidad        Cantidad del movimiento.
+     * @param int $stockAnterior   Stock antes del movimiento.
+     * @param int $afectaCosto     Bandera que indica si afecta costo (1 = sí, 0 = no).
+     * @param float $costoPromedio   Nuevo costo promedio (o el anterior si no afecta).
+     * @param float $precioUnitario  Precio unitario del movimiento.
+     * @param float $totalMovimiento Total calculado del movimiento.
+     */
+    private function insertarKardex(
+        $mov,
+        $documento,
+        int $cantidad,
+        int $stockAnterior,
+        int $afectaCosto,
+        float $costoPromedio,
+        float $precioUnitario,
+        float $totalMovimiento
+    ) {
+        DB::table('modelo_kardex')->insert([
+            'id_modelo'                 => $mov->id_modelo,
+            'id_documento'              => $mov->id_documento,
+            'id_tipo_documento'         => $documento->id_tipo,
+            'id_fase'                   => $documento->id_fase,
+            'id_empresa_almacen'        => $documento->id_almacen_principal_empresa,
+            'id_empresa_almacen_salida' => $documento->id_almacen_secundario_empresa ?? null,
+            'afecta_costo'              => $afectaCosto,
+            'cantidad'                  => $cantidad,
+            'costo'                     => $precioUnitario,
+            'total'                     => $totalMovimiento,
+            'stock_anterior'            => $stockAnterior,
+            'costo_promedio'            => $costoPromedio,
+            'created_at'                => $mov->created_at,
+            'updated_at'                => now()
+        ]);
     }
 
-    public static function aumentarInventario($documento) {
-        $movimientos = DB::table('movimiento')->where('id_documento', $documento)->get();
-        $info_documento = DB::table('documento')->where('id', $documento)->first();
-
-        if(!empty($movimientos)) {
-            foreach ($movimientos as $mov) {
-                $modelo = DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                    ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->first();
-
-                if(!empty($modelo)) {
-                    DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                        ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->update([
-                            'stock' => $modelo->stock + $mov->cantidad
-                        ]);
-                }
-            }
-        }
-    }
-
-    public static function movimientoEntreAlmacen($documento)
+    /**
+     * Procesa un traspaso, que es un caso especial:
+     * - Se resta en el almacén principal.
+     * - Se suma en el almacén secundario.
+     * Se registran ambos movimientos en el kardex.
+     *
+     * @param object $mov        Movimiento actual.
+     * @param object $documento  Documento al que pertenece el movimiento.
+     */
+    private function procesarTraspaso($mov, $documento)
     {
-        $movimientos = DB::table('movimiento')->where('id_documento', $documento)->get();
-        $info_documento = DB::table('documento')->where('id', $documento)->first();
+        // 1. Procesamos la salida (almacén principal).
+        $almacenSalida = $documento->id_almacen_principal_empresa;
+        $existenciaSalida = $this->obtenerOcrearExistencia($mov->id_modelo, $almacenSalida);
+        $costoSalida = $this->obtenerOcrearCosto($mov->id_modelo, $almacenSalida);
 
-        if(!empty($movimientos)) {
-            foreach ($movimientos as $mov) {
-                $modelo = DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                    ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->first();
+        $stockAnteriorSalida = $existenciaSalida->stock;
+        $cantidad = $mov->cantidad;
+        $precioUnitario = $mov->precio * ($documento->tipo_cambio ?? 1);
+        $totalMovimiento = round($cantidad * $precioUnitario, 2);
 
-                if(!empty($modelo)) {
-                    DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                        ->where('id_empresa_almacen', $info_documento->id_almacen_principal_empresa)->update([
-                            'existencia' => $modelo->existencia + $mov->cantidad
-                        ]);
-                }
-
-                $modelo_salida = DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                    ->where('id_empresa_almacen', $info_documento->id_almacen_secundario_empresa)->first();
-
-                if(!empty($modelo_salida)) {
-                    DB::table('modelo_inventario')->where('id_modelo', $mov->id_modelo)
-                        ->where('id_empresa_almacen', $info_documento->id_almacen_secundario_empresa)->update([
-                            'existencia' => $modelo->existencia - $mov->cantidad
-                        ]);
-                }
-            }
+        $nuevoStockSalida = $stockAnteriorSalida - $cantidad;
+        if ($nuevoStockSalida < 0) {
+            $nuevoStockSalida = 0;
         }
+
+        if ($nuevoStockSalida != $stockAnteriorSalida) {
+            DB::table('modelo_existencias')
+                ->where('id', $existenciaSalida->id)
+                ->update([
+                    'stock_anterior' => $stockAnteriorSalida,
+                    'stock'          => $nuevoStockSalida,
+                    'updated_at'     => now()
+                ]);
+        }
+        // Actualizamos el costo (aunque en traspaso generalmente no se recalcula).
+        DB::table('modelo_costo')
+            ->where('id', $costoSalida->id)
+            ->update([
+                'stock_anterior' => $stockAnteriorSalida,
+                'updated_at'     => now()
+            ]);
+
+        // Registramos la salida en el kardex.
+        DB::table('modelo_kardex')->insert([
+            'id_modelo'                 => $mov->id_modelo,
+            'id_documento'              => $mov->id_documento,
+            'id_tipo_documento'         => $documento->id_tipo,
+            'id_fase'                   => $documento->id_fase,
+            'id_empresa_almacen'        => $almacenSalida,
+            'id_empresa_almacen_salida' => $documento->id_almacen_secundario_empresa,
+            'afecta_costo'              => 0,
+            'cantidad'                  => $cantidad,
+            'costo'                     => $precioUnitario,
+            'total'                     => $totalMovimiento,
+            'stock_anterior'            => $stockAnteriorSalida,
+            'costo_promedio'            => $costoSalida->costo_promedio,
+            'created_at'                => $mov->created_at,
+            'updated_at'                => now()
+        ]);
+
+        // 2. Procesamos la entrada (almacén secundario).
+        $almacenEntrada = $documento->id_almacen_secundario_empresa;
+        if (!$almacenEntrada) {
+            // Si no hay almacén secundario, salimos.
+            return;
+        }
+        $existenciaEntrada = $this->obtenerOcrearExistencia($mov->id_modelo, $almacenEntrada);
+        $costoEntrada = $this->obtenerOcrearCosto($mov->id_modelo, $almacenEntrada);
+        $stockAnteriorEntrada = $existenciaEntrada->stock;
+        $nuevoStockEntrada = $stockAnteriorEntrada + $cantidad;
+
+        if ($nuevoStockEntrada != $stockAnteriorEntrada) {
+            DB::table('modelo_existencias')
+                ->where('id', $existenciaEntrada->id)
+                ->update([
+                    'stock_anterior' => $stockAnteriorEntrada,
+                    'stock'          => $nuevoStockEntrada,
+                    'updated_at'     => now()
+                ]);
+        }
+
+        // Registramos la entrada en el kardex.
+        DB::table('modelo_kardex')->insert([
+            'id_modelo'                 => $mov->id_modelo,
+            'id_documento'              => $mov->id_documento,
+            'id_tipo_documento'         => $documento->id_tipo,
+            'id_fase'                   => $documento->id_fase,
+            'id_empresa_almacen'        => $almacenEntrada,
+            'id_empresa_almacen_salida' => $almacenSalida,
+            'afecta_costo'              => 0,
+            'cantidad'                  => $cantidad,
+            'costo'                     => $precioUnitario,
+            'total'                     => round($cantidad * $precioUnitario, 2),
+            'stock_anterior'            => $stockAnteriorEntrada,
+            'costo_promedio'            => $costoEntrada->costo_promedio,
+            'created_at'                => $mov->created_at,
+            'updated_at'                => now()
+        ]);
     }
 }
