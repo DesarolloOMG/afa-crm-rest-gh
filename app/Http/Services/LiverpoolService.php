@@ -194,9 +194,8 @@ class LiverpoolService
 
     private static function relacionarEntidadDocumento($entidadId, $documentoId)
     {
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidadId,
-            'id_documento' => $documentoId
+        DB::table('documento')->where('id', $documentoId)->update([
+            'id_entidad' => $entidadId
         ]);
     }
 

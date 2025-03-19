@@ -401,6 +401,7 @@ class ClaroshopServiceV2
                     'id_paqueteria' => $paqueteriaVenta->id ?? 2,
                     'id_fase' => $fulfillment ? 6 : 1,
                     'id_modelo_proveedor' => 0,
+                    'id_entidad' => $entidad,
                     'no_venta' => $pedido->orderid,
                     'tipo_cambio' => 1,
                     'referencia' => $pedido->orderid,
@@ -446,11 +447,6 @@ class ClaroshopServiceV2
                     'id_documento'  => $documento,
                     'id_usuario'    => 1,
                     'seguimiento'   => "<p>VENTA IMPORTADA MASIVAMENTE T1 API V2</p"
-                ]);
-
-                DB::table('documento_entidad_re')->insert([
-                    'id_entidad'    => $entidad,
-                    'id_documento'  => $documento
                 ]);
 
                 try {

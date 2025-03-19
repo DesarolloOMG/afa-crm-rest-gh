@@ -33,8 +33,7 @@ class DocumentoService
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi = documento_uso_cfdi.id
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
 
         if (empty($info_documento)) {
@@ -147,8 +146,7 @@ class DocumentoService
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi = documento_uso_cfdi.id
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
 
         if (empty($info_documento)) {
@@ -261,8 +259,7 @@ class DocumentoService
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi = documento_uso_cfdi.id
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . "");
             # Si no se encuentra la información, se regresa un error
             if (empty($info_compra)) {
@@ -467,9 +464,9 @@ class DocumentoService
             # Se busca información del cliente del pedido
             $info_entidad = DB::select("SELECT
                                     documento_entidad.*
-                                FROM documento_entidad
-                                INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                WHERE documento_entidad_re.id_documento = " . $documento . "
+                                FROM documento
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                WHERE documento.id = " . $documento . "
                                 AND documento_entidad.tipo = 1");
             # Si no se encuentra información del cliente, se regresa un mensaje de error
             if (empty($info_entidad)) {
@@ -956,9 +953,8 @@ class DocumentoService
                                 $id_proveedor_omg = $existe_proveedor_crm[0]->id;
                             }
                             # Se relaciona el proveedor OMG con la compra recien creada
-                            DB::table('documento_entidad_re')->insert([
+                            DB::table('documento')->where('id', $id_compra_omg)->update([
                                 'id_entidad' => $id_proveedor_omg,
-                                'id_documento' => $id_compra_omg
                             ]);
 
                             # Se relacionan los productos del pedido a la compra, para hacer el match
@@ -1080,8 +1076,8 @@ class DocumentoService
                                             break;
                                     }
 
-                                    #230125 si es shopify, se resta el cupon
-                                    if ($info_documento->marketplace == 'SHOPIFY'){
+                                    #280125 si el cupon es mayor a 0, se resta el cupon
+                                    if ($info_documento->mkt_coupon > 0){
                                         $total_documento -= $info_documento->mkt_coupon;
                                     }
 
@@ -1363,9 +1359,9 @@ class DocumentoService
             # Se busca información del cliente del pedido
             $info_entidad = DB::select("SELECT
                                     documento_entidad.*
-                                FROM documento_entidad
-                                INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                WHERE documento_entidad_re.id_documento = " . $documento . "
+                                FROM documento
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                WHERE documento.id = " . $documento . "
                                 AND documento_entidad.tipo = 1");
             # Si no se encuentra información del cliente, se regresa un mensaje de error
             if (empty($info_entidad)) {
@@ -1815,9 +1811,8 @@ class DocumentoService
                                 $id_proveedor_omg = $existe_proveedor_crm[0]->id;
                             }
                             # Se relaciona el proveedor OMG con la compra recien creada
-                            DB::table('documento_entidad_re')->insert([
-                                'id_entidad' => $id_proveedor_omg,
-                                'id_documento' => $id_compra_omg
+                            DB::table('documento')->where('id', $id_compra_omg)->update([
+                                'id_entidad' => $id_proveedor_omg
                             ]);
 
                             # Se relacionan los productos del pedido a la compra, para hacer el match
@@ -1952,9 +1947,9 @@ class DocumentoService
 
         $info_entidad = DB::select("SELECT
                             documento_entidad.*
-                        FROM documento_entidad
-                        INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                        WHERE documento_entidad_re.id_documento = " . $documento . "
+                        FROM documento
+                        INNER JOIN documento_entidad_re ON documento_entidad.id = documento.id_entidad
+                        WHERE documento.id = " . $documento . "
                         AND documento_entidad.tipo = 1");
 
         if (empty($info_entidad)) {
@@ -2108,7 +2103,7 @@ class DocumentoService
 
         # Despues, se genera un pedido con nueva información del cliente
         $documento_anterior = DB::select("SELECT * FROM documento WHERE id = " . $documento . "")[0];
-        $documento_entidad = DB::select("SELECT id_entidad FROM documento_entidad_re WHERE id_documento = " . $documento . "")[0];
+        $documento_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $documento . "")[0];
         $movimientos_anterior = DB::select("SELECT * FROM movimiento WHERE id_documento = " . $documento . "");
         $documento_direccion = DB::select("SELECT * FROM documento_direccion WHERE id_documento = " . $documento . "");
         $documento_pago = DB::select("SELECT * FROM documento_pago INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago WHERE documento_pago_re.id_documento = " . $documento . "");
@@ -2123,6 +2118,7 @@ class DocumentoService
             'id_moneda' => $documento_anterior->id_moneda,
             'id_paqueteria' => $documento_anterior->id_paqueteria,
             'id_fase' => $documento_anterior->id_fase,
+            'id_entidad' => $documento_entidad->id_entidad,
             'no_venta' => $documento_anterior->no_venta,
             'tipo_cambio' => $documento_anterior->tipo_cambio,
             'referencia' => $documento_anterior->referencia,
@@ -2142,11 +2138,6 @@ class DocumentoService
             'mkt_total' => $documento_anterior->mkt_total,
             'mkt_created_at' => $documento_anterior->mkt_created_at,
             'started_at' => $documento_anterior->started_at
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $documento_entidad->id_entidad,
-            'id_documento' => $documento_nuevo
         ]);
 
         # Seguimiento del pedido anterior
@@ -2591,91 +2582,6 @@ class DocumentoService
                 $existe_entidad = $existe_entidad[0];
             }
         }
-
-        if ($tiene_documento) {
-            if ($pago->origen_entidad === 'XEXX010101000') {
-                $entidad_erp_id = DB::select("SELECT id_erp FROM documento_entidad
-                                                INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                                WHERE documento_entidad_re.id_documento = " . $tiene_documento[0]->id_documento . "");
-
-                if (!empty($entidad_erp_id)) {
-                    $pago->origen_entidad = $entidad_erp_id[0]->id_erp;
-                }
-            }
-        }
-
-        $tipo_documento = $pago->tipo == 1 ? 'Ingresos' : ($pago->tipo == 0 ? 'Egresos' : 'TraspasosV2');
-
-        try {
-            $movimiento_data = array(
-                'bd'                => $bd,
-                'password'          => config("webservice.token"),
-                'folio'             => '',
-                'monto'             => $pago->origen_importe == 0 ? $pago->destino_importe : $pago->origen_importe,
-                'tipo_cambio'       => $pago->tipo_cambio,
-                'fecha_operacion'   => $pago->origen_fecha_operacion,
-                'fecha_operacion_origen'    => $pago->origen_fecha_operacion,
-                'fecha_operacion_destino'   => $pago->destino_fecha_operacion,
-                'origen_entidad'    => $pago->entidad_origen,
-                'origen_cuenta'     => $pago->origen_entidad,
-                'destino_entidad'   => $pago->entidad_destino,
-                'destino_cuenta'    => $pago->destino_entidad,
-                'entidad_origen'    => $pago->entidad_origen,
-                'cuenta_origen'     => $pago->origen_entidad,
-                'entidad_destino'   => $pago->entidad_destino,
-                'cuenta_destino'    => $pago->destino_entidad,
-                'forma_pago'        => $pago->id_metodopago,
-                'cuenta'            => $pago->cuenta_cliente,
-                'clave_rastreo'     => $pago->clave_rastreo,
-                'cheque'            => $pago->autorizacion,
-                'numero_aut'        => $pago->autorizacion,
-                'num_aut'           => $pago->autorizacion,
-                'referencia'        => $pago->referencia
-            );
-
-            if ($pago->tipo == 1 || $pago->tipo == 0) {
-                $movimiento_data['comentarios'] = empty($tiene_documento) ? (($pago->tipo == 1 ? 'Cobro cliente ' : 'Pago proveedor ') . ($pago->tipo == 1 ? $existe_entidad->nombre_oficial : $existe_entidad->razon)) : ($pago->tipo == 1 ? 'Cobro cliente para la factura ' . $tiene_documento[0]->id_documento : 'Egreso del pedido ' . $tiene_documento[0]->id_documento);
-                $movimiento_data['descripcion'] = empty($tiene_documento) ? (($pago->tipo == 1 ? 'Cobro cliente ' : 'Pago proveedor ') . ($pago->tipo == 1 ? $existe_entidad->nombre_oficial : $existe_entidad->razon)) : ($pago->tipo == 1 ? 'Cobro cliente para la factura ' . $tiene_documento[0]->id_documento : 'Egreso del pedido ' . $tiene_documento[0]->id_documento);
-            }
-
-            $crear_movimiento = \Httpful\Request::post(config('webservice.url') . $tipo_documento . '/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                ->body($movimiento_data, \Httpful\Mime::FORM)
-                ->send();
-
-            $crear_movimiento_raw = $crear_movimiento->raw_body;
-            $crear_movimiento = @json_decode($crear_movimiento_raw);
-
-            if (empty($crear_movimiento)) {
-                $response->error = 1;
-                $response->mensaje = "No fue posible generar el movimiento, error desconocido." . self::logVariableLocation();
-                $response->raw = $crear_movimiento_raw;
-                $response->data = $movimiento_data;
-
-                return $response;
-            }
-
-            if ($crear_movimiento->error == 1) {
-                $response->error = 1;
-                $response->mensaje = "No fue posible generar el movimiento, error " . $crear_movimiento->mensaje . "" . self::logVariableLocation();
-                $response->data = $movimiento_data;
-
-                return $response;
-            }
-
-            DB::table('documento_pago')->where(['id' => $pago->id])->update([
-                'folio' => $crear_movimiento->id
-            ]);
-
-            $response->error = 0;
-            $response->id = $crear_movimiento->id;
-
-            return $response;
-        } catch (Exception $e) {
-            $response->error = 1;
-            $response->mensaje = "No fue posible generar el movimiento, error " . $e->getMessage() . "" . self::logVariableLocation();
-
-            return $response;
-        }
     }
 
     public static function crearNotaCredito($documento, $tipo = 0)
@@ -2725,9 +2631,9 @@ class DocumentoService
 
         $info_entidad = DB::select("SELECT
                                     documento_entidad.*
-                                FROM documento_entidad
-                                INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                WHERE documento_entidad_re.id_documento = " . $documento . "
+                                FROM documento
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                WHERE documento.id = " . $documento . "
                                 AND documento_entidad.tipo = 1");
 
         if (empty($info_entidad)) {

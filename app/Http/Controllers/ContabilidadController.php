@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\MovimientoService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use App\Http\Services\DocumentoService;
@@ -58,9 +59,9 @@ class ContabilidadController extends Controller
 
         $rfc_cliente = DB::select("SELECT
                                         documento_entidad.rfc
-                                    FROM documento_entidad
-                                    INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                    WHERE documento_entidad_re.id_documento = " . $data->documento . "")[0]->rfc;
+                                    FROM documento
+                                    INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                    WHERE documento.id = " . $data->documento . "")[0]->rfc;
         # se cambia el id clasificacion a 0 ya que no existe otro
         if (empty($existe_pago)) {
             $pago = DB::table('documento_pago')->insertGetId([
@@ -575,8 +576,7 @@ class ContabilidadController extends Controller
                                         documento_entidad.razon_social,
                                         documento_entidad.rfc
                                     FROM documento 
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.id = " . $documento . " AND documento.status = 1");
 
         if (empty($existe_venta)) {
@@ -1775,125 +1775,13 @@ class ContabilidadController extends Controller
             }
         }
 
-        $documento_pago = DB::table('documento_pago')->insertGetId([
-            'id_empresa' => $id_empresa,
-            'id_usuario' => $auth->id,
-            'id_metodopago' => $data->metodo_pago,
-            'id_vertical' => !empty($data->vertical) ? $data->vertical : 0,
-            'id_categoria' => !empty($data->categoria) ? $data->categoria : 0,
-            'id_clasificacion' => !empty($data->clasificacion) ? $data->clasificacion : 0,
-            'tipo' => $data->tipo_documento,
-            'origen_importe' => $data->origen->monto,
-            'entidad_origen' => $data->origen->entidad,
-            'origen_entidad' => ($data->tipo_documento == 1) ? ((property_exists($data->origen, 'entidad_rfc')) ? (($data->origen->entidad_rfc == 'XEXX010101000') ? $data->origen->cuenta_bancaria : $data->origen->entidad_rfc) : $data->origen->cuenta_bancaria) : $data->origen->cuenta_bancaria,
-            'entidad_destino' => $data->destino->entidad,
-            'destino_entidad' => ($data->tipo_documento == 0) ? ((property_exists($data->destino, 'entidad_rfc')) ? (($data->destino->entidad_rfc == 'XEXX010101000') ? $data->destino->cuenta_bancaria : $data->destino->entidad_rfc) : $data->destino->cuenta_bancaria) : $data->destino->cuenta_bancaria,
-            'referencia' => $data->referencia,
-            'clave_rastreo' => $data->clave_rastreo,
-            'autorizacion' => $data->autorizacion,
-            'cuenta_cliente' => $data->cuenta_proveedor,
-            'destino_fecha_operacion' => $data->destino->fecha_operacion,
-            'destino_fecha_afectacion' => $data->destino->fecha_operacion,
-            'origen_fecha_operacion' => $data->origen->fecha_operacion,
-            'origen_fecha_afectacion'   => $data->origen->fecha_operacion,
-            'tipo_cambio' => $data->tipo_cambio
-        ]);
-
-        $movimiento = DB::select("SELECT * FROM documento_pago WHERE id = " . $documento_pago . "")[0];
-
-        $crear_movimiento = DocumentoService::crearMovimientoFlujo($movimiento, $data->empresa);
-
-        if ($crear_movimiento->error) {
-            DB::table('documento_pago')->where(['id' => $documento_pago])->delete();
-
-            return response()->json([
-                'code'  => 500,
-                'message'   => $crear_movimiento->mensaje,
-                'data'  => property_exists($crear_movimiento, 'data') ? $crear_movimiento->data : 0,
-                'raw'   => property_exists($crear_movimiento, 'raw') ? $crear_movimiento->raw : 0
-            ]);
-        }
-
-        $message = "Movimiento creado correctamente con el folio: " . $crear_movimiento->id;
-
-        if (in_array($data->tipo_documento, [0, 1])) {
-            foreach ($data->facturas_a_pagar as $factura) {
-                $tipo_documento = $data->tipo_documento == "1" ? "FacturaCliente" : "CompraGasto";
-
-                $array_pago = array(
-                    "password" => config("webservice.token"),
-                    "bd" => $data->empresa,
-                    "documentoid" => $factura->documento,
-                    "pagoid" => $crear_movimiento->id,
-                    "tipopago" => 1, # siempre será ingreso en esta archivo
-                    "monto" => $factura->monto_aplicar,
-                    "tc" => $factura->tc,
-                );
-
-                $saldar_factura = \Httpful\Request::post(config('webservice.url') . $tipo_documento . '/Pagar')
-                    ->body($array_pago, \Httpful\Mime::FORM)
-                    ->send();
-
-                $saldar_factura_raw = $saldar_factura->raw_body;
-                $saldar_factura = @json_decode($saldar_factura_raw);
-
-                if (empty($saldar_factura)) {
-                    file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: Ocurrió un error al saldar el documento con el ID " . $factura->documento . " con el movimiento " . $crear_movimiento->id . " en la empresa " . $data->empresa . ", Raw data: " . base64_encode($saldar_factura_raw) . "." . PHP_EOL, FILE_APPEND);
-
-                    # Eliminar movimiento
-                    $movimiento_eliminado = DocumentoService::__eliminarMovimientoFlujo($crear_movimiento->id, $factura->folio, $data->empresa);
-
-                    if ($movimiento_eliminado->error) {
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "No fue posible saldar la factura " . $factura->folio . " con el movimiento " .  $crear_movimiento->id . " en la empresa " . $data->empresa . "<br><br>No fue posible eliminar el movimiento, mensaje de error: " . $movimiento_eliminado->mensaje . "<br>Favor de contactar a un administador.",
-                            "raw" => $saldar_factura_raw
-                        ]);
-                    }
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "No fue posible saldar la factura " . $factura->folio . " con el movimiento " .  $crear_movimiento->id . " en la empresa " . $data->empresa . ", favor de contactar a un administador.",
-                        "raw" => $saldar_factura_raw
-                    ]);
-                }
-
-                if ($saldar_factura->error) {
-                    $movimiento_eliminado = DocumentoService::__eliminarMovimientoFlujo($crear_movimiento->id, $factura->folio, $data->empresa);
-
-                    if ($movimiento_eliminado->error) {
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "No fue posible saldar la factura " . $factura->folio . " con el movimiento " .  $crear_movimiento->id . " en la empresa " . $data->empresa . ", mensaje de error: " . $saldar_factura->mensaje . "<br><br>No fue posible eliminar el movimiento, mensaje de error: " . $movimiento_eliminado->mensaje . "<br>Favor de contactar a un administador.",
-                            "raw" => $saldar_factura_raw
-                        ]);
-                    }
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "No fue posible saldar la factura " . $factura->folio . " con el movimiento " .  $crear_movimiento->id . " en la empresa " . $data->empresa . ", mensaje de error: " . $saldar_factura->mensaje . ".",
-                        "raw" => $saldar_factura_raw
-                    ]);
-                }
-            }
-        }
-
-        if (property_exists($data, "documento_relacionado")) {
-            if ($data->documento_relacionado != 0) {
-                DB::table('documento')->where(['id' => $data->documento_relacionado])->update([
-                    'id_fase'   => 303
-                ]);
-
-                DB::table('documento_pago_re')->insert([
-                    'id_documento'  => $data->documento_relacionado,
-                    'id_pago'       => $documento_pago
-                ]);
-            }
-        }
+        $crear_movimiento = MovimientoService::crearMovimiento($data, $id_empresa, $auth->id);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $message
+            'code'  => $crear_movimiento->code,
+            'message'  => $crear_movimiento->message,
+            'documentos' => $crear_movimiento->documentos,
+            'ingresos' => $crear_movimiento->ingreso,
         ]);
     }
 
@@ -2981,8 +2869,7 @@ class ContabilidadController extends Controller
                             INNER JOIN usuario_empresa ON empresa_almacen.id_empresa = usuario_empresa.id_empresa
                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id

@@ -42,8 +42,7 @@ class SoporteController extends Controller
                                 usuario.nombre AS usuario
                             FROM documento
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
@@ -285,8 +284,7 @@ class SoporteController extends Controller
 
         $informacion_cliente = DB::table("documento")
             ->select("documento_entidad.*")
-            ->join("documento_entidad_re", "documento.id", "=", "documento_entidad_re.id_documento")
-            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->where("documento.id", $informacion_documento->id)
             ->first();
 
@@ -484,9 +482,9 @@ class SoporteController extends Controller
 
             $info_entidad = DB::select("SELECT
                                 documento_entidad.*
-                            FROM documento_entidad
-                            INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                            WHERE documento_entidad_re.id_documento = " . $data->documento . "
+                            FROM documento
+                            INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                            WHERE documento.id = " . $data->documento . "
                             AND documento_entidad.tipo = 1");
 
             if (empty($info_documento)) {
@@ -1140,9 +1138,9 @@ class SoporteController extends Controller
 
                 $info_entidad = DB::select("SELECT
                                     documento_entidad.*
-                                FROM documento_entidad
-                                INNER JOIN documento_entidad_re ON documento_entidad.id = documento_entidad_re.id_entidad
-                                WHERE documento_entidad_re.id_documento = " . $data->documento . "
+                                FROM documento
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
+                                WHERE documento.id = " . $data->documento . "
                                 AND documento_entidad.tipo = 1");
 
                 if (empty($info_documento)) {
@@ -2005,8 +2003,7 @@ class SoporteController extends Controller
                                 INNER JOIN documento_garantia ON documento_garantia_re.id_garantia = documento_garantia.id
                                 INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
                                 INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                INNER JOIN documento_entidad_re ON documento_entidad_re.id_documento = documento.id
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento_entidad_re.id_entidad
+                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
                                 LEFT JOIN documento_direccion ON documento.id = documento_direccion.id_documento
                                 INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                 INNER JOIN area ON marketplace_area.id_area = area.id
@@ -2098,9 +2095,8 @@ class SoporteController extends Controller
                     'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
                 ]);
 
-                DB::table('documento_entidad_re')->insert([
-                    'id_entidad'    => $data->cliente->id,
-                    'id_documento'  => $documento
+                DB::table('documento')->where(['id' => $documento])->update([
+                    'id_entidad'    => $data->cliente->id
                 ]);
             } else {
                 # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
@@ -2111,9 +2107,8 @@ class SoporteController extends Controller
                     'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
                 ]);
 
-                DB::table('documento_entidad_re')->insert([
-                    'id_entidad'    => $existe_cliente[0]->id,
-                    'id_documento'  => $documento
+                DB::table('documento')->where(['id' => $documento])->update([
+                    'id_entidad'    => $existe_cliente[0]->id
                 ]);
             }
         } else {
@@ -2125,9 +2120,8 @@ class SoporteController extends Controller
                 'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
             ]);
 
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad'    => $data->cliente->id,
-                'id_documento'  => $documento
+            DB::table('documento')->where(['id' => $documento])->update([
+                'id_entidad'    => $data->cliente->id
             ]);
         }
 
@@ -2495,8 +2489,7 @@ class SoporteController extends Controller
                         'referencia'        => 'N/A'
                     ]);
 
-                    DB::table('documento_entidad_re')->insert([
-                        'id_documento'  => $documento_pedido,
+                    DB::table('documento')->where(['id' => $documento_pedido])->update([
                         'id_entidad'    => $entidad_pedido
                     ]);
 
@@ -2802,9 +2795,8 @@ class SoporteController extends Controller
                     'referencia' => 'N/A'
                 ]);
 
-                DB::table('documento_entidad_re')->insert([
-                    'id_documento'  => $documento_pedido,
-                    'id_entidad'    => $entidad_pedido
+                DB::table('documento')->where(['id' => $documento_pedido])->update([
+                    'id_entidad' => $entidad_pedido
                 ]);
 
                 DB::table('movimiento')->insertGetId([
@@ -3098,8 +3090,7 @@ class SoporteController extends Controller
                             INNER JOIN documento_garantia_causa ON documento_garantia.id_causa = documento_garantia_causa.id
                             INNER JOIN documento_garantia_fase ON documento_garantia.id_fase = documento_garantia_fase.id
                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
@@ -3320,8 +3311,7 @@ class SoporteController extends Controller
                                                 documento_entidad.correo
                                             FROM documento_garantia
                                             INNER JOIN documento_garantia_re ON documento_garantia.id = documento_garantia_re.id_garantia
-                                            INNER JOIN documento_entidad_re ON documento_garantia_re.id_documento = documento_entidad_re.id_documento
-                                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                             WHERE documento_garantia.id = " . $documento . "");
 
         if (empty($informacion_garantia)) {

@@ -1035,6 +1035,7 @@ class LinioService
             'id_modelo_proveedor' => $venta_data->Proveedor,
             'no_venta' => $venta_data->OrderNumber,
             'referencia' => "N/A",
+            'id_entidad' => $entidad,
             'observacion' => $venta_data->NationalRegistrationNumber,
             'info_extra' => "N/A",
             'fulfillment' => $venta_data->fulfillment,
@@ -1064,11 +1065,6 @@ class LinioService
                 'seguimiento' => $venta_data->Seguimiento
             ]);
         }
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad,
-            'id_documento' => $documento
-        ]);
 
         DB::table('documento_direccion')->insert([
             'id_documento' => $documento,
@@ -1224,10 +1220,10 @@ class LinioService
                         /* Crear documento de compra */
                         $documento_data = DB::table("documento")->find($documento);
 
-                        $entidad_documento = DB::table("documento_entidad_re")
-                            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+                        $entidad_documento = DB::table("documento")
+                            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
                             ->select("documento_entidad.*")
-                            ->where("documento_entidad_re.id_documento", $documento_data->id)
+                            ->where("documento.id", $documento_data->id)
                             ->first();
 
                         $documento_compra = DB::table('documento')->insertGetId([
@@ -1240,6 +1236,7 @@ class LinioService
                             'id_moneda' => $documento_data->id_moneda,
                             'id_paqueteria' => $documento_data->id_paqueteria,
                             'id_fase' => 94,
+                            'id_entidad' => $entidad_id,
                             'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
                             'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
                             'factura_folio' => "N/A",
@@ -1263,7 +1260,6 @@ class LinioService
 
                         if (empty($existe_entidad)) {
                             $entidad_id = DB::table('documento_entidad')->insertGetId([
-                                'id_erp' => 0,
                                 'tipo' => 2,
                                 'razon_social' => $proveedor_btob->razon_social,
                                 'rfc' => $proveedor_btob->rfc,
@@ -1273,11 +1269,6 @@ class LinioService
                         } else {
                             $entidad_id = $existe_entidad->id;
                         }
-
-                        DB::table('documento_entidad_re')->insert([
-                            'id_documento' => $documento_compra,
-                            'id_entidad' => $entidad_id
-                        ]);
 
                         $productos_data = DB::table("movimiento")
                             ->where("id_documento", $documento_data->id)

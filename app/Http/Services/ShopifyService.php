@@ -222,6 +222,7 @@ class ShopifyService
             'id_paqueteria' => $venta_data->paqueteria_id ?? 1, //omg 13
             'id_fase' => 1, //1 Pedido
             'id_modelo_proveedor' => 0, //null
+            'id_entidad' => $entidad,
             'no_venta' => $venta_data->id ?? 0, //order_number
             'referencia' => $venta_data->order_number, //id
             'observacion' => "Pedido Importado " . $marketplace_area . " V3", //null
@@ -247,11 +248,6 @@ class ShopifyService
             'id_documento' => $documento,
             'id_usuario' => 1,
             'seguimiento' => "<h2>PEDIDO IMPORTADO AUTOMATICAMENTE</h2>"
-        ]);
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad,
-            'id_documento' => $documento
         ]);
 
         $estado = DB::table('estados')->where('name', $venta_data->shipping_address->province)->first();
@@ -337,7 +333,7 @@ class ShopifyService
             'id_clasificacion' => 0,
             'tipo' => 1,
             'origen_importe' => 0,
-            'destino_importe' => $total_pago - $venta_data->total_discounts, //puede ser total_price
+            'destino_importe' => $total_pago - $venta_data->total_price, //puede ser total_price
             'folio' => "",
             'entidad_origen' => 1,
             'origen_entidad' => 'XAXX010101000',

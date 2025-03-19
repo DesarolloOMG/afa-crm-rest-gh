@@ -929,6 +929,7 @@ class MercadolibreService
             'id_fase' => $venta->is_buffered ? 7 : ($venta->is_creating_route ? 1 : ($venta->is_manufacturing ? 1 : (property_exists($venta, 'fase') ? $venta->fase : 1))),
             'id_modelo_proveedor' => $venta->proveedor,
             'no_venta' => $venta->id,
+            'id_entidad' => $entidad,
             'referencia' => $referencia,
             'observacion' => $venta->buyer->nickname,
             'info_extra' => json_encode($venta->shipping),
@@ -981,11 +982,6 @@ class MercadolibreService
                 'seguimiento' => "<p>Se manda a fase de pedido por falta de guía. consulte el marketplace</p>"
             ]);
         }
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad,
-            'id_documento' => $documento
-        ]);
 
         try {
             $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
@@ -1180,34 +1176,11 @@ class MercadolibreService
                         /* Crear documento de compra */
                         $documento_data = DB::table("documento")->find($documento);
 
-                        $entidad_documento = DB::table("documento_entidad_re")
-                            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
+                        $entidad_documento = DB::table("documento")
+                            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
                             ->select("documento_entidad.*")
-                            ->where("documento_entidad_re.id_documento", $documento_data->id)
+                            ->where("documento.id", $documento_data->id)
                             ->first();
-
-                        $documento_compra = DB::table('documento')->insertGetId([
-                            'id_tipo' => 1,
-                            'id_almacen_principal_empresa' => $documento_data->id_almacen_principal_empresa,
-                            'id_periodo' => $documento_data->id_periodo,
-                            'id_cfdi' => $documento_data->id_cfdi,
-                            'id_marketplace_area' => $documento_data->id_marketplace_area,
-                            'id_usuario' => $auth->id,
-                            'id_moneda' => $documento_data->id_moneda,
-                            'id_paqueteria' => $documento_data->id_paqueteria,
-                            'id_fase' => 94,
-                            'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
-                            'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
-                            'factura_folio' => "N/A",
-                            'tipo_cambio' => $documento_data->tipo_cambio,
-                            'referencia' => "Compra creada a partir de la venta con el ID " . $documento_data->id,
-                            'observacion' => "N/A",
-                            'info_extra' => 'N/A',
-                            'comentario' => "03",
-                            'pedimento' => "N/A",
-                            'uuid' => "N/A",
-                            'expired_at' => date("Y-m-d H:i:s")
-                        ]);
 
                         # Existe entidad como proveedor
                         $proveedor_btob = DB::table("modelo_proveedor")->find($documento_data->id_modelo_proveedor);
@@ -1219,7 +1192,6 @@ class MercadolibreService
 
                         if (empty($existe_entidad)) {
                             $entidad_id = DB::table('documento_entidad')->insertGetId([
-                                'id_erp' => 0,
                                 'tipo' => 2,
                                 'razon_social' => $proveedor_btob->razon_social,
                                 'rfc' => $proveedor_btob->rfc,
@@ -1230,9 +1202,28 @@ class MercadolibreService
                             $entidad_id = $existe_entidad->id;
                         }
 
-                        DB::table('documento_entidad_re')->insert([
-                            'id_documento' => $documento_compra,
-                            'id_entidad' => $entidad_id
+                        $documento_compra = DB::table('documento')->insertGetId([
+                            'id_tipo' => 1,
+                            'id_almacen_principal_empresa' => $documento_data->id_almacen_principal_empresa,
+                            'id_periodo' => $documento_data->id_periodo,
+                            'id_cfdi' => $documento_data->id_cfdi,
+                            'id_marketplace_area' => $documento_data->id_marketplace_area,
+                            'id_usuario' => $auth->id,
+                            'id_moneda' => $documento_data->id_moneda,
+                            'id_paqueteria' => $documento_data->id_paqueteria,
+                            'id_fase' => 94,
+                            'id_entidad' => $entidad_id,
+                            'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
+                            'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
+                            'factura_folio' => "N/A",
+                            'tipo_cambio' => $documento_data->tipo_cambio,
+                            'referencia' => "Compra creada a partir de la venta con el ID " . $documento_data->id,
+                            'observacion' => "N/A",
+                            'info_extra' => 'N/A',
+                            'comentario' => "03",
+                            'pedimento' => "N/A",
+                            'uuid' => "N/A",
+                            'expired_at' => date("Y-m-d H:i:s")
                         ]);
 
                         $productos_data = DB::table("movimiento")

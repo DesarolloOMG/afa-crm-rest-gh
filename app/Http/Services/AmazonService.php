@@ -211,6 +211,7 @@ class AmazonService
                     'id_fase' => $venta->fulfillment ? 6 : 1,
                     'no_venta' => $venta->venta,
                     'tipo_cambio' => 1,
+                    'id_entidad' => $entidad,
                     'referencia' => $venta->referencia,
                     'observacion' => $venta->referencia,
                     'info_extra' => $venta->asin,
@@ -228,12 +229,7 @@ class AmazonService
                     'id_usuario'    => 1,
                     'seguimiento'   => "<p>VENTA IMPORTADA MASIVAMENTE</p"
                 ]);
-
-                DB::table('documento_entidad_re')->insert([
-                    'id_entidad'    => $entidad,
-                    'id_documento'  => $documento
-                ]);
-
+                
                 DB::table('documento_direccion')->insert([
                     'id_documento'      => $documento,
                     'id_direccion_pro'  => ".",

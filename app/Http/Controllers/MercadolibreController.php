@@ -603,8 +603,7 @@ class MercadolibreController extends Controller{
         $documentos = DB::select("SELECT
                                         documento.id
                                     FROM documento
-                                    INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                    INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                    INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                     WHERE documento.factura_enviada = 0
                                     AND documento_entidad.rfc != 'XAXX010101000'
                                     AND documento.id_tipo = 2

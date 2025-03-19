@@ -101,6 +101,7 @@ class DeveloperController extends Controller
         try {
             DB::beginTransaction();
 
+            //Cambiar a publico general de la nueva empresa
             $documento = DB::table('documento')->insertGetId([
                 'id' => $venta->folio,
                 'id_cfdi' => $uso_cfdi->id,
@@ -117,6 +118,7 @@ class DeveloperController extends Controller
                 'observacion' => "Pedido Importado Backup",
                 'documento_extra' => $venta->documentoid,
                 'fulfillment' => 1,
+                'id_entidad' => 994414,
                 'uuid' => $venta->uuid,
                 'mkt_publicacion' => "N/A",
                 'mkt_total' => 0,
@@ -126,11 +128,6 @@ class DeveloperController extends Controller
                 'mkt_shipping_total' => 0,
                 'mkt_created_at' => $venta->fecha_timbrada,
                 'started_at' => date('Y-m-d H:i:s'),
-            ]);
-
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => 994414,
-                'id_documento' => $documento
             ]);
 
             $direccion = DB::table('documento_direccion')->insert([
@@ -215,6 +212,7 @@ class DeveloperController extends Controller
 
             $uso_cfdi = DB::table('documento_uso_cfdi')->where('codigo', $venta->uso_cfdi)->first();
 
+            //Cambiar por publico general de la nueva empresa
             $documento = DB::table('documento')->insertGetId([
                 'id' => $venta->pedido,
                 'id_cfdi' => $uso_cfdi->id,
@@ -231,6 +229,7 @@ class DeveloperController extends Controller
                 'observacion' => "Pedido Importado Backup", //null
                 'documento_extra' => $venta->id ?? "N/A", //null
                 'fulfillment' => 0, //0
+                'id_entidad' => 737184,
                 'comentario' => $venta->id ?? 0, //id
                 'mkt_publicacion' => "N/A", //null
                 'mkt_total' => $venta->total ?? 0, //current_total_price
@@ -240,12 +239,6 @@ class DeveloperController extends Controller
                 'mkt_created_at' => $venta->fecha ?? 0, //created_at
                 'mkt_user_total' => 0, //0
                 'started_at' => date('Y-m-d H:i:s'),
-            ]);
-
-            //Esto se puede cambiar por la entidad de publico general para no ir crenado nuevas
-            DB::table('documento_entidad_re')->insert([
-                'id_entidad' => 737184,
-                'id_documento' => $documento
             ]);
 
             $direccion = DB::table('documento_direccion')->insert([ //shipping_address
@@ -751,7 +744,7 @@ class DeveloperController extends Controller
 
     public function actualizarSeriePedido(Request $request)
     {
-        $documentoCompraId = $request->input("documento"); // El ID del documento de compra que te pasan
+        $documentoCompraId = $request->input("documento"); // Documento de compra proporcionado en el request
 
         // Paso 1: Obtener las series del documento de compra
         $seriesCompra = DB::table('movimiento_producto as mp')
@@ -760,42 +753,68 @@ class DeveloperController extends Controller
             ->where('m.id_documento', $documentoCompraId)
             ->pluck('mp.id_producto');
 
-        if (empty($seriesCompra)) {
+        if ($seriesCompra->isEmpty()) {
             return response()->json([
                 'code' => 500,
                 'message' => 'El documento no tiene series asignadas.'
             ]);
         }
 
-        // Paso 2: Verificar si las series están en documentos tipo 2, 4, o 11
-        $seriesEnDocumentosEspeciales = DB::table('movimiento_producto as mp')
+        // Paso 2: Obtener el último documento asociado con cada serie
+        $ultimoDocumentoPorSerie = DB::table('movimiento_producto as mp')
             ->join('movimiento as m', 'mp.id_movimiento', '=', 'm.id')
             ->join('documento as d', 'm.id_documento', '=', 'd.id')
-            ->select('mp.id_producto')
+            ->select(
+                'mp.id_producto', // ID del producto (serie)
+                'd.id_tipo',      // Tipo del documento
+                'd.created_at',   // Fecha de creación del documento
+                'd.id as documento_id' // ID del documento
+            )
             ->whereIn('mp.id_producto', $seriesCompra)
-            ->whereIn('d.id_tipo', [2, 4, 11])
-            ->distinct()
-            ->pluck('mp.id_producto');
+            ->orderBy('mp.id_producto') // Ordenar por serie
+            ->orderBy('d.created_at', 'desc') // Ordenar documentos por fecha descendente
+            ->get()
+            ->groupBy('id_producto') // Agrupamos por producto
+            ->map(function ($documentosPorSerie) {
+                return $documentosPorSerie->first(); // Tomar solo el documento más reciente por grupo
+            });
 
-        // Series que no están en documentos tipo 2, 4, o 11
-        $seriesNoEspeciales = $seriesCompra->diff($seriesEnDocumentosEspeciales);
+        // Inicializamos listas para clasificar las series
+        $seriesEspeciales = [];
+        $seriesNoEspeciales = [];
+
+        // Clasificamos las series según el tipo de su último documento
+        foreach ($ultimoDocumentoPorSerie as $ultimoDocumento) {
+            if (in_array($ultimoDocumento->id_tipo, [2, 4, 11])) {
+                $seriesEspeciales[] = $ultimoDocumento->id_producto; // Series en documentos especiales
+            } else {
+                $seriesNoEspeciales[] = $ultimoDocumento->id_producto; // Series en documentos no especiales
+            }
+        }
 
         // Paso 3: Actualizar el estado del producto
         // Actualizar estado a 1 para series no especiales
-        DB::table('producto')
-            ->whereIn('id', $seriesNoEspeciales)
-            ->update(['status' => 1]);
+        if (!empty($seriesNoEspeciales)) {
+            DB::table('producto')
+                ->whereIn('id', $seriesNoEspeciales)
+                ->update(['status' => 1]);
+        }
 
         // Actualizar estado a 0 para series especiales
-        DB::table('producto')
-            ->whereIn('id', $seriesEnDocumentosEspeciales)
-            ->update(['status' => 0]);
+        if (!empty($seriesEspeciales)) {
+            DB::table('producto')
+                ->whereIn('id', $seriesEspeciales)
+                ->update(['status' => 0]);
+        }
 
         return response()->json([
             'code' => 200,
-            'message' => 'Series actualizada correctamente'
+            'message' => 'Series actualizadas correctamente',
+            'series_especiales' => $seriesEspeciales,
+            'series_no_especiales' => $seriesNoEspeciales
         ]);
     }
+
 
     public function actualizar_pedidos_enviados_walmart()
     {
@@ -942,8 +961,11 @@ class DeveloperController extends Controller
         //Se utilizara para validar los documentos repetidos o numeros de venta repetidos
         set_time_limit(0);
 
-        $venta = DocumentoService::crearFactura(1487562, 1,0);
-        dd($venta);
+//        $venta = GeneralService::generarGuiaDocumento(1491894,1);
+//        dd($venta);
+
+        $existencia = DocumentoService::existenciaProducto(198122844265,114);
+        dd($existencia);
     }
 
     private static function existeVenta($venta)
