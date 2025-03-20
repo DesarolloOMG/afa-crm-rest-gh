@@ -9,7 +9,7 @@ return [
             'driver'    => 'mysql',
             'host'      => env('DB_HOST', '201.7.208.7'),
             'port'      => env('DB_PORT', '21227'),
-            'database'  => env('DB_DATABASE', 'crm-core'),
+            'database'  => env('DB_DATABASE', 'crm-afa'),
             'username'  => env('DB_USERNAME', 'afacrm'),
             'password'  => env('DB_PASSWORD', 'rsOp7Ei840F7'),
             'charset'   => 'utf8',

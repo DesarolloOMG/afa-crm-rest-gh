@@ -135,6 +135,6 @@ $app->configure('twilio');
 $app->configure('keys');
 $app->configure('mailgun');
 $app->configure('authy');
-$app->configure('database');
+//$app->configure('database');
 
 return $app;
