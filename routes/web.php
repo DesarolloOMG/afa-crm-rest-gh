@@ -88,21 +88,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->group(['prefix' => 'user'], function () use ($router) {
             $router->get('subnivel-nivel/{userid}', 'DashboardController@subnivel_nivel');
         });
-
-        $router->group(['prefix' => 'ticket'], function () use ($router) {
-            $router->post('data', 'DashboardController@dashboard_ticket_get_data');
-            $router->post('seguimientos', 'DashboardController@dashboard_ticket_get_seguimientos');
-            $router->post('guardar', 'DashboardController@dashboard_ticket_guardar');
-            $router->post('seguimiento', 'DashboardController@dashboard_ticket_seguimiento');
-            $router->post('terminar/{ticket}', 'DashboardController@dashboard_ticket_terminar');
-            $router->post('eliminar/{ticket}', 'DashboardController@dashboard_ticket_eliminar');
-            $router->post('actualizar/{ticket}', 'DashboardController@dashboard_ticket_actualizar');
-            $router->post('abrir/{ticket}', 'DashboardController@dashboard_ticket_abrir');
-        });
-
-        $router->group(['prefix' => 'cliente-proveedor'], function () use ($router) {
-            $router->get('data', 'DashboardController@dashboard_cliente_proveedor_data');
-        });
     });
 
     # Menú personal
@@ -134,16 +119,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
     # Menú general
     $router->group(['prefix' => 'general'], function () use ($router) {
-
-        $router->group(['prefix' => 'ftp'], function () use ($router) {
-            $router->group(['prefix' => 'arome'], function () use ($router) {
-                $router->get('inventario', 'ReporteController@reporte_ftp_arome_inventario');
-            });
-
-            $router->group(['prefix' => 'cliente'], function () use ($router) {
-                $router->get('inventario', 'ReporteController@reporte_ftp_cliente_inventario');
-            });
-        });
         $router->group(['prefix' => 'busqueda'], function () use ($router) {
             $router->group(['prefix' => 'producto'], function () use ($router) {
                 $router->get('data', 'GeneralController@general_busqueda_producto_data');
@@ -151,12 +126,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('costo/{producto}', 'GeneralController@general_busqueda_producto_costo');
                 $router->get('precio/{producto}/{fecha}', 'GeneralController@general_busqueda_producto_precio');
                 $router->post('existencia', 'GeneralController@general_busqueda_producto_existencia');
-
-                $router->group(['prefix' => 'b2b'], function () use ($router) {
-                    $router->get('data', 'GeneralController@general_busqueda_producto_b2b_data');
-                    $router->post('productos', 'GeneralController@general_busqueda_producto_b2b_productos');
-                    $router->post('actualizar', 'GeneralController@general_busqueda_producto_b2b_actualizar');
-                });
             });
 
             $router->group(['prefix' => 'venta'], function () use ($router) {
@@ -176,137 +145,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->group(['prefix' => 'serie'], function () use ($router) {
                 $router->get('{serie}', 'GeneralController@general_busqueda_serie');
                 $router->post('imprimir', 'GeneralController@general_busqueda_serie_imprimir');
-            });
-        });
-
-        $router->group(['prefix' => 'reporte'], function () use ($router) {
-
-            #Reportes HP
-            $router->group(['prefix' => 'hp'], function () use ($router) {
-                $router->post('ventasReporteHp', 'GeneralController@ventasReporteHp');
-                $router->post('comprasReporteHp', 'GeneralController@comprasReporteHp');
-            });
-
-            #Reportes NDC
-            $router->post('notas-autorizadas', 'GeneralController@general_reporte_notas_autorizadas');
-
-            #Reporte de ventas
-            $router->group(['prefix' => 'venta'], function () use ($router) {
-                $router->get('data', 'GeneralController@general_reporte_venta_data');
-                $router->get('diario/{fecha_inicial}/{fecha_final}', 'GeneralController@general_reporte_venta_diario');
-                $router->post('historial', 'GeneralController@general_reporte_venta_historial');
-
-                $router->post('mercadolibre', 'GeneralController@general_reporte_venta_mercadolibre');
-                $router->post('amazon', 'GeneralController@general_reporte_venta_amazon');
-                $router->post('huawei', 'GeneralController@general_reporte_venta_huawei');
-                $router->post('devolucion', 'GeneralController@general_reporte_venta_devolucion');
-
-                $router->group(['prefix' => 'mercadolibre'], function () use ($router) {
-                    $router->post('venta', 'GeneralController@general_reporte_venta_mercadolibre_venta');
-                    $router->post('estatus', 'GeneralController@general_reporte_venta_mercadolibre_estatus');
-                    $router->post('estatus-cancelados', 'GeneralController@general_reporte_venta_mercadolibre_estatus_cancelados');
-                    $router->post('crm', 'GeneralController@general_reporte_venta_mercadolibre_crm');
-                    $router->post('publicacion', 'GeneralController@general_reporte_venta_mercadolibre_publicacion');
-                    $router->post('catalogo', 'GeneralController@general_reporte_venta_mercadolibre_catalogo');
-                    $router->post('ventas-crm', 'GeneralController@general_reporte_venta_mercadolibre_ventas_crm');
-                    $router->post('ventas-ml', 'GeneralController@general_reporte_venta_mercadolibre_ventas_ml');
-                    $router->post('comparacion', 'GeneralController@general_reporte_venta_mercadolibre_comparacion');
-                    $router->post('revision', 'GeneralController@general_reporte_venta_mercadolibre_revision');
-                    $router->post('revision-canceladas', 'GeneralController@general_reporte_venta_mercadolibre_revision_canceladas');
-                });
-
-                $router->group(['prefix' => 'api'], function () use ($router) {
-                    $router->post('credenciales', 'ReporteController@general_reporte_venta_api_credenciales');
-                });
-
-                $router->group(['prefix' => 'producto'], function () use ($router) {
-                    $router->post('precio', 'GeneralController@general_reporte_venta_producto_precio');
-                    $router->post('utilidad', 'GeneralController@general_reporte_venta_producto_utilidad');
-
-                    $router->group(['prefix' => 'categoria'], function () use ($router) {
-                        $router->post('', 'GeneralController@general_reporte_venta_producto_categoria');
-                        $router->get('data', 'GeneralController@general_reporte_venta_producto_categoria_data');
-                    });
-                });
-
-                $router->group(['prefix' => 'empresarial'], function () use ($router) {
-                    $router->get('detalle/{empresa}/{modulo}/{fecha_inicial}/{fecha_final}', 'GeneralController@general_reporte_venta_empresarial_detalle');
-                });
-            });
-
-            #Reporte de procesos en logistica
-            $router->group(['prefix' => 'logistica'], function () use ($router) {
-                $router->group(['prefix' => 'guia'], function () use ($router) {
-                    $router->get('data/{fecha_inicial}/{fecha_final}', 'GeneralController@general_reporte_logistica_guia_data');
-                    $router->post('decode', 'GeneralController@general_reporte_logistica_guia_decode');
-                });
-
-                $router->group(['prefix' => 'manifiesto'], function () use ($router) {
-                    $router->get('generar/{paqueteria}/{fecha}', 'GeneralController@general_reporte_logistica_manifiesto_generar');
-                });
-
-                $router->group(['prefix' => 'marketplace'], function () use ($router) {
-                    $router->get('{fecha_inicial}/{fecha_final}', 'GeneralController@general_reporte_logistica_marketplace');
-                });
-            });
-
-            #Reporte de procesos en logistica
-            $router->group(['prefix' => 'contabilidad'], function () use ($router) {
-                $router->post('recibo_almacen', 'ReporteController@reporte_contabilidad_recibo_almacen');
-                $router->get('recibo_almacen_futuretec', 'ReporteController@reporte_contabilidad_recibo_almacen_futuretec');
-                $router->post('refacturacion', 'GeneralController@general_reporte_contabilidad_refacturacion');
-                $router->post('factura-sin-timbre', 'GeneralController@general_reporte_contabilidad_factura_sin_timbre');
-                $router->post('costo-sobre-venta', 'GeneralController@general_reporte_contabilidad_costo_sobre_venta');
-            });
-
-            $router->get('ventas_canceladas', 'ReporteController@ventas_canceladas');
-
-            #Reporte para subir archivos a FTP
-            $router->group(['prefix' => 'administracion'], function () use ($router) {
-                $router->group(['prefix' => 'margen'], function () use ($router) {
-                    $router->get('data', 'GeneralController@general_reporte_administracion_margen_data');
-                    $router->get('cliente/{criterio}', 'GeneralController@general_reporte_administracion_margen_cliente');
-                    $router->get('cliente-productos/{cliente_id}', 'GeneralController@general_reporte_adminsitracion_cliente_productos');
-                    $router->post('guardar', 'GeneralController@general_reporte_administracion_margen_guardar');
-
-                    $router->group(['prefix' => 'producto'], function () use ($router) {
-                        $router->get('data/{criterio}', 'GeneralController@general_reporte_administracion_margen_producto_data');
-                        $router->get('borrar/{producto}', 'GeneralController@general_reporte_administracion_margen_producto_borrar');
-                        $router->get('cambiar/{producto}/{precio}', 'GeneralController@general_reporte_administracion_margen_producto_cambiar');
-                        $router->post('guardar', 'GeneralController@general_reporte_administracion_margen_producto_guardar');
-                    });
-                });
-            });
-
-            # Reportes relacionados a la compra
-            $router->group(['prefix' => 'compra'], function () use ($router) {
-                $router->post('producto', 'GeneralController@general_reporte_compra_producto');
-            });
-
-            $router->group(['prefix' => 'orden-compra'], function () use ($router) {
-                $router->post('producto-transito', 'GeneralController@general_orden_compra_producto_transito');
-                $router->post('recepciones', 'GeneralController@general_orden_compra_recepciones');
-            });
-
-            $router->group(['prefix' => 'producto'], function () use ($router) {
-                $router->get('antiguedad/{almacen}', 'GeneralController@general_reporte_producto_antiguedad');
-                $router->post('top-venta', 'GeneralController@general_reporte_producto_top_venta');
-                $router->post('costo-precio-promedio', 'GeneralController@general_reporte_producto_costo_precio_promedio');
-                $router->get('caducidad/{disponibles}', 'GeneralController@general_reporte_producto_caducidad');
-
-                $router->group(['prefix' => 'incidencia'], function () use ($router) {
-                    $router->post('', 'GeneralController@general_reporte_producto_incidencia');
-                    $router->post('detalle', 'GeneralController@general_reporte_producto_incidencia_detalle');
-                });
-
-                $router->group(['prefix' => 'btob'], function () use ($router) {
-                    $router->post('reporte', 'GeneralController@general_reporte_producto_btob_reporte');
-                });
-            });
-
-            $router->group(['prefix' => 'nota-credito'], function () use ($router) {
-                $router->get('data', 'GeneralController@general_reporte_nota_credito_data');
-                $router->post('reporte', 'GeneralController@general_reporte_nota_credito_reporte');
             });
         });
 
@@ -543,13 +381,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('pretransferencia', 'VentaController@venta_publicacion_pretransferencia');
         });
 
-        $router->group(['prefix' => 'promocion'], function () use ($router) {
-            $router->get('empresa', 'VentaController@venta_promocion_empresa');
-            $router->get('data/{fecha_inicial}/{fecha_final}', 'VentaController@venta_promocion_data');
-            $router->post('guardar', 'VentaController@venta_promocion_guardar');
-            $router->get('eliminar/{promocion_id}', 'VentaController@venta_promocion_eliminar');
-        });
-
         $router->group(['prefix' => 'externo'], function () use ($router) {
             $router->post('crear', 'ExternoController@venta_externo_crear');
         });
@@ -600,15 +431,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('validar-ventas-data', 'VentaController@venta_mercadolibre_validar_ventas_data');
         });
 
-        $router->group(['prefix' => 'linio'], function () use ($router) {
-            $router->group(['prefix' => 'publicaciones'], function () use ($router) {
-                $router->get('data', 'VentaController@venta_linio_publicaciones_data');
-                $router->post('guardar', 'VentaController@venta_linio_publicaciones_guardar');
-            });
-
-            $router->post('importar-ventas', 'VentaController@venta_linio_importar_ventas');
-        });
-
         $router->group(['prefix' => 'amazon'], function () use ($router) {
             $router->group(['prefix' => 'publicaciones'], function () use ($router) {
                 $router->get('data', 'VentaController@venta_amazon_publicaciones_data');
@@ -638,11 +460,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
     # Menú soporte
     $router->group(['prefix' => 'soporte'], function () use ($router) {
-        $router->group(['prefix' => 'revision'], function () use ($router) {
-            $router->get('data', 'SoporteController@soporte_revision_data');
-            $router->post('guardar', 'SoporteController@soporte_revision_guardar');
-        });
-
         $router->group(['prefix' => 'garantia-devolucion'], function () use ($router) {
             $router->get('data', 'SoporteController@soporte_garantia_devolucion_data');
             $router->get('venta/{venta}', 'SoporteController@soporte_garantia_devolucion_venta');
@@ -832,26 +649,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('documentos/{fase}', 'AlmacenController@almacen_pretransferencia_get_documentos');
         });
 
-        $router->group(['prefix' => 'prestamo'], function () use ($router) {
-            $router->get('data', 'AlmacenController@almacen_prestamo_data');
-            $router->post('crear', 'AlmacenController@almacen_prestamo_crear');
-
-            $router->group(['prefix' => 'generar'], function () use ($router) {
-                $router->post('', 'AlmacenController@almacen_prestamo_generar'); # Todos las url que son crear deben ir así
-                $router->get('data', 'AlmacenController@almacen_prestamo_generar_data');
-            });
-
-            $router->group(['prefix' => 'regresar'], function () use ($router) {
-                $router->get('data', 'AlmacenController@almacen_prestamo_regresar_data');
-                $router->post('guardar', 'AlmacenController@almacen_prestamo_regresar_guardar');
-            });
-
-            $router->group(['prefix' => 'historial'], function () use ($router) {
-                $router->get('data/{fecha_inicial}/{fecha_final}', 'AlmacenController@almacen_prestamo_historial_data');
-                $router->post('guardar', 'AlmacenController@almacen_prestamo_historial_guardar');
-            });
-        });
-
         $router->group(['prefix' => 'etiqueta'], function () use ($router) {
             $router->post('', 'AlmacenController@almacen_etiqueta');
             $router->get('data', 'AlmacenController@almacen_etiqueta_get_data');
@@ -942,10 +739,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('guardar', 'ContabilidadController@contabilidad_pagos_guardar');
         });
 
-        $router->group(['prefix' => 'linio'], function () use ($router) {
-            $router->post('guardar', 'ContabilidadController@contabilidad_linio_guardar');
-        });
-
         $router->group(['prefix' => 'facturas'], function () use ($router) {
             $router->group(['prefix' => 'pendiente'], function () use ($router) {
                 $router->get('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
@@ -1022,7 +815,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
         $router->group(['prefix' => 'globalizar'], function () use ($router) {
             $router->post('data', 'ContabilidadController@contabilidad_globalizar_data');
-            $router->post('linio', 'ContabilidadController@contabilidad_globalizar_linio');
             $router->post('excel', 'ContabilidadController@contabilidad_globalizar_excel');
         });
 
@@ -1086,12 +878,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'rawinfo'], function () use ($router) {
-
-
-        $router->group(['prefix' => 'developer'], function () use ($router) {
-            $router->get('actualizarUuidCrm', 'DeveloperController@rawactualizarUuidCrm');
-        });
-
         $router->group(['prefix' => 'mercadolibre'], function () use ($router) {
             $router->group(['prefix' => 'pseudonimo'], function () use ($router) {
                 $router->group(['middleware' => 'firewall'], function () use ($router) {
@@ -1133,14 +919,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                     $router->get('venta/{venta}', 'RawInfoController@rawinfo_amazon_appid_venta');
                 });
             });
-        });
-
-        $router->group(['prefix' => 'linio'], function () use ($router) {
-            $router->get('importar-ventas/{marketplace_id}/{tipo_importacion}', 'LinioController@rawinfo_linio_importar_ventas');
-            $router->get('validar-ventas', 'LinioController@rawinfo_linio_validar_ventas');
-            $router->get('validar-ventas-canceladas/{marketplace_id}', 'LinioController@rawinfo_linio_validar_ventas_canceladas');
-            $router->get('informacion-venta/{venta}/{marketplace_id}/{status_venta}', 'LinioController@rawinfo_linio_informacion_venta');
-            $router->get('informacion-venta-id/{venta}/{marketplace_id}', 'LinioController@rawinfo_linio_informacion_venta_id');
         });
 
         $router->get('productos', 'GeneralController@rawinfo_productos');
@@ -1197,90 +975,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             return response()->json([str_random(50)]);
         });
     });
-
-    $router->group(['prefix' => 'b2b'], function () use ($router) {
-        $router->get('data', 'B2BController@b2b_get_proveedores');
-        $router->post('crear', 'B2BController@b2b_crear_proveedor');
-        $router->post('editar', 'B2BController@b2b_editar_proveedor');
-        $router->get('eliminar/{proveedor}', 'B2BController@b2b_eliminar_proveedor');
-
-        $router->post('importar', 'B2BController@b2b_importar_productos');
-        $router->post('actualizar', 'B2BController@b2b_actualizar_productos');
-
-        $router->post('importar/excel', 'B2BController@b2b_importar_productos_excel');
-        $router->post('actualizar/excel', 'B2BController@b2b_actualizar_productos_excel');
-
-        $router->group(['prefix' => 'productos'], function () use ($router) {
-            $router->post('data', 'B2BController@b2b_productos_data');
-            $router->post('guardar', 'B2BController@b2b_productos_guardar');
-        });
-    });
-
-    $router->group(['prefix' => 'developer'], function () use ($router) {
-        $router->post('repararNDC', 'DeveloperController@repararNDC');
-        $router->post('repararNDCVentas', 'DeveloperController@repararNDCVentas');
-    });
-});
-
-$router->group(['prefix' => 'developer'], function () use ($router) {
-    $router->post('borrar/pretransferencia', 'DeveloperController@pretransferencias');
-    $router->post('recepciones', 'DeveloperController@recepciones');
-    $router->post('inventarioinicial', 'DeveloperController@inventarioinicial');
-    $router->get('recostear', 'DeveloperController@recostear');
-    $router->get('actualizarPedido', 'DeveloperController@actualizarPedido');
-    $router->get('pedido/{id}', 'DeveloperController@getPedido');
-    $router->get('ventacomercial/{documento}', 'DeveloperController@ventacomercial');
-    $router->get('movimientocomercial/{documento}', 'DeveloperController@movimientoComercial');
-    $router->get('reporte', 'DeveloperController@reporte');
-    $router->post('reporteinventario', 'DeveloperController@reporteinventario');
-    $router->get('actualizarInventariosAlmacen', 'DeveloperController@actualizarInventariosAlmacen');
-    $router->post('conciliar', 'DeveloperController@conciliar');
-    $router->post('confirmar-authy', 'DeveloperController@confirmar_authy');
-    $router->post('confirmar-authy-cce', 'DeveloperController@confirmar_authy_cce');
-    $router->get('series/{serie}', 'DeveloperController@getSeries');
-    $router->post('getWalmartData', 'DeveloperController@getWalmartData');
-    $router->post('getWalmartData2', 'DeveloperController@getWalmartData2');
-    $router->get('buscarWalmartVenta/{data}', 'DeveloperController@buscarWalmartVenta');
-    $router->get('buscarWalmartPedido/{data}', 'DeveloperController@buscarWalmartPedido');
-    $router->post('actualizarWalmart', 'DeveloperController@actualizarWalmart');
-    $router->get('testsAlexget', 'DeveloperController@testsAlexget');
-    $router->post('testsAlexpost', 'DeveloperController@testsAlexpost');
-    $router->get('testAlexExtra', 'DeveloperController@testAlexExtra');
-    $router->get('testAlexData', 'DeveloperController@testAlexData');
-    $router->post('conseguirLinio', 'DeveloperController@conseguirLinio');
-    $router->get('imprimirPicking', 'DeveloperController@imprimirPicking');
-    $router->post('getDuplicadosData', 'DeveloperController@getDuplicadosData');
-    $router->post('getDuplicados', 'DeveloperController@getDuplicados');
-    $router->post('enviarNotificaciones', 'DeveloperController@enviarNotificaciones');
-    $router->get('getUsuariosNotificaciones', 'DeveloperController@getUsuariosNotificaciones');
-    $router->get('descargarReporteML', 'DeveloperController@descargarReporteML');
-    $router->get('descargarReporteSD', 'DeveloperController@descargarReporteSD');
-    $router->get('testApis', 'DeveloperController@testApiWalmart');
-    $router->post('copiarSeries', 'DeveloperController@copiar_series');
-    $router->get('actPedidoEnviadoWalmart', 'DeveloperController@actualizar_pedidos_enviados_walmart');
-    $router->get('agregarInventarioCRM', 'DeveloperController@agregarInventarioCRM');
-    $router->get('importarPedidosComercial', 'DeveloperController@importVentasComercial');
-    $router->get('importarMovComercial', 'DeveloperController@importMovimientosComercial');
-    $router->get('actPedidosComercial', 'DeveloperController@actualizarVentasDeComercial');
-    $router->get('importarProductosML', 'DeveloperController@importarProductosML');
-    $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
-    $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
-    $router->get('seriesDu', 'DeveloperController@quitarSeriesDuplicadas');
-    $router->get('getAlmacenes', 'DeveloperController@getAlmacenes');
-    $router->post('testReporteHp', 'DeveloperController@testReporteHp');
-    $router->post('getTraspasoNDC', 'DeveloperController@getTraspasoNDC');
-    $router->post('recuperarPedidos', 'DeveloperController@recuperarPedidos');
-    $router->post('asignarSeriePedido', 'DeveloperController@asignarSeriePedido');
-    $router->post('actSeriePedido', 'DeveloperController@actualizarSeriePedido');
-    $router->post('descargarExcelImportacionComercial', 'DeveloperController@descargarExcelImportacionComercial');
-    $router->get('barridoStatus/{anio}/{mes}', 'DeveloperController@barridoStatus');
-    $router->get('barridoStatusfase/{anio}/{info}', 'DeveloperController@barridoStatusfase');
-    $router->get('cambiarModuloComercial/{documento}', 'DeveloperController@cambiarModuloComercial');
-
-
-    //!APIS
-    $router->get('apiClaro/{option}', 'DeveloperController@apiClaro');
-    $router->get('apiClaroV2/{option}', 'DeveloperController@apiClaroV2');
 });
 
 $router->group(['prefix' => 'estado'], function () use ($router) {
