@@ -628,99 +628,53 @@ class MercadolibreService
                     # La publicacion es dropshipping, y no se checa existencias 
                     if ($existe_publicacion->id_proveedor == 0) {
                         foreach ($productos_publicacion as $producto) {
+                            // 1) Cálculo de precio y cantidad
                             $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
                             $producto->cantidad = $producto->cantidad * $item->quantity;
 
-                            $producto_sku = DB::select("SELECT sku FROM modelo WHERE id = " . $producto->id_modelo . "")[0]->sku;
+                            // 2) Obtener el SKU del producto (de la tabla "modelo")
+                            $producto_sku = DB::select("SELECT sku FROM modelo WHERE id = ?", [$producto->id_modelo])[0]->sku;
 
-                            $existencia = DocumentoService::existenciaProducto($producto_sku, $pack->venta_principal->almacen);
-                            $empresa_info = DB::table("empresa_almacen")->where("id", $pack->venta_principal->almacen)->first();
-                            $empresa_bd = DB::table("empresa")->where("id", $empresa_info->id_empresa)->first();
+                            // 3) Llamar a la función que envuelve la llamada al SP
+                            $existencia = InventarioService::obtenerExistencia($producto_sku, $pack->venta_principal->almacen);
 
-                            $pendientes_bo = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto_sku . "'
-                                                    AND empresa.bd = " . $empresa_bd->bd . "
-                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.id_fase = 1")[0]->cantidad;
-
-                            $pendientes_surtir = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto_sku . "'
-                                                    AND empresa.bd = " . $empresa_bd->bd . "
-                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.anticipada = 0
-                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
-
-                            $pendientes_importar = DB::select("SELECT
-                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                FROM documento
-                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                WHERE modelo.sku = '" . $producto_sku . "'
-                                                AND empresa.bd = " . $empresa_bd->bd . "
-                                                AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                AND documento.id_tipo = 2
-                                                AND documento.status = 1
-                                                AND documento.anticipada = 0
-                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
-
-                            $pendientes_pretransferencia = DB::select("SELECT
-                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
-                                                            FROM documento
-                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
-                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                            WHERE modelo.sku = '" . $producto_sku . "'
-                                                            AND empresa.bd = " . $empresa_bd->bd . "
-                                                            AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                            AND documento.id_tipo = 9
-                                                            AND documento.status = 1
-                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
-
-
+                            // 4) Verificar si la función retornó error
                             if ($existencia->error) {
                                 $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . "";
+                                $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto "
+                                    . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje;
                                 $pack->venta_principal->fase = 1;
                                 $pack->venta_principal->error = 1;
 
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . " " . PHP_EOL, FILE_APPEND);
+                                file_put_contents(
+                                    "logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log",
+                                    date("H:i:s") . " Error: " . $pack->venta_principal->seguimiento . PHP_EOL,
+                                    FILE_APPEND
+                                );
 
                                 unset($pack->ventas);
-
                                 continue 3;
                             }
 
-                            $existencia_real = $existencia->existencia - $pendientes_bo - $pendientes_surtir - $pendientes_importar - $pendientes_pretransferencia;
+                            // 5) Se obtiene la existencia final (stock_disponible) ya calculada en el SP
+                            $existencia_real = (int) $existencia->stock_disponible;
 
-                            if ((int) $existencia->existencia < (int) $producto->cantidad) {
+                            // 6) Verificar si la existencia es suficiente para la cantidad requerida
+                            if ($existencia_real < (int) $producto->cantidad) {
                                 $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . "";
+                                $pack->venta_principal->seguimiento = "No hay suficiente existencia para procesar la venta "
+                                    . $venta->id . " en el almacén " . $pack->venta_principal->almacen
+                                    . " del producto " . $producto_sku;
                                 $pack->venta_principal->fase = 1;
                                 $pack->venta_principal->error = 1;
 
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . " " . PHP_EOL, FILE_APPEND);
+                                file_put_contents(
+                                    "logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log",
+                                    date("H:i:s") . " Error: " . $pack->venta_principal->seguimiento . PHP_EOL,
+                                    FILE_APPEND
+                                );
 
                                 unset($pack->ventas);
-
                                 continue 3;
                             }
                         }
@@ -1259,13 +1213,14 @@ class MercadolibreService
 
         if ($venta->fase == 6 && $fulfillment) {
             //Aqui ta
-            $factura = DocumentoService::crearFactura($documento, 0, 0);
+//            $factura = DocumentoService::crearFactura($documento, 0, 0);
+            $factura = InventarioService::aplicarMovimiento($documento);
 
             if ($factura->error) {
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
                     'id_usuario' => $usuario,
-                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
+                    'seguimiento' => "<h2>" . $factura->message . "</h2>"
                 ]);
 
                 DB::table('documento')->where(['id' => $documento])->update([

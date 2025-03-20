@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Services\BitacoraService;
 use App\Http\Services\CorreoService;
+use App\Http\Services\InventarioService;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Http\Request;
 use App\Events\PickingEvent;
@@ -836,28 +837,9 @@ class VentaController extends Controller
 
         if ($data->documento->anticipada || $data->documento->fulfillment) {
             //Aqui ta
-            $response = DocumentoService::crearFactura($documento, 0, $data->documento->cce);
+//            $response = DocumentoService::crearFactura($documento, 0, $data->documento->cce);
 
-            //            $movimiento = DB::table('movimiento')->where('id_documento', $documento)->where('id_modelo', 11623)->first();
-            //            $documentoInfo = DB::table('documento')->where('id', $documento)->first();
-            //
-            //            if (!empty($movimiento)) {
-            //                DB::table('modelo_inventario')->insert([
-            //                    'id_modelo' => 11623,
-            //                    'id_documento' => $documento,
-            //                    'id_almacen' => $documentoInfo->id_almacen_principal_empresa,
-            //                    'afecta_costo' => 0,
-            //                    'cantidad' => $movimiento->cantidad,
-            //                    'costo' => $movimiento->precio
-            //                ]);
-            //
-            //                $afecta_inventario = DB::table('modelo_costo')->where('id_modelo', 11623)->first();
-            //                $resta_inventario = $afecta_inventario->stock - $movimiento->cantidad;
-            //
-            //                DB::table('modelo_costo')->where(['id_modelo' => $afecta_inventario->id_modelo])->update([
-            //                    'stock' => $resta_inventario
-            //                ]);
-            //            }
+            $response = InventarioService::aplicarMovimiento($documento);
 
             if ($response->error) {
                 $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento . "");
@@ -1243,7 +1225,7 @@ class VentaController extends Controller
 
         $empresa = $empresa[0];
 
-        $total = DocumentoService::existenciaProducto($producto, $almacen, $empresa->bd);
+        $total = InventarioService::existenciaProducto($producto, $almacen);
 
         if ($total->error) {
             return response()->json([
@@ -1747,7 +1729,8 @@ class VentaController extends Controller
 
             if ($data->documento->fulfillment && !$esta_importado) {
                 //Aqui ta
-                $response = DocumentoService::crearFactura($data->documento->documento, 0, 0);
+//                $response = DocumentoService::crearFactura($data->documento->documento, 0, 0);
+                $response = InventarioService::aplicarMovimiento($data->documento->documento);
 
                 if ($response->error) {
                     DB::table('documento')->where(['id' => $data->documento->documento])->update([
@@ -3236,7 +3219,7 @@ class VentaController extends Controller
 
         foreach ($productos as $producto) {
             if ($producto->id_tipo == 1) {
-                $total = DocumentoService::existenciaProducto($producto->sku, $informacion_documento->id_almacen_principal_empresa);
+                $total = InventarioService::existenciaProducto($producto->sku, $informacion_documento->id_almacen_principal_empresa);
 
                 if ($total->error) {
                     return response()->json([
@@ -3351,28 +3334,7 @@ class VentaController extends Controller
 
         if ($informacion_documento->fulfillment) {
             //Aqui ta
-            $response = DocumentoService::crearFactura($documento, 0, 0);
-
-            //            $movimiento = DB::table('movimiento')->where('id_documento', $documento)->where('id_modelo', 11623)->first();
-            //            $documentoInfo = DB::table('documento')->where('id', $documento)->first();
-            //
-            //            if (!empty($movimiento)) {
-            //                DB::table('modelo_inventario')->insert([
-            //                    'id_modelo' => 11623,
-            //                    'id_documento' => $documento,
-            //                    'id_almacen' => $documentoInfo->id_almacen_principal_empresa,
-            //                    'afecta_costo' => 0,
-            //                    'cantidad' => $movimiento->cantidad,
-            //                    'costo' => $movimiento->precio
-            //                ]);
-            //
-            //                $afecta_inventario = DB::table('modelo_costo')->where('id_modelo', 11623)->first();
-            //                $resta_inventario = $afecta_inventario->stock - $movimiento->cantidad;
-            //
-            //                DB::table('modelo_costo')->where(['id_modelo' => $afecta_inventario->id_modelo])->update([
-            //                    'stock' => $resta_inventario
-            //                ]);
-            //            }
+            $response = InventarioService::aplicarMovimiento($documento);
 
             if ($response->error) {
                 return response()->json([
@@ -3798,7 +3760,7 @@ class VentaController extends Controller
 
         foreach ($data->publicaciones as $publicacion) {
             foreach ($publicacion->productos_enviados as $producto) {
-                $response = DocumentoService::existenciaProducto($producto->sku, $data->almacen_secundario);
+                $response = InventarioService::existenciaProducto($producto->sku, $data->almacen_secundario);
 
                 if ($response->error) {
                     return response()->json([
@@ -4486,11 +4448,11 @@ class VentaController extends Controller
                     $hayError = true;
                 }
             } else {
-                $existencia = DocumentoService::existenciaProducto($codigo, $response->almacen);
+                $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
 
                 if ($existencia->error) {
                     BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                    "Error al consultar la existencia en comercial. Error: " . $existencia->mensaje);
+                    "Error al consultar la existencia. Error: " . $existencia->mensaje);
 
                     DB::table("seguimiento")->insert([
                         'id_documento' => $venta->id,
@@ -4775,8 +4737,8 @@ class VentaController extends Controller
         if ($venta->fulfillment) {
             //Aqui ta
             if(!$hayError) {
-                $factura = DocumentoService::crearFactura($venta->id, 0, 0);
-
+//                $factura = DocumentoService::crearFactura($venta->id, 0, 0);
+                $factura =InventarioService::aplicarMovimiento($venta->id);
                 if (!$factura->error) {
                     DB::table('documento')->where(['id' => $venta->id])->update([
                         'id_fase' => 6,
