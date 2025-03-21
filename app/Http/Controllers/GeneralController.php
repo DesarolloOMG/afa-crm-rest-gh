@@ -3,6 +3,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\InventarioService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -3370,7 +3371,7 @@ class GeneralController extends Controller
                                     WHERE documento_entidad_modelo_margen.id_ftp = " . $cliente_id . "");
 
         foreach ($productos as $producto) {
-            $response = DocumentoService::existenciaProducto($producto->sku, 114);
+            $response = InventarioService::existenciaProducto($producto->sku, 114);
 
             $producto->existencia = $response->error ? 0 : $response->existencia;
         }

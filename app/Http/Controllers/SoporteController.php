@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\InventarioService;
 use App\Models\Enums\DocumentoTipo;
 use App\Models\Enums\DocumentoFase;
 use App\Models\Enums\DocumentoStatus;
@@ -1163,7 +1164,7 @@ class SoporteController extends Controller
 
                         # Verificar que exista la cantidad necesaria para hacer el traspaso despues de crear la nota
 
-                        $existencia_codigo = DocumentoService::existenciaProducto($producto->sku, $info_documento->id_almacen_principal_empresa);
+                        $existencia_codigo = InventarioService::existenciaProducto($producto->sku, $info_documento->id_almacen_principal_empresa);
 
                         if ($existencia_codigo->error) {
                             return response()->json([

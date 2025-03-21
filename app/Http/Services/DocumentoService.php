@@ -3474,13 +3474,7 @@ class DocumentoService
             ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
             ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
             ->where('empresa_almacen.id', $almacen)
-            ->first();;
-
-        $empresa = DB::select("SELECT
-                                empresa.bd
-                            FROM empresa_almacen
-                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                            WHERE empresa_almacen.id = " . $almacen . "");
+            ->first();
 
         if (empty($empresa)) {
             $response->error = 1;

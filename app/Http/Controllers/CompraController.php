@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
 
@@ -3959,7 +3960,7 @@ class CompraController extends Controller
                     }
                 }
 
-                $existencia = DocumentoService::existenciaProducto($producto->sku, 2, 7); # Solo almacén de vidriera y emperesa OMG
+                $existencia = InventarioService::existenciaProducto($producto->sku, 1); # Solo almacén de vidriera y emperesa OMG
 
                 $producto->existencia = $existencia->error ? 0 : $existencia->existencia;
             }

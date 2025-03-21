@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\InventarioService;
 use App\Http\Services\MovimientoService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -510,28 +511,9 @@ class ContabilidadController extends Controller
 
         if ($data->terminar) {
             //Aqui ta
-            $response = DocumentoService::crearFactura($data->documento, 0, 0);
+//            $response = DocumentoService::crearFactura($data->documento, 0, 0);
 
-            //            $movimiento = DB::table('movimiento')->where('id_documento', $data->documento)->where('id_modelo', 11623)->first();
-            //            $documentoInfo = DB::table('documento')->where('id', $data->documento)->first();
-            //
-            //            if(!empty($movimiento)) {
-            //                DB::table('modelo_inventario')->insert([
-            //                    'id_modelo' => 11623,
-            //                    'id_documento' => $data->documento,
-            //                    'id_almacen' => $documentoInfo->id_almacen_principal_empresa,
-            //                    'afecta_costo' => 0,
-            //                    'cantidad' => $movimiento->cantidad,
-            //                    'costo' => $movimiento->precio
-            //                ]);
-            //
-            //                $afecta_inventario = DB::table('modelo_costo')->where('id_modelo', 11623)->first();
-            //                $resta_inventario = $afecta_inventario->stock - $movimiento->cantidad;
-            //
-            //                DB::table('modelo_costo')->where(['id_modelo' => $afecta_inventario->id_modelo])->update([
-            //                    'stock' => $resta_inventario
-            //                ]);
-            //            }
+            $response = InventarioService::aplicarMovimiento($data->documento);
 
             if ($response->error) {
                 return response()->json([
