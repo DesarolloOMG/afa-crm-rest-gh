@@ -84,7 +84,7 @@ class InventarioService
 
                 // Obtenemos (o creamos) la existencia y el costo para este producto en el almacén.
                 $existencia = self::obtenerOcrearExistencia($mov->id_modelo, $almacen);
-                $costo = self::obtenerOcrearCosto($mov->id_modelo, $almacen);
+                $costo = self::obtenerOcrearCosto($mov->id_modelo);
 
                 // Se guardan los valores actuales para poder registrar en el kardex posteriormente.
                 $stockAnterior = $existencia->stock;
@@ -106,9 +106,6 @@ class InventarioService
                 // Si el documento resta inventario, se disminuye el stock sin dejarlo negativo.
                 if ($docTipo->restainventario == 1) {
                     $nuevoStock = $stockAnterior - $cantidad;
-                    if ($nuevoStock < 0) {
-                        $nuevoStock = 0;
-                    }
                 }
 
                 // Se actualiza el registro de existencia si hubo cambio.
@@ -136,7 +133,6 @@ class InventarioService
                         DB::table('modelo_costo')
                             ->where('id', $costo->id)
                             ->update([
-                                'stock_anterior' => $stockAnterior,
                                 'costo_promedio' => $nuevoCostoPromedio,
                                 'ultimo_costo'   => $costoPromAnterior,
                                 'updated_at'     => now()
@@ -213,18 +209,15 @@ class InventarioService
      * @param int $idEmpresaAlmacen ID del almacén.
      * @return object               Registro de costo.
      */
-    public static function obtenerOcrearCosto(int $idModelo, int $idEmpresaAlmacen)
+    public static function obtenerOcrearCosto(int $idModelo)
     {
         $costo = DB::table('modelo_costo')
             ->where('id_modelo', $idModelo)
-            ->where('id_empresa_almacen', $idEmpresaAlmacen)
             ->first();
 
         if (!$costo) {
             $id = DB::table('modelo_costo')->insertGetId([
                 'id_modelo'          => $idModelo,
-                'id_empresa_almacen' => $idEmpresaAlmacen,
-                'stock_anterior'     => 0,
                 'costo_inicial'      => 0,
                 'costo_promedio'     => 0,
                 'ultimo_costo'       => 0,
@@ -294,7 +287,7 @@ class InventarioService
         // Procesar salida (almacén principal)
         $almacenSalida = $documento->id_almacen_principal_empresa;
         $existenciaSalida = self::obtenerOcrearExistencia($mov->id_modelo, $almacenSalida);
-        $costoSalida = self::obtenerOcrearCosto($mov->id_modelo, $almacenSalida);
+        $costoSalida = self::obtenerOcrearCosto($mov->id_modelo);
 
         $stockAnteriorSalida = $existenciaSalida->stock;
         $cantidad = $mov->cantidad;
@@ -302,9 +295,6 @@ class InventarioService
         $totalMovimiento = round($cantidad * $precioUnitario, 2);
 
         $nuevoStockSalida = $stockAnteriorSalida - $cantidad;
-        if ($nuevoStockSalida < 0) {
-            $nuevoStockSalida = 0;
-        }
 
         if ($nuevoStockSalida != $stockAnteriorSalida) {
             DB::table('modelo_existencias')
@@ -315,13 +305,6 @@ class InventarioService
                     'updated_at'     => now()
                 ]);
         }
-        // Actualizamos el costo (normalmente en traspaso no se recalcula).
-        DB::table('modelo_costo')
-            ->where('id', $costoSalida->id)
-            ->update([
-                'stock_anterior' => $stockAnteriorSalida,
-                'updated_at'     => now()
-            ]);
 
         // Registrar salida en el kardex.
         DB::table('modelo_kardex')->insert([
@@ -347,7 +330,7 @@ class InventarioService
             return;
         }
         $existenciaEntrada = self::obtenerOcrearExistencia($mov->id_modelo, $almacenEntrada);
-        $costoEntrada = self::obtenerOcrearCosto($mov->id_modelo, $almacenEntrada);
+        $costoEntrada = self::obtenerOcrearCosto($mov->id_modelo);
         $stockAnteriorEntrada = $existenciaEntrada->stock;
         $nuevoStockEntrada = $stockAnteriorEntrada + $cantidad;
 
