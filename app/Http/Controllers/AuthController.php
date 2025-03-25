@@ -28,7 +28,7 @@ class AuthController extends Controller
 {
     public function auth_login(Request $request)
     {
-        $excepciones = ['balexander.rosas@gmail.com','lorena@omgcorp.com.mx', 'cesar@omg.com.mx', 'lupita81lara@gmail.com', 'isabel@arome.mx', 'sauladrian.arias@gmail.com', 'alberto@omg.com.mx'];
+        $excepciones = ['balexander.rosas@gmail.com','lorena@omgcorp.com.mx', 'cesar@omg.com.mx', 'lupita81lara@gmail.com', 'isabel@arome.mx', 'sauladrian.arias@gmail.com', 'alberto@omg.com.mx', 'efren@omg.com.mx'];
 
         $data = json_decode($request->input("data"));
 
