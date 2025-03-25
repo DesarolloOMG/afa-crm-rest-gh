@@ -266,6 +266,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('guardar', 'CompraController@compra_producto_sinonimo_post_guardar');
                 $router->post('sinonimo', 'CompraController@compra_producto_sinonimo_post_sinonimo');
             });
+
+            $router->get('buscar/{criterio}', 'CompraController@compra_producto_buscar');
         });
 
         $router->group(['prefix' => 'presupuesto'], function () use ($router) {
