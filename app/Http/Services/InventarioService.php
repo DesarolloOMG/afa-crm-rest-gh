@@ -114,8 +114,7 @@ class InventarioService
                         ->where('id', $existencia->id)
                         ->update([
                             'stock_anterior' => $stockAnterior,
-                            'stock'          => $nuevoStock,
-                            'updated_at'     => now()
+                            'stock'          => $nuevoStock
                         ]);
                 }
 
@@ -134,8 +133,7 @@ class InventarioService
                             ->where('id', $costo->id)
                             ->update([
                                 'costo_promedio' => $nuevoCostoPromedio,
-                                'ultimo_costo'   => $costoPromAnterior,
-                                'updated_at'     => now()
+                                'ultimo_costo'   => $costoPromAnterior
                             ]);
                     }
                 }
@@ -192,9 +190,7 @@ class InventarioService
                 'id_empresa_almacen' => $idEmpresaAlmacen,
                 'stock_inicial'      => 0,
                 'stock'              => 0,
-                'stock_anterior'     => 0,
-                'created_at'         => now(),
-                'updated_at'         => now()
+                'stock_anterior'     => 0
             ]);
             $existencia = DB::table('modelo_existencias')->where('id', $id)->first();
         }
@@ -220,9 +216,7 @@ class InventarioService
                 'id_modelo'          => $idModelo,
                 'costo_inicial'      => 0,
                 'costo_promedio'     => 0,
-                'ultimo_costo'       => 0,
-                'created_at'         => now(),
-                'updated_at'         => now()
+                'ultimo_costo'       => 0
             ]);
             $costo = DB::table('modelo_costo')->where('id', $id)->first();
         }
@@ -266,7 +260,6 @@ class InventarioService
             'stock_anterior'            => $stockAnterior,
             'costo_promedio'            => $costoPromedio,
             'created_at'                => $mov->created_at,
-            'updated_at'                => now()
         ]);
     }
 
@@ -302,7 +295,6 @@ class InventarioService
                 ->update([
                     'stock_anterior' => $stockAnteriorSalida,
                     'stock'          => $nuevoStockSalida,
-                    'updated_at'     => now()
                 ]);
         }
 
@@ -321,7 +313,6 @@ class InventarioService
             'stock_anterior'            => $stockAnteriorSalida,
             'costo_promedio'            => $costoSalida->costo_promedio,
             'created_at'                => $mov->created_at,
-            'updated_at'                => now()
         ]);
 
         // Procesar entrada (almacén secundario)
@@ -340,7 +331,6 @@ class InventarioService
                 ->update([
                     'stock_anterior' => $stockAnteriorEntrada,
                     'stock'          => $nuevoStockEntrada,
-                    'updated_at'     => now()
                 ]);
         }
 
@@ -359,7 +349,6 @@ class InventarioService
             'stock_anterior'            => $stockAnteriorEntrada,
             'costo_promedio'            => $costoEntrada->costo_promedio,
             'created_at'                => $mov->created_at,
-            'updated_at'                => now()
         ]);
     }
 
