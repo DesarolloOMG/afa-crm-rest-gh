@@ -3515,20 +3515,6 @@ class CompraController extends Controller
                 $proveedor->pais = "";
                 $proveedor->regimen = "";
             }
-
-            $informacion_cliente = @json_decode(file_get_contents(config('webservice.url') . 'Consultas/Clientes/' . $empresa . '/RFC/' . $proveedor->rfc));
-
-            if (empty($informacion_cliente)) {
-                $proveedor->condicion = 1;
-                $proveedor->limite = 0;
-                // ELIMINAR DEL ARRAY SI ES VACIO 
-                unset($proveedores[$key]);
-            } else {
-                $proveedor->condicion = $informacion_cliente[0]->condicionpago_id;
-                $proveedor->limite = $informacion_cliente[0]->limite_credito;
-            }
-
-            $proveedor->data = $informacion_cliente;
         }
 
         $proveedores = array_values($proveedores);

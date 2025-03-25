@@ -304,6 +304,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('', 'VentaController@venta_venta_crear');
 
                 $router->get('data', 'VentaController@venta_venta_crear_data');
+                $router->get('buscar-cliente/{criterio}', 'VentaController@venta_venta_crear_buscar_cliente');
 
                 $router->group(['prefix' => 'cliente'], function () use ($router) {
                     $router->get('direccion/{rfc}', 'VentaController@venta_venta_crear_cliente_direccion');

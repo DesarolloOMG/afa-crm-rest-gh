@@ -119,27 +119,7 @@ class VentaController extends Controller
         }
 
         if (strpos(TRIM($data->cliente->rfc), 'XAXX010101000') === false && strpos(TRIM($data->cliente->rfc), 'XEXX010101000') === false) {
-            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
-
-            if (empty($existe_cliente)) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No existe el cliente en la base de datos."
-                ]);
-            } else {
-                $cliente = $existe_cliente[0]->id;
-
-                DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
-            }
+            $cliente = $data->cliente->select;
         } else {
             $cliente = DB::table('documento_entidad')->insertGetId([
                 'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
@@ -170,10 +150,7 @@ class VentaController extends Controller
             'id_usuario' => $auth->id,
             'id_moneda' => $data->documento->moneda,
             'id_paqueteria' => $data->documento->paqueteria,
-            'id_fase' => ($data->documento->fulfillment) ?
-                (($marketplace_name->marketplace == "LINIO") ? 6 : 6)
-                : (($marketplace_name->marketplace == "CLAROSHOP" || $marketplace_name->marketplace == "SEARS") ?
-                    (($mkp_area_name->area == "LTM") ? 1 : 3) : 3),
+            'id_fase' => 3,
             'no_venta' => TRIM($data->documento->venta),
             'id_modelo_proveedor' => empty($data->documento->proveedor) ? 0 : $data->documento->proveedor,
             'tipo_cambio' => $data->documento->tipo_cambio,
@@ -214,26 +191,9 @@ class VentaController extends Controller
         }
 
         foreach ($data->documento->productos as $producto) {
-            $existe_modelo = DB::select("SELECT id, serie FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
-
-            if (empty($existe_modelo)) {
-                $modelo = DB::table('modelo')->insertGetId([
-                    'id_tipo' => $producto->tipo,
-                    'sku' => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                    'descripcion' => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                    'costo' => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                    'alto' => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                    'ancho' => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                    'largo' => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                    'peso' => mb_strtoupper(trim($producto->peso), 'UTF-8')
-                ]);
-            } else {
-                $modelo = $existe_modelo[0]->id;
-            }
-
             DB::table('movimiento')->insertGetId([
                 'id_documento'  => $documento,
-                'id_modelo'     => $modelo,
+                'id_modelo'     => $producto->id,
                 'cantidad'      => $producto->cantidad,
                 'precio'        => $producto->precio,
                 'garantia'      => $producto->garantia,
@@ -304,70 +264,6 @@ class VentaController extends Controller
             ]);
         }
 
-        if ($data->documento->cobro->generar_ingreso) {
-            if (empty($data->documento->cobro->metodo_pago)) {
-                $data->documento->cobro->metodo_pago = 99;
-            }
-
-            $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario' => $auth->id,
-                'id_metodopago' => $data->documento->cobro->metodo_pago,
-                'id_vertical' => 0,
-                'id_categoria' => 0,
-                'id_clasificacion' => 0,
-                'tipo' => 1,
-                'origen_importe' => 0,
-                'destino_importe' => $data->documento->cobro->importe,
-                'folio' => "",
-                'entidad_origen' => 1,
-                'origen_entidad' => $data->cliente->rfc == 'XEXX010101000' ? $data->cliente->select : $data->cliente->rfc,
-                'entidad_destino' => $data->documento->cobro->entidad_destino,
-                'destino_entidad' => $data->documento->cobro->destino,
-                'referencia' => $data->documento->cobro->referencia,
-                'clave_rastreo' => $data->documento->cobro->clave_rastreo,
-                'autorizacion' => $data->documento->cobro->numero_aut,
-                'origen_fecha_operacion' => date('Y-m-d'),
-                'origen_fecha_afectacion' => $data->documento->cobro->fecha_cobro,
-                'destino_fecha_operacion' => date('Y-m-d'),
-                'destino_fecha_afectacion' => $data->documento->cobro->fecha_cobro,
-                'cuenta_cliente' => $data->documento->cobro->cuenta_cliente
-            ]);
-
-            DB::table('documento_pago_re')->insert([
-                'id_documento'  => $documento,
-                'id_pago'       => $pago
-            ]);
-        } else {
-            $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario' => $auth->id,
-                'id_metodopago' => 99,
-                'id_vertical' => 0,
-                'id_categoria' => 0,
-                'id_clasificacion' => 0,
-                'tipo' => 1,
-                'origen_importe' => 0,
-                'destino_importe' => ($data->documento->total_paid == 0) ? $data->documento->total : $data->documento->total_paid,
-                'folio' => "",
-                'entidad_origen' => 1,
-                'origen_entidad' => $data->cliente->rfc,
-                'entidad_destino' => '',
-                'destino_entidad' => '',
-                'referencia' => '',
-                'clave_rastreo' => '',
-                'autorizacion' => '',
-                'origen_fecha_operacion' => date('Y-m-d'),
-                'origen_fecha_afectacion' => date('Y-m-d'),
-                'destino_fecha_operacion' => date('Y-m-d'),
-                'destino_fecha_afectacion' => date('Y-m-d'),
-                'cuenta_cliente' => ''
-            ]);
-
-            DB::table('documento_pago_re')->insert([
-                'id_documento' => $documento,
-                'id_pago' => $pago
-            ]);
-        }
-
         $message = "Venta creada correctamente. " . $documento;
 
         if ($data->documento->baja_utilidad) {
@@ -416,429 +312,7 @@ class VentaController extends Controller
             }
         }
 
-        if ($modificacion) {
-            try {
-                $tecnicos = DB::select("SELECT 
-                                        usuario.id
-                                    FROM usuario 
-                                    INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario 
-                                    WHERE id_subnivel_nivel = 12 AND status = 1");
-
-                if (!empty($tecnicos)) {
-                    $usuarios = array();
-
-                    $notificacion['titulo']     = "Modificación para el pedido " . $documento . "";
-                    $notificacion['message']    = "El pedido " . $documento . " requiere una modificación el alguno de sus productos, favor de revisar en la sección de pendientes de revisión.";
-                    $notificacion['tipo']       = "success"; // success, warning, danger
-                    $notificacion['link']       = "/soporte/revision/" . $documento;
-
-                    $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data'  => json_encode($notificacion)
-                    ]);
-
-                    $notificacion['id']         = $notificacion_id;
-
-                    foreach ($tecnicos as $usuario) {
-                        DB::table('notificacion_usuario')->insert([
-                            'id_usuario'        => $usuario->id,
-                            'id_notificacion'   => $notificacion_id
-                        ]);
-
-                        array_push($usuarios, $usuario->id);
-                    }
-
-                    if (!empty($usuarios)) {
-                        $notificacion['usuario']    = $usuarios;
-
-                        event(new PusherEvent(json_encode($notificacion)));
-                    }
-                }
-            } catch (Exception $e) {
-                $log = self::logVariableLocation();
-
-                $message .= "<br><br>No fue posible notificar a los tenicos de soporte de la modificación del pedido.";
-            }
-        }
-
-        if (!empty($data->documento->proveedor)) {
-            $info_documento = DB::select("SELECT
-                                        area.area,
-                                        almacen.id AS id_almacen,
-                                        documento.id_fase,
-                                        documento.id_almacen_principal_empresa,
-                                        documento.id_marketplace_area,
-                                        documento.guia_impresa,
-                                        almacen.id AS id_almacen,
-                                        marketplace.marketplace,
-                                        paqueteria.paqueteria,
-                                        paqueteria.guia,
-                                        paqueteria.api
-                                    FROM documento
-                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                                    INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                    INNER JOIN area ON marketplace_area.id_area = area.id
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE documento.id = " . $documento . " 
-                                    AND documento.id_tipo = 2
-                                    AND documento.status = 1");
-
-            $info_documento = $info_documento[0];
-
-            if ($info_documento->guia) {
-                # Verificamos si el marketplace del documento, nos proporciona la guía
-                $informacion_marketplace = DB::select("SELECT
-                                                            marketplace_api.id
-                                                        FROM documento
-                                                        INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                                        INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                                        AND documento.id = " . $documento . "
-                                                        AND marketplace_api.guia = 1");
-
-                # Sí el marketplace no nos proporciona la guía, la debemos generar en caso de que la paquetería tenga api
-                if (empty($informacion_marketplace)) {
-                    # Verificamos que el pedido tenga documentos de embarque adjuntos, si no, se genera la guía desde la api de la paquetería
-                    $archivos_embarque = DB::select("SELECT
-                                                        documento_archivo.id
-                                                    FROM documento_archivo
-                                                    WHERE documento_archivo.id_documento = " . $documento . "
-                                                    AND documento_archivo.tipo = 2");
-
-                    if (empty($archivos_embarque)) {
-                        if (!$info_documento->api) {
-                            $log = self::logVariableLocation();
-
-                            DB::table("documento")->where("id", $documento)->delete();
-
-                            return response()->json([
-                                "code" => 500,
-                                "message" => "El documento no contiene archivos de embarque adjuntos, el marketplace no proporciona la guía y tampoco la paquetería contiene api, favor de contactar a un administrador."
-                            ]);
-                        }
-
-                        $crear_guia = GeneralService::generarGuiaDocumento($documento, $auth->id);
-
-                        if ($crear_guia->error) {
-                            DB::table("documento")->where("id", $documento)->delete();
-                            $log = self::logVariableLocation();
-
-                            return response()->json([
-                                "code" => 500,
-                                "message" => $crear_guia->mensaje . "" . $log,
-                                "raw" => property_exists($crear_guia, "raw") ? $crear_guia->raw : 0
-                            ]);
-                        }
-                    }
-                } else {
-                    $marketplace_data = DB::select("SELECT
-                                            marketplace_area.id,
-                                            marketplace_api.app_id,
-                                            marketplace_api.secret,
-                                            marketplace_api.extra_1,
-                                            marketplace_api.extra_2,
-                                            marketplace.marketplace
-                                        FROM marketplace_area
-                                        INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                        INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                        WHERE marketplace_area.id = " . $marketplace . "")[0];
-
-                    //!! RELEASE T1 reempalzar
-
-                    // $excluded_marketplaces = ['testclaroshop', 'testsears', 'testsanborns'];
-                    $excluded_marketplaces = ['claroshop', 'sears', 'sanborns'];
-
-                    if (!in_array(strtolower($info_documento->marketplace), $excluded_marketplaces)) {
-                        try {
-                            $marketplace_data->secret = Crypt::decrypt($marketplace_data->secret);
-                        } catch (DecryptException $e) {
-                            $marketplace_data->secret = "";
-                        }
-                    }
-
-                    try {
-                        $marketplace_data->secret = Crypt::decrypt($marketplace_data->secret);
-                    } catch (DecryptException $e) {
-                        $marketplace_data->secret = "";
-                    }
-
-                    switch (strtolower($info_documento->marketplace)) {
-                        case 'mercadolibre':
-                            $response = MercadolibreService::documento(trim($data->documento->venta), $marketplace_data);
-
-                            break;
-
-                        case 'mercadolibre externo':
-                            $response = MercadolibreService::documento(trim($data->documento->venta), $marketplace_data);
-
-                            break;
-
-                        case 'linio':
-                            $response = LinioService::documento(trim($data->documento->venta), $marketplace_data);
-                            break;
-
-                        case 'linio 2':
-                            $response = LinioService::documento(trim($data->documento->venta), $marketplace_data);
-                            break;
-
-                            // case 'claroshop':
-                            // case 'sears':
-                            // case 'sanborns':
-                            //     $paqueteria = DB::select("SELECT
-                            //                                     paqueteria.paqueteria
-                            //                                 FROM documento
-                            //                                 INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            //                                 WHERE documento.id = " . $documento . "")[0]->paqueteria;
-
-                            //     $response = ClaroshopService::documento(trim($data->documento->venta), $marketplace_data, strtolower($paqueteria));
-                            //     break;
-                            //!! RELEASE T1 reempalzar
-
-                        case 'claroshop':
-                        case 'sears':
-                        case 'sanborns':
-                            // $paqueteria = DB::select("SELECT
-                            //                                 paqueteria.paqueteria
-                            //                             FROM documento
-                            //                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            //                             WHERE documento.id = " . $documento . "")[0]->paqueteria;
-
-                            $response = ClaroshopServiceV2::documento(trim($data->documento->venta), $marketplace_data);
-                            break;
-
-                        case 'walmart':
-                            $response = WalmartService::documento($documento, $marketplace_data->id);
-                            break;
-
-                        case 'coppel':
-                            $response = CoppelService::documento($documento, $marketplace_data->id);
-                            break;
-
-                        default:
-                            $response = new \stdClass();
-                            $response->error = 1;
-                            $response->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador.<br/> Error: BVC576";
-
-                            break;
-                    }
-
-                    if ($response->error) {
-                        DB::table("documento")->where("id", $documento)->delete();
-
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => $response->mensaje,
-                            'raw'   => property_exists($response, 'raw') ? $response->raw : ''
-                        ]);
-                    }
-
-                    array_push($archivos, $response->file);
-                }
-            } else {
-                DB::table("documento")->where("id", $documento)->delete();
-
-                return response()->json([
-                    "code" => 500,
-                    "message" => "La paquetería no está configurada para llevar guía, favor de contactar a un administrador."
-                ]);
-            }
-
-            switch ($data->documento->proveedor) {
-                case '4':
-                    $crear_pedido_btob = ExelDelNorteService::crearPedido($documento);
-                    break;
-
-                case '5':
-                    $crear_pedido_btob = CTService::crearPedido($documento);
-                    break;
-
-                default:
-                    $crear_pedido_btob = new \stdClass();
-
-                    $crear_pedido_btob->error = 1;
-                    $crear_pedido_btob->mensaje = "El proveedor no ha sido configurado!";
-
-                    break;
-            }
-
-            if ($crear_pedido_btob->error) {
-                DB::table("documento")->where("id", $documento)->delete();
-
-                return response()->json([
-                    "code" => 500,
-                    "message" => "Ocurrió un error al genear la orden de venta en el proveedor externo, mensaje de error: " . $crear_pedido_exel->mensaje . "",
-                    "raw" => property_exists($crear_pedido_exel, "raw") ? $crear_pedido_exel->raw : 0
-                ]);
-            }
-
-            /* CREAR ORDEN DE COMPRA */
-            $documento_data = DB::table("documento")->find($documento);
-            $proveedor_data = DB::table('modelo_proveedor')->where('id', $data->documento->proveedor)->get()->first();
-            $empresa_data = DB::table('empresa')->where('bd', '7')->get()->first();
-
-            $informacion_empresa = @json_decode(file_get_contents('http://201.7.208.53:11903/api/dminpro/Empresas/Informacion/BD/' . $empresa_data->bd . '/RFC/' . $empresa_data->rfc));
-            $direccionFiscal = [];
-
-            foreach ($informacion_empresa->direccion as $key) {
-                if ($key->nombre == "Dirección fiscal") {
-                    $direccionFiscal = $key;
-                }
-            }
-
-            $billto =
-                $informacion_empresa->nombre_oficial . "\n" .
-                $informacion_empresa->rfc . "\n" .
-                $direccionFiscal->calle . " #" . $direccionFiscal->ext . " " . $direccionFiscal->int . "\n" .
-                $direccionFiscal->colonia . "\n" .
-                $direccionFiscal->ciudad . " " . $direccionFiscal->estado . "\n" .
-                $direccionFiscal->cp;
-
-            $shipto = $informacion_empresa->nombre_oficial . "\n" .
-                $direccionFiscal->calle . " #" . $direccionFiscal->ext . " " . $direccionFiscal->int . "\n" .
-                $direccionFiscal->colonia . "\n" .
-                $direccionFiscal->ciudad . " " . $direccionFiscal->estado . "\n" .
-                $direccionFiscal->cp;
-
-            $informacion_proveedor = @json_decode(file_get_contents(config('webservice.url') . 'Consultas/Proveedores/' . $data->empresa . '/RFC/' . trim($proveedor_data->rfc)));
-
-            $data_odc = new stdClass();
-
-            $data_odc->empresa = $data->empresa; //!
-
-            $data_odc->proveedor = new stdClass();
-            $data_odc->proveedor->id = $informacion_proveedor->idproveedor; //!
-            $data_odc->proveedor->rfc = $informacion_proveedor->rfc; //!
-            $data_odc->proveedor->razon = $informacion_proveedor->razon; //!
-            $data_odc->proveedor->email = $informacion_proveedor->email; //!
-            $data_odc->proveedor->telefono = $informacion_proveedor->telefono; //!
-
-            $data_odc->almacen = $documento_data->id_almacen_principal_empresa; //!
-            $data_odc->uso_cfdi = $documento_data->id_cfdi; //!
-            $data_odc->comentarios = ''; //!
-            $data_odc->fob = ''; //!
-            $data_odc->impuesto = 0; //! 0 'o' 16
-            $data_odc->invoice = ''; //!
-            $data_odc->billto = $billto; //!
-            $data_odc->shipto = $shipto; //!
-            $data_odc->extranjero = ''; //!
-            $data_odc->moneda = $documento_data->id_moneda; //!
-            $data_odc->tipo_cambio = $documento_data->tipo_cambio; //!
-            $data_odc->periodo =  $documento_data->id_periodo; //!
-            $data_odc->metodo_pago = 99; //!
-            $data_odc->archivos = []; //!
-            $data_odc->productos = []; //!
-            $data_odc->documentos = []; //!
-            $data_odc->fecha_entrega = ''; //!
-
-            foreach ($data->documento->productos as $producto) {
-                $prod = new stdClass();
-                $prod->text = $producto->codigo_text;
-                $prod->codigo = $producto->codigo;
-                $prod->descripcion = $producto->descripcion;
-                $prod->comentario = '';
-                $prod->cantidad = $producto->cantidad;
-                $prod->costo = $producto->costo;
-                $prod->descuento = '';
-                $prod->existe = true;
-
-                array_push($data_odc->productos, $prod);
-            }
-
-            if (strpos(TRIM($data_odc->proveedor->rfc), 'XEXX010101000') === false) {
-                $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data_odc->proveedor->rfc . "' AND tipo = 2");
-
-                if (empty($existe_entidad)) {
-                    $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                        'tipo' => 2,
-                        'razon_social' => mb_strtoupper($data_odc->proveedor->razon, 'UTF-8'),
-                        'rfc' => mb_strtoupper($data_odc->proveedor->rfc, 'UTF-8'),
-                        'telefono' => !empty($data_odc->proveedor->telefono) && !is_null($data_odc->proveedor->telefono) ? $data_odc->proveedor->telefono : "",
-                        'correo' => !empty($data_odc->proveedor->email) && !is_null($data_odc->proveedor->email) ? $data_odc->proveedor->email : ""
-                    ]);
-                } else {
-                    $proveedor_id = $existe_entidad[0]->id;
-                }
-            } else {
-                $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                    'tipo' => 2,
-                    'razon_social' => mb_strtoupper($data_odc->proveedor->razon, 'UTF-8'),
-                    'rfc' => mb_strtoupper($data_odc->proveedor->rfc, 'UTF-8'),
-                    'telefono' => !empty($data_odc->proveedor->telefono) && !is_null($data_odc->proveedor->telefono) ? $data_odc->proveedor->telefono : "",
-                    'correo' => !empty($data_odc->proveedor->email) && !is_null($data_odc->proveedor->email) ? $data_odc->proveedor->email : ""
-                ]);
-            }
-
-            $documento = DB::table('documento')->insertGetId([
-                'id_almacen_principal_empresa' => $data_odc->almacen,
-                'id_moneda' => $data_odc->moneda,
-                'id_periodo' => $data_odc->periodo,
-                'id_tipo' => 0,
-                'id_marketplace_area' => 1,
-                'id_usuario' => $auth->id,
-                'id_fase' => 606,
-                'id_entidad' => $proveedor_id,
-                'tipo_cambio' => $data_odc->tipo_cambio,
-                'observacion' => implode(',', $data_odc->documentos),
-                'comentario' => (property_exists($data_odc, "extranjero") && !is_null($data_odc->extranjero)) ? $data_odc->extranjero : "",
-                'referencia' => "Orden de compra creada a partir de la venta con el ID " . $documento_data->id,
-                'info_extra' => json_encode($data_odc),
-                'arrived_at' => date("Y-m-d", strtotime($data_odc->fecha_entrega))
-            ]);
-
-
-            $productos_data = DB::table("movimiento")
-                ->where("id_documento", $documento_data->id)
-                ->get()
-                ->toArray();
-
-
-            foreach ($productos_data as $producto) {
-                DB::table('movimiento')->insert([
-                    'id_documento' => $documento_data->id,
-                    'id_modelo' => $producto->id_modelo,
-                    'cantidad' => $producto->cantidad,
-                    'precio' => $producto->precio,
-                    'garantia' => $producto->garantia,
-                    'modificacion' => $producto->modificacion,
-                    'comentario' => $producto->comentario,
-                    'regalo' => $producto->regalo
-                ]);
-            }
-
-            $crear_orden_compra = DocumentoService::crearOrdenCompra($documento);
-
-            if ($crear_orden_compra->error) {
-                DB::table('documento')->where(['id' => $documento])->delete();
-
-                foreach ($data_odc->documentos as $documento_relacionado) {
-                    DB::table('documento')->where(['id' => $documento_relacionado])->update([
-                        'status' => 1
-                    ]);
-                }
-
-                return response()->json([
-                    'code' => 500,
-                    'message' => $crear_orden_compra->mensaje,
-                    'raw' => property_exists($crear_orden_compra, "raw") ? $crear_orden_compra->raw : 0
-                ]);
-            }
-
-            $json['code'] = 200;
-            $json['message'] = "Orden de compra creada correctamente con el ID " . $documento;
-
-            $pdf = self::ordenes_generar_pdf($documento, $auth);
-
-            if ($pdf->error) {
-                $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
-
-                return response()->json($json);
-            }
-        }
-
         if ($data->documento->anticipada || $data->documento->fulfillment) {
-            //Aqui ta
-//            $response = DocumentoService::crearFactura($documento, 0, $data->documento->cce);
-
             $response = InventarioService::aplicarMovimiento($documento);
 
             if ($response->error) {
@@ -944,6 +418,7 @@ class VentaController extends Controller
         $usos_venta = DB::select("SELECT * FROM documento_uso_cfdi");
         $metodos = DB::select("SELECT * FROM metodo_pago");
         $estados = DB::select("SELECT * FROM estados");
+        $regimenes = DB::table("cat_regimen")->get();
         $marketplaces_publico = DB::select("SELECT
                                                 marketplace.marketplace 
                                             FROM marketplace_area 
@@ -1054,7 +529,22 @@ class VentaController extends Controller
             'marketplaces'  => $marketplaces_publico,
             'proveedores' => $proveedores,
             'estados' => $estados,
-            'usuarios_agro' => $usuarios_agro
+            'usuarios_agro' => $usuarios_agro,
+            'regimenes' => $regimenes
+        ]);
+    }
+
+    public function venta_venta_crear_buscar_cliente($criterio) {
+        $clientes = DB::table("documento_entidad")
+                        ->where("tipo", 1)
+                        ->where("rfc", $criterio)
+                        ->orWhere("razon_social", "like", "%" . $criterio . "%")
+                        ->get();
+
+
+        return response()->json([
+            "code" => 200,
+            "data" => $clientes
         ]);
     }
 
@@ -1913,91 +1403,6 @@ class VentaController extends Controller
                     'message'   => "El documento ya ha sido cancelado."
                 ]);
             }
-
-            $bd = DB::select("SELECT
-                                empresa.bd
-                            FROM documento
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                            WHERE documento.id = " . $documento . "")[0];
-
-            if ($documento_fase->id_fase == 5 || $documento_fase->anticipada || $documento_fase->id_fase == 6) {
-                $info_factura = @json_decode(file_get_contents('http://201.7.208.53:11903/api/adminpro/' . $bd->bd . '/Factura/Estado/Folio/' . $documento));
-
-                if (is_array($info_factura)) {
-                    if (empty($info_factura[0])) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No se encontró información de la factura, favor de contactar a un administrador." . self::logVariableLocation() . $bd->bd . '/Factura/Estado/Folio/' . $documento
-                        ]);
-                    }
-                    if (($info_factura[0]->eliminado == 0 || $info_factura[0]->eliminado == null) && ($info_factura[0]->cancelado == 0 || $info_factura[0]->cancelado == null)) {
-                        if (empty($info_factura[0]->pagos)) {
-                            return response()->json([
-                                'code'  => 500,
-                                'message'   => "La factura no se encuentra cancelada y tampoco está pagada con NC, favor de cancelar o saldar e intentar de nuevo"
-                            ]);
-                        }
-
-                        $pagado_nc = 0;
-
-                        foreach ($info_factura[0]->pagos as $pago) {
-                            if ($pago->operacion == 0 && round($pago->monto) + 2 >= $info_factura[0]->total) {
-                                $pagado_nc = 1;
-                            }
-                        }
-
-                        if (!$pagado_nc) {
-                            return response()->json([
-                                'code'  => 500,
-                                'message'   =>  "La factura no se encuentra cancelada y tampoco está pagada con NC, favor de cancelar o saldar e intentar de nuevo"
-                            ]);
-                        }
-                    }
-
-                    if ($documento_fase->id_fase == 6) {
-                        return response()->json([
-                            'code'  => 406
-                        ]);
-                    }
-                } else {
-                    if (empty($info_factura)) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No se encontró información de la factura, favor de contactar a un administrador." . self::logVariableLocation() . "" . $bd->bd . "" . $documento
-                        ]);
-                    }
-                    if (($info_factura->eliminado == 0 || $info_factura->eliminado == null) && ($info_factura->cancelado == 0 || $info_factura->cancelado == null)) {
-                        if (empty($info_factura->pagos)) {
-                            return response()->json([
-                                'code'  => 500,
-                                'message'   => "La factura no se encuentra cancelada y tampoco está pagada con NC, favor de cancelar o saldar e intentar de nuevo"
-                            ]);
-                        }
-
-                        $pagado_nc = 0;
-
-                        foreach ($info_factura->pagos as $pago) {
-                            if ($pago->operacion == 0 && round($pago->monto) + 2 >= $info_factura->total) {
-                                $pagado_nc = 1;
-                            }
-                        }
-
-                        if (!$pagado_nc) {
-                            return response()->json([
-                                'code'  => 500,
-                                'message'   =>  "La factura no se encuentra cancelada y tampoco está pagada con NC, favor de cancelar o saldar e intentar de nuevo"
-                            ]);
-                        }
-                    }
-
-                    if ($documento_fase->id_fase == 6) {
-                        return response()->json([
-                            'code'  => 406
-                        ]);
-                    }
-                }
-            }
         } else {
             $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
 
@@ -2141,35 +1546,6 @@ class VentaController extends Controller
                         array_push($series_cambiadas, $serie);
                     }
                 }
-            }
-
-            $traspaso = DocumentoService::crearMovimiento($documento_traspaso);
-
-            if ($traspaso->error) {
-                foreach ($series_cambiadas as $serie) {
-                    DB::table('producto')->where(['id' => $serie->id])->update([
-                        'id_almacen'    => $serie->id_almacen,
-                        'status'        => $serie->status
-                    ]);
-                }
-
-                DB::table('documento')->where(['id' => $documento_traspaso])->delete();
-
-                return response()->json([
-                    'code'  => 500,
-                    'message'   => "No fue posible crear el traspaso del documento " . $documento . ", la venta no fue cancelada, mensaje de error: " . $traspaso->mensaje . ""
-                ]);
-            }
-
-            $afectar_traspaso = DocumentoService::afectarMovimiento($documento_traspaso);
-
-            if ($afectar_traspaso->error) {
-                DB::table('documento')->where(['id' => $documento_traspaso])->update([
-                    'autorizado' => 0,
-                    'autorizado_by' => 0
-                ]);
-
-                $message .= "No fue posible afectar el traspaso del documento " . $documento . ", favor de afectar manualmente, mensaje de error: " . $afectar_traspaso->mensaje . "";
             }
         } else {
             $productos = DB::select("SELECT
@@ -2712,29 +2088,7 @@ class VentaController extends Controller
         }
 
         if (strpos(TRIM($data->cliente->rfc), 'XAXX0101010') === false) {
-            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
-
-            if (empty($existe_cliente)) {
-                $cliente = DB::table('documento_entidad')->insertGetId([
-                    'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
-                    'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
-                ]);
-            } else {
-                $cliente = $existe_cliente[0]->id;
-
-                DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                    'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
-                    'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
-                ]);
-            }
+            $cliente = $data->cliente->select;
         } else {
             $cliente = DB::table('documento_entidad')->insertGetId([
                 'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
@@ -2743,221 +2097,6 @@ class VentaController extends Controller
                 'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
                 'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
                 'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
-            ]);
-        }
-
-        /* Si la venta es de claroshop, se hace un pedido por cada producto */
-        if ($data->documento->marketplace == 21) {
-            foreach ($data->documento->productos as $index => $producto) {
-                if ($producto->regalo) {
-                    continue;
-                }
-
-                $existe_modelo = DB::select("SELECT id, serie FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
-
-                if (empty($existe_modelo)) {
-                    $modelo = DB::table('modelo')->insertGetId([
-                        'id_tipo'       => $producto->tipo,
-                        'sku'           => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                        'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                        'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                        'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                        'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                        'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                        'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8')
-                    ]);
-                } else {
-                    $modelo = $existe_modelo[0]->id;
-                }
-
-                for ($i = 0; $i < $producto->cantidad; $i++) {
-                    $documento = DB::table('documento')->insertGetId([
-                        'id_almacen_principal_empresa'  => $data->documento->almacen,
-                        'id_periodo'                    => $data->documento->periodo,
-                        'id_cfdi'                       => $data->documento->uso_venta,
-                        'id_marketplace_area'           => $data->documento->marketplace,
-                        'id_usuario'                    => $auth->id,
-                        'id_moneda'                     => $data->documento->moneda,
-                        'id_paqueteria'                 => $data->documento->paqueteria,
-                        'id_fase'                       => 1,
-                        'no_venta'                      => TRIM($data->documento->venta),
-                        'tipo_cambio'                   => $data->documento->tipo_cambio,
-                        'referencia'                    => TRIM($data->documento->referencia),
-                        'observacion'                   => TRIM($data->documento->observacion),
-                        'info_extra'                    => $data->documento->info_extra,
-                        'fulfillment'                   => $data->documento->fulfillment,
-                        'series_factura'                => $data->documento->series_factura,
-                        'autorizado'                    => ($data->documento->baja_utilidad) ? 0 : 1,
-                        'anticipada'                    => 0,
-                        'id_entidad'                    => $cliente,
-                        'addenda_orden_compra'          => $data->addenda->orden_compra,
-                        'addenda_solicitud_pago'        => $data->addenda->solicitud_pago,
-                        'addenda_tipo_documento'        => $data->addenda->tipo_documento,
-                        'addenda_factura_asociada'      => $data->addenda->factura_asociada,
-                        'mkt_fee'                       => $data->documento->mkt_fee,
-                        'mkt_shipping_total'            => $data->documento->costo_envio,
-                        'mkt_shipping_total_cost'       => $data->documento->costo_envio_total,
-                        'mkt_shipping_id'               => $data->documento->mkt_shipping,
-                        'mkt_user_total'                => $data->documento->total_user,
-                        'mkt_total'                     => $data->documento->total,
-                        'mkt_created_at'                => $data->documento->mkt_created_at,
-                        'started_at'                    => $data->documento->fecha_inicio
-                    ]);
-
-                    DB::table('seguimiento')->insert([
-                        'id_documento'  => $documento,
-                        'id_usuario'    => $auth->id,
-                        'seguimiento'   => $data->documento->seguimiento
-                    ]);
-
-                    DB::table('movimiento')->insertGetId([
-                        'id_documento'  => $documento,
-                        'id_modelo'     => $modelo,
-                        'cantidad'      => 1,
-                        'precio'        => $producto->precio,
-                        'garantia'      => $producto->garantia,
-                        'modificacion'  => $producto->modificacion,
-                        'comentario'    => $producto->comentario,
-                        'addenda'       => $producto->addenda,
-                        'regalo'        => $producto->regalo
-                    ]);
-
-                    if (isset($data->documento->productos[$index + 1]) && $data->documento->productos[$index + 1]->regalo) {
-                        $producto_regalo = $data->documento->productos[$index + 1];
-
-                        $existe_modelo = DB::select("SELECT id, serie FROM modelo WHERE sku = '" . trim($producto_regalo->codigo) . "'");
-
-                        if (empty($existe_modelo)) {
-                            $modelo = DB::table('modelo')->insertGetId([
-                                'id_tipo'       => $producto_regalo->tipo,
-                                'sku'           => mb_strtoupper(trim($producto_regalo->codigo), 'UTF-8'),
-                                'descripcion'   => mb_strtoupper(trim($producto_regalo->descripcion), 'UTF-8'),
-                                'costo'         => mb_strtoupper(trim($producto_regalo->costo), 'UTF-8'),
-                                'alto'          => mb_strtoupper(trim($producto_regalo->alto), 'UTF-8'),
-                                'ancho'         => mb_strtoupper(trim($producto_regalo->ancho), 'UTF-8'),
-                                'largo'         => mb_strtoupper(trim($producto_regalo->largo), 'UTF-8'),
-                                'peso'          => mb_strtoupper(trim($producto_regalo->peso), 'UTF-8')
-                            ]);
-                        } else {
-                            $modelo = $existe_modelo[0]->id;
-                        }
-
-                        DB::table('movimiento')->insertGetId([
-                            'id_documento'  => $documento,
-                            'id_modelo'     => $modelo,
-                            'cantidad'      => 1,
-                            'precio'        => $producto_regalo->precio,
-                            'garantia'      => $producto_regalo->garantia,
-                            'modificacion'  => $producto_regalo->modificacion,
-                            'comentario'    => $producto_regalo->comentario,
-                            'addenda'       => $producto_regalo->addenda,
-                            'regalo'        => $producto_regalo->regalo
-                        ]);
-                    }
-
-                    if (trim($producto->modificacion) != "") {
-                        DB::table('documento')->where(['id' => $documento])->update([
-                            'modificacion'  => 1
-                        ]);
-                    }
-
-                    DB::table('documento_direccion')->insert([
-                        'id_documento'      => $documento,
-                        'id_direccion_pro'  => $data->documento->direccion_envio->colonia,
-                        'contacto'          => $data->documento->direccion_envio->contacto,
-                        'calle'             => $data->documento->direccion_envio->calle,
-                        'numero'            => $data->documento->direccion_envio->numero,
-                        'numero_int'        => $data->documento->direccion_envio->numero_int,
-                        'colonia'           => $data->documento->direccion_envio->colonia_text,
-                        'ciudad'            => $data->documento->direccion_envio->ciudad,
-                        'estado'            => $data->documento->direccion_envio->estado,
-                        'codigo_postal'     => $data->documento->direccion_envio->codigo_postal,
-                        'referencia'        => $data->documento->direccion_envio->referencia
-                    ]);
-
-                    foreach ($data->documento->archivos as $archivo) {
-                        if ($archivo->nombre != "" && $archivo->data != "") {
-                            $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                                ->addHeader('Content-Type', 'application/octet-stream')
-                                ->body($archivo_data)
-                                ->send();
-
-                            DB::table('documento_archivo')->insert([
-                                'id_documento'  =>  $documento,
-                                'id_usuario'    =>  $auth->id,
-                                'nombre'        =>  $archivo->nombre,
-                                'dropbox'       =>  $response->body->id
-                            ]);
-                        }
-                    }
-
-                    if ($data->documento->cobro->generar_ingreso) {
-                        $pago = DB::table('documento_pago')->insertGetId([
-                            'id_usuario'                => $auth->id,
-                            'id_metodopago'             => $data->documento->cobro->metodo_pago,
-                            'id_vertical'               => 0,
-                            'id_categoria'              => 0,
-                            'id_clasificacion'          => 1,
-                            'tipo'                      => 1,
-                            'origen_importe'            => 0,
-                            'destino_importe'           => $data->documento->cobro->importe,
-                            'folio'                     => "",
-                            'entidad_origen'            => 1,
-                            'origen_entidad'            => $data->cliente->rfc,
-                            'entidad_destino'           => $data->documento->cobro->entidad_destino,
-                            'destino_entidad'           => $data->documento->cobro->destino,
-                            'referencia'                => $data->documento->cobro->referencia,
-                            'clave_rastreo'             => $data->documento->cobro->clave_rastreo,
-                            'autorizacion'              => $data->documento->cobro->numero_aut,
-                            'destino_fecha_operacion'   => date('Y-m-d'),
-                            'destino_fecha_afectacion'  => $data->documento->cobro->fecha_cobro,
-                            'cuenta_cliente'            => $data->documento->cobro->cuenta_cliente
-                        ]);
-
-                        DB::table('documento_pago_re')->insert([
-                            'id_documento'  => $documento,
-                            'id_pago'       => $pago
-                        ]);
-                    } else {
-                        $pago = DB::table('documento_pago')->insertGetId([
-                            'id_usuario'                => $auth->id,
-                            'id_metodopago'             => 99,
-                            'id_vertical'               => 0,
-                            'id_categoria'              => 0,
-                            'id_clasificacion'          => 1,
-                            'tipo'                      => 1,
-                            'origen_importe'            => 0,
-                            'destino_importe'           => ($data->documento->total_paid == 0) ? $data->documento->total : $data->documento->total_paid,
-                            'folio'                     => "",
-                            'entidad_origen'            => 1,
-                            'origen_entidad'            => $data->cliente->rfc,
-                            'entidad_destino'           => '',
-                            'destino_entidad'           => '',
-                            'referencia'                => '',
-                            'clave_rastreo'             => '',
-                            'autorizacion'              => '',
-                            'destino_fecha_operacion'   => date('Y-m-d'),
-                            'destino_fecha_afectacion'  => '',
-                            'cuenta_cliente'            => ''
-                        ]);
-
-                        DB::table('documento_pago_re')->insert([
-                            'id_documento'  => $documento,
-                            'id_pago'       => $pago
-                        ]);
-                    }
-
-                    $pedidos_creados .= $documento . ", ";
-                }
-            }
-
-            return response()->json([
-                'code'  => 200,
-                'message'   => "Venta(s) " . $pedidos_creados . " creadas correctamente."
             ]);
         }
 
@@ -3002,26 +2141,9 @@ class VentaController extends Controller
         ]);
 
         foreach ($data->documento->productos as $producto) {
-            $existe_modelo = DB::select("SELECT id, serie FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
-
-            if (empty($existe_modelo)) {
-                $modelo = DB::table('modelo')->insertGetId([
-                    'id_tipo'       => $producto->tipo,
-                    'sku'           => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                    'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                    'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                    'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                    'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                    'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                    'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8')
-                ]);
-            } else {
-                $modelo = $existe_modelo[0]->id;
-            }
-
             DB::table('movimiento')->insertGetId([
                 'id_documento'  => $documento,
-                'id_modelo'     => $modelo,
+                'id_modelo'     => $producto->id,
                 'cantidad'      => $producto->cantidad,
                 'precio'        => $producto->precio,
                 'garantia'      => $producto->garantia,
@@ -3030,12 +2152,6 @@ class VentaController extends Controller
                 'addenda'       => $producto->addenda,
                 'regalo'        => $producto->regalo
             ]);
-
-            if (trim($producto->modificacion) != "") {
-                DB::table('documento')->where(['id' => $documento])->update([
-                    'modificacion'  => 1
-                ]);
-            }
         }
 
         DB::table('documento_direccion')->insert([
@@ -3078,66 +2194,6 @@ class VentaController extends Controller
             return response()->json([
                 'code'  => 500,
                 'message'   => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-            ]);
-        }
-
-        if ($data->documento->cobro->generar_ingreso) {
-            $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario'                => $auth->id,
-                'id_metodopago'             => $data->documento->cobro->metodo_pago,
-                'id_vertical'               => 0,
-                'id_categoria'              => 0,
-                'id_clasificacion'          => 1,
-                'tipo'                      => 1,
-                'origen_importe'            => 0,
-                'destino_importe'           => $data->documento->cobro->importe,
-                'folio'                     => "",
-                'entidad_origen'            => 1,
-                'origen_entidad'            => $data->cliente->rfc,
-                'entidad_destino'           => $data->documento->cobro->entidad_destino,
-                'destino_entidad'           => $data->documento->cobro->destino,
-                'referencia'                => $data->documento->cobro->referencia,
-                'clave_rastreo'             => $data->documento->cobro->clave_rastreo,
-                'autorizacion'              => $data->documento->cobro->numero_aut,
-                'origen_fecha_operacion'    => date('Y-m-d'),
-                'origen_fecha_afectacion'   => $data->documento->cobro->fecha_cobro,
-                'destino_fecha_operacion'   => date('Y-m-d'),
-                'destino_fecha_afectacion'  => $data->documento->cobro->fecha_cobro,
-                'cuenta_cliente'            => $data->documento->cobro->cuenta_cliente
-            ]);
-
-            DB::table('documento_pago_re')->insert([
-                'id_documento'  => $documento,
-                'id_pago'       => $pago
-            ]);
-        } else {
-            $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario'                => $auth->id,
-                'id_metodopago'             => 99,
-                'id_vertical'               => 0,
-                'id_categoria'              => 0,
-                'id_clasificacion'          => 1,
-                'tipo'                      => 1,
-                'origen_importe'            => 0,
-                'destino_importe'           => ($data->documento->total_paid == 0) ? $data->documento->total : $data->documento->total_paid,
-                'folio'                     => "",
-                'entidad_origen'            => 1,
-                'origen_entidad'            => $data->cliente->rfc,
-                'entidad_destino'           => '',
-                'destino_entidad'           => '',
-                'referencia'                => '',
-                'clave_rastreo'             => '',
-                'autorizacion'              => '',
-                'origen_fecha_operacion'    => date('Y-m-d'),
-                'origen_fecha_afectacion'   => date('Y-m-d'),
-                'destino_fecha_operacion'   => date('Y-m-d'),
-                'destino_fecha_afectacion'  => date('Y-m-d'),
-                'cuenta_cliente'            => ''
-            ]);
-
-            DB::table('documento_pago_re')->insert([
-                'id_documento'  => $documento,
-                'id_pago'       => $pago
             ]);
         }
 
