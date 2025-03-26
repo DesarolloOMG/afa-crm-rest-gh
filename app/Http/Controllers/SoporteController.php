@@ -106,8 +106,7 @@ class SoporteController extends Controller
             "documento.id",
             "documento.id_fase",
             "documento.factura_serie",
-            "documento.factura_folio",
-            "empresa.bd"
+            "documento.factura_folio"
         )
             ->join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
             ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
@@ -126,7 +125,7 @@ class SoporteController extends Controller
                     "empresa.bd"
                 )
                 ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
-                ->join("movimento", "documento.id", "=", "movimiento.id_documento")
+                ->join("movimiento", "documento.id", "=", "movimiento.id_documento")
                 ->join("movimiento_producto", "movimiento.id", "=", "movimiento_producto.id_movimiento")
                 ->join("producto", "movimiento_producto.id_producto", "=", "producto.id")
                 ->where("producto.serie", trim($data->venta))
@@ -156,32 +155,6 @@ class SoporteController extends Controller
         if ($existe_devolucion) {
             return response()->json([
                 'message' => "Ya éxiste una devolución generada a partir de esa venta. ID " . $existe_devolucion->id
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
-
-        $factura_folio = $informacion_documento->factura_folio == 'N/A' ? $informacion_documento->id : $informacion_documento->factura_folio;
-
-        $informacion_factura = @json_decode(file_get_contents(config('webservice.url') . $informacion_documento->bd . '/Factura/Estado/Folio/' . $factura_folio));
-
-        if (empty($informacion_factura)) {
-            return response()->json([
-                'message' => "No se encontró la factura del pedido " . $informacion_documento->id
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
-
-        if (is_array($informacion_factura)) {
-            foreach ($informacion_factura as $factura) {
-                if (($factura->eliminado == DocumentoStatus::INACTIVO || $factura->eliminado == DocumentoStatus::NULL) && ($factura->cancelado == DocumentoStatus::INACTIVO || $factura->cancelado == DocumentoStatus::NULL)) {
-                    $informacion_factura = $factura;
-
-                    break;
-                }
-            }
-        }
-
-        if (($informacion_factura->cancelado != DocumentoStatus::INACTIVO && $informacion_factura->cancelado != DocumentoStatus::NULL) || ($informacion_factura->eliminado != DocumentoStatus::INACTIVO && $informacion_factura->eliminado != DocumentoStatus::NULL)) {
-            return response()->json([
-                'message' => "No es posible generar el documento ya que la factura se encuentra cancelada."
             ], HttpStatusCode::NOT_ACCEPTABLE);
         }
 
@@ -316,11 +289,6 @@ class SoporteController extends Controller
                     }
 
                     foreach ($producto->series as $serie) {
-//                        $apos = `'`;
-//                        //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//                        if (str_contains($serie, $apos)) {
-//                            $serie = addslashes($serie);
-//                        }
                         $serie = str_replace(["'", '\\'], '', $serie);
                         $existe_serie = DB::select("SELECT
                                                         producto.id
@@ -424,11 +392,6 @@ class SoporteController extends Controller
             # Se relaciona las series a las partidas de la venta para llevar un registro
             foreach ($data->productos as $producto) {
                 foreach ($producto->series as $serie) {
-//                    $apos = `'`;
-//                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//                    if (str_contains($serie, $apos)) {
-//                        $serie = addslashes($serie);
-//                    }
                     $serie = str_replace(["'", '\\'], '', $serie);
                     $id_serie = DB::select("SELECT id FROM producto WHERE serie = '" . $serie . "'")[0]->id;
                     $id_movimiento = DB::select("SELECT
@@ -449,18 +412,6 @@ class SoporteController extends Controller
                 }
             }
 
-            # Se crear la nota de credito a partir del pedido
-            $crear_nota_credito = DocumentoService::crearNotaCredito($data->documento);
-
-            if ($crear_nota_credito->error) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => $crear_nota_credito->mensaje . " 512",
-                    'raw' => property_exists($crear_nota_credito, "raw") ? $crear_nota_credito->raw : 0,
-                    'data' => property_exists($crear_nota_credito, "data") ? $crear_nota_credito->data : 0,
-                ]);
-            }
-
             # Sí la venta es de AMAZON y es fulfillment, no se hace traspaso
             $venta_fba = (((strtolower($info_documento->marketplace) == "amazon") && $info_documento->fulfillment)) ? true : false;
 
@@ -474,41 +425,8 @@ class SoporteController extends Controller
 
             $info_documento_almacenes = [];
 
-            if (!empty($empresa_externa)) {
-                $info_documento_almacenes = DB::select("SELECT almacen_devolucion_garantia_sistema FROM empresa WHERE rfc = '" . $empresa_externa[0]->rfc . "'");
-
-                $info_factura_empresa_externa = @json_decode(file_get_contents(config('webservice.url') . $empresa_externa[0]->bd  . '/Factura/Estado/Folio/' . $data->documento));
-
-                if (empty($info_factura_empresa_externa)) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No se encontró información de la factura en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de eliminar la nota de credito generada manualmente"
-                    ]);
-                }
-
-                if (is_array($info_factura_empresa_externa)) {
-                    $info_factura_empresa_externa = $info_factura_empresa_externa[0];
-                }
-            }
-
             if (!$venta_fba) {
                 $seguimiento_traspaso = "";
-
-                if (!empty($empresa_externa)) {
-                    $almacen_secundario_empresa = DB::select("SELECT
-                                                                empresa_almacen.id
-                                                            FROM empresa_almacen
-                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                            WHERE empresa_almacen.id_erp = " . $info_factura_empresa_externa->almacenid . "
-                                                            AND empresa.bd = " . $empresa_externa[0]->bd . "");
-
-                    if (empty($almacen_secundario_empresa)) {
-                        return response()->json([
-                            'code' => 500,
-                            'message' => "No se encontró de la factura registrado en el sistema, favor de eliminar la nota de credito manualmente."
-                        ]);
-                    }
-                }
 
                 $documento_traspaso = DB::table('documento')->insertGetId([
                     'id_almacen_principal_empresa'  => !empty($empresa_externa) ? $info_documento_almacenes[0]->almacen_devolucion_garantia_sistema : $info_documento->almacen_devolucion_garantia_sistema,
@@ -541,12 +459,6 @@ class SoporteController extends Controller
 
                     if (COUNT($data->productos[$index]->series) > 0) {
                         foreach ($data->productos[$index]->series as $serie) {
-                            //Aqui se quita
-//                            $apos = `'`;
-//                            //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//                            if (str_contains($serie, $apos)) {
-//                                $serie = addslashes($serie);
-//                            }
                             $serie = str_replace(["'", '\\'], '', $serie);
                             $existe_serie = DB::select("SELECT id FROM producto WHERE serie = '" . TRIM($serie) . "'");
 
@@ -577,27 +489,7 @@ class SoporteController extends Controller
                     }
                 }
 
-                $crear_traspaso = DocumentoService::crearMovimiento($documento_traspaso);
-
-                if ($crear_traspaso->error) {
-                    DB::table('documento')->where(['id' => $documento_traspaso])->delete();
-
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $crear_traspaso->mensaje
-                    ]);
-                }
-
                 $seguimiento_traspaso .= "<p>Traspaso creado correctamente con el ID " . $crear_traspaso->id . ".</p>";
-
-                $afectar_traspaso = DocumentoService::afectarMovimiento($documento_traspaso);
-
-                if ($afectar_traspaso->error) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $afectar_traspaso->mensaje
-                    ]);
-                }
 
                 $seguimiento_traspaso .= "<p>Traspaso con el ID " . $crear_traspaso->id . " afectado correctamente.</p>";
 
@@ -639,46 +531,6 @@ class SoporteController extends Controller
 
                 event(new PusherEvent(json_encode($notificacion)));
             }
-
-            # De desaplican los pagos y notas de credito que tenga la factura y se genera una NC en general
-            $seguimentos_pagos  = "<br><br>";
-            $folio_factura  = ($info_documento->factura_serie == 'N/A') ? $data->documento : $info_documento->factura_folio;
-            $info_factura   = @json_decode(file_get_contents(config("webservice.url") . $info_documento->bd . '/Factura/Estado/Folio/' . $folio_factura));
-
-            if (empty($info_factura)) {
-                return response()->json([
-                    'code' => 200,
-                    'message' => "Documento guardado correctamente, NC: " . $nota_id . ", Traspaso: " . $traspaso_id . ", no fue posible desasociar el pago ni pagar la factura con la NC por que no se encontró la factura."
-                ]);
-            }
-
-            $pagos_asociados = @json_decode(file_get_contents(config('webservice.url') . $info_documento->bd . '/Documento/' . $info_factura->documentoid . '/PagosRelacionados'));
-
-            if (!empty($pagos_asociados)) {
-                foreach ($pagos_asociados as $pago) {
-                    $pago_id = ($pago->pago_con_operacion == 0) ? $pago->pago_con_documento : $pago->pago_con_operacion;
-
-                    $eliminar_relacion = DocumentoService::desaplicarPagoFactura($data->documento, $pago_id);
-
-                    if ($eliminar_relacion->error) {
-                        $seguimentos_pagos .= "<p>No fue posible eliminar la relación " . ($pago->pago_con_operacion == 0) ? 'de la nc' : 'del pago' . " con el ID " . $pago_id . ", mensaje de error: " . $eliminar_relacion->mensaje . ".</p>";
-                    } else {
-                        $seguimentos_pagos .= "<p>Se eliminó la relación " . ($pago->pago_con_operacion == 0) ? 'de la nc' : 'del pago' . " con el ID " . $pago_id . ", correctamente.</p>";
-                    }
-                }
-            } else {
-                $seguimentos_pagos .= "<p>No hay pagos relacionados a la factura " . $folio_factura . "</p>";
-            }
-
-            $saldar_factura = DocumentoService::saldarFactura($data->documento, $crear_nota_credito->id, 0);
-
-            $seguimentos_pagos .= "<p>" . $saldar_factura->mensaje . ".</p>";
-
-            DB::table('seguimiento')->insert([
-                'id_documento' => $data->documento,
-                'id_usuario' => $auth->id,
-                'seguimiento' => $seguimentos_pagos
-            ]);
         }
 
         # Sí la devolución tiene evidencia en archivos, se suben a dropbox y se relacionan al pedido
@@ -1182,60 +1034,6 @@ class SoporteController extends Controller
                     }
                 }
 
-                try {
-                    $array_nota = array(
-                        'bd' => $info_documento->bd,
-                        'password' => config("webservice.token"),
-                        'serie' => "D" . $info_documento->serie_factura,
-                        'fecha' => date('Y-m-d H:i:s'),
-                        'cliente' => $info_entidad->rfc == 'XEXX010101000' ? $info_entidad->id_erp : $info_entidad->rfc,
-                        'titulo' => 'Nota de credito por garantia del pedido ' . $data->documento . ' - ' . $data->documento_garantia,
-                        'almacen' => $info_documento->id_almacen,
-                        'divisa' => $info_documento->id_moneda,
-                        'tipo_cambio' => $info_documento->tipo_cambio,
-                        'condicion_pago' => $info_documento->id_periodo,
-                        'metodo_pago' => ($info_documento->id_periodo == 1) ? "PUE" : "PPD",
-                        'forma_pago' => (strlen($forma_pago->id_metodopago) == 1) ? "0" . $forma_pago->id_metodopago : $forma_pago->id_metodopago,
-                        'uso_cfdi' => $info_documento->uso_cfdi,
-                        'comentarios' => (is_null($info_documento->referencia)) ? '' : $info_documento->referencia,
-                        'productos' => json_encode($productos_nota)
-                    );
-
-                    $response_nota = \Httpful\Request::post(config('webservice.url') . 'cliente/notacredito/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                        ->body($array_nota, \Httpful\Mime::FORM)
-                        ->send();
-
-                    $raw_response_nota  = $response_nota->body;
-                    $response_nota      = @json_decode($response_nota);
-
-                    if (empty($response_nota)) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No fue posible crear la nota de credito del documento " . $data->documento . ", error: desconocido",
-                            'raw'   => $raw_response_nota
-                        ]);
-                    }
-
-                    if ($response_nota->error == 1) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No fue posible generar la nota de credito del documento " . $data->documento . ", error: " . $response_nota->mensaje . ""
-                        ]);
-                    }
-
-                    DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                        'nota'  => $response_nota->id
-                    ]);
-                    array_push($notaresponse, $response_nota->id);
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => "Ocurrió un error al generar la NC en comercial, mensaje de error: " . $e->getMessage(),
-                        'raw'   => $raw_response_nota,
-                        'data'  => $array_nota
-                    ]);
-                }
-
                 # Se crear el documento nota de credito en el CRM para hacer el movimiento de series
                 $documento_nota = DB::table('documento')->insertGetId([
                     'id_almacen_principal_empresa' => $info_documento->id_almacen_principal_empresa,
@@ -1269,12 +1067,6 @@ class SoporteController extends Controller
 
                         if ($producto->serie) {
                             foreach ($producto->series as $serie) {
-                                //Aqui se quita
-//                                $apos = `'`;
-//                                //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//                                if (str_contains($serie->serie, $apos)) {
-//                                    $serie->serie = addslashes($serie->serie);
-//                                }
                                 $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
                                 if ($serie->cambio) {
                                     # Se crea la relación de la serie anterior con la nota de credito
@@ -1297,45 +1089,6 @@ class SoporteController extends Controller
                             }
                         }
                     }
-                }
-                try {
-                    $array_traspaso = array(
-                        'bd' => $info_documento->bd,
-                        'password' => config("webservice.token"),
-                        'fecha' => date('Y-m-d H:i:s'),
-                        'almacen_origen' => $info_documento->id_almacen,
-                        'almacen_destino' => $info_documento->almacen_devolucion_garantia_erp,
-                        'comentarios' => 'Traspaso entre almacenes por garantia ' . $data->documento_garantia,
-                        'productos' => json_encode($productos_nota)
-                    );
-
-                    $response_traspaso = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/MovimientosEntreAlmacenes/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                        ->body($array_traspaso, \Httpful\Mime::FORM)
-                        ->send();
-
-                    $raw_response_traspaso = $response_traspaso->raw_body;
-                    $response_traspaso = @json_decode($response_traspaso);
-
-                    if (empty($response_traspaso)) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "Ocurrió un error al generar el traspaso del documento " . $data->documento . " en comercial, error: desconocido",
-                            'raw'   => $raw_response_traspaso,
-                            'data'  => $array_traspaso
-                        ]);
-                    }
-
-                    if ($response_traspaso->error == 1) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "Ocurrió un error al generar el traspaso del documento " . $data->documento . ", mensaje de error: " . $response_traspaso->mensaje
-                        ]);
-                    }
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => "Ocurrió un error al generar el traspaso del documento " . $data->documento . ", mensaje de error: " . $e->getMessage()
-                    ]);
                 }
 
                 # Se crear el documento de traspaso en el CRM para hacer el movimiento de series
@@ -1381,12 +1134,6 @@ class SoporteController extends Controller
 
                         if ($producto->serie) {
                             foreach ($producto->series as $serie) {
-                                //Aqui se quita
-//                                $apos = `'`;
-//                                //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-//                                if (str_contains($serie->serie, $apos)) {
-//                                    $serie->serie = addslashes($serie->serie);
-//                                }
                                 $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
                                 if ($serie->cambio) {
                                     # Se crea la relación de la serie anterior con la nota de credito
@@ -1416,43 +1163,6 @@ class SoporteController extends Controller
                             }
                         }
                     }
-                }
-
-                try {
-                    $array_afectar_traspaso = array(
-                        'bd'                    => $info_documento->bd,
-                        'password'              => config("webservice.token"),
-                        'documento_movimiento'  => $response_traspaso->id,
-                        'fecha_entrega'         => date('Y-m-d H:i:s')
-                    );
-
-                    $response_afectar_traspaso = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/MovimientosEntreAlmacenes/Entregar/Update/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                        ->body($array_afectar_traspaso, \Httpful\Mime::FORM)
-                        ->send();
-
-                    $raw_response_afectar_traspaso = $response_afectar_traspaso->raw_body;
-                    $response_afectar_traspaso = @json_decode($response_afectar_traspaso);
-
-                    if (empty($response_afectar_traspaso)) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No fue posible afectar el traspaso " . $response_traspaso->id . ", error: desconocido",
-                            'raw'   => $raw_response_afectar_traspaso,
-                            'data'  => $array_afectar_traspaso
-                        ]);
-                    }
-
-                    if ($response_afectar_traspaso->error == 1) {
-                        return response()->json([
-                            'code'  => 500,
-                            'message'   => "No fue posible afectar el traspaso " . $response_traspaso->id . ", favor de afectar manualmente, mensaje de error: " . $response_afectar_traspaso->mensaje . ""
-                        ]);
-                    }
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => "No fue posible afectar el traspaso " . $response_traspaso->id . ", favor de afectar manualmente, mensaje de error: " . $e->getMessage() . ""
-                    ]);
                 }
 
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
@@ -1713,49 +1423,6 @@ class SoporteController extends Controller
                             }
                         }
                     }
-                }
-
-                $crear_traspaso = DocumentoService::crearMovimiento($documento_traspaso);
-
-                if ($crear_traspaso->error) {
-                    foreach ($series_cambiadas as $serie) {
-                        DB::table('producto')->where(['id' => $serie->id])->update([
-                            'id_almacen'    => $serie->id_almacen,
-                            'status'        => $serie->status,
-                            'extra'         => $serie->extra
-                        ]);
-                    }
-
-                    DB::table('documento')->where(['id' => $documento_traspaso])->delete();
-
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $crear_traspaso->mensaje
-                    ]);
-                }
-
-                $afectar_traspaso = DocumentoService::afectarMovimiento($documento_traspaso);
-
-                if ($afectar_traspaso->error) {
-                    foreach ($series_cambiadas as $serie) {
-                        # Las series nuevas cambiadas, se les borra el movimiento de la venta, para que no se duplique
-                        if (property_exists($serie, "movimiento_venta")) {
-                            DB::table("movimiento_producto")->where(["id_movimeinto" => $serie_anterior->movimiento_venta, "id_producto" => $serie->id])->delete();
-                        }
-
-                        DB::table('producto')->where(['id' => $serie->id])->update([
-                            'id_almacen'    => $serie->id_almacen,
-                            'status'        => $serie->status,
-                            'extra'         => $serie->extra
-                        ]);
-                    }
-
-                    DB::table('documento')->where(['id' => $documento_traspaso])->delete();
-
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $afectar_traspaso->mensaje
-                    ]);
                 }
 
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
