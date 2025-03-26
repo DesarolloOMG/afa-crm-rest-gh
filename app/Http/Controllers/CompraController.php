@@ -3394,6 +3394,17 @@ class CompraController extends Controller
     }
 
     /* Compra proveedor */
+    public function compra_proveedor_data() {
+        $regimenes = DB::table("cat_regimen")->get();
+        $paises = DB::table("cat_pais")->get();
+
+        return response()->json([
+            "code" => 200,
+            "regimenes" => $regimenes,
+            "paises" => $paises
+        ]);
+    }
+
     public function compra_proveedor_get_data($criterio)
     {
         $criterio = str_replace("%20", " ", $criterio);
@@ -3446,7 +3457,11 @@ class CompraController extends Controller
             ]);
         }
 
-        $existe_proveedor = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->rfc) . "' AND tipo = 2 AND status = 1 AND id != 0 AND id != " . $data->id . "");
+        $existe_proveedor = DB::table("documento_entidad")
+                                ->where("rfc", trim($data->rfc))
+                                ->where("tipo", "2")
+                                ->where("status", 1)
+                                ->first();
 
         $info_extra = new \stdClass();
         $info_extra->pais = $data->pais;
@@ -3465,10 +3480,11 @@ class CompraController extends Controller
                 'regimen_id' => substr($data->regimen, 0, 3),
                 'pais' => $data->pais,
                 'regimen_letra' => substr($data->regimen, 0, 3),
-                'created_by_user' => $auth->id
+                'created_by_user' => $auth->id,
+                'codigo_postal_fiscal' => $data->cp
             ]);
         } else {
-            DB::table('documento_entidad')->where(['id' => $existe_proveedor[0]->id])->update([
+            DB::table('documento_entidad')->where(['id' => $existe_proveedor->id])->update([
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                 'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
@@ -3480,10 +3496,9 @@ class CompraController extends Controller
                 'regimen_id' => substr($data->regimen, 0, 3),
                 'pais' => $data->pais,
                 'regimen_letra' => substr($data->regimen, 0, 3),
-                'updated_by_user' => $auth->id
+                'updated_by_user' => $auth->id,
+                'codigo_postal_fiscal' => $data->cp
             ]);
-
-            $entidad_id = $existe_proveedor[0]->id;
         }
 
         return response()->json([
@@ -3557,6 +3572,8 @@ class CompraController extends Controller
         $info_extra->regimen = $data->regimen;
         $info_extra->fiscal = $data->fiscal;
 
+
+
         if ($data->id == 0) {
             $existe_cliente = DocumentoEntidad::where("rfc", trim($data->rfc))
                 ->where("status", 1)
@@ -3626,23 +3643,8 @@ class CompraController extends Controller
 
             $entidad_id = $data->id;
         }
-        //Fix Entidades
-        $entidad_data = DocumentoEntidad::find($entidad_id);
-//
-        if ($data->id == 0) {
-            $crear_entidad = DocumentoService::crearEntidad($entidad_data, $data->empresa);
-        } else {
-            $crear_entidad = DocumentoService::actualizarEntidad($entidad_data, $data->empresa);
-        }
 
-        if ($crear_entidad->error) {
-            return response()->json([
-                'code' => 500,
-                'message' => "No fue posible crear la entidad en el ERP, mensaje de error: " . $crear_entidad->mensaje,
-                'raw' => property_exists($crear_entidad, 'raw') ? $crear_entidad->raw : 0,
-                'data' => property_exists($crear_entidad, 'data') ? $crear_entidad->data : 0
-            ]);
-        }
+        $entidad_data = DocumentoEntidad::find($entidad_id);
 
         DocumentoEntidadUpdates::insert([
             "id_usuario" => $auth->id,
@@ -3653,11 +3655,7 @@ class CompraController extends Controller
 
         return response()->json([
             'code' => 200,
-            'message' => $data->id == 0 ? "Entidad creada correctamente" : "Entidad actualizada correctamente",
-            'raw' => property_exists($crear_entidad, 'raw') ? $crear_entidad->raw : 0,
-//            'raw' => 0,
-            'data' => property_exists($crear_entidad, 'data') ? $crear_entidad->data : 0
-//            'data' => 0
+            'message' => $data->id == 0 ? "Entidad creada correctamente" : "Entidad actualizada correctamente"
         ]);
     }
 

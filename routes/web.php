@@ -281,6 +281,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
 
         $router->group(['prefix' => 'proveedor'], function () use ($router) {
+            $router->get('data', 'CompraController@compra_proveedor_data');
             $router->get('data/{criterio}', 'CompraController@compra_proveedor_get_data');
             $router->post('guardar', 'CompraController@compra_proveedor_post_guardar');
         });
