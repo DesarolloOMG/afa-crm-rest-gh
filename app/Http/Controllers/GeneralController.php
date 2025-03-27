@@ -452,7 +452,7 @@ class GeneralController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        // 1) Validar que se envíe criterio o se seleccione un almacén
+        // Validar que se envíe criterio o se seleccione un almacén
         if (empty($data->criterio) && (empty($data->almacen) || $data->almacen == 0)) {
             return response()->json([
                 "code" => 500,
@@ -460,44 +460,27 @@ class GeneralController extends Controller
             ]);
         }
 
-        // 2) Buscar el modelo en 'modelo' o en 'modelo_sinonimo'
-        $modelo = DB::table('modelo')
-            ->where('sku', $data->criterio)
-            ->orWhere('descripcion', 'like', '%' . $data->criterio . '%')
-            ->first();
+        // Preparar variables
+        $criterio       = $data->criterio ?? '';
+        $id_almacen     = $data->almacen  ?? 0;  // 0 => todos
+        $con_existencia = $data->con_existencia == false ? 0 : 1 ?? 0; // 1 => filtra stock>0, 0 => sin filtro
 
-        $id_modelo = null;
-        if ($modelo) {
-            $id_modelo = $modelo->id;
-        } else {
-            // Buscamos en la tabla modelo_sinonimo
-            $sinonimo = DB::table('modelo_sinonimo')
-                ->where('codigo', $data->criterio)
-                ->first();
+        // 1) Ejecutar el SP con la lógica masiva
+        $productos = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
+            $criterio,
+            $id_almacen,
+            $con_existencia
+        ]);
 
-            if ($sinonimo) {
-                $modelo = DB::table('modelo')->where('id', $sinonimo->id_modelo)->first();
-                if ($modelo) {
-                    $id_modelo = $modelo->id;
-                }
-            }
-        }
-
-        if (!$id_modelo) {
+        // 2) Si no se encontraron resultados
+        if (empty($productos)) {
             return response()->json([
                 "code" => 404,
-                "message" => "No se encontró un modelo que coincida con el criterio: " . $data->criterio
+                "message" => "No se encontraron productos con el criterio: {$criterio}"
             ]);
         }
 
-        // 3) Ejecutar SP según se haya seleccionado almacén o no
-        if (!empty($data->almacen) && $data->almacen != 0) {
-            $productos = DB::select("CALL sp_calcularExistenciaAlmacen(?, ?)", [$id_modelo, $data->almacen]);
-        } else {
-            $productos = DB::select("CALL sp_calcularExistenciaTodosAlmacenes(?)", [$id_modelo]);
-        }
-
-        // 4) Construir el Excel con los resultados sin agrupar (cada fila = 1 almacén)
+        // 3) Construir el Excel
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
 
@@ -546,7 +529,7 @@ class GeneralController extends Controller
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        // Guardar temporal y codificar
+        // Guardar archivo temporalmente y codificarlo
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $tempFile = 'reporte_productos.xlsx';
         $writer->save($tempFile);
@@ -554,13 +537,10 @@ class GeneralController extends Controller
         $json['excel'] = base64_encode(file_get_contents($tempFile));
         unlink($tempFile);
 
-        // 5) Agrupar en un arreglo por 'codigo' para que el front-end reciba un solo objeto por producto
-        //    con todos sus almacenes en un sub-arreglo "almacenes".
+        // 4) Agrupar la respuesta en un arreglo por 'codigo'
         $agrupados = [];
         foreach ($productos as $p) {
             $codigo = $p->codigo;
-
-            // Si no existe, creamos la estructura base
             if (!isset($agrupados[$codigo])) {
                 $agrupados[$codigo] = [
                     'codigo'        => $p->codigo,
@@ -578,7 +558,6 @@ class GeneralController extends Controller
                 ];
             }
 
-            // Agregamos la info de este almacén al sub-arreglo
             $agrupados[$codigo]['almacenes'][] = [
                 'almacen'         => $p->almacen,
                 'inventario'      => $p->inventario,
@@ -592,13 +571,12 @@ class GeneralController extends Controller
         // Convertir a array simple (re-indexar)
         $productosAgrupados = array_values($agrupados);
 
+        // 5) Respuesta final
         $json['code']      = 200;
         $json['productos'] = $productosAgrupados;
 
         return response()->json($json);
     }
-
-
 
     public function general_busqueda_producto_costo($producto)
     {
