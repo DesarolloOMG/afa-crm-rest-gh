@@ -722,14 +722,14 @@ class VentaController extends Controller
             return response()->json([
                 'code' => 500,
                 'message' => $total->mensaje
-            ], 500);
+            ]);
         }
 
         if ($total->existencia < $cantidad) {
             return response()->json([
                 'code' => 500,
                 'message' => "Producto sin suficiente existencias.<br><br>Requerida: " . $cantidad . "<br>Disponible: " . $total->existencia
-            ], 500);
+            ]);
         }
 
         $promociones = DB::select("SELECT
@@ -992,29 +992,7 @@ class VentaController extends Controller
         $auth = json_decode($request->auth);
 
         if ($data->cliente->rfc != 'XAXX010101000') {
-            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE RFC = '" . TRIM($data->cliente->rfc) . "' AND tipo = 1");
-
-            if (empty($existe_cliente)) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No existe el cliente en la base de datos"
-                ]);
-            } else {
-                # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
-                DB::table('documento_entidad')->where(['id' => $existe_cliente[0]->id])->update([
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
-
-                DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                    'id_entidad'    => $existe_cliente[0]->id
-                ]);
-            }
+            $id_entidad = $data->cliente->select;
         } else {
             $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento . "")[0]->id_entidad;
 
@@ -1134,44 +1112,31 @@ class VentaController extends Controller
         }
 
         foreach ($data->documento->productos as $producto) {
-            if ($producto->id == 0) {
-                $existe_modelo = DB::select("SELECT id FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
+            $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
 
-                if (empty($existe_modelo)) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No existe el producto en la base datos."
-                    ]);
-                } else {
-                    $modelo = $existe_modelo[0]->id;
-                }
-
-                $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
-
-                if($existencia->error) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => $existencia->mensaje
-                    ]);
-                }
-
-                if($existencia->stock_disponible < $producto->cantidad) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => 'No hay suficiente existencia para procesar la venta'
-                    ]);
-                }
-
-                $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento'  => $data->documento->documento,
-                    'id_modelo'     => $modelo,
-                    'cantidad'      => $producto->cantidad,
-                    'precio'        => $producto->precio,
-                    'garantia'      => $producto->garantia,
-                    'modificacion'  => $producto->modificacion,
-                    'regalo'        => $producto->regalo
+            if($existencia->error) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $existencia->mensaje
                 ]);
             }
+
+            if($existencia->stock_disponible < $producto->cantidad) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => 'No hay suficiente existencia para procesar la venta'
+                ]);
+            }
+
+            $movimiento = DB::table('movimiento')->insertGetId([
+                'id_documento'  => $data->documento->documento,
+                'id_modelo'     => $producto->id,
+                'cantidad'      => $producto->cantidad,
+                'precio'        => $producto->precio,
+                'garantia'      => $producto->garantia,
+                'modificacion'  => $producto->modificacion,
+                'regalo'        => $producto->regalo
+            ]);
         }
 
         foreach ($data->documento->archivos as $archivo) {
