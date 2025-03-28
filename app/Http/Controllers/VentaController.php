@@ -1425,11 +1425,6 @@ class VentaController extends Controller
                                         documento_periodo.id AS id_periodo,
                                         documento_uso_cfdi.codigo AS uso_cfdi,
                                         documento_uso_cfdi.id AS id_cfdi,
-                                        empresa.bd,
-                                        empresa.almacen_devolucion_garantia_erp,
-                                        empresa.almacen_devolucion_garantia_sistema,
-                                        empresa.almacen_devolucion_garantia_serie,
-                                        empresa_almacen.id_erp AS id_almacen,
                                         moneda.id AS id_moneda,
                                         marketplace_area.id AS id_marketplacea_area,
                                         marketplace_area.serie AS serie_factura,
@@ -1437,7 +1432,6 @@ class VentaController extends Controller
                                         marketplace.marketplace
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN moneda ON documento.id_moneda = moneda.id
                                     INNER JOIN documento_periodo ON documento.id_periodo
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi
@@ -1550,13 +1544,12 @@ class VentaController extends Controller
         DB::table('documento')->where(['id' => $documento])->update([
             'status' => 0,
             'canceled_by' => $auth->id,
-            'status_erp' => 0
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => 1,
-            'seguimiento'   => 'Venta cancelada por: ' . $user_nombre . '<br><br>' . $message . "<br><br>" . $motivo
+            'id_documento' => $documento,
+            'id_usuario' => 1,
+            'seguimiento' => 'Venta cancelada por: ' . $user_nombre . '<br><br>' . $message . "<br><br>" . $motivo
         ]);
 
         return response()->json([
