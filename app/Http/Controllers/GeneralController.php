@@ -61,101 +61,430 @@ class GeneralController extends Controller
         ]);
     }
 
+//    public function general_busqueda_producto_existencia(Request $request)
+//    {
+//        set_time_limit(0);
+//
+//        $url = "";
+//        $data = json_decode($request->input('data'));
+//        $auth = json_decode($request->auth);
+//        $bridge = array();
+//        $productos = array();
+//        $productos_array = array();
+//        $skubusqueda = true;
+//        $extras = '';
+//
+//        if (empty($data->criterio)) {
+//            if ($data->almacen == 0) {
+//                return response()->json([
+//                    "code" => 500,
+//                    "message" => "Favor de seleccionar un almacén o escribir un criterio para realizar la búsqueda"
+//                ]);
+//            }
+//        }
+//
+//        if (sizeof($data->etiquetas) >= 2) {
+//            $skubusqueda = false;
+//            foreach ($data->etiquetas as $criterio) {
+//                if ($data->almacen != 0) {
+//                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($criterio);
+//                    $bridge = json_decode(file_get_contents($url));
+//                    $productos = array_merge($productos, $bridge);
+//                } else {
+//                    $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($criterio);
+//                    $bridge = json_decode(file_get_contents($url));
+//                    $productos = array_merge($productos, $bridge);
+//                }
+//            }
+//        }
+//
+//        if ($data->etiquetas == [] || sizeof($data->etiquetas) == 1) {
+//            $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($data->criterio);
+//            if (empty($data->criterio)) {
+//                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen;
+//                $productos = @json_decode(file_get_contents($url));
+//            } else {
+//                if ($data->almacen != 0) {
+//                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($data->criterio);
+//                    $productos = json_decode(file_get_contents($url));
+//                    if (empty($productos)) {
+//                        $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($data->criterio);
+//                        $productos = @json_decode(file_get_contents($url));
+//                        if (empty($productos)) {
+//                            $es_sinonimo = DB::table("modelo_sinonimo")
+//                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+//                                ->select("modelo.sku")
+//                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
+//                                ->first();
+//                            if (!empty($es_sinonimo)) {
+//                                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($es_sinonimo->sku);
+//                                $productos = @json_decode(file_get_contents($url));
+//                            }
+//                        }
+//                    }
+//                } else {
+//                    $productos = @json_decode(file_get_contents($url));
+//                    if (empty($productos)) {
+//                        $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($data->criterio);
+//                        $productos = @json_decode(file_get_contents($url));
+//                        if (empty($productos)) {
+//                            $es_sinonimo = DB::table("modelo_sinonimo")
+//                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+//                                ->select("modelo.sku")
+//                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
+//                                ->first();
+//                            if (!empty($es_sinonimo)) {
+//                                $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($es_sinonimo->sku);
+//                                $productos = @json_decode(file_get_contents($url));
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+//        }
+//
+//        $es_admin = DB::table("usuario_subnivel_nivel")
+//            ->select("usuario_subnivel_nivel.id")
+//            ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
+//            ->where("usuario_subnivel_nivel.id_usuario", $auth->id)
+//            ->where("subnivel_nivel.id_nivel", 6)
+//            ->where("subnivel_nivel.id_subnivel", 1)
+//            ->first();
+//
+//        $spreadsheet = new Spreadsheet();
+//        $sheet = $spreadsheet->getActiveSheet();
+//        $contador_fila  = 2;
+//
+//        # Cabecera
+//        $sheet->setCellValue('A1', 'CÓDIGO');
+//        $sheet->setCellValue('B1', 'DESCRIPCIÓN');
+//        $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
+//        $sheet->setCellValue('D1', 'ALMACÉN');
+//        $sheet->setCellValue('E1', 'INVENTARIO');
+//        $sheet->setCellValue('F1', 'PENDIENTES');
+//        $sheet->setCellValue('G1', 'EN TRANSITO');
+//        $sheet->setCellValue('H1', 'PRETRANSFERENCIA');
+//        $sheet->setCellValue('I1', 'DISPONIBLE');
+//        $sheet->setCellValue('J1', 'TIPO DE PRODUCTO');
+//        $sheet->setCellValue('K1', 'MARCA');
+//        $sheet->setCellValue('L1', 'SUBTIPO');
+//        $sheet->setCellValue('M1', 'VERTICAL');
+//        $sheet->setCellValue('N1', 'CODIGO SAT');
+//        $sheet->setCellValue('O1', 'SERIE');
+//        $sheet->setCellValue('P1', 'NP');
+//
+//        $proveedores_b2b = DB::table("modelo_proveedor")
+//            ->select("id", "razon_social")
+//            ->where("status", 1)
+//            ->where("id", "<>", 0)
+//            ->get()
+//            ->toArray();
+//
+//        $last_column = "P";
+//
+//        foreach ($proveedores_b2b as $index => $proveedor) {
+//            $last_column = self::excelColumnRange('A', 'ZZ')[15 + $index];
+//
+//            $sheet->setCellValue($last_column . '1', $proveedor->razon_social);
+//        }
+//
+//        $sheet->getStyle('A:' . $last_column)->getAlignment()->setHorizontal('center'); # Texto centrado
+//        $spreadsheet->getActiveSheet()->getStyle('A1:' . $last_column . '1')->getFont()->setBold(1)->getColor()->setARGB('2B28F6'); # Cabecera en negritas y de color azul de fondo
+//
+//        $productos = is_array($productos) ? $productos : (array) $productos;
+//        $data->etiquetas = is_array($data->etiquetas) ? $data->etiquetas : (array) $data->etiquetas;
+//        foreach ($productos as $index => $producto) {
+//            if (!$skubusqueda) {
+//                foreach ($data->etiquetas as $key) {
+//
+//                    $haystack = strtolower($producto->producto);
+//                    $needle = strtolower($key);
+//
+//                    if (!str_contains($haystack, $needle)) {
+//                        continue 2;
+//                    }
+//                };
+//            }
+//
+//            $almacenes = array();
+//            $inventario = "";
+//            $pendientes = "";
+//            $transito = "";
+//            $disponible = "";
+//
+//            if ($data->con_existencia) {
+//                if (COUNT($producto->existencias->almacenes) == 0) {
+//                    unset($productos[$index]);
+//
+//                    continue;
+//                }
+//
+//                $existencia_positiva = false;
+//
+//                foreach ($producto->existencias->almacenes as $almacen) {
+//                    if ($almacen->fisico > 0) {
+//                        $existencia_positiva = true;
+//
+//                        break;
+//                    }
+//                }
+//
+//                if (!$existencia_positiva) {
+//                    unset($productos[$index]);
+//
+//                    continue;
+//                }
+//            }
+//
+//            $costo_extra = DB::select("SELECT id, costo_extra, serie  FROM modelo WHERE sku = '" . $producto->sku . "'");
+//
+//            $producto->costo_extra = (empty($costo_extra)) ? 0 : (float) $costo_extra[0]->costo_extra;
+//            $producto->imagenes = DB::table("modelo_imagen")
+//                ->join("modelo", "modelo_imagen.id_modelo", "=", "modelo.id")
+//                ->select("dropbox")
+//                ->where("modelo.sku", $producto->sku)
+//                ->get()
+//                ->toArray();
+//            $producto->precio = DB::table("modelo_precio")
+//                ->selectRaw("ROUND(modelo_precio.precio, 2) AS precio")
+//                ->join("modelo", "modelo_precio.id_modelo", "=", "modelo.id")
+//                ->join("empresa", "modelo_precio.id_empresa", "=", "empresa.id")
+//                ->where("modelo.sku", $producto->sku)
+//                ->where("empresa.bd", $data->empresa)
+//                ->first();
+//
+//            foreach ($producto->existencias->almacenes as $index_producto => $almacen) {
+//                # OMG
+//                if (($data->empresa == "7" && in_array($almacen->almacenid, [17, 0]) && empty($es_admin)) || ($data->empresa == "6" && $almacen->almacenid == 1010 && empty($es_admin)) || ($data->empresa == "8" && $almacen->almacenid == 8 && empty($es_admin))) {
+//                    unset($producto->existencias->almacenes[$index_producto]);
+//
+//                    continue;
+//                }
+//
+//                $pendientes_bo = DB::select("SELECT
+//                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+//                                                    FROM documento
+//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                                    WHERE modelo.sku = '" . $producto->sku . "'
+//                                                    AND empresa.bd = " . $data->empresa . "
+//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
+//                                                    AND documento.id_tipo = 2
+//                                                    AND documento.status = 1
+//                                                    AND documento.id_fase IN (1, 7)")[0]->cantidad;
+//
+//                $pendientes_surtir = DB::select("SELECT
+//                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+//                                                    FROM documento
+//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                                    WHERE modelo.sku = '" . $producto->sku . "'
+//                                                    AND empresa.bd = " . $data->empresa . "
+//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
+//                                                    AND documento.id_tipo = 2
+//                                                    AND documento.status = 1
+//                                                    AND documento.anticipada = 0
+//                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
+//
+//                $pendientes_importar = DB::select("SELECT
+//                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+//                                                FROM documento
+//                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+//                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
+//                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                                WHERE modelo.sku = '" . $producto->sku . "'
+//                                                AND empresa.bd = " . $data->empresa . "
+//                                                AND empresa_almacen.id_erp = " . $almacen->almacenid . "
+//                                                AND documento.id_tipo = 2
+//                                                AND documento.status = 1
+//                                                AND documento.anticipada = 0
+//                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
+//
+//                $pendientes_pretransferencia = DB::select("SELECT
+//                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
+//                                                            FROM documento
+//                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
+//                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
+//                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                                            WHERE modelo.sku = '" . $producto->sku . "'
+//                                                            AND empresa.bd = " . $data->empresa . "
+//                                                            AND empresa_almacen.id_erp = " . $almacen->almacenid . "
+//                                                            AND documento.id_tipo = 9
+//                                                            AND documento.status = 1
+//                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
+//
+//                $pendientes_recibir = DB::select("SELECT
+//                                                        movimiento.id AS movimiento_id,
+//                                                        modelo.sku,
+//                                                        modelo.serie,
+//                                                        movimiento.completa,
+//                                                        movimiento.cantidad,
+//                                                        movimiento.cantidad_aceptada,
+//                                                        (SELECT
+//                                                            COUNT(*) AS cantidad
+//                                                        FROM movimiento
+//                                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
+//                                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+//                                                        WHERE movimiento.id = movimiento_id) AS recepcionadas
+//                                                    FROM documento
+//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                                    WHERE documento.id_tipo = 1
+//                                                    AND documento.status = 1
+//                                                    AND modelo.sku = '" . $producto->sku . "'
+//                                                    AND empresa.bd = " . $data->empresa . "
+//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
+//                                                    AND documento.id_fase = 93");
+//
+//                $total_pendientes = 0;
+//
+//                foreach ($pendientes_recibir as $pendiente) {
+//                    if ($pendiente->serie) {
+//                        $total_pendientes += $pendiente->cantidad - $pendiente->recepcionadas;
+//                    } else {
+//                        #$total_pendientes += ($pendiente->completa) ? 0 : $pendiente->cantidad;
+//                        $total_pendientes += $pendiente->cantidad - $pendiente->cantidad_aceptada;
+//                    }
+//                }
+//
+//                $almacen->nombre = $almacen->almacen;
+//                $almacen->fisico -= $pendientes_importar;
+//
+//                $almacen->pendientes_surtir = (int) $pendientes_surtir;
+//                $almacen->pendientes_recibir = (int) $total_pendientes;
+//                $almacen->pendientes_pretransferencia = (int) $pendientes_pretransferencia;
+//                $almacen->pendientes_bo = (int) $pendientes_bo;
+//
+//                array_push($almacenes, $almacen);
+//            }
+//
+//            foreach ($almacenes as $almacen) {
+//                $pendientes_surtir = property_exists($almacen, "pendientes_surtir") ? $almacen->pendientes_surtir : 0;
+//                $pendientes_recibir = property_exists($almacen, "pendientes_recibir") ? $almacen->pendientes_recibir : 0;
+//                $pendientes_pretransferencia = property_exists($almacen, "pendientes_pretransferencia") ? $almacen->pendientes_pretransferencia : 0;
+//                $disponible = ((int) $almacen->fisico - (int) $pendientes_surtir - (int) $pendientes_pretransferencia);
+//
+//                # Excel
+//                $sheet->setCellValue('A' . $contador_fila, $producto->sku);
+//                $sheet->setCellValue('B' . $contador_fila, $producto->producto);
+//                $sheet->setCellValue('C' . $contador_fila, $producto->ultimo_costo);
+//                $sheet->setCellValue('D' . $contador_fila, $almacen->nombre);
+//                $sheet->setCellValue('E' . $contador_fila, $almacen->fisico);
+//                $sheet->setCellValue('F' . $contador_fila, $pendientes_surtir);
+//                $sheet->setCellValue('G' . $contador_fila, $pendientes_recibir);
+//                $sheet->setCellValue('H' . $contador_fila, $pendientes_pretransferencia);
+//                $sheet->setCellValue('I' . $contador_fila, $disponible);
+//                $sheet->setCellValue('J' . $contador_fila, $producto->cat1);
+//                $sheet->setCellValue('K' . $contador_fila, $producto->cat2);
+//                $sheet->setCellValue('L' . $contador_fila, $producto->cat3);
+//                $sheet->setCellValue('M' . $contador_fila, $producto->cat4);
+//                $sheet->setCellValue('N' . $contador_fila, $producto->claveprodserv);
+//                $sheet->setCellValue('O' . $contador_fila, empty($costo_extra) ? 0 : ($costo_extra[0]->serie ? "SÍ" : "NO"));
+//                $sheet->setCellValue('P' . $contador_fila, property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A");
+//
+//                foreach ($proveedores_b2b as $index => $proveedor) {
+//                    if (!empty($costo_extra)) {
+//                        $codigo_data = DB::table("modelo_proveedor_producto")
+//                            ->select("id_producto")
+//                            ->where("id_modelo_proveedor", $proveedor->id)
+//                            ->where("id_modelo", $costo_extra[0]->id)
+//                            ->first();
+//
+//                        $last_producto_column = self::excelColumnRange('A', 'ZZ')[16 + $index];
+//
+//                        $sheet->setCellValue($last_producto_column . $contador_fila, empty($codigo_data) ? "" : $codigo_data->id_producto);
+//                    }
+//                }
+//
+//                $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+//                $sheet->getCellByColumnAndRow(16, $contador_fila)->setValueExplicit(property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A", \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+//                $spreadsheet->getActiveSheet()->getStyle("C" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
+//
+//                $contador_fila++;
+//            }
+//
+//            if ($data->con_existencia) {
+//                if (COUNT($producto->existencias->almacenes) == 0) {
+//                    unset($productos[$index]);
+//
+//                    continue;
+//                }
+//            }
+//
+//            $producto->ultimo_costo = ROUND($producto->ultimo_costo, 2);
+//            $producto->existencias->almacenes   = $almacenes;
+//
+//            array_push($productos_array, $producto);
+//        }
+//
+//        foreach (range('A', $last_column) as $columna) {
+//            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+//        }
+//
+//
+//        $writer = new Xlsx($spreadsheet);
+//        $writer->save('reporte_productos.xlsx');
+//
+//        $json['code'] = 200;
+//        $json['productos'] = $productos_array;
+//        $json['excel'] = base64_encode(file_get_contents('reporte_productos.xlsx'));
+//        $json['prod'] = $productos;
+//        $json['extra'] = $skubusqueda;
+//        $json['extras'] = $extras;
+//
+//        unlink('reporte_productos.xlsx');
+//
+//        return response()->json($json);
+//    }
+
     public function general_busqueda_producto_existencia(Request $request)
     {
         set_time_limit(0);
 
-        $url = "";
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $bridge = array();
-        $productos = array();
-        $productos_array = array();
-        $skubusqueda = true;
-        $extras = '';
 
-        if (empty($data->criterio)) {
-            if ($data->almacen == 0) {
-                return response()->json([
-                    "code" => 500,
-                    "message" => "Favor de seleccionar un almacén o escribir un criterio para realizar la búsqueda"
-                ]);
-            }
+        // Validar que se envíe criterio o se seleccione un almacén
+        if (empty($data->criterio) && (empty($data->almacen) || $data->almacen == 0)) {
+            return response()->json([
+                "code" => 500,
+                "message" => "Favor de seleccionar un almacén o escribir un criterio para realizar la búsqueda"
+            ]);
         }
 
-        if (sizeof($data->etiquetas) >= 2) {
-            $skubusqueda = false;
-            foreach ($data->etiquetas as $criterio) {
-                if ($data->almacen != 0) {
-                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($criterio);
-                    $bridge = json_decode(file_get_contents($url));
-                    $productos = array_merge($productos, $bridge);
-                } else {
-                    $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($criterio);
-                    $bridge = json_decode(file_get_contents($url));
-                    $productos = array_merge($productos, $bridge);
-                }
-            }
+        // Preparar variables
+        $criterio       = $data->criterio ?? '';
+        $id_almacen     = $data->almacen  ?? 0;  // 0 => todos
+        $con_existencia = $data->con_existencia == false ? 0 : 1 ?? 0; // 1 => filtra stock>0, 0 => sin filtro
+
+        // 1) Ejecutar el SP con la lógica masiva
+        $productos = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
+            $criterio,
+            $id_almacen,
+            $con_existencia
+        ]);
+
+        // 2) Si no se encontraron resultados
+        if (empty($productos)) {
+            return response()->json([
+                "code" => 404,
+                "message" => "No se encontraron productos con el criterio: {$criterio}"
+            ]);
         }
 
-        if ($data->etiquetas == [] || sizeof($data->etiquetas) == 1) {
-            $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($data->criterio);
-            if (empty($data->criterio)) {
-                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen;
-                $productos = @json_decode(file_get_contents($url));
-            } else {
-                if ($data->almacen != 0) {
-                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($data->criterio);
-                    $productos = json_decode(file_get_contents($url));
-                    if (empty($productos)) {
-                        $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($data->criterio);
-                        $productos = @json_decode(file_get_contents($url));
-                        if (empty($productos)) {
-                            $es_sinonimo = DB::table("modelo_sinonimo")
-                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-                                ->select("modelo.sku")
-                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
-                                ->first();
-                            if (!empty($es_sinonimo)) {
-                                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($es_sinonimo->sku);
-                                $productos = @json_decode(file_get_contents($url));
-                            }
-                        }
-                    }
-                } else {
-                    $productos = @json_decode(file_get_contents($url));
-                    if (empty($productos)) {
-                        $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($data->criterio);
-                        $productos = @json_decode(file_get_contents($url));
-                        if (empty($productos)) {
-                            $es_sinonimo = DB::table("modelo_sinonimo")
-                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-                                ->select("modelo.sku")
-                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
-                                ->first();
-                            if (!empty($es_sinonimo)) {
-                                $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($es_sinonimo->sku);
-                                $productos = @json_decode(file_get_contents($url));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        $es_admin = DB::table("usuario_subnivel_nivel")
-            ->select("usuario_subnivel_nivel.id")
-            ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
-            ->where("usuario_subnivel_nivel.id_usuario", $auth->id)
-            ->where("subnivel_nivel.id_nivel", 6)
-            ->where("subnivel_nivel.id_subnivel", 1)
-            ->first();
-
-        $spreadsheet = new Spreadsheet();
+        // 3) Construir el Excel
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $contador_fila  = 2;
 
-        # Cabecera
+        // Encabezados
         $sheet->setCellValue('A1', 'CÓDIGO');
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
         $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
@@ -173,274 +502,78 @@ class GeneralController extends Controller
         $sheet->setCellValue('O1', 'SERIE');
         $sheet->setCellValue('P1', 'NP');
 
-        $proveedores_b2b = DB::table("modelo_proveedor")
-            ->select("id", "razon_social")
-            ->where("status", 1)
-            ->where("id", "<>", 0)
-            ->get()
-            ->toArray();
+        $contador_fila = 2;
+        foreach ($productos as $p) {
+            $sheet->setCellValue('A' . $contador_fila, $p->codigo);
+            $sheet->setCellValue('B' . $contador_fila, $p->descripcion);
+            $sheet->setCellValue('C' . $contador_fila, $p->ultimo_costo);
+            $sheet->setCellValue('D' . $contador_fila, $p->almacen);
+            $sheet->setCellValue('E' . $contador_fila, $p->inventario);
+            $sheet->setCellValue('F' . $contador_fila, $p->pendientes);
+            $sheet->setCellValue('G' . $contador_fila, $p->en_transito);
+            $sheet->setCellValue('H' . $contador_fila, $p->pretransferencia);
+            $sheet->setCellValue('I' . $contador_fila, $p->disponible);
+            $sheet->setCellValue('J' . $contador_fila, $p->tipo_producto);
+            $sheet->setCellValue('K' . $contador_fila, $p->marca);
+            $sheet->setCellValue('L' . $contador_fila, $p->subtipo);
+            $sheet->setCellValue('M' . $contador_fila, $p->vertical);
+            $sheet->setCellValue('N' . $contador_fila, $p->codigo_sat);
+            $sheet->setCellValue('O' . $contador_fila, $p->serie);
+            $sheet->setCellValue('P' . $contador_fila, $p->np);
 
-        $last_column = "P";
-
-        foreach ($proveedores_b2b as $index => $proveedor) {
-            $last_column = self::excelColumnRange('A', 'ZZ')[15 + $index];
-
-            $sheet->setCellValue($last_column . '1', $proveedor->razon_social);
+            $contador_fila++;
         }
 
-        $sheet->getStyle('A:' . $last_column)->getAlignment()->setHorizontal('center'); # Texto centrado
-        $spreadsheet->getActiveSheet()->getStyle('A1:' . $last_column . '1')->getFont()->setBold(1)->getColor()->setARGB('2B28F6'); # Cabecera en negritas y de color azul de fondo
-
-        $productos = is_array($productos) ? $productos : (array) $productos;
-        $data->etiquetas = is_array($data->etiquetas) ? $data->etiquetas : (array) $data->etiquetas;
-        foreach ($productos as $index => $producto) {
-            if (!$skubusqueda) {
-                foreach ($data->etiquetas as $key) {
-
-                    $haystack = strtolower($producto->producto);
-                    $needle = strtolower($key);
-
-                    if (!str_contains($haystack, $needle)) {
-                        continue 2;
-                    }
-                };
-            }
-
-            $almacenes = array();
-            $inventario = "";
-            $pendientes = "";
-            $transito = "";
-            $disponible = "";
-
-            if ($data->con_existencia) {
-                if (COUNT($producto->existencias->almacenes) == 0) {
-                    unset($productos[$index]);
-
-                    continue;
-                }
-
-                $existencia_positiva = false;
-
-                foreach ($producto->existencias->almacenes as $almacen) {
-                    if ($almacen->fisico > 0) {
-                        $existencia_positiva = true;
-
-                        break;
-                    }
-                }
-
-                if (!$existencia_positiva) {
-                    unset($productos[$index]);
-
-                    continue;
-                }
-            }
-
-            $costo_extra = DB::select("SELECT id, costo_extra, serie  FROM modelo WHERE sku = '" . $producto->sku . "'");
-
-            $producto->costo_extra = (empty($costo_extra)) ? 0 : (float) $costo_extra[0]->costo_extra;
-            $producto->imagenes = DB::table("modelo_imagen")
-                ->join("modelo", "modelo_imagen.id_modelo", "=", "modelo.id")
-                ->select("dropbox")
-                ->where("modelo.sku", $producto->sku)
-                ->get()
-                ->toArray();
-            $producto->precio = DB::table("modelo_precio")
-                ->selectRaw("ROUND(modelo_precio.precio, 2) AS precio")
-                ->join("modelo", "modelo_precio.id_modelo", "=", "modelo.id")
-                ->join("empresa", "modelo_precio.id_empresa", "=", "empresa.id")
-                ->where("modelo.sku", $producto->sku)
-                ->where("empresa.bd", $data->empresa)
-                ->first();
-
-            foreach ($producto->existencias->almacenes as $index_producto => $almacen) {
-                # OMG
-                if (($data->empresa == "7" && in_array($almacen->almacenid, [17, 0]) && empty($es_admin)) || ($data->empresa == "6" && $almacen->almacenid == 1010 && empty($es_admin)) || ($data->empresa == "8" && $almacen->almacenid == 8 && empty($es_admin))) {
-                    unset($producto->existencias->almacenes[$index_producto]);
-
-                    continue;
-                }
-
-                $pendientes_bo = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto->sku . "'
-                                                    AND empresa.bd = " . $data->empresa . "
-                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.id_fase IN (1, 7)")[0]->cantidad;
-
-                $pendientes_surtir = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto->sku . "'
-                                                    AND empresa.bd = " . $data->empresa . "
-                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.anticipada = 0
-                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
-
-                $pendientes_importar = DB::select("SELECT
-                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                FROM documento
-                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                WHERE modelo.sku = '" . $producto->sku . "'
-                                                AND empresa.bd = " . $data->empresa . "
-                                                AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                AND documento.id_tipo = 2
-                                                AND documento.status = 1
-                                                AND documento.anticipada = 0
-                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
-
-                $pendientes_pretransferencia = DB::select("SELECT
-                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
-                                                            FROM documento
-                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
-                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                            WHERE modelo.sku = '" . $producto->sku . "'
-                                                            AND empresa.bd = " . $data->empresa . "
-                                                            AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                            AND documento.id_tipo = 9
-                                                            AND documento.status = 1
-                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
-
-                $pendientes_recibir = DB::select("SELECT
-                                                        movimiento.id AS movimiento_id,
-                                                        modelo.sku,
-                                                        modelo.serie,
-                                                        movimiento.completa,
-                                                        movimiento.cantidad,
-                                                        movimiento.cantidad_aceptada,
-                                                        (SELECT
-                                                            COUNT(*) AS cantidad
-                                                        FROM movimiento
-                                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                                        WHERE movimiento.id = movimiento_id) AS recepcionadas
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE documento.id_tipo = 1
-                                                    AND documento.status = 1
-                                                    AND modelo.sku = '" . $producto->sku . "'
-                                                    AND empresa.bd = " . $data->empresa . "
-                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-                                                    AND documento.id_fase = 93");
-
-                $total_pendientes = 0;
-
-                foreach ($pendientes_recibir as $pendiente) {
-                    if ($pendiente->serie) {
-                        $total_pendientes += $pendiente->cantidad - $pendiente->recepcionadas;
-                    } else {
-                        #$total_pendientes += ($pendiente->completa) ? 0 : $pendiente->cantidad;
-                        $total_pendientes += $pendiente->cantidad - $pendiente->cantidad_aceptada;
-                    }
-                }
-
-                $almacen->nombre = $almacen->almacen;
-                $almacen->fisico -= $pendientes_importar;
-
-                $almacen->pendientes_surtir = (int) $pendientes_surtir;
-                $almacen->pendientes_recibir = (int) $total_pendientes;
-                $almacen->pendientes_pretransferencia = (int) $pendientes_pretransferencia;
-                $almacen->pendientes_bo = (int) $pendientes_bo;
-
-                array_push($almacenes, $almacen);
-            }
-
-            foreach ($almacenes as $almacen) {
-                $pendientes_surtir = property_exists($almacen, "pendientes_surtir") ? $almacen->pendientes_surtir : 0;
-                $pendientes_recibir = property_exists($almacen, "pendientes_recibir") ? $almacen->pendientes_recibir : 0;
-                $pendientes_pretransferencia = property_exists($almacen, "pendientes_pretransferencia") ? $almacen->pendientes_pretransferencia : 0;
-                $disponible = ((int) $almacen->fisico - (int) $pendientes_surtir - (int) $pendientes_pretransferencia);
-
-                # Excel
-                $sheet->setCellValue('A' . $contador_fila, $producto->sku);
-                $sheet->setCellValue('B' . $contador_fila, $producto->producto);
-                $sheet->setCellValue('C' . $contador_fila, $producto->ultimo_costo);
-                $sheet->setCellValue('D' . $contador_fila, $almacen->nombre);
-                $sheet->setCellValue('E' . $contador_fila, $almacen->fisico);
-                $sheet->setCellValue('F' . $contador_fila, $pendientes_surtir);
-                $sheet->setCellValue('G' . $contador_fila, $pendientes_recibir);
-                $sheet->setCellValue('H' . $contador_fila, $pendientes_pretransferencia);
-                $sheet->setCellValue('I' . $contador_fila, $disponible);
-                $sheet->setCellValue('J' . $contador_fila, $producto->cat1);
-                $sheet->setCellValue('K' . $contador_fila, $producto->cat2);
-                $sheet->setCellValue('L' . $contador_fila, $producto->cat3);
-                $sheet->setCellValue('M' . $contador_fila, $producto->cat4);
-                $sheet->setCellValue('N' . $contador_fila, $producto->claveprodserv);
-                $sheet->setCellValue('O' . $contador_fila, empty($costo_extra) ? 0 : ($costo_extra[0]->serie ? "SÍ" : "NO"));
-                $sheet->setCellValue('P' . $contador_fila, property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A");
-
-                foreach ($proveedores_b2b as $index => $proveedor) {
-                    if (!empty($costo_extra)) {
-                        $codigo_data = DB::table("modelo_proveedor_producto")
-                            ->select("id_producto")
-                            ->where("id_modelo_proveedor", $proveedor->id)
-                            ->where("id_modelo", $costo_extra[0]->id)
-                            ->first();
-
-                        $last_producto_column = self::excelColumnRange('A', 'ZZ')[16 + $index];
-
-                        $sheet->setCellValue($last_producto_column . $contador_fila, empty($codigo_data) ? "" : $codigo_data->id_producto);
-                    }
-                }
-
-                $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                $sheet->getCellByColumnAndRow(16, $contador_fila)->setValueExplicit(property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A", \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                $spreadsheet->getActiveSheet()->getStyle("C" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
-
-                $contador_fila++;
-            }
-
-            if ($data->con_existencia) {
-                if (COUNT($producto->existencias->almacenes) == 0) {
-                    unset($productos[$index]);
-
-                    continue;
-                }
-            }
-
-            $producto->ultimo_costo = ROUND($producto->ultimo_costo, 2);
-            $producto->existencias->almacenes   = $almacenes;
-
-            array_push($productos_array, $producto);
+        // Ajustar ancho de columnas
+        foreach (range('A', 'P') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
-        foreach (range('A', $last_column) as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+        // Guardar archivo temporalmente y codificarlo
+        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+        $tempFile = 'reporte_productos.xlsx';
+        $writer->save($tempFile);
+
+        $json['excel'] = base64_encode(file_get_contents($tempFile));
+        unlink($tempFile);
+
+        // 4) Agrupar la respuesta en un arreglo por 'codigo'
+        $agrupados = [];
+        foreach ($productos as $p) {
+            $codigo = $p->codigo;
+            if (!isset($agrupados[$codigo])) {
+                $agrupados[$codigo] = [
+                    'codigo'        => $p->codigo,
+                    'descripcion'   => $p->descripcion,
+                    'ultimo_costo'  => $p->ultimo_costo,
+                    'precio'        => $p->precio,
+                    'tipo_producto' => $p->tipo_producto,
+                    'marca'         => $p->marca,
+                    'subtipo'       => $p->subtipo,
+                    'vertical'      => $p->vertical,
+                    'codigo_sat'    => $p->codigo_sat,
+                    'serie'         => $p->serie,
+                    'np'            => $p->np,
+                    'almacenes'     => [],
+                ];
+            }
+
+            $agrupados[$codigo]['almacenes'][] = [
+                'almacen'         => $p->almacen,
+                'inventario'      => $p->inventario,
+                'pendientes'      => $p->pendientes,
+                'en_transito'     => $p->en_transito,
+                'pretransferencia'=> $p->pretransferencia,
+                'disponible'      => $p->disponible,
+            ];
         }
 
+        // Convertir a array simple (re-indexar)
+        $productosAgrupados = array_values($agrupados);
 
-        $writer = new Xlsx($spreadsheet);
-        $writer->save('reporte_productos.xlsx');
-
-        $json['code'] = 200;
-        $json['productos'] = $productos_array;
-        $json['excel'] = base64_encode(file_get_contents('reporte_productos.xlsx'));
-        $json['prod'] = $productos;
-        $json['extra'] = $skubusqueda;
-        $json['extras'] = $extras;
-
-        unlink('reporte_productos.xlsx');
+        // 5) Respuesta final
+        $json['code']      = 200;
+        $json['productos'] = $productosAgrupados;
 
         return response()->json($json);
     }

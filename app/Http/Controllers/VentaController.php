@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Services\BitacoraService;
 use App\Http\Services\CorreoService;
 use App\Http\Services\InventarioService;
+use http\Env\Response;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Http\Request;
 use App\Events\PickingEvent;
@@ -721,14 +722,14 @@ class VentaController extends Controller
             return response()->json([
                 'code' => 500,
                 'message' => $total->mensaje
-            ], 500);
+            ]);
         }
 
         if ($total->existencia < $cantidad) {
             return response()->json([
                 'code' => 500,
                 'message' => "Producto sin suficiente existencias.<br><br>Requerida: " . $cantidad . "<br>Disponible: " . $total->existencia
-            ], 500);
+            ]);
         }
 
         $promociones = DB::select("SELECT
@@ -991,29 +992,7 @@ class VentaController extends Controller
         $auth = json_decode($request->auth);
 
         if ($data->cliente->rfc != 'XAXX010101000') {
-            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE RFC = '" . TRIM($data->cliente->rfc) . "' AND tipo = 1");
-
-            if (empty($existe_cliente)) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No existe el cliente en la base de datos"
-                ]);
-            } else {
-                # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
-                DB::table('documento_entidad')->where(['id' => $existe_cliente[0]->id])->update([
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
-
-                DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                    'id_entidad'    => $existe_cliente[0]->id
-                ]);
-            }
+            $id_entidad = $data->cliente->select;
         } else {
             $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento . "")[0]->id_entidad;
 
@@ -1133,34 +1112,31 @@ class VentaController extends Controller
         }
 
         foreach ($data->documento->productos as $producto) {
-            if ($producto->id == 0) {
-                $existe_modelo = DB::select("SELECT id FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
+            $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
 
-                if (empty($existe_modelo)) {
-                    $modelo = DB::table('modelo')->insertGetId([
-                        'sku'           => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                        'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                        'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                        'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                        'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                        'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                        'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8'),
-                        'id_tipo'       => 1
-                    ]);
-                } else {
-                    $modelo = $existe_modelo[0]->id;
-                }
-
-                $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento'  => $data->documento->documento,
-                    'id_modelo'     => $modelo,
-                    'cantidad'      => $producto->cantidad,
-                    'precio'        => $producto->precio,
-                    'garantia'      => $producto->garantia,
-                    'modificacion'  => $producto->modificacion,
-                    'regalo'        => $producto->regalo
+            if($existencia->error) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $existencia->mensaje
                 ]);
             }
+
+            if($existencia->stock_disponible < $producto->cantidad) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => 'No hay suficiente existencia para procesar la venta'
+                ]);
+            }
+
+            $movimiento = DB::table('movimiento')->insertGetId([
+                'id_documento'  => $data->documento->documento,
+                'id_modelo'     => $producto->id,
+                'cantidad'      => $producto->cantidad,
+                'precio'        => $producto->precio,
+                'garantia'      => $producto->garantia,
+                'modificacion'  => $producto->modificacion,
+                'regalo'        => $producto->regalo
+            ]);
         }
 
         foreach ($data->documento->archivos as $archivo) {
@@ -1449,11 +1425,6 @@ class VentaController extends Controller
                                         documento_periodo.id AS id_periodo,
                                         documento_uso_cfdi.codigo AS uso_cfdi,
                                         documento_uso_cfdi.id AS id_cfdi,
-                                        empresa.bd,
-                                        empresa.almacen_devolucion_garantia_erp,
-                                        empresa.almacen_devolucion_garantia_sistema,
-                                        empresa.almacen_devolucion_garantia_serie,
-                                        empresa_almacen.id_erp AS id_almacen,
                                         moneda.id AS id_moneda,
                                         marketplace_area.id AS id_marketplacea_area,
                                         marketplace_area.serie AS serie_factura,
@@ -1461,7 +1432,6 @@ class VentaController extends Controller
                                         marketplace.marketplace
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN moneda ON documento.id_moneda = moneda.id
                                     INNER JOIN documento_periodo ON documento.id_periodo
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi
@@ -1574,13 +1544,12 @@ class VentaController extends Controller
         DB::table('documento')->where(['id' => $documento])->update([
             'status' => 0,
             'canceled_by' => $auth->id,
-            'status_erp' => 0
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => 1,
-            'seguimiento'   => 'Venta cancelada por: ' . $user_nombre . '<br><br>' . $message . "<br><br>" . $motivo
+            'id_documento' => $documento,
+            'id_usuario' => 1,
+            'seguimiento' => 'Venta cancelada por: ' . $user_nombre . '<br><br>' . $message . "<br><br>" . $motivo
         ]);
 
         return response()->json([
