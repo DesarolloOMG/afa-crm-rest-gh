@@ -131,7 +131,7 @@ class ComodinService
      *  - La lista de series con su estado de validación.
      *  - Un mensaje y un código de error en caso de que alguna serie no cumpla con las condiciones.
      *
-     * @param array  $series Lista de series a validar.
+     * @param array $series Lista de series a validar.
      * @param string $sku    SKU del producto para el que se validan las series.
      * @return object Objeto de respuesta con la validación, que incluye:
      *                - error: 0 si todas las series son válidas, 1 si se encontraron errores.
@@ -139,7 +139,7 @@ class ComodinService
      *                - errores: (opcional) JSON con los errores encontrados.
      *                - series: Array de objetos con la serie y su estado de validación.
      */
-    public static function validar_series($series, string $sku)
+    public static function validar_series(array $series, string $sku)
     {
         // Inicializa un array para almacenar mensajes de error durante la validación.
         $errores = array();
