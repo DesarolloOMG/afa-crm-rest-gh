@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Services\BitacoraService;
 use App\Http\Services\CorreoService;
 use App\Http\Services\InventarioService;
+use http\Env\Response;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Http\Request;
 use App\Events\PickingEvent;
@@ -1137,18 +1138,28 @@ class VentaController extends Controller
                 $existe_modelo = DB::select("SELECT id FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
 
                 if (empty($existe_modelo)) {
-                    $modelo = DB::table('modelo')->insertGetId([
-                        'sku'           => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                        'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                        'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                        'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                        'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                        'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                        'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8'),
-                        'id_tipo'       => 1
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "No existe el producto en la base datos."
                     ]);
                 } else {
                     $modelo = $existe_modelo[0]->id;
+                }
+
+                $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
+
+                if($existencia->error) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $existencia->mensaje
+                    ]);
+                }
+
+                if($existencia->stock_disponible < $producto->cantidad) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => 'No hay suficiente existencia para procesar la venta'
+                    ]);
                 }
 
                 $movimiento = DB::table('movimiento')->insertGetId([
