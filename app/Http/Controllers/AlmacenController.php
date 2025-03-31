@@ -44,13 +44,8 @@ class AlmacenController extends Controller
     {
         set_time_limit(0);
         $auth = json_decode($request->auth);
-        $extra = "";
 
-        if (!in_array($auth->id, [120, 113])) {
-            $extra = "AND empresa_almacen.id != 46";
-        }
-
-        $ventas = $this->picking_packing_raw_data(" AND usuario_empresa.id_usuario = " . $auth->id . " " . $extra . "");
+        $ventas = $this->picking_packing_raw_data(" AND usuario_empresa.id_usuario = " . $auth->id);
 
         return response()->json([
             'code'  => 200,
@@ -77,64 +72,12 @@ class AlmacenController extends Controller
     {
         $series = json_decode($request->input('series'));
         $producto = $request->input('producto');
-        $array = array();
 
-        foreach ($series as $serie) {
-
-            $serie = str_replace(["'", '\\'], '', $serie);
-
-            $serie = strtoupper($serie);
-
-            $object = new \stdClass();
-
-            $existe = DB::table('documento')
-                ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
-                ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
-                ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
-                ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
-                ->where('producto.status', 1)
-                ->where('producto.serie', TRIM($serie))
-                ->where('modelo.sku', TRIM($producto))
-                ->select('producto.id')
-                ->get();
-
-
-            $object->serie = $serie;
-
-            if (empty($existe)) {
-                $esSinonimo = DB::table('modelo_sinonimo')->where('codigo', TRIM($producto))->join('modelo', 'modelo.id', '=', 'modelo_sinonimo.id_modelo')
-                    ->select('modelo.sku')->first();
-
-                if (empty($esSinonimo)) {
-                    $object->status = 0;
-                } else {
-                    $existeSinonimo = DB::table('documento')
-                        ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
-                        ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
-                        ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
-                        ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
-                        ->where('producto.status', 1)
-                        ->where('producto.serie', TRIM($serie))
-                        ->where('modelo.sku', TRIM($esSinonimo->sku))
-                        ->select('producto.id')
-                        ->get();
-
-                    if (empty($existeSinonimo)) {
-                        $object->status = 0;
-                    } else {
-                        $object->status = 1;
-                    }
-                }
-            } else {
-                $object->status = 1;
-            }
-
-            array_push($array, $object);
-        }
+        $validar_series = ComodinService::validar_series($series, $producto);
 
         return response()->json([
             'code'  => 200,
-            'series'    => $array
+            'series'    => $validar_series->series
         ]);
     }
 
@@ -317,6 +260,16 @@ class AlmacenController extends Controller
 
             if (!empty($movimiento)) {
                 if ($movimiento[0]->serie) {
+                    $validar_series = ComodinService::validar_series($producto->series, trim($producto->producto));
+
+                    if($validar_series->error){
+                        return response()->json([
+                            'code'  => 500,
+                            'message'   => $validar_series->message,
+                            'errores' => $validar_series->errores
+                        ]);
+                    }
+
                     foreach ($producto->series as $serie) {
                         $serie = str_replace(["'", '\\'], '', $serie);
                         $existe = DB::table('documento')
@@ -331,42 +284,19 @@ class AlmacenController extends Controller
                             )
                             ->get();
 
-                        if (empty($existe)) {
-                            $serie_nueva = DB::table('producto')->insertGetId([
-                                'id_almacen' => $info_documento->id_almacen,
-                                'serie' => trim($serie),
-                                'status' => 0
-                            ]);
+                        array_push($series_cambiadas, $existe[0]->id);
 
-                            DB::table('movimiento_producto')->insert([
+                        DB::table('producto')->where(['id' => $existe[0]->id])->update([
+                            'id_almacen' => $info_documento->id_almacen,
+                            'status' => 0
+                        ]);
+
+                        DB::table('movimiento_producto')->insert(
+                            [
                                 'id_movimiento' => $movimiento[0]->id,
-                                'id_producto' => $serie_nueva
-                            ]);
-
-                            array_push($series_cambiadas, $serie_nueva);
-
-                            continue;
-                        } else {
-                            array_push($series_cambiadas, $existe[0]->id);
-
-                            if ($existe[0]->sku != $producto->producto) {
-                                array_push($errores, "La serie " . $serie . " no pertenece al sku proporcionado. " . " " . self::logVariableLocation());
-
-                                continue;
-                            }
-
-                            DB::table('producto')->where(['id' => $existe[0]->id])->update([
-                                'id_almacen' => $info_documento->id_almacen,
-                                'status' => 0
-                            ]);
-
-                            DB::table('movimiento_producto')->insert(
-                                [
-                                    'id_movimiento' => $movimiento[0]->id,
-                                    'id_producto' => $existe[0]->id
-                                ]
-                            );
-                        }
+                                'id_producto' => $existe[0]->id
+                            ]
+                        );
                     }
                 }
             } else {
@@ -503,6 +433,14 @@ class AlmacenController extends Controller
             ->toArray();
 
         $documento_info = DB::table('documento')->where('id', $documento)->first();
+
+        if($documento_info->id_tipo != 2) {
+            return response()->json([
+                'code' => 500,
+                'message' => "El documento no es una venta"
+            ]);
+        }
+
         $tiene_series = DB::table('movimiento_producto')
             ->join('movimiento', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
             ->join('producto', 'producto.id', '=', 'movimiento_producto.id_producto')
@@ -524,8 +462,6 @@ class AlmacenController extends Controller
                         'id_usuario' => 1,
                         'seguimiento' => "Pedido mandado a fase factura porque ya fue surtido y no se ha creado la factura."
                     ]);
-
-                    CorreoService::cambioFaseConta($documento, "Pedido mandado a fase factura porque ya fue surtido y no se ha creado la factura.");
 
                     return response()->json([
                         "code" => 500,
@@ -718,7 +654,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        if (in_array($informacion->id_marketplace_area, [1, 32, 43, 52, 55, 58]) && $informacion->shipping_null != 1) {
+        if (in_array($informacion->id_marketplace_area, [1]) && $informacion->shipping_null != 1) {
             $validar_buffered = MercadolibreService::validarPendingBuffered($informacion->id);
 
             if ($validar_buffered->error) {
@@ -912,26 +848,6 @@ class AlmacenController extends Controller
                 'notificado' => $shiping->id_marketplace_area == 64 ? 0 : null
             ]);
         }
-        //! REFRACTORIZADO PARA AÑADIR LA ACTUALIZACION DE WT
-
-        //! OLD
-        // if ($esta_remisionado->id_marketplace_area == 35 || $esta_remisionado->id_marketplace_area == "35") {
-        //     ShopifyService::actualizarPedido($esta_remisionado->id_marketplace_area, $esta_remisionado->no_venta, trim($data->guia));
-        // }
-        //! OLD END
-
-        $id_marketplace_area = $esta_remisionado->id_marketplace_area;
-        $id_marketplace_area = (int) $id_marketplace_area;
-
-        if ($id_marketplace_area === 35) { //SHOPIFY
-            ShopifyService::actualizarPedido($id_marketplace_area, $esta_remisionado->no_venta, trim($data->guia));
-        }
-
-        $walmart_areas = [21, 36, 44, 64];
-
-        if (in_array($id_marketplace_area, $walmart_areas)) { //WALMART
-            WalmartService::actualizarEnvio($esta_remisionado->id);
-        }
 
         return response()->json([
             "code" => 200,
@@ -1110,19 +1026,32 @@ class AlmacenController extends Controller
         }
 
         foreach ($data->productos as $producto) {
+            // Consulta el movimiento relacionado al SKU y documento
             $movimiento = DB::select("SELECT
-                                        movimiento.id,
-                                        modelo.serie
-                                    FROM movimiento 
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                    WHERE modelo.sku = '" . trim($producto->sku) . "' 
-                                    AND movimiento.id_documento = " . $data->documento . "");
+                                    movimiento.id,
+                                    modelo.serie
+                                FROM movimiento 
+                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
+                                WHERE modelo.sku = '" . trim($producto->sku) . "' 
+                                AND movimiento.id_documento = " . $data->documento);
 
             if (!empty($movimiento)) {
                 if ($movimiento[0]->serie) {
-                    $series_count = array_count_values($producto->series);
+                    // Llamamos a la función de validación de series
+                    $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
+
+                    // Si hay errores en la validación, se retorna la respuesta de error
+                    if ($validacion->error == 1) {
+                        return response()->json([
+                            'code'  => 500,
+                            "color" => "red-border-top",
+                            'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
+                            'errores'   => $validacion->errores
+                        ]);
+                    }
 
                     // Verificar si hay series repetidas
+                    $series_count = array_count_values($producto->series);
                     $series_repetidas = array_filter($series_count, function ($count) {
                         return $count > 1;
                     });
@@ -1134,29 +1063,22 @@ class AlmacenController extends Controller
                             'message'   => "Hay series repetidas: " . implode(', ', array_keys($series_repetidas)) . " " . self::logVariableLocation()
                         ]);
                     }
+
+                    // Procesar cada serie validada
                     foreach ($producto->series as $serie) {
-                        //Aqui se quita
-                        //                        $apos = `'`;
-                        //                        //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                        //                        if (str_contains($serie, $apos)) {
-                        //                            $serie = addslashes($serie);
-                        //                        }
+                        // Se limpian caracteres potencialmente problemáticos
                         $serie = str_replace(["'", '\\'], '', $serie);
+
                         $existe = DB::select("SELECT
-                                                producto.id,
-                                                modelo.sku
-                                            FROM documento
-                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                            INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE producto.serie = '" . $serie . "'
-                                            AND modelo.sku = '" . $producto->sku . "'");
-
-
-                        //                        $existe = DB::table("producto")
-                        //                            ->where("serie", trim($serie))->where('status', 1)
-                        //                            ->first();
+                                            producto.id,
+                                            modelo.sku
+                                        FROM documento
+                                        INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                        INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
+                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+                                        WHERE producto.serie = '" . $serie . "'
+                                        AND modelo.sku = '" . $producto->sku . "'");
 
                         if (!empty($existe)) {
                             array_push($series_cambiadas, $existe[0]->id);
@@ -1176,7 +1098,7 @@ class AlmacenController extends Controller
                     }
                 }
             } else {
-                array_push($errores, "Mensaje: No se encontró el movimento relacionado con el producto " . $producto->sku . ", por lo tanto no se generó la relación de las series." . " " . self::logVariableLocation());
+                array_push($errores, "Mensaje: No se encontró el movimiento relacionado con el producto " . $producto->sku . ", por lo tanto no se generó la relación de las series. " . self::logVariableLocation());
             }
         }
 
@@ -1216,35 +1138,36 @@ class AlmacenController extends Controller
                     ->where("id", $data->documento)
                     ->first();
 
-                if (in_array($marketplace_area->id_marketplace_area, [14, 53, 4, 5])) {
-                    if ($fase_documento->id_fase < 3) {
-                        $this->eliminarSeries($data->documento);
-                        DB::table('seguimiento')->insert([
-                            'id_documento' => $data->documento,
-                            'id_usuario' => 1,
-                            'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
-                        ]);
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
-                            "color" => "red-border-top"
-                        ]);
-                    }
-                } else {
-                    if ($fase_documento->id_fase < 3) {
-                        $this->eliminarSeries($data->documento);
-                        DB::table('seguimiento')->insert([
-                            'id_documento' => $data->documento,
-                            'id_usuario' => 1,
-                            'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
-                        ]);
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
-                            "color" => "red-border-top"
-                        ]);
-                    }
+                //PREGUNTAR
+//                if (in_array($marketplace_area->id_marketplace_area, [14, 53, 4, 5])) {
+//                    if ($fase_documento->id_fase < 3) {
+//                        $this->eliminarSeries($data->documento);
+//                        DB::table('seguimiento')->insert([
+//                            'id_documento' => $data->documento,
+//                            'id_usuario' => 1,
+//                            'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
+//                        ]);
+//                        return response()->json([
+//                            "code" => 500,
+//                            "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
+//                            "color" => "red-border-top"
+//                        ]);
+//                    }
+//                } else {
+                if ($fase_documento->id_fase < 3) {
+                    $this->eliminarSeries($data->documento);
+                    DB::table('seguimiento')->insert([
+                        'id_documento' => $data->documento,
+                        'id_usuario' => 1,
+                        'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
+                    ]);
+                    return response()->json([
+                        "code" => 500,
+                        "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
+                        "color" => "red-border-top"
+                    ]);
                 }
+//                }
 
                 $impresora = DB::table("usuario")
                     ->join("impresora", "usuario.id_impresora_packing", "=", "impresora.id")
@@ -1358,7 +1281,8 @@ class AlmacenController extends Controller
                             "raw" => property_exists($impresion, "raw") ? $impresion->raw : 0
                         ]);
                     }
-                } else {
+                }
+                else {
                     $archivo_guia = ComodinService::logistica_envio_pendiente_documento($data->documento,$marketplace_area->id_marketplace_area);
                     $respuesta = json_decode($archivo_guia->getContent());
 
@@ -1594,156 +1518,26 @@ class AlmacenController extends Controller
         ]);
     }
 
-    /*public function almacen_movimiento_crear_crear(Request $request)
-    {
-        set_time_limit(0);
-
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-
-        // Iniciar transacción
-        DB::beginTransaction();
-
-        try {
-            if (!empty($data->almacen_entrada)) {
-                $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
-            }
-
-            if (!empty($data->almacen_salida)) {
-                $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
-            }
-
-            $documento = Documento::create([
-                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
-                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
-                'id_tipo' => $data->tipo,
-                'id_usuario' => $auth->id,
-                'id_fase' => 100,
-                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
-                'referencia' => 'N/A',
-                'info_extra' => 'N/A',
-                'observacion' => $data->observacion
-            ])->id;
-
-            $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
-
-            if (!$existe_entidad) {
-                $entidad_id = DocumentoEntidad::create([
-                    'tipo' => 2,
-                    'razon_social' => 'SISTEMA OMG',
-                    'rfc' => 'SISTEMAOMG'
-                ])->id;
-            } else {
-                $entidad_id = $existe_entidad->id;
-            }
-
-            DocumentoEntidadRelacion::create([
-                'id_documento' => $documento,
-                'id_entidad' => $entidad_id
-            ]);
-
-            foreach ($data->productos as $producto) {
-                $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
-
-                if (!$existe_modelo) {
-                    $modelo = Modelo::create([
-                        'id_tipo' => EnumModeloTipo::PRODUCTO,
-                        'sku' => trim($producto->sku),
-                        'descripcion' => $producto->descripcion,
-                        'costo' => $producto->costo,
-                        'alto' => $producto->alto,
-                        'ancho' => $producto->ancho,
-                        'largo' => $producto->largo,
-                        'peso' => $producto->peso,
-                        'serie' => $producto->serie
-                    ])->id;
-                } else {
-                    $modelo = $existe_modelo->id;
-                }
-
-                $movimiento = Movimiento::create([
-                    'id_documento' => $documento,
-                    'id_modelo' => $modelo,
-                    'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
-                    'precio' => $producto->costo,
-                    'garantia' => 0,
-                    'modificacion' => 'N/A',
-                    'comentario' => $producto->comentarios,
-                    'regalo' => 0
-                ])->id;
-
-                if ($producto->serie) {
-                    foreach ($producto->series as $serie) {
-                        $serie = str_replace(["'", '\\'], '', $serie);
-                        $existe_serie = Producto::where("serie", trim($serie))->first();
-
-                        if (!$existe_serie) {
-                            $id_producto = Producto::create([
-                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO]) ? $id_almacen_salida->id_almacen : $id_almacen_entrada->id_almacen,
-                                'serie' => trim($serie),
-                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 :0
-                            ])->id;
-                        } else {
-                            $id_producto = Producto::where("id", $existe_serie->id)->update([
-                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO]) ? $id_almacen_salida->id_almacen : $id_almacen_entrada->id_almacen,
-                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 :0
-                            ])->id;
-                        }
-
-                        MovimientoProducto::create([
-                            'id_movimiento' => $movimiento,
-                            'id_producto' => $id_producto
-                        ]);
-                    }
-                }
-            }
-
-            if (in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO])) {
-                $response = DocumentoService::crearMovimiento($documento);
-
-                if ($response->error) {
-                    throw new \Exception($response->mensaje);
-                }
-            }
-
-            // Confirmar los cambios en la base de datos
-            DB::commit();
-
-            return response()->json([
-                'message' => "Documento creado correctamente con el ID " . $documento,
-                'documento' => $documento
-            ]);
-        } catch (\Exception $e) {
-            // Revertir todos los cambios en caso de error
-            DB::rollBack();
-
-            return response()->json([
-                'message' => "Error: " . $e->getMessage(). " " . self::logVariableLocation(),
-                'raw' => $e->getCode()
-            ], 500);
-        }
-    }*/
 
     public function almacen_movimiento_crear_crear(Request $request)
     {
         set_time_limit(0);
-
         DB::beginTransaction();
 
         try {
             $data = json_decode($request->input('data'));
             $auth = json_decode($request->auth);
-            $autorized_by = 0;
             $series_afectadas = array();
 
+            // Se obtienen los almacenes, según si son de entrada o salida
             if (!empty($data->almacen_entrada)) {
                 $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
             }
-
             if (!empty($data->almacen_salida)) {
                 $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
             }
 
+            // Creación del documento
             $documento = Documento::create([
                 'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
                 'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
@@ -1756,8 +1550,8 @@ class AlmacenController extends Controller
                 'observacion' => $data->observacion
             ])->id;
 
+            // Verificar existencia de la entidad; si no existe, crearla
             $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
-
             if (!$existe_entidad) {
                 $entidad_id = DocumentoEntidad::create([
                     'tipo' => 2,
@@ -1767,15 +1561,14 @@ class AlmacenController extends Controller
             } else {
                 $entidad_id = $existe_entidad->id;
             }
-
             DocumentoEntidadRelacion::create([
                 'id_documento' => $documento,
                 'id_entidad' => $entidad_id
             ]);
 
+            // Procesar cada producto contenido en el documento
             foreach ($data->productos as $producto) {
                 $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
-
                 if (!$existe_modelo) {
                     $modelo = Modelo::create([
                         'id_tipo' => EnumModeloTipo::PRODUCTO,
@@ -1803,46 +1596,68 @@ class AlmacenController extends Controller
                     'regalo' => 0
                 ])->id;
 
+                // Si el producto se gestiona por series
                 if ($producto->serie) {
+                    // Solo se valida si el documento NO es de tipo ENTRADA
+                    if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
+                        // Se reutiliza la función de validación de series de ComodinService
+                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
+                        if ($validacion->error == 1) {
+                            return response()->json([
+                                'code'  => 500,
+                                "color" => "red-border-top",
+                                'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
+                                'errores'   => $validacion->errores
+                            ], 500);
+                        }
+                    }
+
+                    // Procesar cada serie individualmente
                     foreach ($producto->series as $serie) {
+                        // Se eliminan caracteres conflictivos
                         $serie = str_replace(["'", '\\'], '', $serie);
                         $existe_serie = Producto::where("serie", trim($serie))->first();
 
                         if (!$existe_serie) {
-                            $producto = Producto::create([
-                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO]) ? $id_almacen_salida->id_almacen : $id_almacen_entrada->id_almacen,
-                                'serie' => trim($serie),
-                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
-                            ])->id;
+                            if($data->tipo != EnumDocumentoTipo::ENTRADA){
+                                $productoId = Producto::create([
+                                    'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+                                        ? $id_almacen_salida->id_almacen
+                                        : $id_almacen_entrada->id_almacen,
+                                    'serie' => trim($serie),
+                                    'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+                                ])->id;
 
-                            $serie_afectada = new \stdClass();
-                            $serie_afectada->id = $producto;
-                            $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO]) ? $id_almacen_salida->id_almacen : $id_almacen_entrada->id_almacen;
-                            $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
+                                $serie_afectada = new \stdClass();
+                                $serie_afectada->id = $productoId;
+                                $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+                                    ? $id_almacen_salida->id_almacen
+                                    : $id_almacen_entrada->id_almacen;
+                                $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
 
-                            array_push($series_afectadas, $serie_afectada);
+                                array_push($series_afectadas, $serie_afectada);
+                            }
                         } else {
                             Producto::where("id", $existe_serie->id)->update([
-                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO]) ? $id_almacen_salida->id_almacen : $id_almacen_entrada->id_almacen,
+                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+                                    ? $id_almacen_salida->id_almacen
+                                    : $id_almacen_entrada->id_almacen,
                                 'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
                             ]);
 
-                            $producto = $existe_serie->id;
+                            $productoId = $existe_serie->id;
 
                             $serie_afectada = new \stdClass();
                             $serie_afectada->id = $existe_serie->id;
                             $serie_afectada->almacen_previo = $existe_serie->id_almacen;
                             $serie_afectada->status_previo = $existe_serie->status;
 
-                            array_push(
-                                $series_afectadas,
-                                $serie_afectada
-                            );
+                            array_push($series_afectadas, $serie_afectada);
                         }
 
                         MovimientoProducto::create([
                             'id_movimiento' => $movimiento,
-                            'id_producto' => $producto
+                            'id_producto' => $productoId
                         ]);
                     }
                 }
@@ -1854,6 +1669,7 @@ class AlmacenController extends Controller
                 $response = DocumentoService::crearMovimiento($documento);
 
                 if ($response->error) {
+                    // Si ocurre error en el proceso de creación del movimiento, se revierten los cambios de las series afectadas
                     foreach ($series_afectadas as $serie) {
                         if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
                             DB::table('producto')->where(['id' => $serie->id])->delete();
@@ -1866,7 +1682,6 @@ class AlmacenController extends Controller
                     }
 
                     DB::rollBack();
-
                     return response()->json([
                         'message' => $response->mensaje . " " . self::logVariableLocation(),
                         'raw' => property_exists($response, "raw") ? $response->raw : 0
@@ -1890,7 +1705,6 @@ class AlmacenController extends Controller
             ], 500);
         }
     }
-
 
     public function almacen_movimiento_crear_confirmar_authy(Request $request)
     {
@@ -2174,6 +1988,15 @@ class AlmacenController extends Controller
                     return response()->json([
                         'code'  => 500,
                         'message'   => "El total de series capturadas no concuerda con la cantidad del producto " . $producto->sku . ", favor de verificar e intentar de nuevo." . self::logVariableLocation()
+                    ]);
+                }
+
+                $validar = ComodinService::validar_series($producto->series_afectar, $producto->sku);
+
+                if($validar->error){
+                    return response()->json([
+                        'code'  => 500,
+                        'message'   => $validar->mensaje . " " . self::logVariableLocation()
                     ]);
                 }
 
