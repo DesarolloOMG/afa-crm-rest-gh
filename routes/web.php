@@ -595,6 +595,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('confirmar-authy', 'AlmacenController@almacen_movimiento_crear_confirmar_authy');
             });
 
+            $router->get('data/producto/{producto}', 'AlmacenController@almacen_movimiento_data_producto');
+
             $router->group(['prefix' => 'historial'], function () use ($router) {
                 $router->get('', 'AlmacenController@almacen_movimiento_historial'); # Todo historial debe ser un get, acomodar los demás
                 $router->post('data', 'AlmacenController@almacen_movimiento_historial_data'); # Todo historial debe ser un get, acomodar los demás
