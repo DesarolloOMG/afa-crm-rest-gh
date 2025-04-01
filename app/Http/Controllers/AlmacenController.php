@@ -1501,6 +1501,20 @@ class AlmacenController extends Controller
         ]);
     }
 
+    public function almacen_movimiento_data_producto($producto)
+    {
+        $productos = DB::table('modelo')
+            ->where('descripcion', 'like', '%' . $producto . '%')
+            ->orWhere('sku', $producto)
+            ->get();
+
+
+        return response()->json([
+            'code' => 200,
+            'productos' => $productos
+        ]);
+    }
+
     public function almacen_movimiento_crear_producto($producto)
     {
         $producto  = DB::select("SELECT serie FROM modelo WHERE sku = '" . TRIM($producto) . "'");
