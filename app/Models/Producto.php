@@ -10,6 +10,7 @@ class Producto extends Model {
     protected $fillable = [
         "id_almacen",
         "serie",
-        "status"
+        "status",
+        "id_modelo"
     ];
 }

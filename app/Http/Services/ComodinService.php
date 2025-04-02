@@ -155,7 +155,7 @@ class ComodinService
         $array = array();
 
         // Obtiene el ID del modelo asociado al SKU del producto consultando la tabla "modelo".
-        $id_modelo = DB::table("modelo")->where("sku", $sku)->first()->id_modelo;
+        $id_modelo = DB::table("modelo")->where("sku", $sku)->first()->id;
 
         $id_producto = 0;
 
@@ -196,6 +196,91 @@ class ComodinService
                         // Si la serie no se encontró en la tabla "producto", se marca como error.
                         $object->status = 0;
                         array_push($errores, "La serie " . $serie . " no existe en la Base de Datos");
+                    }
+                } else {
+                    // Si la serie es un sinónimo (existe en "modelo_sinonimo"), se marca como error.
+                    $object->status = 0;
+                    array_push($errores, "La serie " . $serie . " es un sinonimo.");
+                }
+            } else {
+                // Si la serie se encontró en la tabla "modelo" (es un SKU), se marca como error.
+                $object->status = 0;
+                array_push($errores, "La serie " . $serie . " es un sku.");
+            }
+            // Agrega el objeto de validación de la serie al array de resultados.
+            array_push($array, $object);
+        }
+
+        // Prepara el objeto de respuesta final basándose en si se encontraron errores o no.
+        if(!empty($errores)) {
+            // En caso de errores, se codifican en JSON y se asigna un mensaje de error.
+            $response->errores = json_encode($errores);
+            $response->error = 1;
+            $response->mensaje = "Una o mas series no se pueden agregar.";
+            $response->series = json_encode($array);
+            $response->producto = $id_producto;
+        } else {
+            // Si no hay errores, se indica que la validación fue exitosa.
+            $response->error = 0;
+            $response->mensaje = "Series Validadas.";
+            $response->series = json_encode($array);
+            $response->producto = $id_producto;
+        }
+
+        // Retorna el objeto de respuesta con toda la información de la validación.
+        return $response;
+    }
+
+    public static function validar_series_entrada(array $series, string $sku)
+    {
+        // Inicializa un array para almacenar mensajes de error durante la validación.
+        $errores = array();
+
+        // Crea un objeto para la respuesta final.
+        $response = new \stdClass();
+
+        // Objeto temporal para almacenar datos de validación de cada serie.
+        // NOTA: Este objeto se reutiliza en cada iteración, por lo que podría ser necesario reinicializarlo dentro del bucle para evitar efectos colaterales.
+        $object = new \stdClass();
+
+        // Array que contendrá el resultado de cada validación de serie.
+        $array = array();
+
+        // Obtiene el ID del modelo asociado al SKU del producto consultando la tabla "modelo".
+        $id_modelo = DB::table("modelo")->where("sku", $sku)->first()->id;
+
+        $id_producto = 0;
+
+        // Itera sobre cada serie en la lista.
+        foreach ($series as $serie) {
+            // Almacena la serie original en el objeto temporal.
+            $object->serie = $serie;
+
+            // Limpia la cadena de la serie removiendo comillas simples y barras invertidas para evitar inyección o errores en la consulta.
+            $serie = str_replace(["'", '\\'], '', $serie);
+
+            // Verifica si la serie corresponde a un SKU registrado en la tabla "modelo".
+            $es_sku = DB::table('modelo')->where('sku', $serie)->first();
+
+            // Si no se encontró la serie como SKU, se realizan las siguientes comprobaciones:
+            if(empty($es_sku)) {
+                // Comprueba si la serie es un sinónimo registrado en la tabla "modelo_sinonimo".
+                $es_sinonimo = DB::table('modelo_sinonimo')->where('codigo', $serie)->first();
+
+                // Si la serie no es un sinónimo...
+                if(empty($es_sinonimo)) {
+                    // Busca la serie en la tabla "producto" (se utiliza TRIM para eliminar espacios en blanco).
+                    $existe_serie = DB::table('producto')->where('serie', TRIM($serie))->first();
+
+                    // Si la serie existe en la base de datos...
+                    if(!empty($existe_serie)) {
+                        // Si coincide, marca la serie como válida.
+                        $object->status = 1;
+                        array_push($errores, "La serie " . $serie . " ya existe en la Base de Datos");
+                        $id_producto = $existe_serie->id;
+                    } else {
+                        // Si la serie no se encontró en la tabla "producto", se marca como error.
+                        $object->status = 1;
                     }
                 } else {
                     // Si la serie es un sinónimo (existe en "modelo_sinonimo"), se marca como error.

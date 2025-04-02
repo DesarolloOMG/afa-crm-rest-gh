@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Services\ComodinService;
 use App\Http\Services\CorreoService;
+use App\Http\Services\InventarioService;
 use App\Http\Services\ShopifyService;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -1533,6 +1534,193 @@ class AlmacenController extends Controller
     }
 
 
+//    public function almacen_movimiento_crear_crear(Request $request)
+//    {
+//        set_time_limit(0);
+//        DB::beginTransaction();
+//
+//        try {
+//            $data = json_decode($request->input('data'));
+//            $auth = json_decode($request->auth);
+//            $series_afectadas = array();
+//
+//            // Se obtienen los almacenes, según si son de entrada o salida
+//            if (!empty($data->almacen_entrada)) {
+//                $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
+//            }
+//            if (!empty($data->almacen_salida)) {
+//                $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
+//            }
+//
+//            // Creación del documento
+//            $documento = Documento::create([
+//                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
+//                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
+//                'id_tipo' => $data->tipo,
+//                'id_usuario' => $auth->id,
+//                'id_fase' => 100,
+//                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
+//                'referencia' => 'N/A',
+//                'info_extra' => 'N/A',
+//                'observacion' => $data->observacion
+//            ])->id;
+//
+//            // Verificar existencia de la entidad; si no existe, crearla
+//            $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
+//            if (!$existe_entidad) {
+//                $entidad_id = DocumentoEntidad::create([
+//                    'tipo' => 2,
+//                    'razon_social' => 'SISTEMA OMG',
+//                    'rfc' => 'SISTEMAOMG'
+//                ])->id;
+//            } else {
+//                $entidad_id = $existe_entidad->id;
+//            }
+//            DocumentoEntidadRelacion::create([
+//                'id_documento' => $documento,
+//                'id_entidad' => $entidad_id
+//            ]);
+//
+//            // Procesar cada producto contenido en el documento
+//            foreach ($data->productos as $producto) {
+//                $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
+//                if (!$existe_modelo) {
+//                    $modelo = Modelo::create([
+//                        'id_tipo' => EnumModeloTipo::PRODUCTO,
+//                        'sku' => trim($producto->sku),
+//                        'descripcion' => $producto->descripcion,
+//                        'costo' => $producto->costo,
+//                        'alto' => $producto->alto,
+//                        'ancho' => $producto->ancho,
+//                        'largo' => $producto->largo,
+//                        'peso' => $producto->peso,
+//                        'serie' => $producto->serie
+//                    ])->id;
+//                } else {
+//                    $modelo = $existe_modelo->id;
+//                }
+//
+//                $movimiento = Movimiento::create([
+//                    'id_documento' => $documento,
+//                    'id_modelo' => $modelo,
+//                    'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
+//                    'precio' => $producto->costo,
+//                    'garantia' => 0,
+//                    'modificacion' => 'N/A',
+//                    'comentario' => $producto->comentarios,
+//                    'regalo' => 0
+//                ])->id;
+//
+//                // Si el producto se gestiona por series
+//                if ($producto->serie) {
+//                    // Solo se valida si el documento NO es de tipo ENTRADA
+//                    if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
+//                        // Se reutiliza la función de validación de series de ComodinService
+//                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
+//                        if ($validacion->error == 1) {
+//                            return response()->json([
+//                                'code'  => 500,
+//                                "color" => "red-border-top",
+//                                'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
+//                                'errores'   => $validacion->errores
+//                            ], 500);
+//                        }
+//                    }
+//
+//                    // Procesar cada serie individualmente
+//                    foreach ($producto->series as $serie) {
+//                        // Se eliminan caracteres conflictivos
+//                        $serie = str_replace(["'", '\\'], '', $serie);
+//                        $existe_serie = Producto::where("serie", trim($serie))->first();
+//
+//                        if (!$existe_serie) {
+//                            if($data->tipo != EnumDocumentoTipo::ENTRADA){
+//                                $productoId = Producto::create([
+//                                    'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+//                                        ? $id_almacen_salida->id_almacen
+//                                        : $id_almacen_entrada->id_almacen,
+//                                    'serie' => trim($serie),
+//                                    'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+//                                ])->id;
+//
+//                                $serie_afectada = new \stdClass();
+//                                $serie_afectada->id = $productoId;
+//                                $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+//                                    ? $id_almacen_salida->id_almacen
+//                                    : $id_almacen_entrada->id_almacen;
+//                                $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
+//
+//                                array_push($series_afectadas, $serie_afectada);
+//                            }
+//                        } else {
+//                            Producto::where("id", $existe_serie->id)->update([
+//                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+//                                    ? $id_almacen_salida->id_almacen
+//                                    : $id_almacen_entrada->id_almacen,
+//                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+//                            ]);
+//
+//                            $productoId = $existe_serie->id;
+//
+//                            $serie_afectada = new \stdClass();
+//                            $serie_afectada->id = $existe_serie->id;
+//                            $serie_afectada->almacen_previo = $existe_serie->id_almacen;
+//                            $serie_afectada->status_previo = $existe_serie->status;
+//
+//                            array_push($series_afectadas, $serie_afectada);
+//                        }
+//
+//                        MovimientoProducto::create([
+//                            'id_movimiento' => $movimiento,
+//                            'id_producto' => $productoId
+//                        ]);
+//                    }
+//                }
+//            }
+//
+//            $mensaje = "Documento creado correctamente con el ID " . $documento;
+//
+//            if (in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO])) {
+//                $response = DocumentoService::crearMovimiento($documento);
+//
+//                if ($response->error) {
+//                    // Si ocurre error en el proceso de creación del movimiento, se revierten los cambios de las series afectadas
+//                    foreach ($series_afectadas as $serie) {
+//                        if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
+//                            DB::table('producto')->where(['id' => $serie->id])->delete();
+//                        } else {
+//                            DB::table('producto')->where(['id' => $serie->id])->update([
+//                                'id_almacen' => $serie->almacen_previo,
+//                                'status' => $serie->status_previo
+//                            ]);
+//                        }
+//                    }
+//
+//                    DB::rollBack();
+//                    return response()->json([
+//                        'message' => $response->mensaje . " " . self::logVariableLocation(),
+//                        'raw' => property_exists($response, "raw") ? $response->raw : 0
+//                    ], 500);
+//                }
+//
+//                $mensaje = $response->mensaje . " ID " . $documento;
+//            }
+//
+//            DB::commit();
+//
+//            return response()->json([
+//                'message' => $mensaje,
+//                'documento' => $documento
+//            ]);
+//        } catch (\Exception $e) {
+//            DB::rollBack();
+//
+//            return response()->json([
+//                'message' => 'Error al crear el documento: ' . $e->getMessage(),
+//            ], 500);
+//        }
+//    }
+
     public function almacen_movimiento_crear_crear(Request $request)
     {
         set_time_limit(0);
@@ -1543,7 +1731,7 @@ class AlmacenController extends Controller
             $auth = json_decode($request->auth);
             $series_afectadas = array();
 
-            // Se obtienen los almacenes, según si son de entrada o salida
+            // Se obtienen los almacenes según si son de entrada o salida
             if (!empty($data->almacen_entrada)) {
                 $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
             }
@@ -1582,26 +1770,21 @@ class AlmacenController extends Controller
 
             // Procesar cada producto contenido en el documento
             foreach ($data->productos as $producto) {
-                $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
-                if (!$existe_modelo) {
-                    $modelo = Modelo::create([
-                        'id_tipo' => EnumModeloTipo::PRODUCTO,
-                        'sku' => trim($producto->sku),
-                        'descripcion' => $producto->descripcion,
-                        'costo' => $producto->costo,
-                        'alto' => $producto->alto,
-                        'ancho' => $producto->ancho,
-                        'largo' => $producto->largo,
-                        'peso' => $producto->peso,
-                        'serie' => $producto->serie
-                    ])->id;
-                } else {
-                    $modelo = $existe_modelo->id;
+
+                // Verificar existencia del modelo; si no existe se crea
+                $existe_modelo = DB::table('modelo')->where('sku', $producto->sku)->first();
+
+                if(empty($existe_modelo)){
+                    DB::rollBack();
+                    return response()->json([
+                        'message' => "No existe el producto " . trim($producto->sku)
+                    ], 500);
                 }
 
+                // Creación del movimiento
                 $movimiento = Movimiento::create([
                     'id_documento' => $documento,
-                    'id_modelo' => $modelo,
+                    'id_modelo' => $existe_modelo->id,
                     'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
                     'precio' => $producto->costo,
                     'garantia' => 0,
@@ -1610,13 +1793,63 @@ class AlmacenController extends Controller
                     'regalo' => 0
                 ])->id;
 
+                // Validar existencias para documentos que NO sean de entrada.
+                // Ahora, para SALIDA, TRASPASO y USO_INTERNO, se utiliza el almacén de salida para verificar el stock.
+                if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
+                    $sourceAlmacenId = $id_almacen_salida->id_almacen;
+                    $stock = InventarioService::stockDisponible(trim($producto->sku), $sourceAlmacenId);
+                    $cantidadRequerida = $producto->serie ? count($producto->series) : $producto->cantidad;
+                    if ($stock->error || $stock->disponible < $cantidadRequerida) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Stock insuficiente para el producto " . trim($producto->sku) . ". Disponible: " . $stock->disponible . ", requerido: " . $cantidadRequerida
+                        ], 500);
+                    }
+                }
+
                 // Si el producto se gestiona por series
                 if ($producto->serie) {
-                    // Solo se valida si el documento NO es de tipo ENTRADA
-                    if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
-                        // Se reutiliza la función de validación de series de ComodinService
+                    if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
+                        // Validar que las series NO existan en la BD usando la función de validación para entrada.
+                        $validacion = ComodinService::validar_series_entrada($producto->series, trim($producto->sku));
+                        if ($validacion->error == 1) {
+                            DB::rollBack();
+                            return response()->json([
+                                'message' => $validacion->mensaje . " " . self::logVariableLocation(),
+                                'errores' => $validacion->errores
+                            ], 500);
+                        }
+
+                        // Procesar cada serie: al no existir, se crean nuevos registros
+                        foreach ($producto->series as $serie) {
+                            // Eliminar caracteres conflictivos
+                            $serie = str_replace(["'", '\\'], '', $serie);
+                            $existe_serie = Producto::where("serie", trim($serie))->first();
+                            if ($existe_serie) {
+                                // Si por alguna inconsistencia la serie ya existe, se aborta
+                                DB::rollBack();
+                                return response()->json([
+                                    'message' => "La serie " . $serie . " ya existe en la Base de Datos."
+                                ], 500);
+                            } else {
+                                $productoId = Producto::create([
+                                    'id_almacen' => $id_almacen_entrada->id_almacen,
+                                    'serie' => trim($serie),
+                                    'status' => 1,
+                                    'id_modelo' => $existe_modelo->id
+                                ])->id;
+
+                                MovimientoProducto::create([
+                                    'id_movimiento' => $movimiento,
+                                    'id_producto' => $productoId
+                                ]);
+                            }
+                        }
+                    } else {
+                        // Para SALIDA, TRASPASO y USO_INTERNO se utiliza la función existente de validación de series
                         $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
                         if ($validacion->error == 1) {
+                            DB::rollBack();
                             return response()->json([
                                 'code'  => 500,
                                 "color" => "red-border-top",
@@ -1624,66 +1857,45 @@ class AlmacenController extends Controller
                                 'errores'   => $validacion->errores
                             ], 500);
                         }
-                    }
+                        // Procesar cada serie: si existe se actualiza, si no se crea
+                        foreach ($producto->series as $serie) {
+                            $serie = str_replace(["'", '\\'], '', $serie);
+                            $existe_serie = Producto::where("serie", trim($serie))->first();
 
-                    // Procesar cada serie individualmente
-                    foreach ($producto->series as $serie) {
-                        // Se eliminan caracteres conflictivos
-                        $serie = str_replace(["'", '\\'], '', $serie);
-                        $existe_serie = Producto::where("serie", trim($serie))->first();
-
-                        if (!$existe_serie) {
-                            if($data->tipo != EnumDocumentoTipo::ENTRADA){
-                                $productoId = Producto::create([
-                                    'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-                                        ? $id_almacen_salida->id_almacen
-                                        : $id_almacen_entrada->id_almacen,
-                                    'serie' => trim($serie),
-                                    'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
-                                ])->id;
-
+                            if (!$existe_serie) {
+                                return response()->json([
+                                    'code'  => 500,
+                                    'message' => "La serie no existe en la Base de Datos."
+                                ]);
+                            } else {
+                                Producto::where("id", $existe_serie->id)->update([
+                                    'id_almacen' => $id_almacen_salida->id_almacen,
+                                    'status' => 0
+                                ]);
+                                $productoId = $existe_serie->id;
                                 $serie_afectada = new \stdClass();
-                                $serie_afectada->id = $productoId;
-                                $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-                                    ? $id_almacen_salida->id_almacen
-                                    : $id_almacen_entrada->id_almacen;
-                                $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
-
+                                $serie_afectada->id = $existe_serie->id;
+                                $serie_afectada->almacen_previo = $existe_serie->id_almacen;
+                                $serie_afectada->status_previo = $existe_serie->status;
                                 array_push($series_afectadas, $serie_afectada);
                             }
-                        } else {
-                            Producto::where("id", $existe_serie->id)->update([
-                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-                                    ? $id_almacen_salida->id_almacen
-                                    : $id_almacen_entrada->id_almacen,
-                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+
+                            MovimientoProducto::create([
+                                'id_movimiento' => $movimiento,
+                                'id_producto' => $productoId
                             ]);
-
-                            $productoId = $existe_serie->id;
-
-                            $serie_afectada = new \stdClass();
-                            $serie_afectada->id = $existe_serie->id;
-                            $serie_afectada->almacen_previo = $existe_serie->id_almacen;
-                            $serie_afectada->status_previo = $existe_serie->status;
-
-                            array_push($series_afectadas, $serie_afectada);
                         }
-
-                        MovimientoProducto::create([
-                            'id_movimiento' => $movimiento,
-                            'id_producto' => $productoId
-                        ]);
                     }
                 }
             }
 
             $mensaje = "Documento creado correctamente con el ID " . $documento;
 
-            if (in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO])) {
-                $response = DocumentoService::crearMovimiento($documento);
+            if (!in_array($data->tipo, [EnumDocumentoTipo::TRASPASO])) {
+                $response = DocumentoService::afectarMovimiento($documento);
 
                 if ($response->error) {
-                    // Si ocurre error en el proceso de creación del movimiento, se revierten los cambios de las series afectadas
+                    // En caso de error en la creación del movimiento, se revierten los cambios realizados en las series
                     foreach ($series_afectadas as $serie) {
                         if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
                             DB::table('producto')->where(['id' => $serie->id])->delete();
@@ -1719,6 +1931,7 @@ class AlmacenController extends Controller
             ], 500);
         }
     }
+
 
     public function almacen_movimiento_crear_confirmar_authy(Request $request)
     {

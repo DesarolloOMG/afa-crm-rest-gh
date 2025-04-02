@@ -99,12 +99,12 @@ class InventarioService
                 $nuevoStock = $stockAnterior;
 
                 // Si el documento suma inventario, se incrementa el stock.
-                if ($docTipo->sumainventario == 1) {
+                if ($docTipo->sumaInventario == 1) {
                     $nuevoStock = $stockAnterior + $cantidad;
                 }
 
                 // Si el documento resta inventario, se disminuye el stock sin dejarlo negativo.
-                if ($docTipo->restainventario == 1) {
+                if ($docTipo->restaInventario == 1) {
                     $nuevoStock = $stockAnterior - $cantidad;
                 }
 
@@ -181,13 +181,13 @@ class InventarioService
     {
         $existencia = DB::table('modelo_existencias')
             ->where('id_modelo', $idModelo)
-            ->where('id_empresa_almacen', $idEmpresaAlmacen)
+            ->where('id_almacen', $idEmpresaAlmacen)
             ->first();
 
         if (!$existencia) {
             $id = DB::table('modelo_existencias')->insertGetId([
                 'id_modelo'          => $idModelo,
-                'id_empresa_almacen' => $idEmpresaAlmacen,
+                'id_almacen' => $idEmpresaAlmacen,
                 'stock_inicial'      => 0,
                 'stock'              => 0,
                 'stock_anterior'     => 0
