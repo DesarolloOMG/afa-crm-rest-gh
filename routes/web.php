@@ -864,7 +864,15 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('ver-credenciales', 'ConfiguracionController@configuracion_sistema_marketplace_ver_credenciales');
                 $router->post('guardar', 'ConfiguracionController@configuracion_sistema_marketplace_guardar');
             });
+
+            $router->group(['prefix' => 'impresora'], function () use ($router) {
+                $router->post('', 'ConfiguracionController@configuracion_sistema_impresora_create');
+                $router->get('', 'ConfiguracionController@configuracion_sistema_impresora_retrive');
+                $router->post('', 'ConfiguracionController@configuracion_sistema_impresora_update');
+                $router->delete('/{impresora_id}', 'ConfiguracionController@configuracion_sistema_impresora_delete');
+            });
         });
+
 
         # Almacenes
         $router->get('almacen', 'ConfiguracionController@getAlmacenes');
