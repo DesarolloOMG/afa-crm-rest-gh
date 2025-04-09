@@ -3511,7 +3511,7 @@ class GeneralController extends Controller
                                     WHERE documento_entidad_modelo_margen.id_ftp = " . $cliente_id . "");
 
         foreach ($productos as $producto) {
-            $response = InventarioService::existenciaProducto($producto->sku, 114);
+            $response = InventarioService::existenciaProducto($producto->sku, 1);
 
             $producto->existencia = $response->error ? 0 : $response->existencia;
         }

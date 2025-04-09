@@ -81,7 +81,7 @@ class APIController extends Controller
                 ], 404);
             }
 
-            $existencia_producto = DocumentoService::existenciaProducto($producto, 114);
+            $existencia_producto = DocumentoService::existenciaProducto($producto, 1);
 
             if ($existencia_producto->error) {
                 return response()->json([
@@ -173,7 +173,7 @@ class APIController extends Controller
                     continue;
                 }
 
-                $response = DocumentoService::existenciaProducto($producto->sku, 114);
+                $response = DocumentoService::existenciaProducto($producto->sku, 1);
 
                 $producto->disponibilidad = $response->error ? 0 : $response->existencia;
 
@@ -342,7 +342,7 @@ class APIController extends Controller
                     ], 500);
                 }
 
-                $existencia_producto = DocumentoService::existenciaProducto($producto->sku, 114);
+                $existencia_producto = DocumentoService::existenciaProducto($producto->sku, 1);
 
                 if ($existencia_producto->error) {
                     return response()->json([
@@ -1077,7 +1077,7 @@ class APIController extends Controller
                     ], 404);
                 }
 
-                $existencia_producto = DocumentoService::existenciaProducto($producto->sku, 114);
+                $existencia_producto = DocumentoService::existenciaProducto($producto->sku, 1);
 
                 if ($existencia_producto->error) {
                     return response()->json([

@@ -668,15 +668,6 @@ class CompraController extends Controller
             ]);
         }
 
-        $crear_compra = DocumentoService::crearCompra($data->documento);
-
-        if ($crear_compra->error) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => $crear_compra->mensaje
-            ]);
-        }
-
         DB::table('documento')->where(['id' => $data->documento])->update([
             'id_fase'   => 93,
             'autorizado_by' => $auth->id
