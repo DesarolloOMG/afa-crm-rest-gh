@@ -151,7 +151,7 @@ class LiverpoolService
         return DB::table('documento')->insertGetId([
             'id_cfdi' => 3,
             'id_tipo' => 2,
-            'id_almacen_principal_empresa' => $almacen ?? 114,
+            'id_almacen_principal_empresa' => $almacen ?? 1,
             'id_marketplace_area' => $marketplace_area,
             'id_usuario' => 1,
             'id_paqueteria' => 1,

@@ -400,7 +400,7 @@ class APIController extends Controller
             $venta = 'B2B_' . mb_strtoupper(uniqid(), 'UTF-8');
 
             $documento = DB::table('documento')->insertGetId([
-                'id_almacen_principal_empresa' => 114, # Almacén del B2B
+                'id_almacen_principal_empresa' => 1, # Almacén del B2B
                 'id_marketplace_area' => $data_cliente->id_marketplace_area, # Marketplace de cyberpuerta
                 'id_periodo' => $data_cliente->id_periodo, # Previamente registrado junto con el cliente
                 'id_cfdi' => $data_cliente->id_cfdi, # Previamente registrado junto con el cliente
@@ -1129,7 +1129,7 @@ class APIController extends Controller
             $venta = 'B2B_' . mb_strtoupper(uniqid(), 'UTF-8');
 
             $documento = DB::table('documento')->insertGetId([
-                'id_almacen_principal_empresa' => 114, # Almacén del B2B
+                'id_almacen_principal_empresa' => 1, # Almacén del B2B
                 'id_marketplace_area' => $data_cliente->id_marketplace_area, # Marketplace de cyberpuerta
                 'id_periodo' => $data_cliente->id_periodo, # Previamente registrado junto con el cliente
                 'id_cfdi' => $data_cliente->id_cfdi, # Previamente registrado junto con el cliente

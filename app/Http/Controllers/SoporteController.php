@@ -2341,7 +2341,7 @@ class SoporteController extends Controller
                 ]);
 
                 $documento_pedido = DB::table('documento')->insertGetId([
-                    'id_almacen_principal_empresa' => 114,
+                    'id_almacen_principal_empresa' => 1,
                     'id_tipo' => 2,
                     'id_periodo' => 1,
                     'id_cfdi' => 3,
