@@ -4157,7 +4157,6 @@ class AlmacenController extends Controller
     {
         $impresoras = DB::table("impresora")
             ->where("status", 1)
-            ->where("cups", "<>", "N/A")
             ->get()
             ->toArray();
 

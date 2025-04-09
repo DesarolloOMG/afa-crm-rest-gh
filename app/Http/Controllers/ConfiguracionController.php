@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\EmpresaAlmacen;
+use Exception;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Hash;
 use App\Events\PusherEvent;
@@ -83,12 +84,12 @@ class ConfiguracionController extends Controller
 
         $area =
             DB::table('usuario')
-            ->select('area')
-            ->where('status', 1)
-            ->groupBy('area')
-            ->orderBy('area')
-            ->get()
-            ->toarray();
+                ->select('area')
+                ->where('status', 1)
+                ->groupBy('area')
+                ->orderBy('area')
+                ->get()
+                ->toarray();
 
         foreach ($usuarios as $key) {
             $empresaAlmacenIds = DB::table('usuario_empresa_almacen')
@@ -145,7 +146,7 @@ class ConfiguracionController extends Controller
                     'message' => "Usuario no encontrado"
                 ], 404);
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Si ocurre un error, revertir la transacción
             DB::rollBack();
 
@@ -202,9 +203,9 @@ class ConfiguracionController extends Controller
             $contrasena = GeneralService::randomString(10);
 
             $usuario = Usuario::create([
-                'nombre' =>    mb_strtoupper($data->nombre, 'UTF-8'),
+                'nombre' => mb_strtoupper($data->nombre, 'UTF-8'),
                 'email' => $data->email,
-                'contrasena' =>    Hash::make($contrasena),
+                'contrasena' => Hash::make($contrasena),
                 'authy' => $authy_user->id(),
                 'celular' => $data->celular
             ]);
@@ -255,7 +256,7 @@ class ConfiguracionController extends Controller
             DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->whereNull('area')->update([
                 'area' => $area
             ]);
-            $userr =  DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->first();
+            $userr = DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->first();
 
             foreach ($empresa_almacen as $key) {
 
@@ -382,25 +383,25 @@ class ConfiguracionController extends Controller
         if ($nivel->id == 0) {
             $id_nivel = DB::table('nivel')
                 ->insertGetId([
-                    'nivel'      => $nivel->nivel,
-                    'status'    => 1
+                    'nivel' => $nivel->nivel,
+                    'status' => 1
                 ]);
 
-            $json['message']    = "Nivel creado correctamente";
+            $json['message'] = "Nivel creado correctamente";
         } else {
             DB::table('nivel')
                 ->where(['id' => $nivel->id])
                 ->update([
-                    'nivel'  => $nivel
+                    'nivel' => $nivel
                 ]);
 
-            $json['message']    = "Nivel actualizada correctamente";
+            $json['message'] = "Nivel actualizada correctamente";
 
             $id_nivel = $nivel->id;
         }
 
-        $json['code']   = 200;
-        $json['nivel']  = $id_nivel;
+        $json['code'] = 200;
+        $json['nivel'] = $id_nivel;
 
         return response()->json($json);
     }
@@ -416,41 +417,41 @@ class ConfiguracionController extends Controller
             if (empty($existe_subnivel)) {
                 $id_subnivel = DB::table('subnivel')
                     ->insertGetId([
-                        'subnivel'  => $subnivel->subnivel,
-                        'status'    => 1
+                        'subnivel' => $subnivel->subnivel,
+                        'status' => 1
                     ]);
 
                 DB::table('subnivel_nivel')
                     ->insert([
-                        'id_subnivel'   => $id_subnivel,
-                        'id_nivel'      => $subnivel->nivel
+                        'id_subnivel' => $id_subnivel,
+                        'id_nivel' => $subnivel->nivel
                     ]);
             } else {
                 DB::table('subnivel_nivel')
                     ->insert([
-                        'id_subnivel'   => $existe_subnivel[0]->id,
-                        'id_nivel'      => $subnivel->nivel
+                        'id_subnivel' => $existe_subnivel[0]->id,
+                        'id_nivel' => $subnivel->nivel
                     ]);
 
                 $id_subnivel = $existe_subnivel[0]->id;
             }
 
-            $json['message']    = "Subnivel creado correctamente";
-            $json['subnivel']   = $id_subnivel;
+            $json['message'] = "Subnivel creado correctamente";
+            $json['subnivel'] = $id_subnivel;
         } else {
             DB::table('subnivel')
                 ->where(['id' => $subnivel->id])
                 ->update([
-                    'subnivel'  => $subnivel->subnivel
+                    'subnivel' => $subnivel->subnivel
                 ]);
 
             DB::table('subnivel_nivel')
                 ->where(['id_subnivel' => $subnivel->id])
                 ->update([
-                    'id_nivel'   => $subnivel->nivel
+                    'id_nivel' => $subnivel->nivel
                 ]);
 
-            $json['message']    = "Subnivel actualizado correctamente";
+            $json['message'] = "Subnivel actualizado correctamente";
 
             $id_nivel = $subnivel->id;
         }
@@ -644,8 +645,8 @@ class ConfiguracionController extends Controller
             $json['message'] = "Almacén actualizado correctamente";
         }
 
-        $json['code']       = 200;
-        $json['almacen']    = $id_almacen;
+        $json['code'] = 200;
+        $json['almacen'] = $id_almacen;
 
         return $this->make_json($json);
     }
@@ -656,7 +657,7 @@ class ConfiguracionController extends Controller
 
         $paqueterias = Paqueteria::consulta();
 
-        $json['code']   = 200;
+        $json['code'] = 200;
         $json['paqueterias'] = $paqueterias;
 
         return $this->make_json($json);
@@ -690,7 +691,7 @@ class ConfiguracionController extends Controller
             $json['message'] = "Paqueteria actualizada correctamente";
         }
 
-        $json['code']       = 200;
+        $json['code'] = 200;
         $json['paqueteria'] = $id_paqueteria;
 
         return $this->make_json($json);
@@ -772,12 +773,103 @@ class ConfiguracionController extends Controller
         $final = date('m/d/Y h:i:s a', time());
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "ID PAQUETERIA guardado correctamente.",
+            'code' => 200,
+            'message' => "ID PAQUETERIA guardado correctamente.",
             'inicio' => $inicio,
             'mitad' => $mitad,
             'final' => $final,
 
         ]);
+    }
+
+
+    public function configuracion_sistema_impresora_create(Request $request)
+    {
+        $data = json_decode($request->input('data'));
+        try {
+            $id = DB::table('impresora')->insertGetId([
+                'nombre' => $data->nombre,
+                'tamanio' => $data->tamanio,
+                'tipo' => $data->tipo,
+                'ip' => $data->ip,
+                'servidor' => $data->servidor,
+            ]);
+
+            DB::commit();
+
+            return response()->json(['message' => 'Impresora creada con éxito', 'id' => $id], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => 'Error al crear la impresora', 'error' => $e->getMessage()], 400);
+        }
+    }
+
+    public function configuracion_sistema_impresora_retrive()
+    {
+        $impresoras = DB::table('impresora')->get();
+        $empresas = Empresa::where("id", "<>", 0)->get();
+        $areas = Area::where("id", "<>", 0)->get();
+
+        return response()->json([
+            "areas" => $areas,
+            "impresoras" => $impresoras,
+            "empresas" => $empresas
+        ]);
+    }
+
+    public function configuracion_sistema_impresora_update(Request $request)
+    {
+        $data = json_decode($request->input('data'));
+
+        DB::beginTransaction();
+
+        try {
+
+            $updated = DB::table('impresora')
+                ->where('id', $data->id)
+                ->update([
+                    'nombre' => $data->nombre,
+                    'tamanio' => $data->tamanio,
+                    'tipo' => $data->tipo,
+                    'ip' => $data->ip,
+                    'servidor' => $data->servidor
+                ]);
+
+            if (!$updated) {
+                throw new Exception('Recurso no encontrado o no se realizaron cambios');
+            }
+
+            DB::commit();
+
+            return response()->json(['message' => 'Recurso actualizado con éxito'], 200);
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => $e->getMessage()], 400);
+        }
+    }
+
+    public function configuracion_sistema_impresora_delete($impresora_id)
+    {
+        DB::beginTransaction();
+
+        try {
+            $deleted = DB::table('impresora')
+                ->where('id', $impresora_id)
+                ->delete();
+
+            if (!$deleted) {
+                throw new Exception('Recurso no encontrado');
+            }
+
+            DB::commit();
+
+            return response()->json(['message' => 'Recurso eliminado con éxito'], 200);
+        } catch (Exception $e) {
+            DB::rollBack();
+
+            return response()->json(['message' => $e->getMessage()], 400);
+        }
     }
 }
