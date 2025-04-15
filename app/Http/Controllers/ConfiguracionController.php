@@ -184,21 +184,21 @@ class ConfiguracionController extends Controller
         }
 
         if ($data->id == 0) {
-            $authy_request = new \Authy\AuthyApi(config("authy.token"));
-
-            $authy_user = $authy_request->registerUser($data->email, $data->celular, 52);
-
-            if (!$authy_user->ok()) {
-                $errores = "";
-
-                foreach ($auth_user->errors() as $field => $error) {
-                    $errores .= $field . ": " . $error . "<br>";
-                }
-
-                return response()->json([
-                    "message" => "Ocurrió un error al dar de alta el usuario en Authy, errores: " . $errors
-                ], 500);
-            }
+//            $authy_request = new \Authy\AuthyApi(config("authy.token"));
+//
+//            $authy_user = $authy_request->registerUser($data->email, $data->celular, 52);
+//
+//            if (!$authy_user->ok()) {
+//                $errores = "";
+//
+//                foreach ($auth_user->errors() as $field => $error) {
+//                    $errores .= $field . ": " . $error . "<br>";
+//                }
+//
+//                return response()->json([
+//                    "message" => "Ocurrió un error al dar de alta el usuario en Authy, errores: " . $errors
+//                ], 500);
+//            }
 
             $contrasena = GeneralService::randomString(10);
 
@@ -206,7 +206,6 @@ class ConfiguracionController extends Controller
                 'nombre' => mb_strtoupper($data->nombre, 'UTF-8'),
                 'email' => $data->email,
                 'contrasena' => Hash::make($contrasena),
-                'authy' => $authy_user->id(),
                 'celular' => $data->celular
             ]);
 
@@ -480,13 +479,13 @@ class ConfiguracionController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_token);
-
-        if ($validate_authy->error) {
-            return response()->json([
-                "message" => $validate_authy->mensaje
-            ], 500);
-        }
+//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_token);
+//
+//        if ($validate_authy->error) {
+//            return response()->json([
+//                "message" => $validate_authy->mensaje
+//            ], 500);
+//        }
 
         $marketplace_api = MarketplaceApi::with("marketplace_area.marketplace", "marketplace_area.area")->find($data->marketplace_api);
 

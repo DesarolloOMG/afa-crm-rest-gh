@@ -46,32 +46,32 @@ class AuthController extends Controller
             ], 404);
         }
 
-        if (empty($data->authy)) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => "El código de Authy no fue proporcionado"
-            ]);
-
-            return response()->json([
-                "message" => "Abre tu aplicación de Authy y escribe el codigo que aparece para poder iniciar sesión"
-            ], 500);
-        }
-        if (!in_array(strtolower($data->email), $excepciones)) {
-            $validate_authy = DocumentoService::authy($existe->id, $data->authy);
-
-            if ($validate_authy->error) {
-                UsuarioLoginError::create([
-                    "email" => $data->email,
-                    "password" => $data->password,
-                    "mensaje" => "Error al validar el token de authy: " . $validate_authy->mensaje
-                ]);
-
-                return response()->json([
-                    "message" => "Error al validar el token de Authy: " . $validate_authy->mensaje
-                ], 500);
-            }
-        }
+//        if (empty($data->authy)) {
+//            UsuarioLoginError::create([
+//                "email" => $data->email,
+//                "password" => $data->password,
+//                "mensaje" => "El código de Authy no fue proporcionado"
+//            ]);
+//
+//            return response()->json([
+//                "message" => "Abre tu aplicación de Authy y escribe el codigo que aparece para poder iniciar sesión"
+//            ], 500);
+//        }
+//        if (!in_array(strtolower($data->email), $excepciones)) {
+//            $validate_authy = DocumentoService::authy($existe->id, $data->authy);
+//
+//            if ($validate_authy->error) {
+//                UsuarioLoginError::create([
+//                    "email" => $data->email,
+//                    "password" => $data->password,
+//                    "mensaje" => "Error al validar el token de authy: " . $validate_authy->mensaje
+//                ]);
+//
+//                return response()->json([
+//                    "message" => "Error al validar el token de Authy: " . $validate_authy->mensaje
+//                ], 500);
+//            }
+//        }
 
         if (!Hash::check($data->password, $existe->contrasena)) {
             UsuarioLoginError::create([
