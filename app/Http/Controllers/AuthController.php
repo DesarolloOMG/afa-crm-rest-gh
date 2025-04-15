@@ -140,20 +140,20 @@ class AuthController extends Controller
 
         $contrasena = GeneralService::randomString();
 
-        $view = view('email.reset_password')
-            ->with([
-                'usuario' => $existe->nombre,
-                'anio' => date('Y'),
-                'contrasena' => $contrasena
-            ]);
-
-        $mg = Mailgun::create(config("mailgun.token"));
-        $mg->sendMessage(config("mailgun.domain"), array(
-            'from' => config("mailgun.email_from"),
-            'to' => $existe->email,
-            'subject' => 'Reseteo de contraseña.',
-            'html' => $view
-        ));
+//        $view = view('email.reset_password')
+//            ->with([
+//                'usuario' => $existe->nombre,
+//                'anio' => date('Y'),
+//                'contrasena' => $contrasena
+//            ]);
+//
+//        $mg = Mailgun::create(config("mailgun.token"));
+//        $mg->sendMessage(config("mailgun.domain"), array(
+//            'from' => config("mailgun.email_from"),
+//            'to' => $existe->email,
+//            'subject' => 'Reseteo de contraseña.',
+//            'html' => $view
+//        ));
 
         $usuario_data = Usuario::find($existe->id);
 

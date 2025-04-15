@@ -245,34 +245,34 @@ class CompraController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
-
-        if (empty($authy_user_id)) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "No se encontró el usuario que ha autorizado la finalización."
-            ]);
-        }
-
-        try {
-            $authy_user_id = $authy_user_id[0]->id;
-
-            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-            $verification = $authy_request->verifyToken($data->usuario, $data->token);
-
-            if (!$verification->ok()) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido."
-                ]);
-            }
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-            ]);
-        }
+//        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
+//
+//        if (empty($authy_user_id)) {
+//            return response()->json([
+//                'code'  => 403,
+//                'message'   => "No se encontró el usuario que ha autorizado la finalización."
+//            ]);
+//        }
+//
+//        try {
+//            $authy_user_id = $authy_user_id[0]->id;
+//
+//            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+//
+//            $verification = $authy_request->verifyToken($data->usuario, $data->token);
+//
+//            if (!$verification->ok()) {
+//                return response()->json([
+//                    'code'  => 403,
+//                    'message'   => "El token ingresado no es valido."
+//                ]);
+//            }
+//        } catch (\Authy\AuthyFormatException $e) {
+//            return response()->json([
+//                'code'  => 403,
+//                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
+//            ]);
+//        }
 
         return response()->json([
             "code" => 200,
@@ -1514,47 +1514,47 @@ class CompraController extends Controller
 
         $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id . "")[0];
 
-        $view = view('email.notificacion_requisicion_autorizacion')->with([
-            'anio' => date('Y'),
-            'nombre' => $usuario->nombre,
-            'documento' => $documento,
-            'seguimiento' => $seguimiento,
-        ]);
-
-        try {
-            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-            $domain = "omg.com.mx";
-            $mg->sendMessage($domain, array(
-                'from'  => 'CRM OMG International <crm@omg.com.mx>',
-                'to'            => $usuario->email,
-                'subject'       => 'Requisición con el ID ' . $documento . '.',
-                'html'          => $view
-            ));
-
-            $notificacion['titulo']     = "Requisición autorizada";
-            $notificacion['message']    = "Tu requisición con el ID " . $documento . " ha sido autorizada";
-            $notificacion['tipo']       = "success"; // success, warning, danger
-            $notificacion['link']       = "/compra/orden/historial";
-
-            $notificacion_id = DB::table('notificacion')->insertGetId([
-                'data'  => json_encode($notificacion)
-            ]);
-
-            DB::table('notificacion_usuario')->insert([
-                'id_usuario'    => $usuario->id,
-                'id_notificacion'   => $notificacion_id
-            ]);
-
-            $notificacion['id']         = $notificacion_id;
-            $notificacion['usuario']    = $usuario->id;
-
-            event(new PusherEvent(json_encode($notificacion)));
-        } catch (Exception $e) {
-            return response()->json([
-                'code'  => 200,
-                'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
-            ]);
-        }
+//        $view = view('email.notificacion_requisicion_autorizacion')->with([
+//            'anio' => date('Y'),
+//            'nombre' => $usuario->nombre,
+//            'documento' => $documento,
+//            'seguimiento' => $seguimiento,
+//        ]);
+//
+//        try {
+//            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+//            $domain = "omg.com.mx";
+//            $mg->sendMessage($domain, array(
+//                'from'  => 'CRM OMG International <crm@omg.com.mx>',
+//                'to'            => $usuario->email,
+//                'subject'       => 'Requisición con el ID ' . $documento . '.',
+//                'html'          => $view
+//            ));
+//
+//            $notificacion['titulo']     = "Requisición autorizada";
+//            $notificacion['message']    = "Tu requisición con el ID " . $documento . " ha sido autorizada";
+//            $notificacion['tipo']       = "success"; // success, warning, danger
+//            $notificacion['link']       = "/compra/orden/historial";
+//
+//            $notificacion_id = DB::table('notificacion')->insertGetId([
+//                'data'  => json_encode($notificacion)
+//            ]);
+//
+//            DB::table('notificacion_usuario')->insert([
+//                'id_usuario'    => $usuario->id,
+//                'id_notificacion'   => $notificacion_id
+//            ]);
+//
+//            $notificacion['id']         = $notificacion_id;
+//            $notificacion['usuario']    = $usuario->id;
+//
+//            event(new PusherEvent(json_encode($notificacion)));
+//        } catch (Exception $e) {
+//            return response()->json([
+//                'code'  => 200,
+//                'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
+//            ]);
+//        }
 
         return response()->json([
             'code'  => 200,
@@ -2179,34 +2179,34 @@ class CompraController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
-
-        if (empty($authy_user_id)) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "No se encontró el usuario que ha autorizado la finalización."
-            ]);
-        }
-
-        try {
-            $authy_user_id = $authy_user_id[0]->id;
-
-            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-            $verification = $authy_request->verifyToken($data->usuario, $data->token);
-
-            if (!$verification->ok()) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido."
-                ]);
-            }
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-            ]);
-        }
+//        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
+//
+//        if (empty($authy_user_id)) {
+//            return response()->json([
+//                'code'  => 403,
+//                'message'   => "No se encontró el usuario que ha autorizado la finalización."
+//            ]);
+//        }
+//
+//        try {
+//            $authy_user_id = $authy_user_id[0]->id;
+//
+//            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+//
+//            $verification = $authy_request->verifyToken($data->usuario, $data->token);
+//
+//            if (!$verification->ok()) {
+//                return response()->json([
+//                    'code'  => 403,
+//                    'message'   => "El token ingresado no es valido."
+//                ]);
+//            }
+//        } catch (\Authy\AuthyFormatException $e) {
+//            return response()->json([
+//                'code'  => 403,
+//                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
+//            ]);
+//        }
 
         return response()->json([
             "code" => 200,

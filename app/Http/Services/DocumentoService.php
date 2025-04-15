@@ -3098,40 +3098,40 @@ class DocumentoService
 
     public static function authy($usuario, $token)
     {
-        $response = new \stdClass();
-
-        $authy = DB::select("SELECT authy FROM usuario WHERE id = " . $usuario . "");
-
-        if (empty($authy)) {
-            $response->error = 1;
-            $response->mensaje = "Usuario no encontrado." . self::logVariableLocation();
-
-            return $response;
-        }
-
-        $authy = $authy[0]->authy;
-
-        try {
-            $authy_request = new \Authy\AuthyApi(config("authy.token"));
-
-            $verification = $authy_request->verifyToken($authy, $token);
-
-            if (!$verification->ok()) {
-                $response->error = 1;
-                $response->mensaje = "Token incorrecto" . self::logVariableLocation();
-
-                return $response;
-            }
-
-            $response->error = 0;
-
-            return $response;
-        } catch (\Authy\AuthyFormatException $e) {
-            $response->error = 1;
-            $response->mensaje = $e->getMessage() . "" . self::logVariableLocation();
-
-            return $response;
-        }
+//        $response = new \stdClass();
+//
+//        $authy = DB::select("SELECT authy FROM usuario WHERE id = " . $usuario . "");
+//
+//        if (empty($authy)) {
+//            $response->error = 1;
+//            $response->mensaje = "Usuario no encontrado." . self::logVariableLocation();
+//
+//            return $response;
+//        }
+//
+//        $authy = $authy[0]->authy;
+//
+//        try {
+//            $authy_request = new \Authy\AuthyApi(config("authy.token"));
+//
+//            $verification = $authy_request->verifyToken($authy, $token);
+//
+//            if (!$verification->ok()) {
+//                $response->error = 1;
+//                $response->mensaje = "Token incorrecto" . self::logVariableLocation();
+//
+//                return $response;
+//            }
+//
+//            $response->error = 0;
+//
+//            return $response;
+//        } catch (\Authy\AuthyFormatException $e) {
+//            $response->error = 1;
+//            $response->mensaje = $e->getMessage() . "" . self::logVariableLocation();
+//
+//            return $response;
+//        }
     }
 
     public static function __eliminarFactura($documento)

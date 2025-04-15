@@ -602,45 +602,45 @@ class NotificacionesController extends Controller{
                 }
             }
 
-            if (!$fulfillment) {
-                $html = view('email.notificacion_pedido')->with(['cliente' => ($data->CustomerFirstName . " " . $data->CustomerLastName), 'pedido' => $documento, 'anio' => date('Y')]);
+//            if (!$fulfillment) {
+//                $html = view('email.notificacion_pedido')->with(['cliente' => ($data->CustomerFirstName . " " . $data->CustomerLastName), 'pedido' => $documento, 'anio' => date('Y')]);
+//
+//                $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
+//                $domain = "omg.com.mx";
+//                $mg->sendMessage($domain, array('from'  => 'Laptop México <generico@omg.com.mx>',
+//                                        'to'      => 'desarrollo1@omg.com.mx',
+//                                        'subject' => '¡Pedido ' . $documento . ' procesado!',
+//                                        'html'    => $html));
+//            }
 
-                $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
-                $domain = "omg.com.mx";
-                $mg->sendMessage($domain, array('from'  => 'Laptop México <generico@omg.com.mx>',
-                                        'to'      => 'desarrollo1@omg.com.mx',
-                                        'subject' => '¡Pedido ' . $documento . ' procesado!',
-                                        'html'    => $html));
-            }
-
-            if (!empty($usuarios_marketplace)) {
-                $usuarios = array();
-
-                $notificacion['titulo']     = "Nueva venta";
-                $notificacion['message']    = ($fulfillment) ? "Se ha importado correctamente la venta: " . $data->OrderNumber . " con el número de pedido: " . $documento . " al ser una venta de fulfillment, fue surtida automaticamente, favor de verificar que esté creada correctamente de lo contrario cancelar e importar manualmente." : "Se ha importado correctamente la venta: " . $data->OrderNumber . " con el número de pedido: " . $documento . ", la podrás visualizar en el menú 'Ventas > Pedidos de venta > Pendientes'";
-                $notificacion['tipo']       = "success"; // success, warning, danger
-
-                $notificacion_id = DB::table('notificacion')->insertGetId([
-                    'data'  => json_encode($notificacion)
-                ]);
-
-                $notificacion['id']         = $notificacion_id;
-
-                foreach ($usuarios_marketplace as $usuario) {
-                    DB::table('notificacion_usuario')->insert([
-                        'id_usuario'        => $usuario->id_usuario,
-                        'id_notificacion'   => $notificacion_id
-                    ]);
-
-                    array_push($usuarios, $usuario->id_usuario);
-                }
-
-                if (!empty($usuarios)) {
-                    $notificacion['usuario']    = $usuarios;
-        
-                    event(new PusherEvent(json_encode($notificacion)));
-                }
-            }
+//            if (!empty($usuarios_marketplace)) {
+//                $usuarios = array();
+//
+//                $notificacion['titulo']     = "Nueva venta";
+//                $notificacion['message']    = ($fulfillment) ? "Se ha importado correctamente la venta: " . $data->OrderNumber . " con el número de pedido: " . $documento . " al ser una venta de fulfillment, fue surtida automaticamente, favor de verificar que esté creada correctamente de lo contrario cancelar e importar manualmente." : "Se ha importado correctamente la venta: " . $data->OrderNumber . " con el número de pedido: " . $documento . ", la podrás visualizar en el menú 'Ventas > Pedidos de venta > Pendientes'";
+//                $notificacion['tipo']       = "success"; // success, warning, danger
+//
+//                $notificacion_id = DB::table('notificacion')->insertGetId([
+//                    'data'  => json_encode($notificacion)
+//                ]);
+//
+//                $notificacion['id']         = $notificacion_id;
+//
+//                foreach ($usuarios_marketplace as $usuario) {
+//                    DB::table('notificacion_usuario')->insert([
+//                        'id_usuario'        => $usuario->id_usuario,
+//                        'id_notificacion'   => $notificacion_id
+//                    ]);
+//
+//                    array_push($usuarios, $usuario->id_usuario);
+//                }
+//
+//                if (!empty($usuarios)) {
+//                    $notificacion['usuario']    = $usuarios;
+//
+//                    event(new PusherEvent(json_encode($notificacion)));
+//                }
+//            }
 
             echo "Venta importada correctamente!";
         }

@@ -954,34 +954,34 @@ class LogisticaController extends Controller
         $auth = json_decode($request->auth);
         $usuarios = [];
 
-        if (!empty($data->notificados)) {
-            foreach ($data->notificados as $notificado) {
-                try {
-                    $usuario = Usuario::find($notificado->id);
-
-                    if ($usuario) {
-                        if (filter_var($usuario->email, FILTER_VALIDATE_EMAIL)) {
-                            $html = view('email.notificacion_control_paqueteria')->with(['data' => $data, 'anio' => date('Y')]);
-
-                            $mg = Mailgun::create(config("mailgun.token"));
-                            $mg->sendMessage(config("mailgun.domain"), array(
-                                'from'  => config("mailgun.email_from"),
-                                'to' => $usuario->email,
-                                'subject' => '¡Te llegó un paquete!',
-                                'html' => $html
-                            ));
-                        }
-                    }
-
-                    array_push($usuarios, $notificado->id);
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => $e->getMessage()
-                    ]);
-                }
-            }
-        }
+//        if (!empty($data->notificados)) {
+//            foreach ($data->notificados as $notificado) {
+//                try {
+//                    $usuario = Usuario::find($notificado->id);
+//
+//                    if ($usuario) {
+//                        if (filter_var($usuario->email, FILTER_VALIDATE_EMAIL)) {
+//                            $html = view('email.notificacion_control_paqueteria')->with(['data' => $data, 'anio' => date('Y')]);
+//
+//                            $mg = Mailgun::create(config("mailgun.token"));
+//                            $mg->sendMessage(config("mailgun.domain"), array(
+//                                'from'  => config("mailgun.email_from"),
+//                                'to' => $usuario->email,
+//                                'subject' => '¡Te llegó un paquete!',
+//                                'html' => $html
+//                            ));
+//                        }
+//                    }
+//
+//                    array_push($usuarios, $notificado->id);
+//                } catch (Exception $e) {
+//                    return response()->json([
+//                        'code' => 500,
+//                        'message' => $e->getMessage()
+//                    ]);
+//                }
+//            }
+//        }
 
         DB::table('paqueteria_control')->insert([
             'id_paqueteria' => $data->paqueteria,

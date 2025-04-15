@@ -694,32 +694,32 @@ class ShopifyService
     {
         $emails = "";
 
-        $view = view('email.notificacion_error_importacion_shopify')->with([
-            "errores" => $errores,
-            "anio" => date("Y")
-        ]);
-
-        $usuarios = DB::select("SELECT
-                                usuario.email
-                            FROM usuario
-                            INNER JOIN usuario_marketplace_area ON usuario.id = usuario_marketplace_area.id_usuario
-                            WHERE usuario_marketplace_area.id_marketplace_area = " . $marketplace_id . "
-                            AND usuario.status = 1
-                            GROUP BY usuario.email");
-
-        foreach ($usuarios as $usuario) {
-            $emails .= $usuario->email . ";";
-        }
-
-        $emails = substr($emails, 0, -1);
-
-        $mg = Mailgun::create(config("mailgun.token"));
-        $mg->sendMessage(config("mailgun.domain"), array(
-            'from' => config("mailgun.email_from"),
-            'to' => $emails,
-            'subject' => 'Reporte ' . $titulo_email,
-            'html' => $view
-        ));
+//        $view = view('email.notificacion_error_importacion_shopify')->with([
+//            "errores" => $errores,
+//            "anio" => date("Y")
+//        ]);
+//
+//        $usuarios = DB::select("SELECT
+//                                usuario.email
+//                            FROM usuario
+//                            INNER JOIN usuario_marketplace_area ON usuario.id = usuario_marketplace_area.id_usuario
+//                            WHERE usuario_marketplace_area.id_marketplace_area = " . $marketplace_id . "
+//                            AND usuario.status = 1
+//                            GROUP BY usuario.email");
+//
+//        foreach ($usuarios as $usuario) {
+//            $emails .= $usuario->email . ";";
+//        }
+//
+//        $emails = substr($emails, 0, -1);
+//
+//        $mg = Mailgun::create(config("mailgun.token"));
+//        $mg->sendMessage(config("mailgun.domain"), array(
+//            'from' => config("mailgun.email_from"),
+//            'to' => $emails,
+//            'subject' => 'Reporte ' . $titulo_email,
+//            'html' => $view
+//        ));
     }
 
     private static function request_data($parameters, $api, $token, $path)

@@ -81,13 +81,13 @@ class SoporteController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-
-        if ($validate_authy->error) {
-            return response()->json([
-                "message" => $validate_authy->mensaje
-            ], 500);
-        }
+//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+//
+//        if ($validate_authy->error) {
+//            return response()->json([
+//                "message" => $validate_authy->mensaje
+//            ], 500);
+//        }
 
         DB::table("documento_garantia")->where("id", $data->documento)->delete();
 

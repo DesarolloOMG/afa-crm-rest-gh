@@ -690,43 +690,43 @@ class GeneralService
         $emails = "";
         $query = "";
 
-        $view = view('email.notificacion_error_sistema')->with([
-            "recurso" => $recurso,
-            "mensaje" => $mensaje,
-            "raw" => $raw,
-            "anio" => date("Y")
-        ]);
-
-        if (!empty($extra_emails)) {
-            $query = "OR usuario.id IN (" . implode(",", $extra_emails) . ")";
-        }
-
-        $admins = DB::select("SELECT
-                                usuario.email
-                            FROM usuario
-                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
-                            WHERE subnivel.subnivel = 'SISTEMA'
-                            " . $query . "
-                            GROUP BY usuario.email");
-
-        foreach ($admins as $admin) {
-            $emails .= $admin->email . ";";
-        }
-
-        $emails .= "sistemas@omg.com.mx";
-
-        # $emails = substr($emails, 0, -1);
-
-        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-        $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array(
-            'from' => 'CRM OMG International <crm@omg.com.mx>',
-            'to' => $emails,
-            'subject' => !$tipo ? 'Error en CRM' : '¡Advertencia!',
-            'html' => $view
-        ));
+//        $view = view('email.notificacion_error_sistema')->with([
+//            "recurso" => $recurso,
+//            "mensaje" => $mensaje,
+//            "raw" => $raw,
+//            "anio" => date("Y")
+//        ]);
+//
+//        if (!empty($extra_emails)) {
+//            $query = "OR usuario.id IN (" . implode(",", $extra_emails) . ")";
+//        }
+//
+//        $admins = DB::select("SELECT
+//                                usuario.email
+//                            FROM usuario
+//                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
+//                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
+//                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
+//                            WHERE subnivel.subnivel = 'SISTEMA'
+//                            " . $query . "
+//                            GROUP BY usuario.email");
+//
+//        foreach ($admins as $admin) {
+//            $emails .= $admin->email . ";";
+//        }
+//
+//        $emails .= "sistemas@omg.com.mx";
+//
+//        # $emails = substr($emails, 0, -1);
+//
+//        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+//        $domain = "omg.com.mx";
+//        $mg->sendMessage($domain, array(
+//            'from' => 'CRM OMG International <crm@omg.com.mx>',
+//            'to' => $emails,
+//            'subject' => !$tipo ? 'Error en CRM' : '¡Advertencia!',
+//            'html' => $view
+//        ));
     }
 
     public static function randomString($length = 10)

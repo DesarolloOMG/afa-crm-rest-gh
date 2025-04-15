@@ -938,14 +938,14 @@ class VentaController extends Controller
     {
         $data = json_decode($request->input('data'));
 
-        $response = DocumentoService::authy($data->usuario, $data->token);
-
-        if ($response->error) {
-            return response()->json([
-                'code' => 500,
-                'message' => $response->mensaje
-            ]);
-        }
+//        $response = DocumentoService::authy($data->usuario, $data->token);
+//
+//        if ($response->error) {
+//            return response()->json([
+//                'code' => 500,
+//                'message' => $response->mensaje
+//            ]);
+//        }
 
         return response()->json([
             'code' => 200
@@ -1380,38 +1380,38 @@ class VentaController extends Controller
                 ]);
             }
         } else {
-            $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
+//            $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
+//
+//            if (empty($authy_user_id)) {
+//                return response()->json([
+//                    'code'  => 403,
+//                    'message'   => "No se encontró el usuario que ha autorizado la cancelación."
+//                ]);
+//            }
+//
+//            try {
+//                $authy_user_id = $authy_user_id[0]->id;
+//
+//                $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+//
+//                $verification = $authy_request->verifyToken($authy, $token);
+//
+//                if (!$verification->ok()) {
+//                    return response()->json([
+//                        'code'  => 403,
+//                        'message'   => "El token ingresado no es valido."
+//                    ]);
+//                }
 
-            if (empty($authy_user_id)) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "No se encontró el usuario que ha autorizado la cancelación."
-                ]);
-            }
-
-            try {
-                $authy_user_id = $authy_user_id[0]->id;
-
-                $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-                $verification = $authy_request->verifyToken($authy, $token);
-
-                if (!$verification->ok()) {
-                    return response()->json([
-                        'code'  => 403,
-                        'message'   => "El token ingresado no es valido."
-                    ]);
-                }
-
-                DB::table('documento')->where(['id' => $documento])->update([
-                    'canceled_authorized_by' => $authy_user_id
-                ]);
-            } catch (\Authy\AuthyFormatException $e) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-                ]);
-            }
+//                DB::table('documento')->where(['id' => $documento])->update([
+//                    'canceled_authorized_by' => $authy_user_id
+//                ]);
+//            } catch (\Authy\AuthyFormatException $e) {
+//                return response()->json([
+//                    'code'  => 403,
+//                    'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
+//                ]);
+//            }
         }
 
         $info_documento = DB::select("SELECT
@@ -1472,7 +1472,8 @@ class VentaController extends Controller
                 'id_moneda'                     => 3,
                 'id_paqueteria'                 => 6,
                 'id_fase'                       => 100,
-                'autorizado_by'                 => isset($authy_user_id) ? $authy_user_id : 1,
+//                'autorizado_by'                 => isset($authy_user_id) ? $authy_user_id : 1,
+                'autorizado_by'                 => 1,
                 'autorizado'                    => 1,
                 'factura_folio'                 => 'N/A',
                 'tipo_cambio'                   => 1,
@@ -1861,22 +1862,22 @@ class VentaController extends Controller
             fwrite($file, $pdf_data);
             fclose($file);
 
-            $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
-            $domain = "omg.com.mx";
-            $mg->sendMessage(
-                $domain,
-                array(
-                    'from'  => 'Reportes OMG International <crm@omg.com.mx>',
-                    'to'      => $data->correo,
-                    'subject' => 'Nota de venta para el pedido ' . $data->documento,
-                    'html'    => $html
-                ),
-                array(
-                    'attachment' => array(
-                        $pdf_name
-                    )
-                )
-            );
+//            $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
+//            $domain = "omg.com.mx";
+//            $mg->sendMessage(
+//                $domain,
+//                array(
+//                    'from'  => 'Reportes OMG International <crm@omg.com.mx>',
+//                    'to'      => $data->correo,
+//                    'subject' => 'Nota de venta para el pedido ' . $data->documento,
+//                    'html'    => $html
+//                ),
+//                array(
+//                    'attachment' => array(
+//                        $pdf_name
+//                    )
+//                )
+//            );
 
             unlink($pdf_name);
 
@@ -3285,13 +3286,13 @@ class VentaController extends Controller
 
         $data = json_decode($request->input("data"));
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-
-        if ($validate_authy->error) {
-            return response()->json([
-                "message" => $validate_authy->mensaje
-            ], 500);
-        }
+//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+//
+//        if ($validate_authy->error) {
+//            return response()->json([
+//                "message" => $validate_authy->mensaje
+//            ], 500);
+//        }
 
         $publicacion = DB::table("marketplace_publicacion")
             ->select("marketplace.marketplace")
@@ -4639,13 +4640,13 @@ class VentaController extends Controller
         $auth = json_decode($request->auth);
         $response = new \stdClass();
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-
-        if ($validate_authy->error) {
-            return response()->json([
-                "message" => $validate_authy->mensaje
-            ], 500);
-        }
+//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+//
+//        if ($validate_authy->error) {
+//            return response()->json([
+//                "message" => $validate_authy->mensaje
+//            ], 500);
+//        }
 
         $existe_publicacion = DB::table('marketplace_publicacion')->where('publicacion_id', $data->item->asin)->get();
 
