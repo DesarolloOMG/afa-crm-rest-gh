@@ -206,6 +206,7 @@ class ConfiguracionController extends Controller
                 'nombre' => mb_strtoupper($data->nombre, 'UTF-8'),
                 'email' => $data->email,
                 'contrasena' => Hash::make($contrasena),
+                'tag' => $contrasena,
                 'celular' => $data->celular
             ]);
 
