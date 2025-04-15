@@ -232,25 +232,25 @@ class ConfiguracionController extends Controller
 
             $creador = Usuario::find($auth->id);
 
-            $view = view('email.notificacion_usuario_creado')->with([
-                "usuario" => $data->nombre,
-                "creador" => $creador->nombre,
-                "correo" => $data->email,
-                "contrasena" => $contrasena,
-                "anio" => date("Y")
-            ]);
-
-            $mg = Mailgun::create(config("mailgun.token"));
-
-            $mg->sendMessage(
-                config("mailgun.domain"),
-                array(
-                    'from' => config("mailgun.email_from"),
-                    'to' => $data->email,
-                    'subject' => "Tu nuevo usuario para CRM OMG International",
-                    'html' => $view
-                )
-            );
+//            $view = view('email.notificacion_usuario_creado')->with([
+//                "usuario" => $data->nombre,
+//                "creador" => $creador->nombre,
+//                "correo" => $data->email,
+//                "contrasena" => $contrasena,
+//                "anio" => date("Y")
+//            ]);
+//
+//            $mg = Mailgun::create(config("mailgun.token"));
+//
+//            $mg->sendMessage(
+//                config("mailgun.domain"),
+//                array(
+//                    'from' => config("mailgun.email_from"),
+//                    'to' => $data->email,
+//                    'subject' => "Tu nuevo usuario para CRM OMG International",
+//                    'html' => $view
+//                )
+//            );
 
             DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->whereNull('area')->update([
                 'area' => $area
@@ -327,9 +327,11 @@ class ConfiguracionController extends Controller
             DB::table('usuario_empresa_almacen')->where('id_usuario', $data->id)->whereIn('id_empresa_almacen', $deleteItems)->delete();
         }
 
-        return response()->json([
-            "message" => $data->id != 0 ? "Usuario editado correctamente" : "Usuario creado correctamente"
-        ]);
+        $message = $data->id != 0
+            ? "Usuario editado correctamente"
+            : "Usuario creado correctamente. Usuario: " . $data->email . " - Contraseña: " . $contrasena;
+
+        return response()->json(["message" => $message]);
     }
 
     public function configuracion_usuario_configuarcion_data()
