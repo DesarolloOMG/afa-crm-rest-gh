@@ -45,7 +45,7 @@ class GeneralController extends Controller
 
         foreach ($empresas as $empresa) {
             $empresa->almacenes = DB::table("empresa_almacen")
-                ->select("empresa_almacen.id", "empresa_almacen.id_erp", "almacen.almacen")
+                ->select("empresa_almacen.id", "almacen.almacen")
                 ->join("almacen", "empresa_almacen.id_almacen", "=", "almacen.id")
                 ->where("empresa_almacen.id_empresa", $empresa->id)
                 ->where("almacen.status", 1)
