@@ -25,6 +25,7 @@ class Usuario extends Model
     protected $fillable = [
         'nombre',
         'email',
+        'tag',
         'celular',
         'contrasena',
         'authy'
