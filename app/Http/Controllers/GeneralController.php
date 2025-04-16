@@ -703,7 +703,6 @@ class GeneralController extends Controller
                                 INNER JOIN movimiento ON documento.id = movimiento.id_documento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
                                 WHERE modelo.sku = '" . trim($data->producto) . "'
-                                AND empresa.bd = '" . $data->empresa . "'
                                 " . $extra_query . "");
 
         foreach ($documentos as $documento) {
