@@ -2,19 +2,12 @@
 
 namespace App\Http\Services;
 
-use App\Http\Services\DocumentoService;
-use App\Http\Services\ExelDelNorteService;
-use App\Http\Services\CTService;
+use DB;
+use Exception;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use Mailgun\Mailgun;
-use ZipArchive;
-use Exception;
-use DateTime;
-use DB;
 use MP;
+use ZipArchive;
 
 class MercadolibreService
 {
@@ -42,31 +35,55 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
         $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        //$seller = self::seller($marketplace->extra_2, $token);
 
         $venta = str_replace("%20", " ", $venta);
+        $ventas = [];
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
+        $opts = [
+            "http" => [
+                "method" => "GET",
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
 
-        if (empty($informacion_venta)) {
-            $log = self::logVariableLocation();
+        $context = stream_context_create($opts);
 
-            $response->error = 1;
-            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
+        //$informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
+        $informacion_paquete = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "packs/" . rawurlencode($venta), false, $context));
 
-            return $response;
+        if (empty($informacion_paquete)) {
+            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta), false, $context));
+
+            if (empty($informacion_venta)) {
+                $log = self::logVariableLocation();
+
+                $response->error = 1;
+                $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
+
+                return $response;
+            }
+
+            array_push($ventas, $informacion_venta);
+        }
+        else {
+            foreach ($informacion_paquete->orders as $venta_paquete) {
+                $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta_paquete->id), false, $context));
+
+                if (empty($informacion_venta)) {
+                    $log = self::logVariableLocation();
+
+                    $response->error = 1;
+                    $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
+
+                    return $response;
+                }
+
+                array_push($ventas, $informacion_venta);
+            }
         }
 
-        if (empty($informacion_venta->results)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "La venta no fue encontrada en los sistemas de Mercadolibre." . $log;
-
-            return $response;
-        }
-
-        foreach ($informacion_venta->results as $venta) {
+        foreach ($ventas as $venta) {
             $venta->productos = array();
 
             $pack_id = explode(".", empty($venta->pack_id) ? $venta->id : sprintf('%lf', $venta->pack_id))[0];
@@ -123,7 +140,7 @@ class MercadolibreService
         }
 
         $response->error = 0;
-        $response->data = $informacion_venta->results;
+        $response->data = $ventas;
 
         return $response;
     }
@@ -153,11 +170,11 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
         $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $seller = self::seller($marketplace->extra_2, $token);
 
         $venta = str_replace("%20", " ", $venta);
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
+        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -191,21 +208,21 @@ class MercadolibreService
         $packs = array();
 
         $token = self::token($credenciales->app_id, $credenciales->secret);
-        $seller = self::seller($credenciales->extra_2);
+        $seller = self::seller($credenciales->extra_2, $token);
 
         $fecha_inicial = date("Y-m-d\T00:00:00.000\Z", strtotime($credenciales->fecha_inicio));
         $fecha_final = date("Y-m-d\T00:00:00.000\Z", strtotime($credenciales->fecha_final . " +1 day"));
 
         $publicaciones_full = 0;
 
-        $ventas = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final . "&search_type=scan&scroll_id=" . $scroll_id . "&access_token=" . $token));
+        $ventas = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final . "&search_type=scan&scroll_id=" . $scroll_id . "&access_token=" . $token));
 
         $limite = $ventas->paging->limit;
         $total_ciclo = ceil($ventas->paging->total / $limite);
         $offset = 0;
 
         for ($i = 0; $i < $total_ciclo; $i++) {
-            $ventas = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&offset=" . $offset . "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final . "&scroll_id=" . $scroll_id . "&access_token=" . $token));
+            $ventas = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&offset=" . $offset . "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final . "&scroll_id=" . $scroll_id . "&access_token=" . $token));
 
             if (empty($ventas)) {
                 break;
@@ -285,7 +302,7 @@ class MercadolibreService
                     $producto_data->id = $item->item->id;
                     $producto_data->titulo = $item->item->title;
                     $producto_data->cantidad = $item->quantity;
-                    $producto_data->categoria = empty($categoria) ? "" :  $categoria->name;
+                    $producto_data->categoria = empty($categoria) ? "" : $categoria->name;
                     $producto_data->atributos = $atributos;
 
                     array_push($productos, $producto_data);
@@ -349,7 +366,7 @@ class MercadolibreService
         $marketplace_info = $marketplace_info[0];
 
         $token = self::token($marketplace_info->app_id, $marketplace_info->secret);
-        $seller = self::seller($marketplace_info->extra_2);
+        $seller = self::seller($marketplace_info->extra_2, $token);
 
         if (empty($seller)) {
             $log = self::logVariableLocation();
@@ -363,7 +380,7 @@ class MercadolibreService
         $fecha_inicial = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_inicial . "-1 day"));
         $fecha_final = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_final . "+1 day"));
 
-        $url = config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&access_token=" . $token;
+        $url = config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&access_token=" . $token;
 
         if (!empty($publicacion_id)) {
             $url .= "&q=" . $publicacion_id;
@@ -458,7 +475,7 @@ class MercadolibreService
                 $pack->error = 1;
                 $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado";
 
-                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: El pack " . $pack->id . " ya ha sido importado ". PHP_EOL, FILE_APPEND);
+                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: El pack " . $pack->id . " ya ha sido importado " . PHP_EOL, FILE_APPEND);
 
                 continue;
             }
@@ -489,7 +506,7 @@ class MercadolibreService
                                 $pack->error = 1;
                                 $pack->mensaje = "La venta " . $venta->id . " contiene un reclamo en la plataforma de Mercadolibre.";
 
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " contiene un reclamo en la plataforma de Mercadolibre. ". PHP_EOL, FILE_APPEND);
+                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " contiene un reclamo en la plataforma de Mercadolibre. " . PHP_EOL, FILE_APPEND);
 
                                 unset($pack->ventas);
 
@@ -543,7 +560,7 @@ class MercadolibreService
                     $pack->error = 1;
                     $pack->mensaje = "No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id . "";
 
-                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id . " " .PHP_EOL, FILE_APPEND);
+                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id . " " . PHP_EOL, FILE_APPEND);
 
                     unset($pack->ventas);
 
@@ -556,7 +573,7 @@ class MercadolibreService
                 }
 
                 foreach ($venta->order_items as $item) {
-                    $pack->venta_principal->total_fee += (float) $item->sale_fee * (int) $item->quantity;
+                    $pack->venta_principal->total_fee += (float)$item->sale_fee * (int)$item->quantity;
 
                     $existe_publicacion = DB::select("SELECT 
                                                             marketplace_publicacion.id, 
@@ -596,7 +613,7 @@ class MercadolibreService
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay relación entre productos y la publicación " . $item->item->id . " en la venta " . $venta->id . " ". PHP_EOL, FILE_APPEND);
+                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay relación entre productos y la publicación " . $item->item->id . " en la venta " . $venta->id . " " . PHP_EOL, FILE_APPEND);
 
                         unset($pack->ventas);
 
@@ -615,7 +632,7 @@ class MercadolibreService
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Los productos de la publicación " . $item->item->id . " no suman un porcentaje total de 100%. ". PHP_EOL, FILE_APPEND);
+                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Los productos de la publicación " . $item->item->id . " no suman un porcentaje total de 100%. " . PHP_EOL, FILE_APPEND);
 
                         unset($pack->ventas);
 
@@ -625,56 +642,102 @@ class MercadolibreService
                     $pack->venta_principal->almacen = property_exists($venta->shipping, 'logistic_type') ? ($venta->shipping->logistic_type == 'fulfillment' ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa) : $existe_publicacion->id_almacen_empresa;
                     $pack->venta_principal->proveedor = $existe_publicacion->id_proveedor;
 
-                    # La publicacion es dropshipping, y no se checa existencias 
+                    # La publicacion es dropshipping, y no se checa existencias
                     if ($existe_publicacion->id_proveedor == 0) {
                         foreach ($productos_publicacion as $producto) {
-                            // 1) Cálculo de precio y cantidad
                             $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
                             $producto->cantidad = $producto->cantidad * $item->quantity;
 
-                            // 2) Obtener el SKU del producto (de la tabla "modelo")
-                            $producto_sku = DB::select("SELECT sku FROM modelo WHERE id = ?", [$producto->id_modelo])[0]->sku;
+                            $producto_sku = DB::select("SELECT sku FROM modelo WHERE id = " . $producto->id_modelo . "")[0]->sku;
 
-                            // 3) Llamar a la función que envuelve la llamada al SP
-                            $existencia = InventarioService::obtenerExistencia($producto_sku, $pack->venta_principal->almacen);
+                            $existencia = DocumentoService::existenciaProducto($producto_sku, $pack->venta_principal->almacen);
+                            $empresa_info = DB::table("empresa_almacen")->where("id", $pack->venta_principal->almacen)->first();
+                            $empresa_bd = DB::table("empresa")->where("id", $empresa_info->id_empresa)->first();
 
-                            // 4) Verificar si la función retornó error
+                            $pendientes_bo = DB::select("SELECT
+                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+                                                    FROM documento
+                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                                    WHERE modelo.sku = '" . $producto_sku . "'
+                                                    AND empresa.bd = " . $empresa_bd->bd . "
+                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
+                                                    AND documento.id_tipo = 2
+                                                    AND documento.status = 1
+                                                    AND documento.id_fase = 1")[0]->cantidad;
+
+                            $pendientes_surtir = DB::select("SELECT
+                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+                                                    FROM documento
+                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                                    WHERE modelo.sku = '" . $producto_sku . "'
+                                                    AND empresa.bd = " . $empresa_bd->bd . "
+                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
+                                                    AND documento.id_tipo = 2
+                                                    AND documento.status = 1
+                                                    AND documento.anticipada = 0
+                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
+
+                            $pendientes_importar = DB::select("SELECT
+                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
+                                                FROM documento
+                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                                WHERE modelo.sku = '" . $producto_sku . "'
+                                                AND empresa.bd = " . $empresa_bd->bd . "
+                                                AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
+                                                AND documento.id_tipo = 2
+                                                AND documento.status = 1
+                                                AND documento.anticipada = 0
+                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
+
+                            $pendientes_pretransferencia = DB::select("SELECT
+                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
+                                                            FROM documento
+                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
+                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                                            WHERE modelo.sku = '" . $producto_sku . "'
+                                                            AND empresa.bd = " . $empresa_bd->bd . "
+                                                            AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
+                                                            AND documento.id_tipo = 9
+                                                            AND documento.status = 1
+                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
+
+
                             if ($existencia->error) {
                                 $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto "
-                                    . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje;
+                                $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . "";
                                 $pack->venta_principal->fase = 1;
                                 $pack->venta_principal->error = 1;
 
-                                file_put_contents(
-                                    "logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log",
-                                    date("H:i:s") . " Error: " . $pack->venta_principal->seguimiento . PHP_EOL,
-                                    FILE_APPEND
-                                );
+                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . " " . PHP_EOL, FILE_APPEND);
 
                                 unset($pack->ventas);
+
                                 continue 3;
                             }
 
-                            // 5) Se obtiene la existencia final (stock_disponible) ya calculada en el SP
-                            $existencia_real = (int) $existencia->stock_disponible;
+                            $existencia_real = $existencia->existencia - $pendientes_bo - $pendientes_surtir - $pendientes_importar - $pendientes_pretransferencia;
 
-                            // 6) Verificar si la existencia es suficiente para la cantidad requerida
-                            if ($existencia_real < (int) $producto->cantidad) {
+                            if ((int)$existencia->existencia < (int)$producto->cantidad) {
                                 $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "No hay suficiente existencia para procesar la venta "
-                                    . $venta->id . " en el almacén " . $pack->venta_principal->almacen
-                                    . " del producto " . $producto_sku;
+                                $pack->venta_principal->seguimiento = "No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . "";
                                 $pack->venta_principal->fase = 1;
                                 $pack->venta_principal->error = 1;
 
-                                file_put_contents(
-                                    "logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log",
-                                    date("H:i:s") . " Error: " . $pack->venta_principal->seguimiento . PHP_EOL,
-                                    FILE_APPEND
-                                );
+                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . " " . PHP_EOL, FILE_APPEND);
 
                                 unset($pack->ventas);
+
                                 continue 3;
                             }
                         }
@@ -745,7 +808,7 @@ class MercadolibreService
         $response = new \stdClass();
 
         $existe_venta = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta->id . "' AND status = 1");
-        if($venta->id == 2000009252429830) {
+        if ($venta->id == 2000009252429830) {
             dump("Existe venta en crm");
             dump($existe_venta);
             dump(empty($existe_venta));
@@ -861,8 +924,8 @@ class MercadolibreService
             $referencia = $payment->id;
 
             if ($payment->status == "approved") {
-                $marketplace_fee += (float) $marketplace_fee_pago;
-                $marketplace_coupon += (float) $payment->coupon_amount;
+                $marketplace_fee += (float)$marketplace_fee_pago;
+                $marketplace_coupon += (float)$payment->coupon_amount;
             }
         }
 
@@ -883,7 +946,6 @@ class MercadolibreService
             'id_fase' => $venta->is_buffered ? 7 : ($venta->is_creating_route ? 1 : ($venta->is_manufacturing ? 1 : (property_exists($venta, 'fase') ? $venta->fase : 1))),
             'id_modelo_proveedor' => $venta->proveedor,
             'no_venta' => $venta->id,
-            'id_entidad' => $entidad,
             'referencia' => $referencia,
             'observacion' => $venta->buyer->nickname,
             'info_extra' => json_encode($venta->shipping),
@@ -936,6 +998,11 @@ class MercadolibreService
                 'seguimiento' => "<p>Se manda a fase de pedido por falta de guía. consulte el marketplace</p>"
             ]);
         }
+
+        DB::table('documento_entidad_re')->insert([
+            'id_entidad' => $entidad,
+            'id_documento' => $documento
+        ]);
 
         try {
             $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
@@ -1071,9 +1138,9 @@ class MercadolibreService
                         ]);
 
                         DB::table('seguimiento')->insert([
-                            'id_documento'  => $documento,
-                            'id_usuario'    => 1,
-                            'seguimiento'   => "<p>No fue posible descargar las guías de embarque para solicitar la orden de compra al proveedor B2B, mensaje de error: " . $guia->mensaje . "</p>"
+                            'id_documento' => $documento,
+                            'id_usuario' => 1,
+                            'seguimiento' => "<p>No fue posible descargar las guías de embarque para solicitar la orden de compra al proveedor B2B, mensaje de error: " . $guia->mensaje . "</p>"
                         ]);
                     } else {
                         $extension = $guia->pdf ? ".pdf" : ".zpl";
@@ -1121,40 +1188,20 @@ class MercadolibreService
                             ]);
 
                             DB::table('seguimiento')->insert([
-                                'id_documento'  => $documento,
-                                'id_usuario'    => 1,
-                                'seguimiento'   => "<p>No fue posible crear la venta en el sistema del proveedor B2B, mensaje de error: " . $crear_pedido_btob->mensaje . "</p>"
+                                'id_documento' => $documento,
+                                'id_usuario' => 1,
+                                'seguimiento' => "<p>No fue posible crear la venta en el sistema del proveedor B2B, mensaje de error: " . $crear_pedido_btob->mensaje . "</p>"
                             ]);
                         }
 
                         /* Crear documento de compra */
                         $documento_data = DB::table("documento")->find($documento);
 
-                        $entidad_documento = DB::table("documento")
-                            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
+                        $entidad_documento = DB::table("documento_entidad_re")
+                            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
                             ->select("documento_entidad.*")
-                            ->where("documento.id", $documento_data->id)
+                            ->where("documento_entidad_re.id_documento", $documento_data->id)
                             ->first();
-
-                        # Existe entidad como proveedor
-                        $proveedor_btob = DB::table("modelo_proveedor")->find($documento_data->id_modelo_proveedor);
-
-                        $existe_entidad = DB::table("documento_entidad")
-                            ->where("rfc", $proveedor_btob->rfc)
-                            ->where("tipo", 2)
-                            ->first();
-
-                        if (empty($existe_entidad)) {
-                            $entidad_id = DB::table('documento_entidad')->insertGetId([
-                                'tipo' => 2,
-                                'razon_social' => $proveedor_btob->razon_social,
-                                'rfc' => $proveedor_btob->rfc,
-                                'telefono' => 'N/A',
-                                'correo' => $proveedor_btob->correo
-                            ]);
-                        } else {
-                            $entidad_id = $existe_entidad->id;
-                        }
 
                         $documento_compra = DB::table('documento')->insertGetId([
                             'id_tipo' => 1,
@@ -1166,7 +1213,6 @@ class MercadolibreService
                             'id_moneda' => $documento_data->id_moneda,
                             'id_paqueteria' => $documento_data->id_paqueteria,
                             'id_fase' => 94,
-                            'id_entidad' => $entidad_id,
                             'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
                             'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
                             'factura_folio' => "N/A",
@@ -1178,6 +1224,32 @@ class MercadolibreService
                             'pedimento' => "N/A",
                             'uuid' => "N/A",
                             'expired_at' => date("Y-m-d H:i:s")
+                        ]);
+
+                        # Existe entidad como proveedor
+                        $proveedor_btob = DB::table("modelo_proveedor")->find($documento_data->id_modelo_proveedor);
+
+                        $existe_entidad = DB::table("documento_entidad")
+                            ->where("rfc", $proveedor_btob->rfc)
+                            ->where("tipo", 2)
+                            ->first();
+
+                        if (empty($existe_entidad)) {
+                            $entidad_id = DB::table('documento_entidad')->insertGetId([
+                                'id_erp' => 0,
+                                'tipo' => 2,
+                                'razon_social' => $proveedor_btob->razon_social,
+                                'rfc' => $proveedor_btob->rfc,
+                                'telefono' => 'N/A',
+                                'correo' => $proveedor_btob->correo
+                            ]);
+                        } else {
+                            $entidad_id = $existe_entidad->id;
+                        }
+
+                        DB::table('documento_entidad_re')->insert([
+                            'id_documento' => $documento_compra,
+                            'id_entidad' => $entidad_id
                         ]);
 
                         $productos_data = DB::table("movimiento")
@@ -1213,14 +1285,13 @@ class MercadolibreService
 
         if ($venta->fase == 6 && $fulfillment) {
             //Aqui ta
-//            $factura = DocumentoService::crearFactura($documento, 0, 0);
-            $factura = InventarioService::aplicarMovimiento($documento);
+            $factura = DocumentoService::crearFactura($documento, 0, 0);
 
             if ($factura->error) {
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
                     'id_usuario' => $usuario,
-                    'seguimiento' => "<h2>" . $factura->message . "</h2>"
+                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
                 ]);
 
                 DB::table('documento')->where(['id' => $documento])->update([
@@ -1263,9 +1334,9 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
         $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $seller = self::seller($marketplace->extra_2, $token);
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
+        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -1383,9 +1454,9 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
         $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $seller = self::seller($marketplace->extra_2, $token);
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
+        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -1512,7 +1583,7 @@ class MercadolibreService
 
         if (!is_null($pack->id) && $pack->id != $informacion_venta->id) {
             $pseudonimo_venta = str_replace(" ", "%20", $informacion_venta->buyer->nickname);
-            $ventas_pseudonimo = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($pseudonimo_venta) . "&sort=date_desc&access_token=" . $token));
+            $ventas_pseudonimo = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . rawurlencode($pseudonimo_venta) . "&sort=date_desc&access_token=" . $token));
 
             if (empty($ventas_pseudonimo)) {
                 $log = self::logVariableLocation();
@@ -1548,7 +1619,7 @@ class MercadolibreService
                 if (!empty($existe)) {
 
                     $pack->error = 1;
-                    $pack->mensaje = "La venta " . $venta->id . " ya fue importada anteriormente con el pedido " .  $existe[0]->id;
+                    $pack->mensaje = "La venta " . $venta->id . " ya fue importada anteriormente con el pedido " . $existe[0]->id;
 
                     break;
                 }
@@ -1632,6 +1703,7 @@ class MercadolibreService
             ]);
         }
     }
+
     public static function actualizarRTS_doc_o($venta)
     {
         DB::table('documento')->where('no_venta', $venta)
@@ -1653,6 +1725,7 @@ class MercadolibreService
                 'picking_by' => 0
             ]);
     }
+
     public static function actualizarDelivered_com($existe_pack)
     {
         foreach ($existe_pack as $key) {
@@ -1661,6 +1734,7 @@ class MercadolibreService
             ]);
         }
     }
+
     public static function actualizarDelivered_doc_o($venta)
     {
         DB::table('documento')->where('no_venta', $venta)
@@ -1669,6 +1743,7 @@ class MercadolibreService
                 'id_fase' => 6,
             ]);
     }
+
     public static function actualizarDelivered_doc($venta)
     {
         DB::table('documento')->where('no_venta', $venta)
@@ -1684,11 +1759,22 @@ class MercadolibreService
 
         $token = self::token($credenciales->app_id, $credenciales->secret);
 
-        $seller = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "sites/MLM/search?nickname=" . str_replace(" ", "%20", $credenciales->extra_2)));
+        //$seller = self::seller(str_replace(" ", "%20", $credenciales->extra_2), $token);
 
-        $seller_id  = $seller->seller->id;
+        //$seller_id = $seller->seller->id;
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller_id . "&q=" . rawurlencode($venta) . "&access_token=" . $token));
+        $opts = [
+            "http" => [
+                "method" => "GET",
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+
+        $context = stream_context_create($opts);
+
+        //$informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller_id . "&q=" . rawurlencode($venta) . "&access_token=" . $token));
+
+        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta), false, $context));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -1699,7 +1785,7 @@ class MercadolibreService
             return $response;
         }
 
-        $informacion_venta = $informacion_venta->results[0];
+        // $informacion_venta = $informacion_venta->results[0];
 
         $tmp = tempnam('', 'me2');
         rename($tmp, $tmp .= '.zip');
@@ -1738,9 +1824,9 @@ class MercadolibreService
 
         $token = self::token($credenciales->app_id, $credenciales->secret);
 
-        $seller = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "sites/MLM/search?nickname=" . str_replace(" ", "%20", $credenciales->extra_2)));
+        $seller = self::seller(str_replace(" ", "%20", $credenciales->extra_2), $token);
 
-        $seller_id  = $seller->seller->id;
+        $seller_id = $seller->id;
 
         $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller_id . "&q=" . $venta . "&access_token=" . $token));
 
@@ -1811,13 +1897,13 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
 
-        $token  = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $token = self::token($marketplace->app_id, $marketplace->secret);
+        $seller = self::seller($marketplace->extra_2, $token);
         $offset = 0;
 
-        $tiendas_oficiales = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->seller->id . "/brands"));
+        $tiendas_oficiales = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/brands"));
         $tiendas_oficiales = !empty($tiendas_oficiales) ? $tiendas_oficiales->brands : [];
-        $publicaciones = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->seller->id . "/items/search?search_type=scan" . $extra_query . "&access_token=" . $token));
+        $publicaciones = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/items/search?search_type=scan" . $extra_query . "&access_token=" . $token));
 
         if (empty($publicaciones)) {
             $log = self::logVariableLocation();
@@ -1870,7 +1956,7 @@ class MercadolibreService
         }
 
         while (!is_null($scroll_id)) {
-            $publicaciones = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->seller->id . "/items/search?search_type=scan&scroll_id=" . $scroll_id . "&access_token=" . $token));
+            $publicaciones = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/items/search?search_type=scan&scroll_id=" . $scroll_id . "&access_token=" . $token));
 
             if (empty($publicaciones)) {
                 break;
@@ -2120,7 +2206,7 @@ class MercadolibreService
                     'id_etiqueta' => $variacion->id,
                     'etiqueta' => "Color",
                     'valor' => $colores,
-                    'cantidad' => (int) $variacion->available_quantity,
+                    'cantidad' => (int)$variacion->available_quantity,
                 ]);
             }
         }
@@ -2463,8 +2549,8 @@ class MercadolibreService
 
         $marketplace = $marketplace[0];
 
-        $token  = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $token = self::token($marketplace->app_id, $marketplace->secret);
+        $seller = self::seller($marketplace->extra_2, $token);
         $scroll_id = null;
 
         DB::table('marketplace_publicacion')->where(['id_marketplace_area' => $marketplace_id])->update([
@@ -2473,7 +2559,7 @@ class MercadolibreService
 
         $publicaciones_raw = array();
 
-        $publicaciones = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->seller->id . "/items/search?search_type=scan&limit=100&access_token=" . $token));
+        $publicaciones = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/items/search?search_type=scan&limit=100&access_token=" . $token));
 
         if (!empty($publicaciones)) {
             $scroll_id = $publicaciones->scroll_id;
@@ -2481,7 +2567,7 @@ class MercadolibreService
             $publicaciones_raw = array_merge($publicaciones_raw, $publicaciones->results);
 
             while (!is_null($scroll_id)) {
-                $publicaciones = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->seller->id . "/items/search?search_type=scan&limit=100&access_token=" . $token . "&scroll_id=" . $scroll_id));
+                $publicaciones = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/items/search?search_type=scan&limit=100&access_token=" . $token . "&scroll_id=" . $scroll_id));
 
                 if (empty($publicaciones->results)) {
                     $scroll_id = null;
@@ -2552,7 +2638,7 @@ class MercadolibreService
                             'id_etiqueta' => $variacion->id,
                             'etiqueta' => "Color",
                             'valor' => $colores,
-                            'cantidad' => (int) $variacion->available_quantity,
+                            'cantidad' => (int)$variacion->available_quantity,
                         ]);
                     }
                 }
@@ -2677,7 +2763,7 @@ class MercadolibreService
         }
 
         $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
-        $seller = self::seller($marketplace_data->extra_2);
+        $seller = self::seller($marketplace_data->extra_2, $token);
 
         $scroll_id = "";
 
@@ -2685,9 +2771,9 @@ class MercadolibreService
             $preguntas = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "my/received_questions/search?seller_id=" . $seller->id . "&api_version=4&status=UNANSWERED&search_type=scan&scroll_id=" . $scroll_id . "&access_token=" . $token));
 
             if (empty($preguntas)) {
-                $scroll_id = null;
+                $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
 
-                break;
+                continue;
             }
 
             if (empty($preguntas->questions)) {
@@ -2855,7 +2941,7 @@ class MercadolibreService
         }
 
         $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
-        $seller = self::seller($marketplace_data->extra_2);
+        $seller = self::seller($marketplace_data->extra_2, $token);
 
         $data = array(
             "user_id" => $user_id,
@@ -3120,9 +3206,9 @@ class MercadolibreService
 
         $pdf_factura = config('webservice.url') . $informacion_documento->bd . "/DescargarPDF/Serie/" . $info_factura->serie . "/Folio/" . $info_factura->folio;
         $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2);
+        $seller = self::seller($marketplace->extra_2, $token);
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $informacion_documento->no_venta . "&sort=date_desc&access_token=" . $token));
+        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $informacion_documento->no_venta . "&sort=date_desc&access_token=" . $token));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -3221,13 +3307,26 @@ class MercadolibreService
         return $pdf;
     }
 
-    public static function seller($pseudonimo)
+    public static function seller($pseudonimo, $token)
     {
-        $pseudonimo = str_replace(" ", "%20", $pseudonimo);
+        $url = config("webservice.mercadolibre_enpoint")."users/me";
 
-        $seller = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "sites/MLM/search?nickname=" . $pseudonimo));
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
 
-        return $seller;
+        $context = stream_context_create($options);
+
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            return response()->json(["error" => "No se pudo obtener información del usuario"], 500);
+        }
+
+        return @json_decode($response, false);
+
     }
 
     public static function token($app_id, $secret_key)
@@ -3287,9 +3386,9 @@ class MercadolibreService
 
             $marketplace = $marketplace[0];
             $token = self::token($marketplace->app_id, $marketplace->secret);
-            $seller = self::seller($marketplace->extra_2);
+            $seller = self::seller($marketplace->extra_2, $token);
 
-            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
+            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
 
             if (empty($informacion_venta)) {
                 $log = self::logVariableLocation();
@@ -3341,9 +3440,9 @@ class MercadolibreService
             }
             $marketplace = $marketplace[0];
             $token = self::token($marketplace->app_id, $marketplace->secret);
-            $seller = self::seller($marketplace->extra_2);
+            $seller = self::seller($marketplace->extra_2, $token);
 
-            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $documento . "&sort=date_desc&access_token=" . $token));
+            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $documento . "&sort=date_desc&access_token=" . $token));
 
             if (empty($informacion_venta)) {
                 $log = self::logVariableLocation();
@@ -3383,6 +3482,7 @@ class MercadolibreService
 
         return $response;
     }
+
     public static function checarCancelados($documento, $tipo, $marketplace_id)
     {
         set_time_limit(0);
@@ -3414,9 +3514,9 @@ class MercadolibreService
 
             $marketplace = $marketplace[0];
             $token = self::token($marketplace->app_id, $marketplace->secret);
-            $seller = self::seller($marketplace->extra_2);
+            $seller = self::seller($marketplace->extra_2, $token);
 
-            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
+            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
 
             if (empty($informacion_venta)) {
                 $log = self::logVariableLocation();
@@ -3458,9 +3558,9 @@ class MercadolibreService
             }
             $marketplace = $marketplace[0];
             $token = self::token($marketplace->app_id, $marketplace->secret);
-            $seller = self::seller($marketplace->extra_2);
+            $seller = self::seller($marketplace->extra_2, $token);
 
-            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . $documento . "&sort=date_desc&access_token=" . $token));
+            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $documento . "&sort=date_desc&access_token=" . $token));
 
             if (empty($informacion_venta)) {
                 $log = self::logVariableLocation();
@@ -3492,6 +3592,46 @@ class MercadolibreService
         }
 
         return $response;
+    }
+
+    public static function getUserDataByNickname($nickname, $marketplace_id)
+    {
+        $response = new \stdClass();
+        $response->error = 1;
+
+        $marketplace_data = DB::table("marketplace_api")
+            ->where("id_marketplace_area", $marketplace_id)
+            ->first();
+
+        if (!$marketplace_data) {
+            $log = self::logVariableLocation();
+
+            $response->error = 1;
+            $response->mensaje = "No se encontró información de la publicación." . $log;
+
+            return $response;
+        }
+
+        $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
+
+        $url = "https://api.mercadolibre.com/sites/MLM/search?nickname={$nickname}";
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+
+        $context = stream_context_create($options);
+
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            return response()->json(["error" => "No se pudo obtener información del usuario"], 500);
+        }
+
+        return response()->json(json_decode($response, true));
+
     }
 
     public static function logVariableLocation()
