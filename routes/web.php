@@ -244,6 +244,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('producto', 'CompraController@compra_producto_gestion_producto');
                 $router->post('productos', 'CompraController@compra_producto_gestion_productos');
                 $router->post('crear', 'CompraController@compra_producto_gestion_crear');
+                $router->post('codigo/sat', 'CompraController@compra_producto_buscar_codigo_sat');
                 $router->get('imagen/{dropbox}', 'CompraController@compra_producto_gestion_imagen');
                 $router->post('producto-proveedor', 'CompraController@compra_producto_gestion_producto_proveedor');
 

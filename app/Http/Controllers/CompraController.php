@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\ComodinService;
 use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
@@ -2742,96 +2743,234 @@ class CompraController extends Controller
         ]);
     }
 
+    public function compra_producto_buscar_codigo_sat(Request $request)
+    {
+        $criterio = $request->input('criterio');
+        $existe_codigo = DB::table('modelo_sat')->where('clave_sat', trim($criterio))->first();
+
+        if (empty($existe_codigo)) {
+            $existe_descripcion = DB::table('modelo_sat')->where('descripcion', 'like', '%'.trim($criterio).'%')->get();
+
+            if(empty($existe_descripcion)) {
+                $existe_sinonimo = DB::table('modelo_sinonimo')->where('sinonimos', 'like', '%'.trim($criterio).'%')->get();
+
+                if(empty($existe_sinonimo)) {
+                    return response()->json([
+                        'code'  => 500,
+                        'message' => "No se encontro el codigo sat con el criterio proporcionado."
+                    ]);
+                } else {
+                    return response()->json([
+                        'code'  => 200,
+                        'message' => "Codigo encontrado.",
+                        'data' => $existe_sinonimo
+                    ]);
+                }
+            } else {
+                return response()->json([
+                    'code'  => 200,
+                    'message' => "Codigo encontrado.",
+                    'data' => $existe_descripcion
+                ]);
+            }
+        } else {
+            return response()->json([
+                'code'  => 200,
+                'message' => "Codigo encontrado.",
+                'data' => $existe_codigo
+            ]);
+        }
+    }
+
     public function compra_producto_gestion_crear(Request $request)
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $empresa = $request->input('empresa');
 
-        $existe_producto = DB::table("modelo")
-                                ->where("sku", trim($data->sku))
-                                ->where("id", "<>", $data->id)
-                                ->first();
+        $codigo_anterior = $data->sku;
 
-        if ($existe_producto) {
+        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id . "");
+
+        if ($data->id != 0) {
+            $codigo_anterior = DB::select("SELECT sku FROM modelo WHERE id = " . $data->id . "")[0]->sku;
+        }
+
+        $informacion_empresa = DB::table("empresa")->find($empresa);
+
+        if (!$informacion_empresa) {
             return response()->json([
-                "code" => 500,
-                "message" => "Ya éxiste un producto con el SKU proporcionado"
+                "message" => "No se encontró información de la empresa proporcionada"
             ]);
         }
 
-        $producto_edicion_anterior = DB::table("modelo")->where("id", $data->id)->first();
+        if ($data->id != 0) { # Ya existe el producto en el crm
+            $modelo_id = $data->id;
 
-        DB::table('modelo')->where(['id' => $data->id])->update([
-            'id_tipo' => $data->tipo,
-            'sku' => $data->sku,
-            'descripcion' => $data->descripcion,
-            'costo' => $data->costo,
-            'alto' => $data->alto,
-            'ancho' => $data->ancho,
-            'largo' => $data->largo,
-            'peso' => $data->peso,
-            'serie' => $data->serie,
-            'clave_sat' => $data->clave_sat, // clave del sat
-            'unidad' => 'PIEZA',
-            'clave_unidad' => $data->clave_unidad,
-            'refurbished' => $data->refurbished,
-            'np' => $data->np,
-            'cat1' => $data->cat1,
-            'cat2' => $data->cat2,
-            'cat3' => $data->cat3,
-            'cat4' => $data->cat4,
-            'caducidad' => $data->caducidad,
-        ]);
+            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id . "");
 
-        $producto_edicion = DB::table("modelo")->where("id", $data->id)->first();
+            if (!empty($existe_producto)) {
+                return response()->json([
+                    'code' => 200,
+                    'message' => "Producto actualizado correctamente."
+                ]);
+            }
 
-        DB::table('modelo_edits')->insert([
-            'id_modelo' => $data->id,
-            'id_usuario' => $auth->id,
-            'informacion_antes' => json_encode($producto_edicion_anterior),
-            'informacion_despues' => json_encode($producto_edicion)
-        ]);
-
-        $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id . "");
-
-        if (empty($existe_amazon)) {
-            DB::table("modelo_amazon")->insert([
-                "id_modelo" => $data->id,
-                "codigo" => $data->amazon->codigo,
-                "descripcion" => $data->amazon->descripcion
+            DB::table('modelo')->where(['id' => $data->id])->update([
+                'id_tipo' => $data->tipo,
+                'sku' => $data->sku,
+                'descripcion' => $data->descripcion,
+                'costo' => $data->costo,
+                'alto' => $data->alto,
+                'ancho' => $data->ancho,
+                'largo' => $data->largo,
+                'peso' => $data->peso,
+                'serie' => $data->serie,
+                'clave_sat' => $data->clave_sat, // clave del sat
+                'unidad' => 'PIEZA',
+                'clave_unidad' => $data->clave_unidad,
+                'refurbished' => $data->refurbished,
+                'np' => $data->np,
+                'cat1' => $data->cat1,
+                'cat2' => $data->cat2,
+                'cat3' => $data->cat3,
+                'cat4' => $data->cat4,
+                'caducidad' => $data->caducidad,
             ]);
+
+            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id . "");
+
+            DB::table('modelo_edits')->insert([
+                'id_modelo' => $data->id,
+                'id_usuario' => $auth->id,
+                'informacion_antes' => json_encode($producto_data_anterior[0]),
+                'informacion_despues' => json_encode($producto_data_actual[0])
+            ]);
+
+            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id . "");
+
+            if (empty($existe_amazon)) {
+                DB::table("modelo_amazon")->insert([
+                    "id_modelo" => $data->id,
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+            } else {
+                DB::table("modelo_amazon")->where(["id_modelo" => $data->id])->update([
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+            }
+
+            try {
+                foreach ($data->imagenes as $archivo) {
+                    if ($archivo->nombre != "" && $archivo->data != "") {
+                        $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+
+                        $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                            ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                            ->addHeader('Content-Type', 'application/octet-stream')
+                            ->body($archivo_data)
+                            ->send();
+
+                        DB::table('modelo_imagen')->insert([
+                            'id_modelo' => $data->id,
+                            'nombre' => $archivo->nombre,
+                            'dropbox' => $response->body->id
+                        ]);
+                    }
+                }
+            } catch (Exception $e) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+                ]);
+            }
         } else {
-            DB::table("modelo_amazon")->where(["id_modelo" => $data->id])->update([
-                "codigo" => $data->amazon->codigo,
-                "descripcion" => $data->amazon->descripcion
-            ]);
-        }
+            $existe_producto = DB::select("SELECT id FROM modelo WHERE sku = '" . TRIM($data->sku) . "'");
 
-        try {
-            foreach ($data->imagenes as $archivo) {
-                if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+            if (empty($existe_producto)) {
+                $modelo_id = DB::table('modelo')->insertGetId([
+                    'id_tipo' => $data->tipo,
+                    'sku' => $data->sku,
+                    'descripcion' => $data->descripcion,
+                    'costo' => $data->costo,
+                    'alto' => $data->alto,
+                    'ancho' => $data->ancho,
+                    'largo' => $data->largo,
+                    'peso' => $data->peso,
+                    'serie' => $data->serie,
+                    'clave_sat' => $data->clave_sat, // clave del sat
+                    'unidad' => 'PIEZA',
+                    'clave_unidad' => $data->clave_unidad,
+                    'refurbished' => $data->refurbished,
+                    'np' => $data->np,
+                    'cat1' => $data->cat1,
+                    'cat2' => $data->cat2,
+                    'cat3' => $data->cat3,
+                    'cat4' => $data->cat4,
+                    'caducidad' => $data->caducidad,
 
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                ]);
 
-                    DB::table('modelo_imagen')->insert([
-                        'id_modelo' => $data->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                DB::table("modelo_amazon")->insert([
+                    "id_modelo" => $modelo_id,
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+
+                try {
+                    foreach ($data->imagenes as $archivo) {
+                        if ($archivo->nombre != "" && $archivo->data != "") {
+                            $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+
+                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                                ->addHeader('Content-Type', 'application/octet-stream')
+                                ->body($archivo_data)
+                                ->send();
+
+                            DB::table('modelo_imagen')->insert([
+                                'id_modelo' => $modelo_id,
+                                'nombre' => $archivo->nombre,
+                                'dropbox' => $response->body->id
+                            ]);
+                        }
+                    }
+                } catch (Exception $e) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
                     ]);
                 }
+            } else {
+                $modelo_id = $existe_producto[0]->id;
+
+                DB::table('modelo')->where("id", $existe_producto[0]->id)->update([
+                    'id_tipo' => $data->tipo,
+                    'sku' => $data->sku,
+                    'descripcion' => $data->descripcion,
+                    'costo' => $data->costo,
+                    'alto' => $data->alto,
+                    'ancho' => $data->ancho,
+                    'largo' => $data->largo,
+                    'peso' => $data->peso,
+                    'serie' => $data->serie,
+                    'clave_sat' => $data->clave_sat, // clave del sat
+                    'unidad' => 'PIEZA',
+                    'clave_unidad' => $data->clave_unidad,
+                    'refurbished' => $data->refurbished,
+                    'np' => $data->np,
+                    'cat1' => $data->cat1,
+                    'cat2' => $data->cat2,
+                    'cat3' => $data->cat3,
+                    'cat4' => $data->cat4,
+                    'caducidad' => $data->caducidad,
+
+                ]);
             }
-        } catch (Exception $e) {
-            return response()->json([
-                'code' => 500,
-                'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-            ]);
         }
 
         foreach ($data->proveedores as $proveedor) {
@@ -2893,7 +3032,7 @@ class CompraController extends Controller
                 if ($data->id == 0) {
                     $existe = DB::table("modelo")
                         ->where("sku", $data->sku)
-                        ->select("id", "precio")
+                        ->select("id", "costo")
                         ->first();
 
                     if (!empty($existe)) {
@@ -2935,7 +3074,7 @@ class CompraController extends Controller
 
         return response()->json([
             'code' => 200,
-            'message' => "Producto actualizado / agregado correctamente",
+            'message' => "Producto actualizado / agregado correctamente"
         ]);
     }
 
