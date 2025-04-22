@@ -84,44 +84,44 @@ class AlmacenController extends Controller
 
     public function almacen_packing_confirmar_authy(Request $request)
     {
-//        $data = json_decode($request->input("data"));
+        $data = json_decode($request->input("data"));
 
-//        $authy_user_id = DB::table('usuario')
-//            ->where('authy', $data->authy)
-//            ->where('status', 1)
-//            ->select('id')
-//            ->get();
-//
-//        if (empty($authy_user_id)) {
-//            return response()->json([
-//                'code'  => 403,
-//                'message'   => "No se encontró el usuario que ha autorizado la cancelación." . " " . self::logVariableLocation()
-//            ]);
-//        }
-//
-//        try {
-//            $authy_user_id = $authy_user_id[0]->id;
-//
-//            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-//
-//            $verification = $authy_request->verifyToken($data->authy, $data->token);
-//
-//            if (!$verification->ok()) {
-//                return response()->json([
-//                    'code'  => 400,
-//                    'message'   => "El token ingresado no es valido." . " " . self::logVariableLocation()
-//                ]);
-//            }
+        $authy_user_id = DB::table('usuario')
+            ->where('authy', $data->authy)
+            ->where('status', 1)
+            ->select('id')
+            ->get();
+
+        if (empty($authy_user_id)) {
+            return response()->json([
+                'code'  => 403,
+                'message'   => "No se encontró el usuario que ha autorizado la cancelación." . " " . self::logVariableLocation()
+            ]);
+        }
+
+        try {
+            $authy_user_id = $authy_user_id[0]->id;
+
+            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+
+            $verification = $authy_request->verifyToken($data->authy, $data->token);
+
+            if (!$verification->ok()) {
+                return response()->json([
+                    'code'  => 400,
+                    'message'   => "El token ingresado no es valido." . " " . self::logVariableLocation()
+                ]);
+            }
 
             return response()->json([
                 "code" => 200
             ]);
-//        } catch (\Authy\AuthyFormatException $e) {
-//            return response()->json([
-//                'code' => 400,
-//                'message' => "El token ingresado no es valido, error: " . $e->getMessage() . " " . self::logVariableLocation()
-//            ]);
-//        }
+        } catch (\Authy\AuthyFormatException $e) {
+            return response()->json([
+                'code' => 400,
+                'message' => "El token ingresado no es valido, error: " . $e->getMessage() . " " . self::logVariableLocation()
+            ]);
+        }
     }
 
     public function almacen_packing_guardar(Request $request)
@@ -192,44 +192,44 @@ class AlmacenController extends Controller
                     )
                     ->first();
 
-//                if ($usuario_documento->id_usuario > 1) {
-//                    $notificacion['titulo']     = "Pedido en problemas.";
-//                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-//                    $notificacion['tipo']       = "warning"; // success, warning, danger
-//                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
-//
-//                    $notificacion_id = DB::table('notificacion')->insertGetId([
-//                        'data'  => json_encode($notificacion)
-//                    ]);
-//
-//                    $notificacion['id']         = $notificacion_id;
-//
-//                    DB::table('notificacion_usuario')->insert([
-//                        'id_usuario'        => $usuario_documento->id_usuario,
-//                        'id_notificacion'   => $notificacion_id
-//                    ]);
-//
-//                    $notificacion['usuario']    = $usuario_documento->id_usuario;
-//
-//                    event(new PusherEvent(json_encode($notificacion)));
-//
-//                    $view = view('email.notificacion_problema')->with([
-//                        'vendedor' => $usuario_documento->nombre,
-//                        'usuario' => $usuario_documento->nombre,
-//                        'anio' => date('Y'),
-//                        'documento' => $data->documento,
-//                        'comentario' => $data->seguimiento
-//                    ]);
-//
-//                    $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                    $domain = "omg.com.mx";
-//                    $mg->sendMessage($domain, array(
-//                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
-//                        'to'            => $usuario_documento->email,
-//                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
-//                        'html'          => $view
-//                    ));
-//                }
+                if ($usuario_documento->id_usuario > 1) {
+                    $notificacion['titulo']     = "Pedido en problemas.";
+                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+                    $notificacion['tipo']       = "warning"; // success, warning, danger
+                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
+
+                    $notificacion_id = DB::table('notificacion')->insertGetId([
+                        'data'  => json_encode($notificacion)
+                    ]);
+
+                    $notificacion['id']         = $notificacion_id;
+
+                    DB::table('notificacion_usuario')->insert([
+                        'id_usuario'        => $usuario_documento->id_usuario,
+                        'id_notificacion'   => $notificacion_id
+                    ]);
+
+                    $notificacion['usuario']    = $usuario_documento->id_usuario;
+
+                    event(new PusherEvent(json_encode($notificacion)));
+
+                    $view = view('email.notificacion_problema')->with([
+                        'vendedor' => $usuario_documento->nombre,
+                        'usuario' => $usuario_documento->nombre,
+                        'anio' => date('Y'),
+                        'documento' => $data->documento,
+                        'comentario' => $data->seguimiento
+                    ]);
+
+                    $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+                    $domain = "omg.com.mx";
+                    $mg->sendMessage($domain, array(
+                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
+                        'to'            => $usuario_documento->email,
+                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
+                        'html'          => $view
+                    ));
+                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,
@@ -967,45 +967,45 @@ class AlmacenController extends Controller
                                                 INNER JOIN usuario ON documento.id_usuario = usuario.id 
                                                 WHERE documento.id = " . $data->documento . "")[0];
 
-//                if ($usuario_documento->id_usuario > 1) {
-//                    $notificacion['titulo'] = "Pedido en problemas.";
-//                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-//                    $notificacion['tipo'] = "warning"; // success, warning, danger
-//                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
-//
-//                    $notificacion_id = DB::table('notificacion')->insertGetId([
-//                        'data' => json_encode($notificacion)
-//                    ]);
-//
-//                    $notificacion['id'] = $notificacion_id;
-//
-//                    DB::table('notificacion_usuario')->insert([
-//                        'id_usuario' => $usuario_documento->id_usuario,
-//                        'id_notificacion' => $notificacion_id
-//                    ]);
-//
-//                    $notificacion['usuario'] = $usuario_documento->id_usuario;
-//
-//                    event(new PusherEvent(json_encode($notificacion)));
-//
-//                    $view = view('email.notificacion_problema')->with([
-//                        'vendedor' => $usuario_documento->nombre,
-//                        'problema' => 0,
-//                        'usuario' => $usuario_documento->nombre,
-//                        'anio' => date('Y'),
-//                        'documento' => $data->documento,
-//                        'comentario' => $data->seguimiento
-//                    ]);
-//
-//                    $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                    $domain = "omg.com.mx";
-//                    $mg->sendMessage($domain, array(
-//                        'from' => 'CRM OMG International <crm@omg.com.mx>',
-//                        'to' => $usuario_documento->email,
-//                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
-//                        'html' => $view
-//                    ));
-//                }
+                if ($usuario_documento->id_usuario > 1) {
+                    $notificacion['titulo'] = "Pedido en problemas.";
+                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+                    $notificacion['tipo'] = "warning"; // success, warning, danger
+                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
+
+                    $notificacion_id = DB::table('notificacion')->insertGetId([
+                        'data' => json_encode($notificacion)
+                    ]);
+
+                    $notificacion['id'] = $notificacion_id;
+
+                    DB::table('notificacion_usuario')->insert([
+                        'id_usuario' => $usuario_documento->id_usuario,
+                        'id_notificacion' => $notificacion_id
+                    ]);
+
+                    $notificacion['usuario'] = $usuario_documento->id_usuario;
+
+                    event(new PusherEvent(json_encode($notificacion)));
+
+                    $view = view('email.notificacion_problema')->with([
+                        'vendedor' => $usuario_documento->nombre,
+                        'problema' => 0,
+                        'usuario' => $usuario_documento->nombre,
+                        'anio' => date('Y'),
+                        'documento' => $data->documento,
+                        'comentario' => $data->seguimiento
+                    ]);
+
+                    $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+                    $domain = "omg.com.mx";
+                    $mg->sendMessage($domain, array(
+                        'from' => 'CRM OMG International <crm@omg.com.mx>',
+                        'to' => $usuario_documento->email,
+                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
+                        'html' => $view
+                    ));
+                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,
@@ -1324,36 +1324,36 @@ class AlmacenController extends Controller
                     'seguimiento' => "Ocurrió un error al generar la factura y se manda a fase Factura."
                 ]);
 
-//                $emails = "";
-//                $correos = DB::select("SELECT
-//                                usuario.email
-//                            FROM usuario
-//                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-//                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-//                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
-//                            WHERE subnivel.subnivel in ('CXC','CXP') and usuario.email like '%@omg%'
-//                            GROUP BY usuario.email");
-//
-//                foreach ($correos as $correo) {
-//                    $emails .= $correo->email . ";";
-//                }
-//
-//                $emails .= "sistemas@omg.com.mx";
-//
-//                $vista = view('email.notificacion_factura')->with([
-//                    'mensaje' => $crear_factura->mensaje,
-//                    'anio' => date('Y'),
-//                    'documento' => $data->documento
-//                ]);
-//
-//                $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                $domain = "omg.com.mx";
-//                $mg->sendMessage($domain, array(
-//                    'from' => 'CRM OMG International <crm@omg.com.mx>',
-//                    'to' => $emails,
-//                    'subject' => 'Error al generar factura',
-//                    'html' => $vista
-//                ));
+                $emails = "";
+                $correos = DB::select("SELECT
+                                usuario.email
+                            FROM usuario
+                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
+                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
+                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
+                            WHERE subnivel.subnivel in ('CXC','CXP') and usuario.email like '%@omg%'
+                            GROUP BY usuario.email");
+
+                foreach ($correos as $correo) {
+                    $emails .= $correo->email . ";";
+                }
+
+                $emails .= "sistemas@omg.com.mx";
+
+                $vista = view('email.notificacion_factura')->with([
+                    'mensaje' => $crear_factura->mensaje,
+                    'anio' => date('Y'),
+                    'documento' => $data->documento
+                ]);
+
+                $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+                $domain = "omg.com.mx";
+                $mg->sendMessage($domain, array(
+                    'from' => 'CRM OMG International <crm@omg.com.mx>',
+                    'to' => $emails,
+                    'subject' => 'Error al generar factura',
+                    'html' => $vista
+                ));
 
                 return response()->json([
                     "code" => 200,
@@ -1935,16 +1935,16 @@ class AlmacenController extends Controller
 
     public function almacen_movimiento_crear_confirmar_authy(Request $request)
     {
-//        $auth = json_decode($request->auth);
-//        $authy_code = json_decode($request->input("authy_code"));
-//
-//        $validate_authy = DocumentoService::authy($auth->id, $authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $auth = json_decode($request->auth);
+        $authy_code = json_decode($request->input("authy_code"));
+
+        $validate_authy = DocumentoService::authy($auth->id, $authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         return response()->json();
     }
@@ -2115,13 +2115,13 @@ class AlmacenController extends Controller
             ], 401);
         }
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         try {
             $tipo_documento = DB::select("SELECT id_tipo FROM documento WHERE id = " . $data->document . "")[0]->id_tipo;
@@ -2887,13 +2887,13 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         if (!empty($data->seguimiento)) {
             DB::table('seguimiento')->insert([
@@ -2975,13 +2975,13 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         DB::table("documento")->where("id", $data->id)->update([
             "status" => 0
@@ -3918,13 +3918,13 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         if (!empty($data->seguimiento)) {
             DB::table('seguimiento')->insert([
@@ -4032,13 +4032,13 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-//            ], 500);
-//        }
+        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+
+        if ($validate_authy->error) {
+            return response()->json([
+                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         if (!empty($data->seguimiento)) {
             DB::table('seguimiento')->insert([

@@ -1747,15 +1747,15 @@ class ContabilidadController extends Controller
 
         $id_empresa = $id_empresa[0]->id;
 
-//        if ($data->authy->necesita_authy) {
-//            $validate_authy = DocumentoService::authy($auth->id, $data->authy->authy_code);
-//
-//            if ($validate_authy->error) {
-//                return response()->json([
-//                    "message" => $validate_authy->mensaje
-//                ], 500);
-//            }
-//        }
+        if ($data->authy->necesita_authy) {
+            $validate_authy = DocumentoService::authy($auth->id, $data->authy->authy_code);
+
+            if ($validate_authy->error) {
+                return response()->json([
+                    "message" => $validate_authy->mensaje
+                ], 500);
+            }
+        }
 
         $crear_movimiento = MovimientoService::crearMovimiento($data, $id_empresa, $auth->id);
 
@@ -2440,25 +2440,25 @@ class ContabilidadController extends Controller
     {
         $registro   = $request->input('registro');
         $token      = $request->input('token');
-//        $authy      = $request->input('authy');
-//
-//        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
-//
-//        if (empty($authy_user_id)) {
-//            return response()->json([
-//                'code'  => 403,
-//                'message'   => "Usuario no encontrado, favor de contactar a un administrador."
-//            ]);
-//        }
-//
-//        $authy_user_id = $authy_user_id[0]->id;
-//
-//        $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-//
-//        try {
-//            $verification = $authy_request->verifyToken($authy, $token);
-//
-//            if ($verification->ok()) {
+        $authy      = $request->input('authy');
+
+        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
+
+        if (empty($authy_user_id)) {
+            return response()->json([
+                'code'  => 403,
+                'message'   => "Usuario no encontrado, favor de contactar a un administrador."
+            ]);
+        }
+
+        $authy_user_id = $authy_user_id[0]->id;
+
+        $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+
+        try {
+            $verification = $authy_request->verifyToken($authy, $token);
+
+            if ($verification->ok()) {
                 DB::table('documento_pago_cuenta_conciliacion')->where(['id' => $registro])->update([
                     'status'    => 1
                 ]);
@@ -2467,18 +2467,18 @@ class ContabilidadController extends Controller
                     'code'  => 200,
                     'message'   => "Día desconciliado correctamente."
                 ]);
-//            } else {
-//                return response()->json([
-//                    'code'  => 403,
-//                    'message'   => "Token incorrecto"
-//                ]);
-//            }
-//        } catch (\Authy\AuthyFormatException $e) {
-//            return response()->json([
-//                'code'  => 500,
-//                'message'   => "Token incorrecto. " . $e->getMessage()
-//            ]);
-//        }
+            } else {
+                return response()->json([
+                    'code'  => 403,
+                    'message'   => "Token incorrecto"
+                ]);
+            }
+        } catch (\Authy\AuthyFormatException $e) {
+            return response()->json([
+                'code'  => 500,
+                'message'   => "Token incorrecto. " . $e->getMessage()
+            ]);
+        }
     }
 
     public function contabilidad_ingreso_cuenta_estado(Request $request)
@@ -3329,16 +3329,16 @@ class ContabilidadController extends Controller
             ]);
         }
 
-//        if ($data->necesita_token) {
-//            $validate_authy = DocumentoService::authy($auth->id, $data->token);
-//
-//            if ($validate_authy->error) {
-//                return response()->json([
-//                    "code" => 500,
-//                    "message" => $validate_authy->mensaje
-//                ]);
-//            }
-//        }
+        if ($data->necesita_token) {
+            $validate_authy = DocumentoService::authy($auth->id, $data->token);
+
+            if ($validate_authy->error) {
+                return response()->json([
+                    "code" => 500,
+                    "message" => $validate_authy->mensaje
+                ]);
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -4198,30 +4198,30 @@ class ContabilidadController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save($archivo);
 
-//        $view = view('email.notificacion_reporte_factura')->with([
-//            "recurso" => 'Empresa: ' . $data['nombre'],
-//            "mensaje" => 'Tipo: Clientes',
-//            "anio" => date("Y")
-//        ])->render();
-//
-//        $emails = ['cxc@omg.com.mx', 'sebastiancifer@gmail.com'];
-//
-//        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//        $domain = "omg.com.mx";
-//        $mg->sendMessage(
-//            $domain,
-//            array(
-//                'from' => 'CRM OMG International <crm@omg.com.mx>',
-//                'to' => $emails,
-//                'subject' => 'Reporte Estado Facturas Clientes ' . $data['nombre'] . '-' . $anio,
-//                'html' => $view
-//            ),
-//            array(
-//                'attachment' => array(
-//                    $archivo
-//                )
-//            )
-//        );
+        $view = view('email.notificacion_reporte_factura')->with([
+            "recurso" => 'Empresa: ' . $data['nombre'],
+            "mensaje" => 'Tipo: Clientes',
+            "anio" => date("Y")
+        ])->render();
+
+        $emails = ['cxc@omg.com.mx', 'sebastiancifer@gmail.com'];
+
+        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+        $domain = "omg.com.mx";
+        $mg->sendMessage(
+            $domain,
+            array(
+                'from' => 'CRM OMG International <crm@omg.com.mx>',
+                'to' => $emails,
+                'subject' => 'Reporte Estado Facturas Clientes ' . $data['nombre'] . '-' . $anio,
+                'html' => $view
+            ),
+            array(
+                'attachment' => array(
+                    $archivo
+                )
+            )
+        );
 
         unlink($archivo);
     }
