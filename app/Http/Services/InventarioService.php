@@ -37,6 +37,8 @@ class InventarioService
         $response->error = 0;
         $response->message = '';
 
+        $se_agrego = false;
+
         // Iniciamos una transacción para asegurar la atomicidad de las operaciones.
         DB::beginTransaction();
         try {
@@ -83,8 +85,58 @@ class InventarioService
                 $almacen = $documento->id_almacen_principal_empresa;
 
                 // Obtenemos (o creamos) la existencia y el costo para este producto en el almacén.
-                $existencia = self::obtenerOcrearExistencia($mov->id_modelo, $almacen);
-                $costo = self::obtenerOcrearCosto($mov->id_modelo);
+                $hay_existencia = DB::table('modelo_existencias')->where('id_modelo', $mov->id_modelo)->where('id_almacen', $almacen)->first();
+                dump($hay_existencia);
+
+                if(empty($hay_existencia)) {
+                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3) {
+                        $existencia = DB::table('modelo_existencias')->insert([
+                            'id_modelo' => $mov->id_modelo,
+                            'id_almacen' => $almacen,
+                            'stock_inicial' => $mov->cantidad,
+                            'stock' => $mov->cantidad,
+                            'stock_anterior' => 0
+                        ]);
+
+                        $existencia = DB::table('modelo_existencias')->where('id_modelo', $mov->id_modelo)->where('id_almacen', $almacen)->first();
+
+                        $se_agrego = true;
+                    } else {
+                        $response->code = 404;
+                        $response->error = 1;
+                        $response->message = "No existe registro de existencias en la base de datos.";
+                        $response->mensaje = "No existe registro de existencias en la base de datos.";
+                        return $response;
+                    }
+
+                } else {
+                    $existencia = $hay_existencia;
+                }
+
+                $hay_costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
+
+                if(empty($hay_costo)) {
+                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3) {
+                        $costo = DB::table('modelo_costo')->insert([
+                            'id_modelo' => $mov->id_modelo,
+                            'costo_inicial' => $mov->precio,
+                            'costo_promedio' => $mov->precio,
+                            'ultimo_costo' => $mov->precio
+                        ]);
+
+                        $costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
+
+                        $se_agrego = true;
+                    } else {
+                        $response->code = 404;
+                        $response->error = 1;
+                        $response->message = "No existe registro de costo en la base de datos.";
+                        $response->mensaje = "No existe registro de costo en la base de datos.";
+                        return $response;
+                    }
+                } else {
+                    $costo = $hay_costo;
+                }
 
                 // Se guardan los valores actuales para poder registrar en el kardex posteriormente.
                 $stockAnterior = $existencia->stock;
@@ -92,7 +144,7 @@ class InventarioService
 
                 // Se calcula la cantidad, el precio unitario (considerando el tipo de cambio) y el total del movimiento.
                 $cantidad = $mov->cantidad;
-                $precioUnitario = $mov->precio * ($documento->tipo_cambio ?? 1);
+                $precioUnitario = $mov->precio;
                 $totalMovimiento = round($cantidad * $precioUnitario, 2);
 
                 // Inicializamos el nuevo stock con el valor actual.
@@ -109,7 +161,7 @@ class InventarioService
                 }
 
                 // Se actualiza el registro de existencia si hubo cambio.
-                if ($nuevoStock != $stockAnterior) {
+                if ($nuevoStock != $stockAnterior && !$se_agrego) {
                     DB::table('modelo_existencias')
                         ->where('id', $existencia->id)
                         ->update([
@@ -128,7 +180,7 @@ class InventarioService
                         $nuevoCostoPromedio = ($montoAnterior + $montoActual) / ($stockAnterior + $cantidad);
                     }
                     // Se actualiza el registro de costo si hay cambio.
-                    if ($nuevoCostoPromedio != $costoPromAnterior) {
+                    if ($nuevoCostoPromedio != $costoPromAnterior && !$se_agrego) {
                         DB::table('modelo_costo')
                             ->where('id', $costo->id)
                             ->update([

@@ -1724,6 +1724,7 @@ class AlmacenController extends Controller
     public function almacen_movimiento_crear_crear(Request $request)
     {
         set_time_limit(0);
+
         DB::beginTransaction();
 
         try {
@@ -1786,7 +1787,7 @@ class AlmacenController extends Controller
                     'id_documento' => $documento,
                     'id_modelo' => $existe_modelo->id,
                     'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
-                    'precio' => $producto->costo,
+                    'precio' => (float)str_replace(',', '', $producto->costo),
                     'garantia' => 0,
                     'modificacion' => 'N/A',
                     'comentario' => $producto->comentarios,
@@ -1980,7 +1981,7 @@ class AlmacenController extends Controller
 
         $query_filter = empty($data->document) ? " AND documento.id_tipo = " . $data->type . " AND documento.created_at BETWEEN '" . $data->initial_date . " 00:00:00' AND '" . $data->final_date . " 23:59:59'"
             : ($data->su ? " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (3, 4, 5, 11)"
-                : " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (5, 11)");
+                : " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (3, 4, 5, 11)");
 
 
 
@@ -2376,7 +2377,7 @@ class AlmacenController extends Controller
                                 movimiento.cantidad,
                                 movimiento.garantia,
                                 movimiento.comentario,
-                                modelo.costo
+                                movimiento.precio as costo
                             FROM movimiento 
                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
                             WHERE id_documento = " . $documento . "");
