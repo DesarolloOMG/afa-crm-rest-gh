@@ -1202,16 +1202,16 @@ class GeneralController extends Controller
         $data = json_decode($request->input("data"));
         $option = json_decode($request->input("option"));
 
-//        if ($data->necesita_token) {
-//            $validate_authy = DocumentoService::authy($auth->id, $data->token);
-//
-//            if ($validate_authy->error) {
-//                return response()->json([
-//                    "code" => 500,
-//                    "message" => $validate_authy->mensaje
-//                ]);
-//            }
-//        }
+        if ($data->necesita_token) {
+            $validate_authy = DocumentoService::authy($auth->id, $data->token);
+
+            if ($validate_authy->error) {
+                return response()->json([
+                    "code" => 500,
+                    "message" => $validate_authy->mensaje
+                ]);
+            }
+        }
 
         $crear_refacturacion = DocumentoService::crearRefacturacion($data->documento, $option);
 
@@ -1910,7 +1910,7 @@ class GeneralController extends Controller
         return response()->json($json);
     }
 
-    /*
+
     public function general_reporte_venta_diario(){
         set_time_limit(0);
 
@@ -2097,7 +2097,7 @@ class GeneralController extends Controller
 
         unlink('estado_cuenta.xlsx');
     }
-    */
+
 
     public function general_reporte_venta_mercadolibre_venta(Request $request)
     {
@@ -2676,26 +2676,26 @@ class GeneralController extends Controller
         $writer->save('reporte_ventas_amazon.xlsx');
 
         try {
-//            $correo = DB::select("SELECT nombre, email FROM usuario WHERE id = " . $auth->id . "")[0];
-//
-//            $view       = view('email.notificacion_reporte_ventas_amazon')->with(['nombre' => $correo->nombre, 'anio' => date('Y')]);
-//
-//            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//            $domain = "omg.com.mx";
-//            $mg->sendMessage(
-//                $domain,
-//                array(
-//                    'from'  => 'CRM OMG International <crm@omg.com.mx>',
-//                    'to'            => $correo->email,
-//                    'subject'       => 'REPORTE DE VENTAS AMAZON.',
-//                    'html'          => $view
-//                ),
-//                array(
-//                    'attachment' => array(
-//                        'reporte_ventas_amazon.xlsx'
-//                    )
-//                )
-//            );
+            $correo = DB::select("SELECT nombre, email FROM usuario WHERE id = " . $auth->id . "")[0];
+
+            $view       = view('email.notificacion_reporte_ventas_amazon')->with(['nombre' => $correo->nombre, 'anio' => date('Y')]);
+
+            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+            $domain = "omg.com.mx";
+            $mg->sendMessage(
+                $domain,
+                array(
+                    'from'  => 'CRM OMG International <crm@omg.com.mx>',
+                    'to'            => $correo->email,
+                    'subject'       => 'REPORTE DE VENTAS AMAZON.',
+                    'html'          => $view
+                ),
+                array(
+                    'attachment' => array(
+                        'reporte_ventas_amazon.xlsx'
+                    )
+                )
+            );
 
             unlink('reporte_ventas_amazon.xlsx');
 
@@ -4061,64 +4061,64 @@ class GeneralController extends Controller
             mkdir("logs", 0777, true);
         }
 
-//        if (!empty($usuarios)) {
-//            foreach ($usuarios as $usuario) {
-//                $documentos = DB::select("SELECT id FROM documento WHERE id_usuario = " . $usuario->id . " AND problema = 1 AND status = 1");
-//
-//                if (!empty($documentos)) {
-//                    $array_documentos = array();
-//
-//                    foreach ($documentos as $documento) {
-//                        array_push($array_documentos, $documento->id);
-//                    }
-//
-//                    try {
-//                        $notificacion['titulo']     = "Pedido en problemas.";
-//                        $notificacion['message']    = "Se te recuerda que todavía cuentas con los siguientes pedidos en problemas: " . implode(" ", $array_documentos) . ".";
-//                        $notificacion['tipo']       = "danger"; // success, warning, danger
-//                        $notificacion['link']       = "/venta/venta/problema";
-//
-//                        $notificacion_id = DB::table('notificacion')->insertGetId([
-//                            'data'  => json_encode($notificacion)
-//                        ]);
-//
-//                        $notificacion['id']         = $notificacion_id;
-//
-//                        DB::table('notificacion_usuario')->insert([
-//                            'id_usuario'        => $usuario->id,
-//                            'id_notificacion'   => $notificacion_id
-//                        ]);
-//
-//                        $notificacion['usuario']    = $usuario->id;
-//
-//                        event(new PusherEvent(json_encode($notificacion)));
-//
-//                        $view       = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
-//
-//                        $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                        $domain = "omg.com.mx";
-//                        $mg->sendMessage($domain, array(
-//                            'from'  => 'CRM OMG International <generico@omg.com.mx>',
-//                            'to'            => $usuario->email,
-//                            'subject'       => 'Recordatorio de pedidos en problemas',
-//                            'html'          => $view
-//                        ));
-//
-//                        # Generar bitacora
-//                        file_put_contents("logs/notificaciones.log", date("d/m/Y H:i:s") . " Notificación sobre pedidos en problemas enviada correctamente a " . $usuario->nombre . "" . PHP_EOL, FILE_APPEND);
-//
-//                        return 1;
-//                    } catch (Exception $e) {
-//                        # Generar bicatora
-//                        file_put_contents("logs/notificaciones.log", date("d/m/Y H:i:s") . " Ocurrió un error al generar la notificación para el usuario " . $usuario->nombre . " mensaje de error: " . $e->getMessage() . "" . PHP_EOL, FILE_APPEND);
-//
-//                        echo $e->getMessage();
-//
-//                        return 0;
-//                    }
-//                }
-//            }
-//        }
+        if (!empty($usuarios)) {
+            foreach ($usuarios as $usuario) {
+                $documentos = DB::select("SELECT id FROM documento WHERE id_usuario = " . $usuario->id . " AND problema = 1 AND status = 1");
+
+                if (!empty($documentos)) {
+                    $array_documentos = array();
+
+                    foreach ($documentos as $documento) {
+                        array_push($array_documentos, $documento->id);
+                    }
+
+                    try {
+                        $notificacion['titulo']     = "Pedido en problemas.";
+                        $notificacion['message']    = "Se te recuerda que todavía cuentas con los siguientes pedidos en problemas: " . implode(" ", $array_documentos) . ".";
+                        $notificacion['tipo']       = "danger"; // success, warning, danger
+                        $notificacion['link']       = "/venta/venta/problema";
+
+                        $notificacion_id = DB::table('notificacion')->insertGetId([
+                            'data'  => json_encode($notificacion)
+                        ]);
+
+                        $notificacion['id']         = $notificacion_id;
+
+                        DB::table('notificacion_usuario')->insert([
+                            'id_usuario'        => $usuario->id,
+                            'id_notificacion'   => $notificacion_id
+                        ]);
+
+                        $notificacion['usuario']    = $usuario->id;
+
+                        event(new PusherEvent(json_encode($notificacion)));
+
+                        $view       = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
+
+                        $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+                        $domain = "omg.com.mx";
+                        $mg->sendMessage($domain, array(
+                            'from'  => 'CRM OMG International <generico@omg.com.mx>',
+                            'to'            => $usuario->email,
+                            'subject'       => 'Recordatorio de pedidos en problemas',
+                            'html'          => $view
+                        ));
+
+                        # Generar bitacora
+                        file_put_contents("logs/notificaciones.log", date("d/m/Y H:i:s") . " Notificación sobre pedidos en problemas enviada correctamente a " . $usuario->nombre . "" . PHP_EOL, FILE_APPEND);
+
+                        return 1;
+                    } catch (Exception $e) {
+                        # Generar bicatora
+                        file_put_contents("logs/notificaciones.log", date("d/m/Y H:i:s") . " Ocurrió un error al generar la notificación para el usuario " . $usuario->nombre . " mensaje de error: " . $e->getMessage() . "" . PHP_EOL, FILE_APPEND);
+
+                        echo $e->getMessage();
+
+                        return 0;
+                    }
+                }
+            }
+        }
 
         return 1;
     }

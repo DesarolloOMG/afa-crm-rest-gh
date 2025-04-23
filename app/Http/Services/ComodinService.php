@@ -276,7 +276,7 @@ class ComodinService
                     if(!empty($existe_serie)) {
                         // Si coincide, marca la serie como válida.
                         $object->status = 1;
-                        array_push($errores, "La serie " . $serie . " ya existe en la Base de Datos");
+                        array_push($errores, "La serie " . $serie . " ya existe en la Base de Datos, en el sku: " . $sku);
                         $id_producto = $existe_serie->id;
                     } else {
                         // Si la serie no se encontró en la tabla "producto", se marca como error.
@@ -285,12 +285,12 @@ class ComodinService
                 } else {
                     // Si la serie es un sinónimo (existe en "modelo_sinonimo"), se marca como error.
                     $object->status = 0;
-                    array_push($errores, "La serie " . $serie . " es un sinonimo.");
+                    array_push($errores, "La serie " . $serie . " es un sinonimo., en el sku: " . $sku);
                 }
             } else {
                 // Si la serie se encontró en la tabla "modelo" (es un SKU), se marca como error.
                 $object->status = 0;
-                array_push($errores, "La serie " . $serie . " es un sku.");
+                array_push($errores, "La serie " . $serie . " es un sku: " . $sku);
             }
             // Agrega el objeto de validación de la serie al array de resultados.
             array_push($array, $object);
