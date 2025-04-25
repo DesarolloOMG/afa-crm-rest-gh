@@ -1818,7 +1818,7 @@ class AlmacenController extends Controller
                             return response()->json([
                                 'message' => $validacion->mensaje . " " . self::logVariableLocation(),
                                 'errores' => $validacion->errores
-                            ], 500);
+                            ]);
                         }
 
                         // Procesar cada serie: al no existir, se crean nuevos registros
@@ -1856,7 +1856,7 @@ class AlmacenController extends Controller
                                 "color" => "red-border-top",
                                 'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
                                 'errores'   => $validacion->errores
-                            ], 500);
+                            ]);
                         }
                         // Procesar cada serie: si existe se actualiza, si no se crea
                         foreach ($producto->series as $serie) {

@@ -214,7 +214,7 @@ class ComodinService
         // Prepara el objeto de respuesta final basándose en si se encontraron errores o no.
         if(!empty($errores)) {
             // En caso de errores, se codifican en JSON y se asigna un mensaje de error.
-            $response->errores = json_encode($errores);
+            $response->errores = $errores;
             $response->error = 1;
             $response->mensaje = "Una o mas series no se pueden agregar.";
             $response->series = json_encode($array);
@@ -234,7 +234,7 @@ class ComodinService
     public static function validar_series_entrada(array $series, string $sku)
     {
         // Inicializa un array para almacenar mensajes de error durante la validación.
-        $errores = array();
+        $errores = [];
 
         // Crea un objeto para la respuesta final.
         $response = new \stdClass();
@@ -276,7 +276,7 @@ class ComodinService
                     if(!empty($existe_serie)) {
                         // Si coincide, marca la serie como válida.
                         $object->status = 1;
-                        array_push($errores, "La serie " . $serie . " ya existe en la Base de Datos, en el sku: " . $sku);
+                        $errores[] = "La serie {$serie} ya existe en la Base de Datos, en el SKU: {$sku}";
                         $id_producto = $existe_serie->id;
                     } else {
                         // Si la serie no se encontró en la tabla "producto", se marca como error.
@@ -285,21 +285,22 @@ class ComodinService
                 } else {
                     // Si la serie es un sinónimo (existe en "modelo_sinonimo"), se marca como error.
                     $object->status = 0;
-                    array_push($errores, "La serie " . $serie . " es un sinonimo., en el sku: " . $sku);
+                    $errores[] = "La serie {$serie} es un sinónimo, en el SKU: {$sku}";
+
                 }
             } else {
                 // Si la serie se encontró en la tabla "modelo" (es un SKU), se marca como error.
                 $object->status = 0;
-                array_push($errores, "La serie " . $serie . " es un sku: " . $sku);
+                $errores[] = "La serie {$serie} es un SKU: {$sku}";
             }
             // Agrega el objeto de validación de la serie al array de resultados.
             array_push($array, $object);
         }
 
         // Prepara el objeto de respuesta final basándose en si se encontraron errores o no.
-        if(!empty($errores)) {
+        if(count($errores)) {
             // En caso de errores, se codifican en JSON y se asigna un mensaje de error.
-            $response->errores = json_encode($errores);
+            $response->errores = $errores;
             $response->error = 1;
             $response->mensaje = "Una o mas series no se pueden agregar.";
             $response->series = json_encode($array);
