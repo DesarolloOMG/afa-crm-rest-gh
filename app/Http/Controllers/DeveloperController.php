@@ -986,15 +986,41 @@ class DeveloperController extends Controller
     {
         //Se utilizara para validar los documentos repetidos o numeros de venta repetidos
         set_time_limit(0);
+        $temporal = DB::table('temporal')->get();
 
-//        $venta = GeneralService::generarGuiaDocumento(1491894,1);
-//        dd($venta);
+        foreach ($temporal as $temp) {
+            $modelo = DB::table('modelo')->where('sku', $temp->sku)->first();
 
-//        $validar_buffered = MercadolibreService::venta2(2000011180562660, 1);
-//        dd($validar_buffered);
+            if(!empty($modelo)){
+                DB::table('modelo_existencias')->insert([
+                    'id_modelo' => $modelo->id,
+                    'id_almacen' => 3,
+                    'stock_inicial' => $temp->stock,
+                    'stock' => $temp->stock,
+                    'stock_anterior' => 0,
+                ]);
 
-        $venta = MercadolibreService::venta(2000008054129802, 1);
-        dd($venta);
+                $existe_costo = DB::table('modelo_costo')->where('id_modelo', $modelo->id)->first();
+
+                if(!empty($existe_costo)){
+                    DB::table('modelo_costo')->insert([
+                        'id_modelo' => $modelo->id,
+                        'costo_inicial' => $temp->costo,
+                        'costo_promedio' => $temp->costo,
+                        'ultimo_costo' => $temp->costo,
+                    ]);
+                }
+
+                DB::table('temporal')->where('id', $temp->id)->update([
+                    'mesnaje' => "OK"
+                ]);
+            }
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => 'Ya quedo duerme'
+        ]);
     }
 
     private static function existeVenta($venta)

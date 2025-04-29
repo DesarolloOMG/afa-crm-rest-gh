@@ -86,7 +86,6 @@ class InventarioService
 
                 // Obtenemos (o creamos) la existencia y el costo para este producto en el almacén.
                 $hay_existencia = DB::table('modelo_existencias')->where('id_modelo', $mov->id_modelo)->where('id_almacen', $almacen)->first();
-                dump($hay_existencia);
 
                 if(empty($hay_existencia)) {
                     if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3) {

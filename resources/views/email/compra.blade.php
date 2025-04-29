@@ -4,7 +4,7 @@
 <head>
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 
-    <title>OMG International SA de CV.</title>
+    <title>AFA Innovations.</title>
     <meta name="viewport" content="width=device-width" />
     <!-- Favicon icon -->
     <link rel="icon" href="../email-templates/img/favicon.ico" type="image/x-icon">
@@ -51,12 +51,12 @@
             <td align="center" bgcolor="#ffffff" style="padding: 40px 20px 40px 20px; color: #555555; font-family: Arial, sans-serif; font-size: 20px; line-height: 30px; border-bottom: 1px solid #f6f6f6;">
                 {!! $texto !!}
 
-                Team OMG International.
+                Team AFA Innovations.
             </td>
         </tr>
         <tr>
             <td align="center" bgcolor="#dddddd" style="padding: 15px 10px 15px 10px; color: #555555; font-family: Arial, sans-serif; font-size: 12px; line-height: 18px;">
-                <b>Todos los Derechos OMG International SA de CV. 2004 - {{ $anio }}</b>
+                <b>Todos los Derechos AFA Innovations SA de CV. 2004 - {{ $anio }}</b>
                 <br/>Industria Vidriera 105 &bull; Fracc. Industrial Zapopan Norte &bull; Zapopan Jalisco 45130
             </td>
         </tr>

@@ -69,7 +69,9 @@ $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use 
 
 $router->group(['prefix' => 'auth'], function () use ($router) {
     $router->post('login', 'AuthController@auth_login');
+    $router->post('login2', 'AuthController@auth_login2');
     $router->post('reset', 'AuthController@auth_reset');
+    $router->post('auth-code', 'AuthController@auth_code');
     $router->post('encuesta', 'AuthController@auth_encuesta');
 });
 
@@ -1001,3 +1003,61 @@ $router->get('barridoStatusfase', 'DeveloperController@barridoStatusfase');
 $router->post('rawinfo/mercadolibre/notificaciones/{marketplace_id}', 'NotificacionesController@notificacion');
 $router->get('pruebaPicking', 'AlmacenController@rawinfo_almacen_picking');
 $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2@mercadolibre_notificaciones_callbacks');
+
+$router->group(['prefix' => 'developer'], function () use ($router) {
+    $router->post('borrar/pretransferencia', 'DeveloperController@pretransferencias');
+    $router->post('recepciones', 'DeveloperController@recepciones');
+    $router->post('inventarioinicial', 'DeveloperController@inventarioinicial');
+    $router->get('recostear', 'DeveloperController@recostear');
+    $router->get('actualizarPedido', 'DeveloperController@actualizarPedido');
+    $router->get('pedido/{id}', 'DeveloperController@getPedido');
+    $router->get('ventacomercial/{documento}', 'DeveloperController@ventacomercial');
+    $router->get('movimientocomercial/{documento}', 'DeveloperController@movimientoComercial');
+    $router->get('reporte', 'DeveloperController@reporte');
+    $router->post('reporteinventario', 'DeveloperController@reporteinventario');
+    $router->get('actualizarInventariosAlmacen', 'DeveloperController@actualizarInventariosAlmacen');
+    $router->post('conciliar', 'DeveloperController@conciliar');
+    $router->post('confirmar-authy', 'DeveloperController@confirmar_authy');
+    $router->post('confirmar-authy-cce', 'DeveloperController@confirmar_authy_cce');
+    $router->get('series/{serie}', 'DeveloperController@getSeries');
+    $router->post('getWalmartData', 'DeveloperController@getWalmartData');
+    $router->post('getWalmartData2', 'DeveloperController@getWalmartData2');
+    $router->get('buscarWalmartVenta/{data}', 'DeveloperController@buscarWalmartVenta');
+    $router->get('buscarWalmartPedido/{data}', 'DeveloperController@buscarWalmartPedido');
+    $router->post('actualizarWalmart', 'DeveloperController@actualizarWalmart');
+    $router->get('testsAlexget', 'DeveloperController@testsAlexget');
+    $router->post('testsAlexpost', 'DeveloperController@testsAlexpost');
+    $router->get('testAlexExtra', 'DeveloperController@testAlexExtra');
+    $router->get('testAlexData', 'DeveloperController@testAlexData');
+    $router->post('conseguirLinio', 'DeveloperController@conseguirLinio');
+    $router->get('imprimirPicking', 'DeveloperController@imprimirPicking');
+    $router->post('getDuplicadosData', 'DeveloperController@getDuplicadosData');
+    $router->post('getDuplicados', 'DeveloperController@getDuplicados');
+    $router->post('enviarNotificaciones', 'DeveloperController@enviarNotificaciones');
+    $router->get('getUsuariosNotificaciones', 'DeveloperController@getUsuariosNotificaciones');
+    $router->get('descargarReporteML', 'DeveloperController@descargarReporteML');
+    $router->get('descargarReporteSD', 'DeveloperController@descargarReporteSD');
+    $router->get('testApis', 'DeveloperController@testApiWalmart');
+    $router->post('copiarSeries', 'DeveloperController@copiar_series');
+    $router->get('actPedidoEnviadoWalmart', 'DeveloperController@actualizar_pedidos_enviados_walmart');
+    $router->get('agregarInventarioCRM', 'DeveloperController@agregarInventarioCRM');
+    $router->get('importarPedidosComercial', 'DeveloperController@importVentasComercial');
+    $router->get('importarMovComercial', 'DeveloperController@importMovimientosComercial');
+    $router->get('actPedidosComercial', 'DeveloperController@actualizarVentasDeComercial');
+    $router->get('importarProductosML', 'DeveloperController@importarProductosML');
+    $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
+    $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
+    $router->get('seriesDu', 'DeveloperController@quitarSeriesDuplicadas');
+    $router->get('getAlmacenes', 'DeveloperController@getAlmacenes');
+    $router->post('testReporteHp', 'DeveloperController@testReporteHp');
+    $router->post('getTraspasoNDC', 'DeveloperController@getTraspasoNDC');
+    $router->post('recuperarPedidos', 'DeveloperController@recuperarPedidos');
+    $router->post('asignarSeriePedido', 'DeveloperController@asignarSeriePedido');
+    $router->post('actSeriePedido', 'DeveloperController@actualizarSeriePedido');
+    $router->post('descargarExcelImportacionComercial', 'DeveloperController@descargarExcelImportacionComercial');
+    $router->get('barridoStatus/{anio}/{mes}', 'DeveloperController@barridoStatus');
+    $router->get('barridoStatusfase/{anio}/{info}', 'DeveloperController@barridoStatusfase');
+    $router->get('cambiarModuloComercial/{documento}', 'DeveloperController@cambiarModuloComercial');
+    $router->post('liberarExistencias', 'DeveloperController@liberarExistenciasProducto');
+
+});

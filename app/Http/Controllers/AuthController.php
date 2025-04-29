@@ -1,41 +1,34 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
 use App\Http\Services\DocumentoService;
 use App\Http\Services\GeneralService;
-
+use App\Http\Services\WhatsAppService;
 use App\Models\Generalmodel;
 use App\Models\NotificacionUsuario;
-use App\Models\UsuarioEmpresa;
-use App\Models\UsuarioSubnivelNivel;
-use App\Models\SubNivel;
-use App\Models\UsuarioMarketplaceArea;
 use App\Models\Usuario;
-use App\Models\Area;
-use App\Models\Empresa;
-use App\Models\Nivel;
-use App\Models\MarketplaceArea;
-use App\Models\UsuarioLoginError;
 use App\Models\UsuarioIP;
-
-use Illuminate\Support\Facades\Hash;
+use App\Models\UsuarioLoginError;
+use Exception;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Mailgun\Mailgun;
-use DB;
+use Mailgun\Messages\Exceptions\MissingRequiredMIMEParameters;
+use Twilio\Rest\Client;
 
 class AuthController extends Controller
 {
     public function auth_login(Request $request)
     {
-        $excepciones = ['balexander.rosas@gmail.com','lorena@omgcorp.com.mx', 'cesar@omg.com.mx', 'lupita81lara@gmail.com', 'isabel@arome.mx',
-            'sauladrian.arias@gmail.com', 'alberto@omg.com.mx', 'efren@omg.com.mx', 'humberto@omg.com.mx', 'inventarios@omg.com.mx', 'roberto@omg.com.mx'];
-
         $data = json_decode($request->input("data"));
 
-        $existe = Usuario::where("email", $data->email)->first();
+        $usuario = Usuario::where("email", $data->email)->first();
 
-        if (!$existe) {
+        if (!$usuario) {
             UsuarioLoginError::create([
                 "email" => $data->email,
                 "password" => $data->password,
@@ -47,55 +40,109 @@ class AuthController extends Controller
             ], 404);
         }
 
+        # usuario existe pero todavía no se envia whatsapp, se verifica contraseña y se envia codigo
         if (empty($data->authy)) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => "El código de Authy no fue proporcionado"
-            ]);
-
-            return response()->json([
-                "message" => "Abre tu aplicación de Authy y escribe el codigo que aparece para poder iniciar sesión"
-            ], 500);
-        }
-        if (!in_array(strtolower($data->email), $excepciones)) {
-            $validate_authy = DocumentoService::authy($existe->id, $data->authy);
-
-            if ($validate_authy->error) {
+            if (!Hash::check($data->password, $usuario->contrasena)) {
                 UsuarioLoginError::create([
                     "email" => $data->email,
                     "password" => $data->password,
-                    "mensaje" => "Error al validar el token de authy: " . $validate_authy->mensaje
+                    "mensaje" => "Contraseña incorrecta"
                 ]);
 
                 return response()->json([
-                    "message" => "Error al validar el token de Authy: " . $validate_authy->mensaje
-                ], 500);
+                    "message" => "Contraseña incorrecta"
+                ], 404);
+            }
+
+            $exits_code_user = DB::table("auth_codes")
+                ->where('user', $usuario->id)
+                ->where('expires_at', '>', Carbon::now())
+                ->first();
+            try {
+                if (!$exits_code_user) {
+                    $code = random_int(100000, 999999);
+
+                    $code_expires_at = Carbon::now()->addMinutes(5);
+
+                    DB::beginTransaction();
+
+                    DB::table('auth_codes')->insert([
+                        'user' => $usuario->id,
+                        'code' => $code,
+                        'expires_at' => $code_expires_at
+                    ]);
+
+                    DB::commit();
+                }
+                else {
+                    $code = $exits_code_user->code;
+                }
+
+                $whatsappService = new WhatsAppService();
+
+                $response_whatsapp_service = $whatsappService->send_whatsapp_verification_code($usuario->celular, $code);
+
+                return response()->json([
+                    'code' => 200,
+                    'message' => "Se ha enviado un codigo a tu whatsapp, utilizalo para iniciar sesión",
+                    'data' => $response_whatsapp_service
+                ]);
+            }
+            catch (Exception $e) {
+                DB::rollBack();
+
+                return response()->json([
+                    "message" => "Hubo un problema con la transacción " . self::logVariableLocation() . ' ' . $e->getMessage(),
+                ], 404);
             }
         }
 
-        if (!Hash::check($data->password, $existe->contrasena)) {
+        # usuario existe y el token de whatsapp está presente en el request
+        $authCode = DB::table('auth_codes')
+            ->where('user', $usuario->id)
+            ->where('code', $data->authy)
+            ->first();
+
+        # El codigo proporcionado por el usuario no existe
+        if (!$authCode) {
             UsuarioLoginError::create([
                 "email" => $data->email,
                 "password" => $data->password,
-                "mensaje" => "Contraseña incorrecta"
+                "mensaje" => "El código es incorrecto, favor de verificarlo",
             ]);
 
             return response()->json([
-                "message" => "Usuario no encontrado"
-            ], 404);
+                'message' => 'Código inválido',
+                "data" => $authCode
+            ], 500);
         }
 
-        $usuario = Usuario::find($existe->id);
+        if ($authCode->expires_at < Carbon::now()) {
+            DB::table('auth_codes')
+                ->where('id', $authCode->id)
+                ->delete();
 
-        if (Hash::needsRehash($existe->contrasena)) {
+            return response()->json([
+                'message' => 'Código expirado, vuelve a ingresar tus credenciales',
+                "data" => $authCode,
+                "expired" => true
+            ], 500);
+        }
+
+        # El codigo existe y es valido, se procede a eliminarlo y dar acceso al usuario
+        DB::table('auth_codes')
+            ->where('id', $authCode->id)
+            ->delete();
+
+        # No es necesario verificar la contraseña de nuevo ya que se verificó al mandar el codigo, solo si necesita rehash
+        if (Hash::needsRehash($usuario->contrasena)) {
             $usuario->contrasena = Hash::make($data->password);
         }
 
         $usuario->last_ip = $request->ip();
 
         UsuarioIP::create([
-            "id_usuario" => $existe->id,
+            "id_usuario" => $usuario->id,
             "ip" => $request->ip()
         ]);
 
@@ -109,10 +156,12 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * @throws MissingRequiredMIMEParameters
+     * @throws \Throwable
+     */
     public function auth_reset(Request $request)
     {
-        $excepciones = ['balexander.rosas@gmail.com','lorena@omgcorp.com.mx', 'cesar@omg.com.mx', 'lupita81lara@gmail.com', 'isabel@arome.mx', 'sauladrian.arias@gmail.com', 'alberto@omg.com.mx', 'efren@omg.com.mx'];
-
         $data = json_decode($request->input("data"));
 
         $existe = Usuario::where("email", $data->email)->first();
@@ -123,21 +172,84 @@ class AuthController extends Controller
             ], 404);
         }
 
-        if (!in_array(strtolower($data->email), $excepciones)) {
-            if (empty($data->authy)) {
+        if (empty($data->authy)) {
+            $exits_code_user = DB::table("auth_codes")
+                ->where('user', $existe->id)
+                ->where('expires_at', '>', Carbon::now())
+                ->first();
+            try {
+                if (!$exits_code_user) {
+                    $code = random_int(100000, 999999);
+
+                    $code_expires_at = Carbon::now()->addMinutes(5);
+
+                    DB::beginTransaction();
+
+                    DB::table('auth_codes')->insert([
+                        'user' => $existe->id,
+                        'code' => $code,
+                        'expires_at' => $code_expires_at
+                    ]);
+
+                    DB::commit();
+                }
+                else {
+                    $code = $exits_code_user->code;
+                }
+
+                $whatsappService = new WhatsAppService();
+
+                $whatsappService->send_whatsapp_verification_code($existe->celular, $code);
+
                 return response()->json([
-                    "message" => "Para iniciar sesión, abre tu aplicación Authy registrada con tu correo y escribe el codigo que aparece en tu pantalla"
-                ], 500);
+                    'code' => 200,
+                    'message' => "Se ha enviado un codigo a tu whatsapp, utilizalo para resetear tu contraseña"
+                ]);
             }
+            catch (Exception $e) {
+                DB::rollBack();
 
-            $validate_authy = DocumentoService::authy($existe->id, $data->authy);
-
-            if ($validate_authy->error) {
                 return response()->json([
-                    "message" => "Error al validar el token de Authy: " . $validate_authy->mensaje,
-                ], 500);
+                    "message" => "Hubo un problema con la transacción " . self::logVariableLocation() . ' ' . $e->getMessage(),
+                ], 404);
             }
         }
+
+        # usuario existe y el token de whatsapp está presente en el request
+        $authCode = DB::table('auth_codes')
+            ->where('user', $existe->id)
+            ->where('code', $data->authy)
+            ->first();
+
+        # El codigo proporcionado por el usuario no existe
+        if (!$authCode) {
+            UsuarioLoginError::create([
+                "email" => $data->email,
+                "mensaje" => "El código es incorrecto, favor de verificarlo",
+            ]);
+
+            return response()->json([
+                'message' => 'Código inválido',
+                "data" => $authCode
+            ], 500);
+        }
+
+        if ($authCode->expires_at < Carbon::now()) {
+            DB::table('auth_codes')
+                ->where('id', $authCode->id)
+                ->delete();
+
+            return response()->json([
+                'message' => 'Código expirado, vuelve a ingresar tus credenciales',
+                "data" => $authCode,
+                "expired" => true
+            ], 500);
+        }
+
+        # El codigo existe y es valido, se procede a eliminarlo y dar acceso al usuario
+        DB::table('auth_codes')
+            ->where('id', $authCode->id)
+            ->delete();
 
         $contrasena = GeneralService::randomString();
 
@@ -149,12 +261,13 @@ class AuthController extends Controller
             ]);
 
         $mg = Mailgun::create(config("mailgun.token"));
-        $mg->sendMessage(config("mailgun.domain"), array(
+
+        $mg->messages()->send(config("mailgun.domain"), [
             'from' => config("mailgun.email_from"),
             'to' => $existe->email,
             'subject' => 'Reseteo de contraseña.',
-            'html' => $view
-        ));
+            'html' => $view->render()
+        ]);
 
         $usuario_data = Usuario::find($existe->id);
 
@@ -162,7 +275,8 @@ class AuthController extends Controller
         $usuario_data->save();
 
         return response()->json([
-            'message' => "Se te ha enviado un email con tu contraseña temporal."
+            'message' => "Se te ha enviado un email con tu contraseña temporal.",
+            'email_sent' => true
         ]);
     }
 
@@ -177,7 +291,7 @@ class AuthController extends Controller
 
         if ($existe_email) {
             return response()->json([
-                "message" => "Ya éxiste un usuario con el email proporcionado"
+                "message" => "Ya Ã©xiste un usuario con el email proporcionado"
             ], 400);
         }
 
@@ -188,7 +302,7 @@ class AuthController extends Controller
 
         if ($existe_celular) {
             return response()->json([
-                "message" => "Ya éxiste un usuario con el celular proporcionado"
+                "message" => "Ya Ã©xiste un usuario con el celular proporcionado"
             ], 400);
         }
 
@@ -308,18 +422,18 @@ class AuthController extends Controller
 
     public function info(Request $request)
     {
-        $user_id    = $request->input('user_id');
-        $json       = array();
+        $user_id = $request->input('user_id');
+        $json = array();
 
-        $exists     = Usuario::v_existe_usuario($user_id);
+        $exists = Usuario::v_existe_usuario($user_id);
 
         if (empty($exists)) {
-            $json['code']       = 401;
-            $json['message']    = "Usuario no encontrado";
+            $json['code'] = 401;
+            $json['message'] = "Usuario no encontrado";
         }
 
-        $json['code']   = 200;
-        $json['user']   = $exists;
+        $json['code'] = 200;
+        $json['user'] = $exists;
 
         return $this->make_json($json);
     }
@@ -331,15 +445,15 @@ class AuthController extends Controller
         $existe_usuario = Usuario::existe_usuario($email);
 
         if (empty($existe_usuario)) {
-            $json['code']   = 404;
-            $json['message']    = "No se encontró ningún usuario registrado con el email proporcionado.";
+            $json['code'] = 404;
+            $json['message'] = "No se encontró ningÃºn usuario registrado con el email proporcionado.";
 
             return $this->make_json($json);
         }
 
-        $json['code']       = 200;
-        $json['message']    = "Por favor ingresa el token de la aplicación Authy.";
-        $json['authy']      = $existe_usuario->authy;
+        $json['code'] = 200;
+        $json['message'] = "Por favor ingresa el token de la aplicación Authy.";
+        $json['authy'] = $existe_usuario->authy;
 
         return $this->make_json($json);
     }
@@ -355,8 +469,8 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'notificaciones'    => $notificaciones
+            'code' => 200,
+            'notificaciones' => $notificaciones
         ]);
     }
 
@@ -409,5 +523,14 @@ class AuthController extends Controller
     private function random_string($length = 10)
     {
         return substr(str_shuffle(str_repeat($x = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', ceil($length / strlen($x)))), 1, $length);
+    }
+
+    private static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'AS'; //Primera letra del Controlador y Letra de la segunda Palabra: Controller, service
+        $fin = 'UTH'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }
