@@ -607,10 +607,10 @@ class NotificacionesController extends Controller{
 //
 //                $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
 //                $domain = "omg.com.mx";
-//                $mg->sendMessage($domain, array('from'  => 'Laptop México <generico@omg.com.mx>',
+//                $mg->messages()->send($domain, array('from'  => 'Laptop México <generico@omg.com.mx>',
 //                                        'to'      => 'desarrollo1@omg.com.mx',
 //                                        'subject' => '¡Pedido ' . $documento . ' procesado!',
-//                                        'html'    => $html));
+//                                        'html'    => $html->render()));
 //            }
 
 //            if (!empty($usuarios_marketplace)) {

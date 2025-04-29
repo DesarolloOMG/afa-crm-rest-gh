@@ -964,17 +964,22 @@ class LogisticaController extends Controller
                             $html = view('email.notificacion_control_paqueteria')->with(['data' => $data, 'anio' => date('Y')]);
 
                             $mg = Mailgun::create(config("mailgun.token"));
-                            $mg->sendMessage(config("mailgun.domain"), array(
+                            $mg->messages()->send(config("mailgun.domain"), array(
                                 'from'  => config("mailgun.email_from"),
                                 'to' => $usuario->email,
                                 'subject' => '¡Te llegó un paquete!',
-                                'html' => $html
+                                'html' => $html->render()
                             ));
                         }
                     }
 
                     array_push($usuarios, $notificado->id);
                 } catch (Exception $e) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $e->getMessage()
+                    ]);
+                } catch (\Throwable $e) {
                     return response()->json([
                         'code' => 500,
                         'message' => $e->getMessage()

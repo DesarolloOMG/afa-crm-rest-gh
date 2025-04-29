@@ -714,11 +714,11 @@ class ShopifyService
 //        $emails = substr($emails, 0, -1);
 //
 //        $mg = Mailgun::create(config("mailgun.token"));
-//        $mg->sendMessage(config("mailgun.domain"), array(
+//        $mg->messages()->send(config("mailgun.domain"), array(
 //            'from' => config("mailgun.email_from"),
 //            'to' => $emails,
 //            'subject' => 'Reporte ' . $titulo_email,
-//            'html' => $view
+//            'html' => $view->render()
 //        ));
     }
 

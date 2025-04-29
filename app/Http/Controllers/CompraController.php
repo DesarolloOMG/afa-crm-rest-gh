@@ -1445,10 +1445,10 @@ class CompraController extends Controller
 
             $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
             $domain = "omg.com.mx";
-            $mg->sendMessage($domain, array('from' => 'CRM OMG International <crm@omg.com.mx>',
+            $mg->messages()->send($domain, array('from' => 'CRM OMG International <crm@omg.com.mx>',
                                     'to' => 'desarrollo1@omg.com.mx',
                                     'subject' => 'Nueva requisición para orden de compra.',
-                                    'html' => $view));
+                                    'html' => $view->render()));
 
             $notificacion['titulo'] = "Requisición generada";
             $notificacion['message'] = "Se ha generado una nueva requisición para una orden de compra por el usuario " . $nombre . " con el ID " . $documento . ".";
@@ -1472,6 +1472,11 @@ class CompraController extends Controller
             event(new PusherEvent(json_encode($notificacion)));
         }
         catch(Exception $e) {
+            return response()->json([
+                'code' => 200,
+                'message' => "La requisición fue creada correctamente con el ID " . $documento . " pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
+            ]);
+        } catch (\Throwable $e) {
             return response()->json([
                 'code' => 200,
                 'message' => "La requisición fue creada correctamente con el ID " . $documento . " pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
@@ -1524,11 +1529,11 @@ class CompraController extends Controller
         try {
             $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
             $domain = "omg.com.mx";
-            $mg->sendMessage($domain, array(
+            $mg->messages()->send($domain, array(
                 'from'  => 'CRM OMG International <crm@omg.com.mx>',
                 'to'            => $usuario->email,
                 'subject'       => 'Requisición con el ID ' . $documento . '.',
-                'html'          => $view
+                'html'          => $view->render()
             ));
 
             $notificacion['titulo']     = "Requisición autorizada";
@@ -1550,6 +1555,11 @@ class CompraController extends Controller
 
             event(new PusherEvent(json_encode($notificacion)));
         } catch (Exception $e) {
+            return response()->json([
+                'code'  => 200,
+                'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
+            ]);
+        } catch (\Throwable $e) {
             return response()->json([
                 'code'  => 200,
                 'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()

@@ -243,13 +243,13 @@ class ConfiguracionController extends Controller
 //
 //            $mg = Mailgun::create(config("mailgun.token"));
 //
-//            $mg->sendMessage(
+//            $mg->messages()->send(
 //                config("mailgun.domain"),
 //                array(
 //                    'from' => config("mailgun.email_from"),
 //                    'to' => $data->email,
 //                    'subject' => "Tu nuevo usuario para CRM OMG International",
-//                    'html' => $view
+//                    'html' => $view->render()
 //                )
 //            );
 

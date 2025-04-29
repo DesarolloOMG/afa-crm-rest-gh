@@ -1589,6 +1589,9 @@ class VentaController extends Controller
     }
 
     /* Venta > Venta > Nota */
+    /**
+     * @throws \Throwable
+     */
     public function venta_venta_nota(Request $request)
     {
         $data = json_decode($request->input('data'));
@@ -1863,13 +1866,13 @@ class VentaController extends Controller
 
             $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
             $domain = "omg.com.mx";
-            $mg->sendMessage(
+            $mg->messages()->send(
                 $domain,
                 array(
                     'from'  => 'Reportes OMG International <crm@omg.com.mx>',
                     'to'      => $data->correo,
                     'subject' => 'Nota de venta para el pedido ' . $data->documento,
-                    'html'    => $html
+                    'html'    => $html->render()
                 ),
                 array(
                     'attachment' => array(

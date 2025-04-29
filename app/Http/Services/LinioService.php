@@ -2012,6 +2012,9 @@ class LinioService
         return $response;
     }
 
+    /**
+     * @throws \Throwable
+     */
     public static function enviarEmailErroresImportacion($marketplace_id, $errores, $titulo_email)
     {
         $emails = "";
@@ -2036,11 +2039,11 @@ class LinioService
         $emails = substr($emails, 0, -1);
 
         $mg = Mailgun::create(config("mailgun.token"));
-        $mg->sendMessage(config("mailgun.domain"), array(
+        $mg->messages()->send(config("mailgun.domain"), array(
             'from' => config("mailgun.email_from"),
             'to' => $emails,
             'subject' => 'Reporte ' . $titulo_email,
-            'html' => $view
+            'html' => $view->render()
         ));
     }
 

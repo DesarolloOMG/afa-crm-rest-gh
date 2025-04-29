@@ -3433,6 +3433,11 @@ class ContabilidadController extends Controller
         return $url;
     }
 
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     * @throws \Throwable
+     */
     public static function procesar_contabilidad_estado_factura_reporte_semanal($response, $empresa, $data, $url_pagos_pendientes, $anio)
     {
         $nombre_entidad = $response[0]->documento->nombre;
@@ -4202,19 +4207,19 @@ class ContabilidadController extends Controller
             "recurso" => 'Empresa: ' . $data['nombre'],
             "mensaje" => 'Tipo: Clientes',
             "anio" => date("Y")
-        ])->render();
+        ]);
 
         $emails = ['cxc@omg.com.mx', 'sebastiancifer@gmail.com'];
 
         $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
         $domain = "omg.com.mx";
-        $mg->sendMessage(
+        $mg->messages()->send(
             $domain,
             array(
                 'from' => 'CRM OMG International <crm@omg.com.mx>',
                 'to' => $emails,
                 'subject' => 'Reporte Estado Facturas Clientes ' . $data['nombre'] . '-' . $anio,
-                'html' => $view
+                'html' => $view->render()
             ),
             array(
                 'attachment' => array(

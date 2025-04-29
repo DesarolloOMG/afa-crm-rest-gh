@@ -685,6 +685,9 @@ class GeneralService
         return $response;
     }
 
+    /**
+     * @throws \Throwable
+     */
     public static function sendEmailToAdmins($recurso, $mensaje, $raw, $tipo = 0 /* 0 = Error, 1 = Advertencia */, $extra_emails = [])
     {
         $emails = "";
@@ -721,11 +724,11 @@ class GeneralService
 
         $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
         $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array(
+        $mg->messages()->send($domain, array(
             'from' => 'CRM OMG International <crm@omg.com.mx>',
             'to' => $emails,
             'subject' => !$tipo ? 'Error en CRM' : '¡Advertencia!',
-            'html' => $view
+            'html' => $view->render()
         ));
     }
 

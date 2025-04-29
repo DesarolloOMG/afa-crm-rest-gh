@@ -2085,10 +2085,10 @@ class GeneralController extends Controller
 
         $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
         $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array('from'  => 'Reportes OMG International <crm@omg.com.mx>',
+        $mg->messages()->send($domain, array('from'  => 'Reportes OMG International <crm@omg.com.mx>',
                                 'to'      => 'desarrollo1@omg.com.mx',
                                 'subject' => 'Reporte de actividades OMG International ' . date('d/m/Y'),
-                                'html'    => $html),
+                                'html'    => $html->render()),
                                 array(
                                     'attachment' => array(
                                         'reporte_diario.xlsx'
@@ -2682,13 +2682,13 @@ class GeneralController extends Controller
 
             $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
             $domain = "omg.com.mx";
-            $mg->sendMessage(
+            $mg->messages()->send(
                 $domain,
                 array(
                     'from'  => 'CRM OMG International <crm@omg.com.mx>',
                     'to'            => $correo->email,
                     'subject'       => 'REPORTE DE VENTAS AMAZON.',
-                    'html'          => $view
+                    'html'          => $view->render()
                 ),
                 array(
                     'attachment' => array(
@@ -4097,11 +4097,11 @@ class GeneralController extends Controller
 
                         $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                         $domain = "omg.com.mx";
-                        $mg->sendMessage($domain, array(
+                        $mg->messages()->send($domain, array(
                             'from'  => 'CRM OMG International <generico@omg.com.mx>',
                             'to'            => $usuario->email,
                             'subject'       => 'Recordatorio de pedidos en problemas',
-                            'html'          => $view
+                            'html'          => $view->render()
                         ));
 
                         # Generar bitacora

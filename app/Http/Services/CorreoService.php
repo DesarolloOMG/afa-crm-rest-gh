@@ -49,11 +49,11 @@ class CorreoService {
 
                 $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                 $domain = "omg.com.mx";
-                $mg->sendMessage($domain, array(
+                $mg->messages()->send($domain, array(
                     'from' => 'CRM OMG International <crm@omg.com.mx>',
                     'to' => $usuario_documento->email,
                     'subject' => 'Pedido ' . $documento . ' cambiado de fase.',
-                    'html' => $view
+                    'html' => $view->render()
                 ));
             }
 
@@ -61,6 +61,12 @@ class CorreoService {
                 "code" => 200
             ]);
         } catch (Exception $e) {
+            return response()->json([
+                'code'  => 500,
+                "color" => "red-border-top",
+                'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage()
+            ]);
+        } catch (\Throwable $e) {
             return response()->json([
                 'code'  => 500,
                 "color" => "red-border-top",
@@ -107,11 +113,11 @@ class CorreoService {
 
                 $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                 $domain = "omg.com.mx";
-                $mg->sendMessage($domain, array(
+                $mg->messages()->send($domain, array(
                     'from' => 'CRM OMG International <crm@omg.com.mx>',
                     'to' => $usuario_documento->email,
                     'subject' => 'Pedido ' . $documento . ' cambiado de fase.',
-                    'html' => $view
+                    'html' => $view->render()
                 ));
             }
 
@@ -124,9 +130,18 @@ class CorreoService {
                 "color" => "red-border-top",
                 'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage()
             ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'code'  => 500,
+                "color" => "red-border-top",
+                'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage()
+            ]);
         }
     }
 
+    /**
+     * @throws \Throwable
+     */
     public static function cambioFaseConta($documento, $mensaje) {
         $emails = "";
         $correos = DB::table('usuario')
@@ -151,14 +166,17 @@ class CorreoService {
 
         $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
         $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array(
+        $mg->messages()->send($domain, array(
             'from' => 'CRM OMG International <crm@omg.com.mx>',
             'to' => $emails,
             'subject' => 'Pedido Pendiente de factura',
-            'html' => $vista
+            'html' => $vista->render()
         ));
     }
 
+    /**
+     * @throws \Throwable
+     */
     public static function enviarErrorComercial($mensaje) {
         $emails = "";
         $correos = DB::table('usuario')
@@ -182,14 +200,17 @@ class CorreoService {
 
         $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
         $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array(
+        $mg->messages()->send($domain, array(
             'from' => 'CRM OMG International <crm@omg.com.mx>',
             'to' => $emails,
             'subject' => 'Pedido Pendiente de factura',
-            'html' => $vista
+            'html' => $vista->render()
         ));
     }
 
+    /**
+     * @throws \Throwable
+     */
     public static function enviarManifiesto($guias, $tipo, $paqueteria, $server) {
         $emails = "";
         if($server == "http://wimtech-test.ddns.net:9181") {
@@ -273,11 +294,11 @@ class CorreoService {
 
         $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
         $domain = "omg.com.mx";
-        $mg->sendMessage($domain, array(
+        $mg->messages()->send($domain, array(
             'from' => 'CRM OMG International <crm@omg.com.mx>',
             'to' => $emails,
             'subject' => $asunto,
-            'html' => $vista
+            'html' => $vista->render()
         ));
     }
 }

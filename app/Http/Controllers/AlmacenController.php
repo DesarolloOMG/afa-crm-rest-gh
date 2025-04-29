@@ -223,11 +223,11 @@ class AlmacenController extends Controller
 
                     $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                     $domain = "omg.com.mx";
-                    $mg->sendMessage($domain, array(
+                    $mg->messages()->send($domain, array(
                         'from'  => 'CRM OMG International <crm@omg.com.mx>',
                         'to'            => $usuario_documento->email,
                         'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
-                        'html'          => $view
+                        'html'          => $view->render()
                     ));
                 }
 
@@ -236,6 +236,11 @@ class AlmacenController extends Controller
                     'picking_date' => '0000-00-00 00:00:00'
                 ]);
             } catch (Exception $e) {
+                return response()->json([
+                    'code'  => 500,
+                    'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
+                ]);
+            } catch (\Throwable $e) {
                 return response()->json([
                     'code'  => 500,
                     'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
@@ -891,6 +896,9 @@ class AlmacenController extends Controller
         ]);
     }
 
+    /**
+     * @throws \Throwable
+     */
     public function almacen_packing_guardar_v2(Request $request)
     {
         $backup = 0;
@@ -999,11 +1007,11 @@ class AlmacenController extends Controller
 
                     $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                     $domain = "omg.com.mx";
-                    $mg->sendMessage($domain, array(
+                    $mg->messages()->send($domain, array(
                         'from' => 'CRM OMG International <crm@omg.com.mx>',
                         'to' => $usuario_documento->email,
                         'subject' => 'Pedido ' . $data->documento . ' en problemas.',
-                        'html' => $view
+                        'html' => $view->render()
                     ));
                 }
 
@@ -1012,6 +1020,12 @@ class AlmacenController extends Controller
                     'picking_date' => '0000-00-00 00:00:00'
                 ]);
             } catch (Exception $e) {
+                return response()->json([
+                    'code'  => 500,
+                    "color" => "red-border-top",
+                    'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
+                ]);
+            } catch (\Throwable $e) {
                 return response()->json([
                     'code'  => 500,
                     "color" => "red-border-top",
@@ -1348,11 +1362,11 @@ class AlmacenController extends Controller
 
                 $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                 $domain = "omg.com.mx";
-                $mg->sendMessage($domain, array(
+                $mg->messages()->send($domain, array(
                     'from' => 'CRM OMG International <crm@omg.com.mx>',
                     'to' => $emails,
                     'subject' => 'Error al generar factura',
-                    'html' => $vista
+                    'html' => $vista->render()
                 ));
 
                 return response()->json([
