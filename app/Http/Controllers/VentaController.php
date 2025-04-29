@@ -4280,7 +4280,7 @@ class VentaController extends Controller
 
         foreach ($areas as $i => $area) {
             $area->marketplaces = DB::table("marketplace_area")
-                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo")
+                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo", "marketplace_api.token AS marketplace_token")
                 ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
                 ->join("usuario_marketplace_area", "marketplace_area.id", "=", "usuario_marketplace_area.id_marketplace_area")
                 ->leftJoin("marketplace_api", "marketplace_area.id", "=", "marketplace_api.id_marketplace_area")
