@@ -3063,6 +3063,7 @@ class VentaController extends Controller
     public function venta_mercadolibre_publicaciones_busqueda(Request $request)
     {
         set_time_limit(0);
+        
         $data = json_decode($request->input("data"));
 
         $publicaciones = DB::table("marketplace_publicacion")
@@ -3144,6 +3145,8 @@ class VentaController extends Controller
 
     public function venta_mercadolibre_publicaciones_actualizar(Request $request)
     {
+        set_time_limit(0);
+
         $data = json_decode($request->input("data"));
 
         $marketplace_name = DB::table("marketplace_area")
