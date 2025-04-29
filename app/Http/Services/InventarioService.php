@@ -171,12 +171,16 @@ class InventarioService
 
                 // Si el documento afecta costo, se recalcula el costo promedio.
                 if ($docTipo->afectaCosto == 1) {
-                    if ($stockAnterior <= 0) {
+                    $totalStockAnterior = DB::table('modelo_existencias')
+                        ->where('id_modelo', $mov->id_modelo)
+                        ->sum('stock');
+
+                    if ($totalStockAnterior <= 0) {
                         $nuevoCostoPromedio = $precioUnitario;
                     } else {
-                        $montoAnterior = $stockAnterior * $costoPromAnterior;
+                        $montoAnterior = $totalStockAnterior * $costoPromAnterior;
                         $montoActual = $cantidad * $precioUnitario;
-                        $nuevoCostoPromedio = ($montoAnterior + $montoActual) / ($stockAnterior + $cantidad);
+                        $nuevoCostoPromedio = ($montoAnterior + $montoActual) / ($totalStockAnterior + $cantidad);
                     }
                     // Se actualiza el registro de costo si hay cambio.
                     if ($nuevoCostoPromedio != $costoPromAnterior && !$se_agrego) {
