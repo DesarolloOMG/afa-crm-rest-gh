@@ -4810,7 +4810,8 @@ class CompraController extends Controller
                                         documento.factura_folio,
                                         documento.created_at,
                                         documento_entidad.razon_social,
-                                        empresa.sello_recibido
+                                        empresa.sello_recibido,
+                                        empresa.empresa
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
@@ -4840,7 +4841,7 @@ class CompraController extends Controller
         $pdf->Cell(0, 10, utf8_decode(mb_strtoupper("RECIBO DE ALMACÉN", 'UTF-8')), 0, 0, 'C');
 
         $pdf->Ln(5);
-        $pdf->Cell(0, 10, "OMG INTERNATIONAL S.A DE C.V.", 0, 0, 'C');
+        $pdf->Cell(0, 10, $info_compra->empresa, 0, 0, 'C');
 
         $pdf->Ln(25);
 
