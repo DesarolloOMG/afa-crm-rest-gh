@@ -1,4 +1,4 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
@@ -17,7 +17,7 @@ use Mailgun\Mailgun;
 use DOMDocument;
 use Exception;
 use Validator;
-use DB;
+use Illuminate\Support\Facades\DB;
 
 class CompraController extends Controller
 {
@@ -1337,7 +1337,11 @@ class CompraController extends Controller
     /* Compra > Orden */
     public function compra_orden_requisicion_data()
     {
-        $marketplaces = DB::select("SELECT marketplace FROM marketplace");
+//        $marketplaces = DB::select("SELECT id, marketplace FROM marketplace");
+        $marketplaces = DB::table('marketplace_area')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->select('marketplace.marketplace', 'marketplace_area.id')
+            ->get();
 
         $requisiciones = DB::select("SELECT
                                         SUM(movimiento.precio * movimiento.cantidad) AS total
@@ -1373,7 +1377,7 @@ class CompraController extends Controller
             'id_almacen_principal_empresa' => 0,
             'id_almacen_secundario_empresa' => 0,
             'id_tipo' => 0,
-            'id_marketplace_area' => 0,
+            'id_marketplace_area' => $data->marketplace_area,
             'id_usuario' => $auth->id,
             'id_fase' => 601,
             'autorizado' => 0,
@@ -1390,7 +1394,6 @@ class CompraController extends Controller
                 'descripcion' => 'PRODUCTO TEMPORAL'
             ]);
 
-            $modelo_id = $modelo_id;
         } else {
             $modelo_id = $existe_temporal[0]->id;
         }
@@ -1440,7 +1443,7 @@ class CompraController extends Controller
             foreach ($usuarios as $usuario) {
                 $emails .= $usuario->email . ";";
 
-                array_push($notificados, $usuario->id);
+                $notificados[] = $usuario->id;
             }
 
             $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
