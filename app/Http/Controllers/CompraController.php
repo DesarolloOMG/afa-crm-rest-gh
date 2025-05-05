@@ -3378,37 +3378,45 @@ class CompraController extends Controller
     }
 
     /* Compra > producto > buscar */
-    public function compra_producto_buscar($criterio) {
+    public function compra_producto_buscar($criterio)
+    {
+        $criterio = urldecode(trim($criterio));
+
         $productos = DB::table("modelo")
             ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
             ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-            ->where("status", 1)
-            ->where("sku", $criterio)
+            ->where("modelo.status", 1)
+            ->where("modelo.sku", $criterio)
             ->get()
             ->toArray();
 
         if (empty($productos)) {
-            $productos = DB::table("modelo")
+            $palabras = preg_split('/\s+/', $criterio);
+
+            $query = DB::table("modelo")
                 ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
                 ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                ->where("status", 1)
-                ->where("descripcion", "LIKE", "%" . $criterio . "%")
-                ->get()
-                ->toArray();
+                ->where("modelo.status", 1);
+
+            foreach ($palabras as $palabra) {
+                $query->where("modelo.descripcion", "LIKE", "%" . $palabra . "%");
+            }
+
+            $productos = $query->get()->toArray();
 
             if (empty($productos)) {
                 $sinonimo = DB::table("modelo_sinonimo")
                     ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
                     ->select("modelo.sku")
-                    ->where("modelo_sinonimo.codigo", trim($criterio))
+                    ->where("modelo_sinonimo.codigo", $criterio)
                     ->first();
 
                 if (!empty($sinonimo)) {
                     $productos = DB::table("modelo")
                         ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
                         ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                        ->where("status", 1)
-                        ->where("sku", $sinonimo->sku)
+                        ->where("modelo.status", 1)
+                        ->where("modelo.sku", $sinonimo->sku)
                         ->get()
                         ->toArray();
                 }
@@ -3420,6 +3428,7 @@ class CompraController extends Controller
             "data" => $productos
         ]);
     }
+
 
     /* Compra > presupuesto */
     public function compra_presupuesto_data()
@@ -4286,9 +4295,12 @@ class CompraController extends Controller
             }
         }
 
-        $pdf->Cell(95, 30 - $current_heigth_ship_bill, '', 'LBR', false, 'L');
-        $pdf->Cell(95, 30 - $current_heigth_ship_bill, '', 'LBR', false, 'L');
-        $pdf->Ln(5);
+        $remainingHeight = max(0, 30 - $current_heigth_ship_bill);
+        if ($remainingHeight > 0) {
+            $pdf->Cell(95, $remainingHeight, '', 'LBR');
+            $pdf->Cell(95, $remainingHeight, '', 'LBR');
+            $pdf->Ln();
+        }
 
         $pdf->Cell(38, 7, "Sales Order #", 1, false, 'C');
         $pdf->Cell(38, 7, "Terms", 1, false, 'C');
