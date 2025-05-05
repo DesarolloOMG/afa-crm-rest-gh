@@ -3022,7 +3022,7 @@ class VentaController extends Controller
         $areas = self::areas_marketplaces($auth->id, "MERCADOLIBRE");
 
         $empresas = DB::table("empresa")
-            ->select("empresa.id", "empresa.empresa", "empresa.bd")
+            ->select("empresa.id", "empresa.empresa")
             ->join("usuario_empresa", "empresa.id", "=", "usuario_empresa.id_empresa")
             ->where("usuario_empresa.id_usuario", $auth->id)
             ->where("empresa.id", "<>", 0)
@@ -4280,6 +4280,8 @@ class VentaController extends Controller
             ->where("status", 1)
             ->get()
             ->toArray();
+
+        if($marketplace == "MERCADOLIBRE"){}
 
         foreach ($areas as $i => $area) {
             $area->marketplaces = DB::table("marketplace_area")

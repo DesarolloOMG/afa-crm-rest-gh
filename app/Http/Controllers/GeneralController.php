@@ -778,7 +778,16 @@ class GeneralController extends Controller
 
                 $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($documento->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
-                $spreadsheet->getActiveSheet()->getStyle("I" . $fila . ":L" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+                $spreadsheet->getActiveSheet()
+                    ->getStyle("I{$fila},K{$fila},L{$fila}")
+                    ->getNumberFormat()
+                    ->setFormatCode('_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)');
+
+                // 2) Formatear J (cantidad) como número entero (sin decimales ni símbolo)
+                $spreadsheet->getActiveSheet()
+                    ->getStyle("J{$fila}")
+                    ->getNumberFormat()
+                    ->setFormatCode('0');
 
                 if (!$documento->status) {
                     $spreadsheet->getActiveSheet()->getStyle('A' . $fila . ":Q" . $fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('CD5C5C');
