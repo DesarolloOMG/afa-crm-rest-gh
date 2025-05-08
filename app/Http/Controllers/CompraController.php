@@ -4298,6 +4298,7 @@ class CompraController extends Controller
             $pdf->Ln();
         }
 
+        $pdf->Ln(3);
         $pdf->Cell(38, 7, "Sales Order #", 1, false, 'C');
         $pdf->Cell(38, 7, "Terms", 1, false, 'C');
         $pdf->Cell(38, 7, "Rep", 1, false, 'C');
