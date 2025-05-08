@@ -2102,12 +2102,14 @@ class CompraController extends Controller
             }
 
             if ($producto->cantidad_recibida > 0) {
+                $aplicar_recepcion = InventarioService::procesarRecepcion($producto->id, $producto->cantidad_recibida);
+
                 $movimiento_recepcionado = DB::table("documento_recepcion")->insertGetId([
                     "id_usuario" => $auth->id,
                     "id_movimiento" => $producto->id,
                     "cantidad" => $producto->cantidad_recibida,
                     "documento_erp" => $simulacion_documento_erp,
-                    "afectado" => 0
+                    "afectado" => $aplicar_recepcion->error ? 0 : 1,
                 ]);
 
                 array_push($movimientos_recepcionados, $movimiento_recepcionado);
