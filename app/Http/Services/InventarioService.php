@@ -415,13 +415,11 @@ class InventarioService
 
         $movimiento = DB::table('movimiento')->where('id', $idMov)->first();
         $documento = DB::table('documento')->where('id',$movimiento->id_documento)->first();
-        dump($documento);
 
         $almacen = $documento->id_almacen_principal_empresa;
 
         $hay_existencia = DB::table('modelo_existencias')->where('id_modelo', $movimiento->id_modelo)
             ->where('id_almacen', $documento->id_almacen_principal_empresa)->first();
-        dump($hay_existencia);
 
         if(empty($hay_existencia)) {
             $existencia = DB::table('modelo_existencias')->insert([
@@ -431,7 +429,6 @@ class InventarioService
                 'stock' => $cantidad,
                 'stock_anterior' => 0
             ]);
-            dump($existencia);
 
             if($existencia) {
                 $response->error = 0;
@@ -445,7 +442,6 @@ class InventarioService
                 ->where('id_almacen', $documento->id_almacen_principal_empresa)->update([
                     'stock' => $hay_existencia->stock + $cantidad,
                 ]);
-            dump($existencia);
 
             if($existencia) {
                 $response->error = 0;

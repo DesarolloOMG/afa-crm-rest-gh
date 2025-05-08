@@ -96,6 +96,8 @@ class CompraController extends Controller
                     'regalo' => 0
                 ]);
             }
+
+            InventarioService::aplicarMovimiento($documento);
         } catch (Exception $e) {
             if (isset($documento)) {
                 DB::table('documento')->where(['id' => $documento])->delete();
@@ -115,7 +117,6 @@ class CompraController extends Controller
             ]);
         }
 
-        InventarioService::aplicarMovimiento($documento);
 
         return response()->json([
             'code' => 200,
@@ -2121,23 +2122,6 @@ class CompraController extends Controller
                 "code" => 200,
                 "message" => "Seguimiento guardado correctamente",
                 "terminada" => 0
-            ]);
-        }
-
-        if ($error) {
-            foreach ($series_agregadas as $serie) {
-                DB::table('producto')->where(['id' => $serie])->update([
-                    "status" => 0
-                ]);
-            }
-
-            foreach ($movimientos_producto as $movimiento) {
-                DB::table("movimiento_producto")->where("id", $movimiento)->delete();
-            }
-
-            return response()->json([
-                'code'  => 500,
-                'message'   => "Ocurrió un error al actualizar la orden de compra.<br><br>" . $error_text
             ]);
         }
 
