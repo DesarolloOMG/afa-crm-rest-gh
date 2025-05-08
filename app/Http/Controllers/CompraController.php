@@ -115,6 +115,8 @@ class CompraController extends Controller
             ]);
         }
 
+        InventarioService::aplicarMovimiento($documento);
+
         return response()->json([
             'code' => 200,
             'message' => "Compra creada correctamente, podrás visualizarla en el historial."
@@ -2104,7 +2106,8 @@ class CompraController extends Controller
                     "id_usuario" => $auth->id,
                     "id_movimiento" => $producto->id,
                     "cantidad" => $producto->cantidad_recibida,
-                    "documento_erp" => $simulacion_documento_erp
+                    "documento_erp" => $simulacion_documento_erp,
+                    "afectado" => 0
                 ]);
 
                 array_push($movimientos_recepcionados, $movimiento_recepcionado);
