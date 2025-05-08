@@ -688,6 +688,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     #Catalogos
     $router->group(['prefix' => 'catalogo'], function () use ($router) {
         $router->get('buscar/cp/{cp}', 'CatalogoController@buscar_CP');
+        $router->post('busqueda/producto', 'CatalogoController@buscar_producto');
     });
 
     # Menú logistica

@@ -25,4 +25,24 @@ class CatalogoController extends Controller
             ]);
         }
     }
+
+    public function buscar_producto(Request $request)
+    {
+        $criterio = $request->input('criterio');
+
+        $existe_modelo = DB::table('modelo')->where('sku', $criterio)->orWhere('descripcion', 'like', '%' . $criterio . '%')->get();
+
+        if($existe_modelo){
+            return response()->json([
+                'code'  => 200,
+                'message' => "Producto encontrado.",
+                'data' => $existe_modelo
+            ]);
+        } else {
+            return response()->json([
+                'code'  => 404,
+                'message' => "Producto no encontrado."
+            ]);
+        }
+    }
 }
