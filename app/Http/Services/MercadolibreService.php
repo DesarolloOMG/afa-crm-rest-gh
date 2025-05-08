@@ -1,11 +1,11 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Services;
 
-use DB;
 use Exception;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use MP;
 use ZipArchive;
 
@@ -3634,15 +3634,35 @@ class MercadolibreService
 
     }
 
-    public static function logVariableLocation()
+    public static function getMarketplaceData($marketplace_id)
+    {
+        $response = new \stdClass();
+        $response->error = 0;
+
+        $marketplace_data = DB::table("marketplace_api")
+            ->where("id_marketplace_area", $marketplace_id)
+            ->first();
+
+        if (!$marketplace_data) {
+            $log = self::logVariableLocation();
+
+            $response->error = 1;
+            $response->mensaje = "No se encontró información de la publicación." . $log;
+
+            return $response;
+        }
+        $response->marketplace_data = $marketplace_data;
+
+        return $response;
+    }
+
+    public static function logVariableLocation(): string
     {
         // $log = self::logVariableLocation();
         $sis = 'BE'; //Front o Back
         $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
         $fin = 'BRE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
-        $text = ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
-
-        return $text;
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 }

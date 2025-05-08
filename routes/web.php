@@ -413,6 +413,11 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
 
         $router->group(['prefix' => 'mercadolibre'], function () use ($router) {
+
+            $router->group(['prefix' => 'token'], function () use ($router) {
+                $router->get('data/{marketplace_id}', 'VentaController@venta_mercadolibre_token');
+            });
+
             $router->group(['prefix' => 'pregunta-respuesta'], function () use ($router) {
                 $router->get('data', 'VentaController@venta_mercadolibre_pregunta_respuesta_get_data');
                 $router->get('preguntas/{marketplace_id}', 'VentaController@venta_mercadolibre_pregunta_respuesta_get_preguntas');

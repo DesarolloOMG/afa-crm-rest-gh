@@ -2950,6 +2950,23 @@ class VentaController extends Controller
     }
 
     /* Mercadolibre */
+
+    public function venta_mercadolibre_token($marketplace_id){
+        $response = MercadolibreService::getMarketplaceData($marketplace_id);
+
+        if ($response->error){
+            return response()->json([
+                'Respuesta' => "No se pudo obtener la informacion del marketplace"
+            ],400);
+        }
+        $marketplace_data = $response->marketplace_data;
+
+        $token = MercadolibreService::token($marketplace_data->app_id, $marketplace_data->secret);
+
+        return response()->json([
+            'token' => $token
+        ]);
+    }
     public function venta_mercadolibre_pregunta_respuesta_get_data(Request $request)
     {
         $auth = json_decode($request->auth);
