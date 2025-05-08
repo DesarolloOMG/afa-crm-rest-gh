@@ -184,21 +184,6 @@ class ConfiguracionController extends Controller
         }
 
         if ($data->id == 0) {
-//            $authy_request = new \Authy\AuthyApi(config("authy.token"));
-//
-//            $authy_user = $authy_request->registerUser($data->email, $data->celular, 52);
-//
-//            if (!$authy_user->ok()) {
-//                $errores = "";
-//
-//                foreach ($auth_user->errors() as $field => $error) {
-//                    $errores .= $field . ": " . $error . "<br>";
-//                }
-//
-//                return response()->json([
-//                    "message" => "Ocurrió un error al dar de alta el usuario en Authy, errores: " . $errors
-//                ], 500);
-//            }
 
             $contrasena = GeneralService::randomString(10);
 
@@ -233,25 +218,25 @@ class ConfiguracionController extends Controller
 
             $creador = Usuario::find($auth->id);
 
-//            $view = view('email.notificacion_usuario_creado')->with([
-//                "usuario" => $data->nombre,
-//                "creador" => $creador->nombre,
-//                "correo" => $data->email,
-//                "contrasena" => $contrasena,
-//                "anio" => date("Y")
-//            ]);
-//
-//            $mg = Mailgun::create(config("mailgun.token"));
-//
-//            $mg->messages()->send(
-//                config("mailgun.domain"),
-//                array(
-//                    'from' => config("mailgun.email_from"),
-//                    'to' => $data->email,
-//                    'subject' => "Tu nuevo usuario para CRM OMG International",
-//                    'html' => $view->render()
-//                )
-//            );
+            $view = view('email.notificacion_usuario_creado')->with([
+                "usuario" => $data->nombre,
+                "creador" => $creador->nombre,
+                "correo" => $data->email,
+                "contrasena" => $contrasena,
+                "anio" => date("Y")
+            ]);
+
+            $mg = Mailgun::create(config("mailgun.token"));
+
+            $mg->messages()->send(
+                config("mailgun.domain"),
+                array(
+                    'from' => config("mailgun.email_from"),
+                    'to' => $data->email,
+                    'subject' => "Tu nuevo usuario para CRM OMG International",
+                    'html' => $view->render()
+                )
+            );
 
             DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->whereNull('area')->update([
                 'area' => $area
