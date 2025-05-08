@@ -1122,7 +1122,7 @@ class VentaController extends Controller
                 ]);
             }
 
-            if($existencia->stock_disponible < $producto->cantidad) {
+            if($existencia->disponible < $producto->cantidad) {
                 return response()->json([
                     'code' => 500,
                     'message' => 'No hay suficiente existencia para procesar la venta'
