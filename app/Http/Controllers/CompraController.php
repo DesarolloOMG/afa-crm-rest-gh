@@ -84,6 +84,11 @@ class CompraController extends Controller
                 'expired_at' => $data->fecha
             ]);
 
+            DB::table('documento_entidad_re')->insert([
+                'id_documento' => $documento,
+                'id_entidad' => $entidad
+            ]);
+
             foreach ($data->productos as $producto) {
                 $movimiento = DB::table('movimiento')->insertGetId([
                     'id_documento' => $documento,
@@ -94,6 +99,14 @@ class CompraController extends Controller
                     'modificacion' => 'N/A',
                     'comentario' => $producto->descripcion,
                     'regalo' => 0
+                ]);
+            }
+
+            if ($data->recepcion != 0) {
+                $recepciones = explode(",", $data->recepcion);
+
+                DB::table("documento_recepcion")->whereIn("documento_erp", $recepciones)->update([
+                    "documento_erp_compra" => $documento
                 ]);
             }
 
@@ -116,7 +129,6 @@ class CompraController extends Controller
                 "seguimiento" => $data->seguimiento
             ]);
         }
-
 
         return response()->json([
             'code' => 200,

@@ -115,7 +115,7 @@ class InventarioService
                 $hay_costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
 
                 if(empty($hay_costo)) {
-                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3) {
+                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->tipo == 'COMPRA' || $docTipo->id == 1) {
                         $costo = DB::table('modelo_costo')->insert([
                             'id_modelo' => $mov->id_modelo,
                             'costo_inicial' => $mov->precio,
