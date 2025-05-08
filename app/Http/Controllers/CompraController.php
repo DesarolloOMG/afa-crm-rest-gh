@@ -8,6 +8,7 @@ use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
 use App\Models\Modelo;
 
+use Illuminate\Http\JsonResponse;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use App\Http\Services\DocumentoService;
@@ -1583,9 +1584,7 @@ class CompraController extends Controller
 
         DB::table('documento')->where(['id' => $documento])->update([
             'status' => 0,
-            'canceled_by'   => $auth->id,
-            'status_erp' => 0
-
+            'canceled_by'   => $auth->id
         ]);
 
         DB::table('seguimiento')->insert([
@@ -1641,7 +1640,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_orden_crear(Request $request)
+    public function compra_orden_orden_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -1677,7 +1676,6 @@ class CompraController extends Controller
                     'descripcion' => $producto->descripcion
                 ]);
 
-                $modelo_id = $modelo_id;
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -1725,7 +1723,7 @@ class CompraController extends Controller
         }
 
         foreach ($data->documentos as $documento_relacionado) {
-            $seguimientos = DB::select("SELECT id_usuario, seguimiento FROM seguimiento WHERE id_documento = " . $documento_relacionado . "");
+            $seguimientos = DB::select("SELECT id_usuario, seguimiento FROM seguimiento WHERE id_documento = " . $documento_relacionado);
 
             foreach ($seguimientos as $seguimiento) {
                 DB::table('seguimiento')->insert([
@@ -1736,8 +1734,7 @@ class CompraController extends Controller
             }
 
             DB::table('documento')->where(['id' => $documento_relacionado])->update([
-                'status' => 0,
-                'status_erp' => 0
+                'status' => 0
             ]);
         }
 
@@ -1793,8 +1790,7 @@ class CompraController extends Controller
         }
 
         DB::table('documento')->where(['id' => $documento])->update([
-            'status' => 0,
-            'status_erp' => 0
+            'status' => 0
         ]);
 
         return response()->json([

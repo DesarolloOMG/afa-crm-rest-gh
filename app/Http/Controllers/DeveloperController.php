@@ -4023,7 +4023,7 @@ class DeveloperController extends Controller
         LoggerService::writeLog('developer', 'INICIO Reporte de Barrido Status');
 
         $documentos = DB::table('documento')
-            ->select('documento.id', 'documento.status', 'documento.status_erp', 'documento.fecha_timbrado_erp', 'empresa.bd', 'documento.factura_folio', 'documento.factura_serie', 'documento.created_at')
+            ->select('documento.id', 'documento.status', 'documento.fecha_timbrado_erp', 'empresa.bd', 'documento.factura_folio', 'documento.factura_serie', 'documento.created_at')
             ->where('documento.id_tipo', 2)
             ->where('erp_check', 0)
             ->where('documento.id_fase', 6)

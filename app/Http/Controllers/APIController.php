@@ -605,8 +605,7 @@ class APIController extends Controller
             }
 
             DB::table('documento')->where(['id' => $documento])->update([
-                'status' => 0,
-                'status_erp' => 0
+                'status' => 0
             ]);
 
             return response()->json([

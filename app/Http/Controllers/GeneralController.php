@@ -3678,7 +3678,6 @@ class GeneralController extends Controller
                                 documento.refacturado,
                                 documento_fase.fase,
                                 documento.status,
-                                documento.status_erp,
                                 documento.fecha_timbrado_erp,
                                 documento.created_at, 
                                 documento.mkt_created_at,
@@ -3732,28 +3731,9 @@ class GeneralController extends Controller
 
             array_push($ventas_shifted, $venta);
 
-            $estatus_factura = "NO ENCONTRADA";
+            $estatus_factura = "N/A";
             $fecha_timbre = "NO ENCONTRADA";
             $folio_factura_nueva = "NO ENCONTRADA";
-
-            switch ($venta->status_erp) {
-                case 0:
-                    $estatus_factura = 'CANCELADA/ELIMINADA';
-                    break;
-                case 1:
-                    $estatus_factura = 'ACTIVA';
-                    break;
-                case 2:
-                case 3:
-                    $estatus_factura = 'NO ENCONTRADA';
-                    break;
-                case 4:
-                    $estatus_factura = 'NOTA DE CREDITO';
-                    break;
-                default:
-                    $estatus_factura = 'NO ENCONTRADA';
-                    break;
-            }
 
             $fecha_timbre = $venta->fecha_timbrado_erp ?? 'NO ENCONTRADA';
 
