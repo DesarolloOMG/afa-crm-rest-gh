@@ -2598,38 +2598,9 @@ class AlmacenController extends Controller
             })
             ->get();
 
-        $areas = Area::with("marketplaces")->get();
-
-        /*
-        $es_admin = DB::table("usuario_subnivel_nivel")
-                                ->select("usuario_subnivel_nivel.id")
-                                ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
-                                ->where("usuario_subnivel_nivel.id_usuario", $auth->id)
-                                ->where("subnivel_nivel.id_nivel", 6)
-                                ->where("subnivel_nivel.id_subnivel", 1)
-                                ->first();
-
-        $extra_text = "";
-
-        if (empty($es_admin)) {
-            $extra_text = "AND almacen.id != 38";
-        }
-
-        foreach ($empresas as $empresa) {
-            $almacenes = DB::select("SELECT
-                                        empresa_almacen.id,
-                                        almacen.almacen
-                                    FROM empresa_almacen
-                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    WHERE empresa_almacen.id_empresa = " . $empresa->id . "
-                                    AND almacen.status = 1
-                                    AND almacen.id != 0
-                                    " . $extra_text . "
-                                    ORDER BY almacen.almacen ASC");
-
-            $empresa->almacenes = $almacenes;
-        }
-        */
+        $areas = Area::with("marketplaces")
+            ->where('area', '!=', 'N/A')
+            ->get();
 
         return response()->json([
             'empresas' => $empresas,
@@ -3276,8 +3247,8 @@ class AlmacenController extends Controller
             ]);
         }
 
-        $id_almacen_entrada = DB::select("SELECT id_almacen, id_erp FROM empresa_almacen WHERE id = " . $data->id_almacen_principal . "")[0];
-        $id_almacen_salida  = DB::select("SELECT id_almacen, id_erp FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario . "")[0];
+        $id_almacen_entrada = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_principal . "")[0];
+        $id_almacen_salida  = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario . "")[0];
 
         $bd = DB::select("SELECT
                             empresa.bd

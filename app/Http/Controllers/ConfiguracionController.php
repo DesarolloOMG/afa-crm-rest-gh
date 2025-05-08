@@ -79,7 +79,9 @@ class ConfiguracionController extends Controller
             ->get();
 
         $niveles = Nivel::with("subniveles")->get();
-        $areas = Area::with("marketplaces")->get();
+        $areas = Area::with("marketplaces")
+            ->where('area', '!=', 'N/A')
+            ->get();
         $empresas = Empresa::where("id", "<>", 0)->get();
 
         $area =
@@ -323,8 +325,7 @@ class ConfiguracionController extends Controller
     public function configuracion_usuario_configuarcion_data()
     {
         $niveles = Nivel::with("subniveles")->get();
-        $areas = Area::get();
-
+        $areas = Area::where('area', '!=', 'N/A')->get();
         return response()->json([
             'areas' => $areas,
             'niveles' => $niveles
@@ -453,7 +454,7 @@ class ConfiguracionController extends Controller
     {
         $marketplaces = MarketplaceArea::with("marketplace", "area", "api", "empresa")->get();
         $empresas = Empresa::where("id", "<>", 0)->get();
-        $areas = Area::get();
+        $areas = Area::where('area', '!=', 'N/A')->get();
 
         return response()->json([
             "areas" => $areas,
@@ -796,7 +797,9 @@ class ConfiguracionController extends Controller
     {
         $impresoras = DB::table('impresora')->get();
         $empresas = Empresa::where("id", "<>", 0)->get();
-        $areas = Area::where("id", "<>", 0)->get();
+        $areas = Area::where("id", "<>", 0)
+            ->where("area", "!=", "N/A")
+            ->get();
 
         return response()->json([
             "areas" => $areas,

@@ -474,6 +474,7 @@ class VentaController extends Controller
                             INNER JOIN marketplace_area ON marketplace_area.id = usuario_marketplace_area.id_marketplace_area
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             WHERE usuario_marketplace_area.id_usuario = " . $auth->id . "
+                            AND area.area != 'N/A'
                             GROUP BY area.id");
 
         foreach ($areas as $area) {
@@ -728,7 +729,7 @@ class VentaController extends Controller
         if ($total->disponible < $cantidad) {
             return response()->json([
                 'code' => 500,
-                'message' => "Producto sin suficiente existencias.<br><br>Requerida: " . $cantidad . "<br>Disponible: " . $total->existencia
+                'message' => "Producto sin suficiente existencias.<br><br>Requerida: " . $cantidad . "<br>Disponible: " . $total->disponible
             ]);
         }
 
@@ -4295,6 +4296,7 @@ class VentaController extends Controller
 
         $areas = DB::table("area")
             ->where("status", 1)
+            ->where('area', '!=', 'N/A')
             ->get()
             ->toArray();
 
@@ -4883,6 +4885,7 @@ class VentaController extends Controller
             ->join('area', 'area.id',  'marketplace_area.id_area')
             ->groupBy('area.area')
             ->where('marketplace_publicacion_marketplaces.estatus', 1)
+                ->where('area.area', '!=', 'N/A')
             ->get()
             ->toArray();
 
@@ -4914,6 +4917,7 @@ class VentaController extends Controller
 
         $areas = DB::table("area")
             ->where("status", 1)
+            ->where('area', '!=', 'N/A')
             ->get()
             ->toArray();
 
