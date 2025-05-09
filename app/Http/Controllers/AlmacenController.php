@@ -457,7 +457,7 @@ class AlmacenController extends Controller
         //El pedido ya fue surtido por alguien
         if ($documento_info->packing_by != 0) {
             //El pedido ya fue surtido y tiene series asignadas
-            if (!empty($tiene_series)) {
+            if ($tiene_series->isNotEmpty()) {
                 //El pedido ya tiene documento en comercial
                 if ($documento_info->documento_extra == "N/A") {
                     //Se manda el pedido a fase factura para solo crear la factura
@@ -565,7 +565,7 @@ class AlmacenController extends Controller
                 }
             }
         } else {
-            if (!empty($tiene_series)) {
+            if ($tiene_series->isNotEmpty()) {
                 $this->eliminarSeries($documento);
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
