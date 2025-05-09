@@ -1,19 +1,19 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Services;
 
 use Carbon\Carbon;
-use Twilio\Exceptions\ConfigurationException;
+use Exception;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Twilio\Exceptions\TwilioException;
+use Twilio\Rest\Api\V2010\Account\MessageInstance;
 use Twilio\Rest\Client;
 
 class WhatsAppService
 {
     protected $twilio;
 
-    /**
-     * @throws ConfigurationException
-     */
     public function __construct()
     {
         $this->twilio = new Client(config("twilio.sid"), config("twilio.token"));
@@ -22,10 +22,10 @@ class WhatsAppService
     /**
      * @throws TwilioException
      */
-    public function send_whatsapp_verification_code($phone, $code)
+    public function send_whatsapp_verification_code($phone, $code): MessageInstance
     {
         $variables = [
-            "1" => strval($code) // Convertir a string por seguridad
+            "1" => strval($code)
         ];
 
         return $this->twilio->messages->create(
@@ -38,60 +38,53 @@ class WhatsAppService
         );
     }
 
-    public function sendCode(int $userId, string $phone)
+
+    public function sendCode(int $userId, string $phone): JsonResponse
     {
-        // 1) ¿Ya existe un código vigente?
-        $record = DB::table('auth_codes')
-            ->where('user', $userId)
-            ->where('expires_at', '>', Carbon::now())
-            ->first();
+            $exits_code_user = DB::table("auth_codes")
+                ->where('user', $userId)
+                ->where('expires_at', '>', Carbon::now())
+                ->first();
+            try {
+                if (!$exits_code_user) {
+                    $code = random_int(100000, 999999);
 
-        if ($record) {
-            $code = $record->code;
-        } else {
-            // 2) Generamos uno nuevo
-            $code = random_int(100000, 999999);
-            $expiresAt = Carbon::now()->addMinutes(5);
+                    $code_expires_at = Carbon::now()->addMinutes(5);
 
-            DB::table('auth_codes')->insert([
-                'user'       => $userId,
-                'code'       => $code,
-                'expires_at' => $expiresAt,
-            ]);
-        }
-        return $this->send_whatsapp_verification_code($phone, $code);
+                    DB::beginTransaction();
+
+                    DB::table('auth_codes')->insert([
+                        'user' => $userId,
+                        'code' => $code,
+                        'expires_at' => $code_expires_at
+                    ]);
+
+                    DB::commit();
+                }
+                else {
+                    $code = $exits_code_user->code;
+                }
+                self::send_whatsapp_verification_code($phone, $code);
+
+                return response()->json([
+                    "message" => "Código enviado a whatsapp, verifica tu celular para continuar.",
+                ]);
+            }
+            catch (Exception $e) {
+                DB::rollBack();
+
+                return response()->json([
+                    "message" => "Hubo un problema con la transacción " . self::logVariableLocation() . ' ' . $e->getMessage(),
+                ], 404);
+            }
     }
 
-    /**
-     * Valida un código recibido del usuario.
-     * - Si es correcto y vigente: elimina el registro y retorna true.
-     * - Si no: elimina cualquier código expirado, envía uno nuevo y retorna false.
-     */
-    public function validateCode(int $userId, string $submittedCode, string $phone): bool
+    public static function logVariableLocation(): string
     {
-        $record = DB::table('auth_codes')
-            ->where('user', $userId)
-            ->first();
-
-        // no existe o ya expiró
-        if (! $record || Carbon::parse($record->expires_at)->lt(Carbon::now())) {
-            if ($record) {
-                DB::table('auth_codes')->where('id', $record->id)->delete();
-            }
-            // reenviamos nuevo código
-            $this->sendCode($userId, $phone);
-            return false;
-        }
-
-        // código incorrecto
-        if ($record->code !== $submittedCode) {
-            // opcional: podrías contar intentos fallidos aquí
-            $this->sendCode($userId, $phone);
-            return false;
-        }
-
-        // válido: lo borramos y retornamos éxito
-        DB::table('auth_codes')->where('id', $record->id)->delete();
-        return true;
+        $sis = 'BE'; //Front o Back
+        $ini = 'WS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'APP'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 }
