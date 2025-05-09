@@ -489,6 +489,7 @@ class InventarioService
                     $response->pretransferencia = (int)$row->pretransferencia;
                     $response->disponible = (int)$row->disponible;
                     $response->mensaje = $row->mensaje;
+                    $response->tipo = $row->tipo;
                 }
             } else {
                 $response->error = 1;

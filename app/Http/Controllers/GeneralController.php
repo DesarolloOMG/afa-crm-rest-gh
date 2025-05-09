@@ -22,6 +22,7 @@ use DB;
 use DateTime;
 use Illuminate\Support\Facades\Crypt;
 use stdClass;
+use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 
 class GeneralController extends Controller
 {
@@ -639,11 +640,11 @@ class GeneralController extends Controller
 
         $extra_query = "";
 
-        if (!empty($data->tipo_documento)) {
+        if ($data->tipo_documento != "") {
             $extra_query .= " AND documento_tipo.id = " . $data->tipo_documento . "";
         }
 
-        if (!empty($data->fecha_inicial) || !empty($data->fecha_final)) {
+        if ($data->fecha_inicial != "" || $data->fecha_final != "") {
             $extra_query .=  " AND documento.created_at BETWEEN '" . $data->fecha_inicial . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'";
         }
 
@@ -680,11 +681,14 @@ class GeneralController extends Controller
                                         FROM usuario
                                         WHERE id = autorizado_por
                                     ) AS autorizador,
-                                    documento_tipo.tipo,
+                                    documento.id_tipo,
+                                    IF(documento_tipo.tipo = 'ORDEN DE COMPRA', 'RECEPCION', documento_tipo.tipo) AS tipo,
                                     documento_fase.fase,
                                     documento_entidad.razon_social,
                                     moneda.moneda,
                                     movimiento.cantidad,
+                                    documento_recepcion.cantidad AS cantidad_recepcion,
+                                    documento_recepcion.documento_erp AS recepcion_erp,
                                     ROUND(IF (documento_tipo.tipo = 'COMPRA', movimiento.precio, movimiento.precio * 1.16), 2) AS precio,
                                     marketplace_area.serie AS serie_factura,
                                     marketplace.marketplace,
@@ -702,11 +706,18 @@ class GeneralController extends Controller
                                 LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN movimiento ON documento.id = movimiento.id_documento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                LEFT JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
                                 WHERE modelo.sku = '" . trim($data->producto) . "'
                                 " . $extra_query . "");
 
         foreach ($documentos as $documento) {
             $existe_almacen = 0;
+
+            if ($documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA) {
+                if (is_null($documento->cantidad_recepcion)) {
+                    continue;
+                }
+            }
 
             foreach ($documentos_almacen as $documento_almacen) {
                 if ($documento_almacen->almacen == $documento->id_almacen_principal) {
@@ -758,7 +769,7 @@ class GeneralController extends Controller
             $sheet->setCellValue('Q1', 'TIPO DOCUMENTO');
 
             foreach ($almacen->documentos as $documento) {
-                $sheet->setCellValue('A' . $fila, $documento->documento_extra);
+                $sheet->setCellValue('A' . $fila, $documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA ? $documento->recepcion_erp : $documento->documento_extra);
                 $sheet->setCellValue('B' . $fila, $documento->id);
                 $sheet->setCellValue('C' . $fila, $documento->no_venta);
                 $sheet->setCellValue('D' . $fila, $documento->factura_serie . " " . $documento->factura_folio);
@@ -767,7 +778,7 @@ class GeneralController extends Controller
                 $sheet->setCellValue('G' . $fila, $documento->almacen_alterno);
                 $sheet->setCellValue('H' . $fila, $documento->moneda);
                 $sheet->setCellValue('I' . $fila, $documento->tipo_cambio);
-                $sheet->setCellValue('J' . $fila, $documento->cantidad);
+                $sheet->setCellValue('J' . $fila, $documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA ? $documento->cantidad_recepcion : $documento->cantidad);
                 $sheet->setCellValue('K' . $fila, $documento->precio);
                 $sheet->setCellValue('L' . $fila, (float) $documento->tipo_cambio * (int) $documento->cantidad * (float) $documento->precio);
                 $sheet->setCellValue('M' . $fila, $documento->observacion);

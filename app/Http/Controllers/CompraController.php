@@ -3551,11 +3551,13 @@ class CompraController extends Controller
     public function compra_proveedor_data() {
         $regimenes = DB::table("cat_regimen")->get();
         $paises = DB::table("cat_pais")->get();
+        $periodos = DB::table("documento_periodo")->where('status', 1)->get();
 
         return response()->json([
             "code" => 200,
             "regimenes" => $regimenes,
-            "paises" => $paises
+            "paises" => $paises,
+            "condiciones" => $periodos
         ]);
     }
 

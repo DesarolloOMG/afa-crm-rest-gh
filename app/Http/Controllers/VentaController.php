@@ -2258,10 +2258,10 @@ class VentaController extends Controller
                 }
 
                 if ($total->tipo == 1) { /* Sí es producto se toman en cuenta la existencia, si es servicio, no */
-                    if ($total->existencia < $producto->cantidad) {
+                    if ($total->disponible < $producto->cantidad) {
                         return response()->json([
                             'code'  => 500,
-                            'message'   => "Producto " . $producto->sku . " sin suficiente existencias.<br><br>Requerida: " . $producto->cantidad . "<br>Disponible: " . $total->existencia
+                            'message'   => "Producto " . $producto->sku . " sin suficiente existencias.<br><br>Requerida: " . $producto->cantidad . "<br>Disponible: " . $total->disponible
                         ]);
                     }
                 }
