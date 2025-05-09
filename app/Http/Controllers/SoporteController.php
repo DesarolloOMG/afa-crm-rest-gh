@@ -465,6 +465,7 @@ class SoporteController extends Controller
                             if (empty($existe_serie)) {
                                 $id_serie = DB::table('producto')->insertGetId([
                                     'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                    'id_modelo' => $producto->id_modelo,
                                     'serie' => trim($serie),
                                     'status' => 1
                                 ]);
@@ -472,6 +473,7 @@ class SoporteController extends Controller
                                 $id_serie = $existe_serie[0]->id;
 
                                 DB::table('producto')->where(['id' => $existe_serie[0]->id])->update([
+                                    'id_modelo' => $producto->id_modelo,
                                     'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
                                     'status' => 1
                                 ]);
@@ -1074,6 +1076,7 @@ class SoporteController extends Controller
 
                                     if (empty($existe_serie)) {
                                         $serie_id = DB::table('producto')->insertGetId([
+                                            'id_modelo' => $producto->id_modelo,
                                             'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
                                             'serie' => $serie->serie
                                         ]);
@@ -1141,6 +1144,7 @@ class SoporteController extends Controller
 
                                     if (empty($existe_serie)) {
                                         $serie_id = DB::table('producto')->insertGetId([
+                                            'id_modelo' => $producto->id_modelo,
                                             'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
                                             'serie'         => $serie->serie
                                         ]);
@@ -1149,6 +1153,7 @@ class SoporteController extends Controller
 
                                         # La serie anterior se cambia al almacén de refacciones (13) y se deja un comentario del movimiento
                                         DB::table('producto')->where(['id' => $serie_id])->update([
+                                            'id_modelo' => $producto->id_modelo,
                                             'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
                                             'status'        => 1
                                         ]);

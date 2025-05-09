@@ -77,7 +77,8 @@ class AlmacenController extends Controller
         $validar_series = ComodinService::validar_series($series, $producto);
 
         return response()->json([
-            'code'  => 200,
+            'code'  => $validar_series->error ? 500 : 200,
+            'mensaje' => $validar_series->mensaje,
             'series'    => $validar_series->series
         ]);
     }
@@ -520,24 +521,24 @@ class AlmacenController extends Controller
                         'seguimiento' => "El pedido ya fue surtido. Se manda a fase de Terminado."
                     ]);
 
-                    if ($documento_info->documento_extra == "N/A") {
-                        $crear_factura = DocumentoService::crearFactura($documento, 0, 0);
-
-                        if ($crear_factura->error) {
-                            file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al crear la factura " . $documento . " en packing v2." . PHP_EOL, FILE_APPEND);
-
-
-                            DB::table('documento')->where(['id' => $documento])->update([
-                                'id_fase' => 5,
-                            ]);
-
-                            DB::table('seguimiento')->insert([
-                                'id_documento' => $documento,
-                                'id_usuario' => 1,
-                                'seguimiento' => "Ocurrio un error al generar la factura y se manda a fase Factura." . $crear_factura->mensaje
-                            ]);
-                        }
-                    }
+//                    if ($documento_info->documento_extra == "N/A") {
+//                        $crear_factura = InventarioService::aplicarMovimiento($documento);
+//
+//                        if ($crear_factura->error) {
+//                            file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al crear la factura " . $documento . " en packing v2." . PHP_EOL, FILE_APPEND);
+//
+//
+//                            DB::table('documento')->where(['id' => $documento])->update([
+//                                'id_fase' => 5,
+//                            ]);
+//
+//                            DB::table('seguimiento')->insert([
+//                                'id_documento' => $documento,
+//                                'id_usuario' => 1,
+//                                'seguimiento' => "Ocurrio un error al generar la factura y se manda a fase Factura." . $crear_factura->mensaje
+//                            ]);
+//                        }
+//                    }
 
                     return response()->json([
                         "code" => 500,
@@ -1323,7 +1324,7 @@ class AlmacenController extends Controller
         ]);
 
         if (!$info_documento->anticipada && ($info_documento->documento_extra == "N/A" || $info_documento->documento_extra == "")) {
-            $crear_factura = DocumentoService::crearFactura($data->documento, 0, 0);
+            $crear_factura = InventarioService::aplicarMovimiento($data->documento);
 
             if ($crear_factura->error) {
                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al crear la factura " . $data->documento . " en packing v2." . PHP_EOL, FILE_APPEND);
@@ -3347,12 +3348,14 @@ class AlmacenController extends Controller
 
                     if (empty($existe_serie)) {
                         $producto_id = DB::table('producto')->insertGetId([
+                            'id_modelo' => $modelo,
                             'id_almacen' => $id_almacen_salida->id_almacen,
                             'serie' => TRIM($serie),
                             'status' => 0
                         ]);
                     } else {
                         DB::table('producto')->where(['id' => $existe_serie[0]->id])->update([
+                            'id_modelo' => $modelo,
                             'id_almacen' => $id_almacen_entrada->id_almacen,
                             'status' => 0
                         ]);

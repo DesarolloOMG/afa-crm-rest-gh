@@ -838,6 +838,7 @@ class CompraController extends Controller
                 $total_series = 0;
 
                 foreach ($producto->series as $serie) {
+                    $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
                     //Aqui se quita
                     //                    $apos = `'`;
                     //                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
@@ -868,11 +869,13 @@ class CompraController extends Controller
 
                             DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
                                 "id_almacen" => $almacen[0]->id_almacen,
+                                "id_modelo" => $movimiento->id_modelo,
                                 "status" => 1
                             ]);
                         } else {
                             $id_serie = DB::table('producto')->insertGetId([
                                 'id_almacen'    => $almacen[0]->id_almacen,
+                                "id_modelo"     => $movimiento->id_modelo,
                                 'serie'         => $serie->serie,
                                 'status'        => 1
                             ]);
@@ -2061,6 +2064,7 @@ class CompraController extends Controller
                 $total_series = 0;
 
                 foreach ($producto->series as $serie) {
+                    $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
                     $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
                     if ($serie->id == 0) $total_series++;
 
@@ -2070,12 +2074,14 @@ class CompraController extends Controller
                         if (!empty($existe_serie)) {
                             DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
                                 "id_almacen" => $almacen[0]->id_almacen,
+                                "id_modelo" => $movimiento->id_modelo,
                                 "status" => 1,
                                 "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null
                             ]);
                         } else {
                             $id_serie = DB::table('producto')->insertGetId([
                                 'id_almacen' => $almacen[0]->id_almacen,
+                                'id_modelo' => $movimiento->id_modelo,
                                 'serie' => $serie->serie,
                                 'status' => 1,
                                 "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null

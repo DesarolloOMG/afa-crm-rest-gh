@@ -77,8 +77,7 @@ class ReparacionService
                                 empresa.bd,
                                 empresa.almacen_devolucion_garantia_erp,
                                 empresa.almacen_devolucion_garantia_sistema,
-                                empresa.almacen_devolucion_garantia_serie,
-                                empresa_almacen.id_erp AS id_almacen
+                                empresa.almacen_devolucion_garantia_serie
                             FROM documento
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
@@ -239,6 +238,7 @@ class ReparacionService
                             if (empty($existe_serie)) {
                                 $id_serie = DB::table('producto')->insertGetId([
                                     'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                    'id_modelo' =>  $producto->id_modelo,
                                     'serie' => trim($serie),
                                     'status' => 1
                                 ]);
@@ -247,6 +247,7 @@ class ReparacionService
 
                                 DB::table('producto')->where(['id' => $existe_serie[0]->id])->update([
                                     'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                    'id_modelo' =>  $producto->id_modelo,
                                     'status' => 1
                                 ]);
                             }
@@ -263,29 +264,9 @@ class ReparacionService
                     }
                 }
 
-                $crear_traspaso = DocumentoService::crearMovimiento($documento_traspaso);
+                $crear_traspaso = InventarioService::aplicarMovimiento($documento_traspaso);
 
-                if ($crear_traspaso->error) {
-                    DB::table('documento')->where(['id' => $documento_traspaso])->delete();
-
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $crear_traspaso->mensaje
-                    ]);
-                }
-
-                $seguimiento_traspaso .= "<p>Traspaso creado correctamente con el ID " . $crear_traspaso->id . ".</p>";
-
-                $afectar_traspaso = DocumentoService::afectarMovimiento($documento_traspaso);
-
-                if ($afectar_traspaso->error) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message'   => $afectar_traspaso->mensaje
-                    ]);
-                }
-
-                $seguimiento_traspaso .= "<p>Traspaso con el ID " . $crear_traspaso->id . " afectado correctamente.</p>";
+                $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . " afectado correctamente.</p>";
 
                 DB::table('seguimiento')->insert([
                     'id_documento' => $data->documento,

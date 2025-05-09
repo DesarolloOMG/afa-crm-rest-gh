@@ -217,13 +217,13 @@ class ComodinService
             $response->errores = $errores;
             $response->error = 1;
             $response->mensaje = "Una o mas series no se pueden agregar.";
-            $response->series = json_encode($array);
+            $response->series = $array;
             $response->producto = $id_producto;
         } else {
             // Si no hay errores, se indica que la validación fue exitosa.
             $response->error = 0;
             $response->mensaje = "Series Validadas.";
-            $response->series = json_encode($array);
+            $response->series = $array;
             $response->producto = $id_producto;
         }
 
@@ -303,13 +303,13 @@ class ComodinService
             $response->errores = $errores;
             $response->error = 1;
             $response->mensaje = "Una o mas series no se pueden agregar.";
-            $response->series = json_encode($array);
+            $response->series = $array;
             $response->producto = $id_producto;
         } else {
             // Si no hay errores, se indica que la validación fue exitosa.
             $response->error = 0;
             $response->mensaje = "Series Validadas.";
-            $response->series = json_encode($array);
+            $response->series = $array;
             $response->producto = $id_producto;
         }
 
