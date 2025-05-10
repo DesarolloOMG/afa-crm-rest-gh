@@ -2,41 +2,38 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\PusherEvent;
 use App\Http\Services\ComodinService;
 use App\Http\Services\CorreoService;
-use App\Http\Services\InventarioService;
-use App\Http\Services\ShopifyService;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use App\Http\Services\MercadolibreService;
 use App\Http\Services\DocumentoService;
 use App\Http\Services\GeneralService;
-use App\Http\Services\AmazonService;
-use Illuminate\Http\Request;
-use App\Events\PusherEvent;
-use App\Http\Services\WalmartService;
-use Mailgun\Mailgun;
-use Exception;
-use DB;
-
+use App\Http\Services\InventarioService;
+use App\Http\Services\MercadolibreService;
+use App\Http\Services\WhatsAppService;
 use App\Models\Area;
-use App\Models\Paqueteria;
-use App\Models\Empresa;
-use App\Models\EmpresaAlmacen;
-use App\Models\Usuario;
 use App\Models\Documento;
-use App\Models\DocumentoTipo;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadRelacion;
+use App\Models\DocumentoTipo;
+use App\Models\Empresa;
+use App\Models\EmpresaAlmacen;
+use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 use App\Models\Movimiento;
 use App\Models\MovimientoProducto;
-use App\Models\Modelo;
+use App\Models\Paqueteria;
 use App\Models\Producto;
-
-use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
-use App\Models\Enums\ModeloTipo as EnumModeloTipo;
-use App\Models\Enums\DocumentoPaqueteria as EnumDocumentoPaqueteria;
-use App\Models\Enums\DocumentoEntidadTipo;
+use Exception;
+use Httpful\Mime;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Mailgun\Mailgun;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Picqer\Barcode\BarcodeGeneratorJPG;
+use stdClass;
+use Throwable;
 
 class AlmacenController extends Controller
 {
@@ -86,43 +83,10 @@ class AlmacenController extends Controller
     public function almacen_packing_confirmar_authy(Request $request)
     {
         $data = json_decode($request->input("data"));
-
-        $authy_user_id = DB::table('usuario')
-            ->where('authy', $data->authy)
-            ->where('status', 1)
-            ->select('id')
-            ->get();
-
-        if (empty($authy_user_id)) {
             return response()->json([
-                'code'  => 403,
-                'message'   => "No se encontró el usuario que ha autorizado la cancelación." . " " . self::logVariableLocation()
+                "code" => 404
             ]);
-        }
 
-        try {
-            $authy_user_id = $authy_user_id[0]->id;
-
-            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-            $verification = $authy_request->verifyToken($data->authy, $data->token);
-
-            if (!$verification->ok()) {
-                return response()->json([
-                    'code'  => 400,
-                    'message'   => "El token ingresado no es valido." . " " . self::logVariableLocation()
-                ]);
-            }
-
-            return response()->json([
-                "code" => 200
-            ]);
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code' => 400,
-                'message' => "El token ingresado no es valido, error: " . $e->getMessage() . " " . self::logVariableLocation()
-            ]);
-        }
     }
 
     public function almacen_packing_guardar(Request $request)
@@ -241,7 +205,7 @@ class AlmacenController extends Controller
                     'code'  => 500,
                     'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
                 ]);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 return response()->json([
                     'code'  => 500,
                     'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
@@ -363,7 +327,7 @@ class AlmacenController extends Controller
             );
 
             \Httpful\Request::post('http://wimtech.ddns.net:9180')
-                ->body($array, \Httpful\Mime::FORM)
+                ->body($array, Mime::FORM)
                 ->send();
         } catch (Exception $e) {
             return response()->json([
@@ -870,6 +834,7 @@ class AlmacenController extends Controller
 
         $usuarios = DB::select("SELECT
                                     usuario.authy,
+                                    usuario.id,
                                     usuario.nombre,
                                     nivel.nivel
                                 FROM usuario
@@ -898,7 +863,7 @@ class AlmacenController extends Controller
     }
 
     /**
-     * @throws \Throwable
+     * @throws Throwable
      */
     public function almacen_packing_guardar_v2(Request $request)
     {
@@ -1026,7 +991,7 @@ class AlmacenController extends Controller
                     "color" => "red-border-top",
                     'message'   => "Ocurrió un error al enviar el correo de notificación, favor de contactar al administrador. Mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
                 ]);
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 return response()->json([
                     'code'  => 500,
                     "color" => "red-border-top",
@@ -1536,7 +1501,7 @@ class AlmacenController extends Controller
         $producto  = DB::select("SELECT serie FROM modelo WHERE sku = '" . TRIM($producto) . "'");
 
         if (empty($producto)) {
-            $producto = new \stdClass();
+            $producto = new stdClass();
             $producto->serie = 0;
         } else {
             $producto = $producto[0];
@@ -1889,7 +1854,7 @@ class AlmacenController extends Controller
                                     'status' => 0
                                 ]);
                                 $productoId = $existe_serie->id;
-                                $serie_afectada = new \stdClass();
+                                $serie_afectada = new stdClass();
                                 $serie_afectada->id = $existe_serie->id;
                                 $serie_afectada->almacen_previo = $existe_serie->id_almacen;
                                 $serie_afectada->status_previo = $existe_serie->status;
@@ -1939,7 +1904,7 @@ class AlmacenController extends Controller
                 'message' => $mensaje,
                 'documento' => $documento
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             return response()->json([
@@ -2102,9 +2067,8 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_historial_afectar(Request $request)
+    public function almacen_movimiento_historial_afectar(Request $request): JsonResponse
     {
-        $documento = $request->input('documento');
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
@@ -2131,16 +2095,16 @@ class AlmacenController extends Controller
             ], 401);
         }
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
         try {
-            $tipo_documento = DB::select("SELECT id_tipo FROM documento WHERE id = " . $data->document . "")[0]->id_tipo;
+            $tipo_documento = DB::select("SELECT id_tipo FROM documento WHERE id = " . $data->document)[0]->id_tipo;
 
             if ($tipo_documento == 4) {
                 $response = DocumentoService::crearMovimiento($data->document);
@@ -2418,7 +2382,7 @@ class AlmacenController extends Controller
                                     WHERE documento.id = " . $documento . "")[0];
         }
 
-        $barcode = new \Picqer\Barcode\BarcodeGeneratorJPG();
+        $barcode = new BarcodeGeneratorJPG();
         $barcode_image = "data://text/plain;base64," . base64_encode($barcode->getBarcode(substr($informacion_documento->tipo, 0, 4) . "&"  . $documento, $barcode::TYPE_CODE_128));
         $fontsize = 8;
         $pageline = 3;
@@ -2874,11 +2838,11 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -2962,11 +2926,11 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -3131,7 +3095,7 @@ class AlmacenController extends Controller
             ->first();
 
         if (!$regresar && $marketplace_envio->marketplace === "MERCADOLIBRE") {
-            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReader("Xlsx");
+            $reader = IOFactory::createReader("Xlsx");
             $spreadsheet = $reader->load("archivos/templates/mercadolibre/Envio-Fulfillment.xlsx");
 
             $sheet = $spreadsheet->setActiveSheetIndex(1);
@@ -3199,8 +3163,8 @@ class AlmacenController extends Controller
                 $sheet->setCellValue('E' . $contador_fila, $producto->etiqueta !== 'N/A' ? $producto->etiqueta : "");
                 $sheet->setCellValue('F' . $contador_fila, (int) $producto->cantidad);
 
-                $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit(!is_null($producto->seller_sku) ? $producto->seller_sku : "", \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                $sheet->getCellByColumnAndRow(2, $contador_fila)->setValueExplicit(!is_null($producto->codigo_universal) ? $producto->codigo_universal : "", \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit(!is_null($producto->seller_sku) ? $producto->seller_sku : "", DataType::TYPE_STRING);
+                $sheet->getCellByColumnAndRow(2, $contador_fila)->setValueExplicit(!is_null($producto->codigo_universal) ? $producto->codigo_universal : "", DataType::TYPE_STRING);
 
                 $contador_fila++;
             }
@@ -3374,7 +3338,7 @@ class AlmacenController extends Controller
                         'id_producto' => $producto_id
                     ]);
 
-                    $serie_afectada = new \stdClass();
+                    $serie_afectada = new stdClass();
                     $serie_afectada->id = $producto_id;
                     $serie_afectada->almacen_previo = empty($existe_serie) ? $id_almacen_salida->id_almacen : $existe_serie[0]->id_almacen;
 
@@ -3468,7 +3432,7 @@ class AlmacenController extends Controller
                     ], 500);
                 }
 
-                $etiqueta_data = new \stdClass();
+                $etiqueta_data = new stdClass();
                 $etiqueta_data->codigo = $codigo;
                 $etiqueta_data->descripcion = $response->data->title;
                 $etiqueta_data->cantidad = $informacion_publicacion->cantidad;
@@ -3492,7 +3456,7 @@ class AlmacenController extends Controller
                     ->get();
 
                 foreach ($etiquetas_amazon as $etiqueta) {
-                    $etiqueta_data = new \stdClass();
+                    $etiqueta_data = new stdClass();
                     $etiqueta_data->codigo = $etiqueta->codigo;
                     foreach ($movimientos as $mov) {
                         if ($mov->id_modelo == $etiqueta->id_modelo) {
@@ -3532,7 +3496,7 @@ class AlmacenController extends Controller
         $token = $request->get("token");
 
         $impresion = \Httpful\Request::post($marketplace_envio->servidor . "/raspberry-print-server/public/label/sku-and-description?token=" . $token)
-            ->body($data, \Httpful\Mime::FORM)
+            ->body($data, Mime::FORM)
             ->send();
 
         $impresion_raw = $impresion->raw_body;
@@ -3673,7 +3637,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        $direccion_fiscal = new \stdClass();
+        $direccion_fiscal = new stdClass();
 
         foreach ($informacion_empresa->direccion as $direccion) {
             if ($direccion->nombre === "Dirección fiscal") {
@@ -3902,16 +3866,16 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_finalizar_guardar(Request $request)
+    public function almacen_pretransferencia_finalizar_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -4021,11 +3985,11 @@ class AlmacenController extends Controller
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -4133,7 +4097,7 @@ class AlmacenController extends Controller
         $token = $request->get("token");
 
         $impresion = \Httpful\Request::post($impresora->servidor . "/raspberry-print-server/public/" . $url . "?token=" . $token)
-            ->body($etiquetas, \Httpful\Mime::FORM)
+            ->body($etiquetas, Mime::FORM)
             ->send();
 
         $impresion_raw = $impresion->raw_body;
@@ -4226,7 +4190,7 @@ class AlmacenController extends Controller
 
             $sufijo .= $consecutivo;
 
-            $etiqueta_data = new \stdClass();
+            $etiqueta_data = new stdClass();
             $etiqueta_data->serie = (string) $prefijo . $fecha . $sufijo;
             $etiqueta_data->codigo = $data->codigo;
             $etiqueta_data->descripcion = $data->descripcion;
@@ -4261,7 +4225,7 @@ class AlmacenController extends Controller
                 $token = $request->get("token");
 
                 $impresion = \Httpful\Request::post($impresora->servidor . "/raspberry-print-server/public/label/qr-serie?token=" . $token)
-                    ->body($data_qr, \Httpful\Mime::FORM)
+                    ->body($data_qr, Mime::FORM)
                     ->send();
 
                 $impresion_raw = $impresion->raw_body;
@@ -4278,7 +4242,7 @@ class AlmacenController extends Controller
             $token = $request->get("token");
 
             $impresion = \Httpful\Request::post($impresora->servidor . "/raspberry-print-server/public/label/sku-and-description-and-serie?token=" . $token)
-                ->body($data_etiqueta, \Httpful\Mime::FORM)
+                ->body($data_etiqueta, Mime::FORM)
                 ->send();
 
             $impresion_raw = $impresion->raw_body;
@@ -4312,7 +4276,7 @@ class AlmacenController extends Controller
         $token = $request->get("token");
 
         $impresion = \Httpful\Request::post($impresora->servidor . "/raspberry-print-server/public/label/qr-serie?token=" . $token)
-            ->body($data, \Httpful\Mime::FORM)
+            ->body($data, Mime::FORM)
             ->send();
 
         $impresion_raw = $impresion->raw_body;
@@ -4415,7 +4379,7 @@ class AlmacenController extends Controller
 
                     try {
                         $impresion = \Httpful\Request::post($servidor->servidor . "/raspberry-print-server/public/picking")
-                            ->body($data, \Httpful\Mime::FORM)
+                            ->body($data, Mime::FORM)
                             ->send();
 
                         $impresion_raw = $impresion->raw_body;

@@ -1005,9 +1005,9 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'whatsapp'], function () use ($router) {
-        $router->get('validateWhatsApp', 'WhatsAppController@whatsapp_validate');
+        $router->get('sendWhatsApp', 'WhatsAppController@whatsapp_send');
+        $router->get('validateWhatsApp/{code}', 'WhatsAppController@whatsapp_validate');
     });
-
 });
 
 $router->group(['prefix' => 'estado'], function () use ($router) {

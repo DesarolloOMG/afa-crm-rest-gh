@@ -2,35 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\EmpresaAlmacen;
-use Exception;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\Hash;
 use App\Events\PusherEvent;
-use Illuminate\Http\Request;
-use App\Http\Services\DocumentoService;
 use App\Http\Services\GeneralService;
-use Illuminate\Support\Facades\Crypt;
-use Illuminate\Contracts\Encryption\DecryptException;
-use Mailgun\Mailgun;
-
-use App\Models\Usuario;
-use App\Models\NotificacionUsuario;
-use App\Models\UsuarioEmpresa;
-use App\Models\UsuarioSubnivelNivel;
-use App\Models\SubNivel;
-use App\Models\UsuarioMarketplaceArea;
+use App\Http\Services\WhatsAppService;
+use App\Models\Almacen;
 use App\Models\Area;
 use App\Models\Empresa;
-use App\Models\Nivel;
-use App\Models\MarketplaceArea;
-use App\Models\Usuario_Login_Error;
+use App\Models\EmpresaAlmacen;
 use App\Models\Marketplace;
-use App\Models\Almacen;
 use App\Models\MarketplaceApi;
+use App\Models\MarketplaceArea;
 use App\Models\MarketplaceAreaEmpresa;
+use App\Models\Nivel;
+use App\Models\NotificacionUsuario;
 use App\Models\Paqueteria;
-use DB;
+use App\Models\Usuario;
+use App\Models\Usuario_Login_Error;
+use App\Models\UsuarioEmpresa;
+use App\Models\UsuarioMarketplaceArea;
+use App\Models\UsuarioSubnivelNivel;
+use Exception;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Mailgun\Mailgun;
+use stdClass;
+use Throwable;
 
 class ConfiguracionController extends Controller
 {
@@ -62,7 +62,7 @@ class ConfiguracionController extends Controller
         }
 
         foreach ($gruposPorEmpresa as $nombreEmpresa => $grupo) {
-            $empresasSeparadas = new \stdClass();
+            $empresasSeparadas = new stdClass();
 
             $empresasSeparadas->nombre = $nombreEmpresa;
             $empresasSeparadas->data = $grupo;
@@ -463,33 +463,36 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-    public function configuracion_sistema_marketplace_ver_credenciales(Request $request)
+    /**
+     * @throws Throwable
+     */
+    public function configuracion_sistema_marketplace_ver_credenciales(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-//        $validate_authy = DocumentoService::authy($auth->id, $data->authy_token);
-//
-//        if ($validate_authy->error) {
-//            return response()->json([
-//                "message" => $validate_authy->mensaje
-//            ], 500);
-//        }
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
+
+        if ($validate_wa->error) {
+            return response()->json([
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
+            ], 500);
+        }
 
         $marketplace_api = MarketplaceApi::with("marketplace_area.marketplace", "marketplace_area.area")->find($data->marketplace_api);
 
         if (!$marketplace_api) {
             return response()->json([
-                "message" => "No se encontró información del API del marketplace"
+                "message" => "No se encontró información del API del marketplace" . " " . self::logVariableLocation()
             ], 500);
         }
-
-        $decoded_secret = "";
 
         try {
             $decoded_secret = Crypt::decrypt($marketplace_api->secret);
         } catch (DecryptException $e) {
-            $decoded_secret = "";
+            return response()->json([
+                "message" => $e->getMessage() . " " . self::logVariableLocation()
+            ], 500);
         }
 
         $user = DB::table("usuario")->find($auth->id);
@@ -786,7 +789,7 @@ class ConfiguracionController extends Controller
             DB::commit();
 
             return response()->json(['message' => 'Impresora creada con éxito', 'id' => $id], 201);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             return response()->json(['message' => 'Error al crear la impresora', 'error' => $e->getMessage()], 400);
@@ -861,5 +864,14 @@ class ConfiguracionController extends Controller
 
             return response()->json(['message' => $e->getMessage()], 400);
         }
+    }
+
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'ION'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }
