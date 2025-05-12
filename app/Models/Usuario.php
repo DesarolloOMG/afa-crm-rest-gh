@@ -13,6 +13,9 @@ use App\Models\SubnivelNivel;
 
 //use Illuminate\Database\Eloquent\Eloquent\HasFactory;
 
+/**
+ * @method static where(string $string, $usuario)
+ */
 class Usuario extends Model
 {
     // use HasFactory;

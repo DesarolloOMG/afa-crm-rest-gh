@@ -17,7 +17,7 @@ use App\Events\PusherEvent;
 use Mailgun\Mailgun;
 use DOMDocument;
 use Exception;
-use Validator;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 
 class CompraController extends Controller
@@ -177,7 +177,7 @@ class CompraController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
@@ -210,6 +210,7 @@ class CompraController extends Controller
         ]);
     }
 
+    /** @noinspection PhpParamsInspection */
     public function compra_compra_crear_get_recepcion($recepcion)
     {
         $recepciones = explode(",", $recepcion);
@@ -748,7 +749,7 @@ class CompraController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen ");
 
             $empresa->almacenes = $almacenes;
         }
@@ -1642,7 +1643,7 @@ class CompraController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
@@ -1895,7 +1896,6 @@ class CompraController extends Controller
                     'descripcion' => $producto->descripcion
                 ]);
 
-                $modelo_id = $modelo_id;
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -1934,8 +1934,9 @@ class CompraController extends Controller
         $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
         $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
         $usuarios = DB::select("SELECT
-                                    usuario.authy,
+                                    usuario.id,
                                     usuario.nombre,
+                                    usuario.celular,
                                     nivel.nivel
                                 FROM usuario
                                 INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
@@ -2191,7 +2192,7 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_orden_recepcion_authy(Request $request)
+    public function compra_orden_recepcion_whatsapp(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -2480,7 +2481,6 @@ class CompraController extends Controller
                     'descripcion' => $producto->descripcion
                 ]);
 
-                $modelo_id = $modelo_id;
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -3459,11 +3459,11 @@ class CompraController extends Controller
     /* Compra > Tipo de cambio */
     public function compra_tipo_cambio_data()
     {
-        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
+//        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
 
         return response()->json([
             'code' => 200,
-            'tc' => empty($tipo_cambio) ? DocumentoService::tipo_cambio() : (float) $tipo_cambio[0]->tipo_cambio
+            'tc' => DocumentoService::tipo_cambio()
         ]);
     }
 
@@ -4044,6 +4044,7 @@ class CompraController extends Controller
         return $compras;
     }
 
+    /** @noinspection PhpParamsInspection */
     private function ordenes_raw_data($extra_data)
     {
         set_time_limit(0);

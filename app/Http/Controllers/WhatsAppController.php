@@ -1,9 +1,13 @@
-<?php /** @noinspection PhpUnused */
+<?php /** @noinspection PhpUndefinedFieldInspection */
+/** @noinspection PhpComposerExtensionStubsInspection */
+
+/** @noinspection PhpUnused */
 
 namespace App\Http\Controllers;
 
 
 use App\Http\Services\WhatsAppService;
+use App\Models\Usuario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -23,6 +27,56 @@ class WhatsAppController extends Controller
             ], 400);
         }
 
+        return $this->callToServiceSend($auth);
+    }
+
+    public function whatsapp_send_with_option(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input("data"));
+        $usuario = Usuario::where("id", $data->usuario)->first();
+
+        return $this->callToServiceSend($usuario);
+    }
+
+    public function whatsapp_validate($code, Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+
+        $authCode = DB::table('auth_codes')
+            ->where('user', $auth->id)
+            ->where('code', $code)
+            ->first();
+
+        return $this->callToServiceValidate($authCode);
+    }
+
+    public function whatsapp_validate_with_option(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input("data"));
+
+        $authCode = DB::table('auth_codes')
+            ->where('user', $data->usuario)
+            ->where('code', $data->token)
+            ->first();
+
+        return $this->callToServiceValidate($authCode);
+    }
+
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'WC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'APP'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
+    }
+
+    /**
+     * @param $auth
+     * @return JsonResponse
+     */
+    public function callToServiceSend($auth): JsonResponse
+    {
         $whatsappService = new WhatsAppService();
         $response_whatsapp_service = $whatsappService->sendCode($auth->id, $auth->celular);
 
@@ -36,16 +90,12 @@ class WhatsAppController extends Controller
         ], $status);
     }
 
-    public function whatsapp_validate($code, Request $request): JsonResponse
+    /**
+     * @param $authCode
+     * @return JsonResponse
+     */
+    public function callToServiceValidate($authCode): JsonResponse
     {
-        $auth = json_decode($request->auth);
-
-        $authCode = DB::table('auth_codes')
-            ->where('user', $auth->id)
-            ->where('code', $code)
-            ->first();
-
-        # El codigo proporcionado por el usuario no existe
         if (!$authCode) {
             return response()->json([
                 'code' => 500,
@@ -54,7 +104,6 @@ class WhatsAppController extends Controller
             ], 500);
         }
 
-        # El codigo proporcionado por el usuario expirado
         if ($authCode->expires_at < Carbon::now()) {
             DB::table('auth_codes')
                 ->where('id', $authCode->id)
@@ -68,7 +117,6 @@ class WhatsAppController extends Controller
             ], 500);
         }
 
-        # El codigo existe y es valido, se procede a eliminarlo y dar acceso
         DB::table('auth_codes')
             ->where('id', $authCode->id)
             ->delete();
@@ -78,15 +126,6 @@ class WhatsAppController extends Controller
             'message' => 'Código correcto',
             "data" => $authCode,
         ]);
-    }
-
-    public static function logVariableLocation(): string
-    {
-        $sis = 'BE'; //Front o Back
-        $ini = 'WC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'APP'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 
 }

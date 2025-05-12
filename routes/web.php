@@ -228,7 +228,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->group(['prefix' => 'recepcion'], function () use ($router) {
                 $router->get('data', 'CompraController@compra_orden_recepcion_data');
                 $router->post('guardar', 'CompraController@compra_orden_recepcion_guardar');
-                $router->post('authy', 'CompraController@compra_orden_recepcion_authy');
+                $router->post('whatsapp', 'CompraController@compra_orden_recepcion_whatsapp');
             });
 
             $router->group(['prefix' => 'historial'], function () use ($router) {
@@ -1007,6 +1007,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     $router->group(['prefix' => 'whatsapp'], function () use ($router) {
         $router->get('sendWhatsApp', 'WhatsAppController@whatsapp_send');
         $router->get('validateWhatsApp/{code}', 'WhatsAppController@whatsapp_validate');
+        $router->post('sendWhatsAppWithOption', 'WhatsAppController@whatsapp_send_with_option');
+        $router->post('validateWhatsAppWithOption', 'WhatsAppController@whatsapp_validate_with_option');
     });
 });
 
