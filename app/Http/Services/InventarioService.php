@@ -77,6 +77,7 @@ class InventarioService
             foreach ($movimientos as $mov) {
                 // Si es un traspaso, se procesa de forma especial.
                 if ($docTipo->tipo == 'TRASPASO' || $docTipo->id == 5) {
+                    dump("El documento es un traspaso.");
                     self::procesarTraspaso($mov, $documento);
                     continue; // Continuamos con el siguiente movimiento.
                 }
@@ -333,7 +334,7 @@ class InventarioService
     public static function procesarTraspaso($mov, $documento)
     {
         // Procesar salida (almacén principal)
-        $almacenSalida = $documento->id_almacen_principal_empresa;
+        $almacenSalida = $documento->id_almacen_secundario_empresa;
         $existenciaSalida = self::obtenerOcrearExistencia($mov->id_modelo, $almacenSalida);
         $costoSalida = self::obtenerOcrearCosto($mov->id_modelo);
 
@@ -359,8 +360,8 @@ class InventarioService
             'id_documento'              => $mov->id_documento,
             'id_tipo_documento'         => $documento->id_tipo,
             'id_fase'                   => $documento->id_fase,
-            'id_empresa_almacen'        => $almacenSalida,
-            'id_empresa_almacen_salida' => $documento->id_almacen_secundario_empresa,
+            'id_empresa_almacen'        => $documento->id_almacen_secundario_empresa,
+            'id_empresa_almacen_salida' => $documento->id_almacen_principal_empresa,
             'afecta_costo'              => 0,
             'cantidad'                  => $cantidad,
             'costo'                     => $precioUnitario,
@@ -370,8 +371,8 @@ class InventarioService
             'created_at'                => $mov->created_at,
         ]);
 
-        // Procesar entrada (almacén secundario)
-        $almacenEntrada = $documento->id_almacen_secundario_empresa;
+        // Procesar entrada (almacén principañ)
+        $almacenEntrada = $documento->id_almacen_principal_empresa;
         if (!$almacenEntrada) {
             return;
         }

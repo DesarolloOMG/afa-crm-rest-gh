@@ -1025,4 +1025,5 @@ $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2
 $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
+    $router->get('testApis', 'DeveloperController@testApiWalmart');
 });
