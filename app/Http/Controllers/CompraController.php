@@ -2,23 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Services\ComodinService;
+use App\Events\PusherEvent;
+use App\Http\Services\DocumentoService;
 use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
-use App\Models\Modelo;
-
+use Exception;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Mailgun\Mailgun;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use App\Http\Services\DocumentoService;
-use Illuminate\Http\Request;
-use App\Events\PusherEvent;
-use Mailgun\Mailgun;
-use DOMDocument;
-use Exception;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 
 class CompraController extends Controller
 {
@@ -1928,11 +1924,15 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_orden_recepcion_data()
+    public function compra_orden_recepcion_data(): JsonResponse
     {
         set_time_limit(0);
         $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
-        $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $empresas = DB::table('empresa')
+            ->select('id', 'bd', 'empresa')
+            ->where('status', 1)
+            ->where('id', '!=', 0)
+            ->get();
         $usuarios = DB::select("SELECT
                                     usuario.id,
                                     usuario.nombre,
@@ -4045,9 +4045,10 @@ class CompraController extends Controller
     }
 
     /** @noinspection PhpParamsInspection */
-    private function ordenes_raw_data($extra_data)
+    private function ordenes_raw_data($extra_data): array
     {
         set_time_limit(0);
+
         $documentos = DB::select("SELECT
                                     documento.id, 
                                     documento.id_fase,
@@ -4092,34 +4093,129 @@ class CompraController extends Controller
                                 " . $extra_data . "
                                 GROUP BY documento.id");
 
-        foreach ($documentos as $documento) {
-            $documento->productos = DB::select("SELECT
-                                                modelo.id AS id_modelo,
-                                                modelo.sku AS codigo,
-                                                modelo.serie,
-                                                modelo.cat1,
-                                                modelo.cat2,
-                                                modelo.cat3,
-                                                modelo.caducidad,
-                                                movimiento.id,
-                                                movimiento.cantidad,
-                                                movimiento.cantidad_aceptada AS cantidad_recepcionada_anterior,
-                                                0 AS cantidad_recepcionada,
-                                                movimiento.comentario as descripcion,
-                                                IF(movimiento.descuento = 0, ROUND(movimiento.precio, 8), ROUND((movimiento.precio * movimiento.descuento) / 100, 8)) AS costo,
-                                                movimiento.modificacion AS condicion,
-                                                movimiento.addenda AS marketplace
-                                            FROM movimiento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE id_documento = " . $documento->id . "");
+        $documentoIds = array_map(function ($d) {
+            return $d->id;
+        }, $documentos);
 
-            $documento->archivos_anteriores = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $documento->id . " AND status = 1");
-            $documento->seguimiento = DB::select("SELECT
-                                                    seguimiento.*, 
-                                                    usuario.nombre 
-                                                FROM seguimiento 
-                                                INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                WHERE id_documento = " . $documento->id . "");
+        $productos = DB::table('movimiento')
+            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+            ->select(
+                'modelo.id AS id_modelo',
+                'modelo.sku AS codigo',
+                'modelo.serie',
+                'modelo.cat1',
+                'modelo.cat2',
+                'modelo.cat3',
+                'modelo.caducidad',
+                'movimiento.id',
+                'movimiento.cantidad',
+                'movimiento.cantidad_aceptada AS cantidad_recepcionada_anterior',
+                DB::raw('0 AS cantidad_recepcionada'),
+                'movimiento.comentario AS descripcion',
+                DB::raw('IF(movimiento.descuento = 0, ROUND(movimiento.precio, 8), ROUND((movimiento.precio * movimiento.descuento) / 100, 8)) AS costo'),
+                'movimiento.modificacion AS condicion',
+                'movimiento.addenda AS marketplace',
+                'movimiento.id_documento'
+            )
+            ->whereIn('movimiento.id_documento', $documentoIds)
+            ->get()
+            ->groupBy('id_documento');
+
+        $seguimientos = DB::table('seguimiento')
+            ->join('usuario', 'seguimiento.id_usuario', '=', 'usuario.id')
+            ->select('seguimiento.*', 'usuario.nombre')
+            ->whereIn('seguimiento.id_documento', $documentoIds)
+            ->get()
+            ->groupBy('id_documento');
+
+
+        $archivos = DB::table('documento_archivo')
+            ->where('status', 1)
+            ->whereIn('id_documento', $documentoIds)
+            ->get()
+            ->groupBy('id_documento');
+
+
+        $recepciones = DB::table('documento_recepcion')
+            ->join('movimiento', 'documento_recepcion.id_movimiento', '=', 'movimiento.id')
+            ->join('usuario', 'documento_recepcion.id_usuario', '=', 'usuario.id')
+            ->select(
+                'movimiento.id_documento',
+                'documento_recepcion.documento_erp',
+                'documento_recepcion.documento_erp_compra',
+                'usuario.nombre',
+                'documento_recepcion.created_at'
+            )
+            ->whereIn('movimiento.id_documento', $documentoIds)
+            ->get();
+
+        $recepcionesPorDocumento = [];
+        foreach ($recepciones as $r) {
+            $docId = $r->id_documento;
+            $docErp = $r->documento_erp;
+
+            if (!isset($recepcionesPorDocumento[$docId])) {
+                $recepcionesPorDocumento[$docId] = [];
+            }
+
+            if (!isset($recepcionesPorDocumento[$docId][$docErp])) {
+                $recepcionesPorDocumento[$docId][$docErp] = (object)[
+                    'documento_erp' => $r->documento_erp,
+                    'documento_erp_compra' => $r->documento_erp_compra,
+                    'nombre' => $r->nombre,
+                    'created_at' => $r->created_at,
+                    'productos' => []
+                ];
+            }
+        }
+
+        $recepcionProductos = DB::table("documento_recepcion")
+            ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
+            ->join("modelo", "movimiento.id_modelo", "=", "modelo.id")
+            ->select(
+                "movimiento.id_documento",
+                "documento_recepcion.documento_erp",
+                "modelo.sku",
+                "modelo.descripcion",
+                "documento_recepcion.cantidad"
+            )
+            ->whereIn("movimiento.id_documento", $documentoIds)
+            ->get();
+
+        foreach ($recepcionProductos as $p) {
+            $docId = $p->id_documento;
+            $docErp = $p->documento_erp;
+
+            if (isset($recepcionesPorDocumento[$docId][$docErp])) {
+                $recepcionesPorDocumento[$docId][$docErp]->productos[] = [
+                    'sku' => $p->sku,
+                    'descripcion' => $p->descripcion,
+                    'cantidad' => $p->cantidad,
+                ];
+            }
+        }
+
+        $movimientoIds = collect($productos)->flatten()->map(function ($producto) {
+            return $producto->id;
+        })->toArray();
+
+        $seriesPorMovimiento = DB::table("movimiento_producto")
+            ->join("producto", "movimiento_producto.id_producto", "=", "producto.id")
+            ->whereIn("movimiento_producto.id_movimiento", $movimientoIds)
+            ->select("movimiento_producto.id_movimiento", "producto.id", "producto.serie", "producto.fecha_caducidad")
+            ->get()
+            ->groupBy("id_movimiento");
+
+        foreach ($documentos as $documento) {
+            $documento->productos = $productos[$documento->id] ?? [];
+
+            $documento->seguimiento = $seguimientos[$documento->id] ?? [];
+
+            $documento->archivos_anteriores = $archivos[$documento->id] ?? [];
+
+            $documento->recepciones = isset($recepcionesPorDocumento[$documento->id])
+                ? array_values($recepcionesPorDocumento[$documento->id])
+                : [];
 
             $documento->proveedor = new \stdClass();
             $documento->proveedor->id = $documento->id_erp;
@@ -4130,15 +4226,6 @@ class CompraController extends Controller
             $documento->total = 0;
             $documento->fecha_entrega = !str_contains($documento->fecha_entrega, '0000-00-00') ? date("Y-m-d", strtotime($documento->fecha_entrega)) : "";
 
-            $documento->recepciones = DB::table("documento_recepcion")
-                ->select("documento_recepcion.documento_erp", "documento_recepcion.documento_erp_compra", "usuario.nombre", "documento_recepcion.created_at")
-                ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
-                ->join("usuario", "documento_recepcion.id_usuario", "=", "usuario.id")
-                ->where("movimiento.id_documento", $documento->id)
-                ->groupBy('documento_erp')
-                ->get()
-                ->toArray();
-
             $documento->odc = DB::table("documento")
                 ->select("documento.id")
                 ->where("documento.id_fase", ">", 603)
@@ -4147,17 +4234,6 @@ class CompraController extends Controller
                 ->first();
 
             $documento->odc = $documento->odc ? $documento->odc->id : 0;
-
-            foreach ($documento->recepciones as $recepcion) {
-                $recepcion->productos = DB::table("documento_recepcion")
-                    ->select("modelo.sku", "modelo.descripcion", "documento_recepcion.cantidad")
-                    ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
-                    ->join("modelo", "movimiento.id_modelo", "=", "modelo.id")
-                    ->where("documento_recepcion.documento_erp", $recepcion->documento_erp)
-                    ->where("movimiento.id_documento", $documento->id)
-                    ->get()
-                    ->toArray();
-            }
 
             foreach ($documento->productos as $producto) {
                 $documento->total += (int) $producto->cantidad * (float) $producto->costo;
@@ -4175,13 +4251,7 @@ class CompraController extends Controller
                 }
 
                 if ($producto->serie) {
-                    $producto->series = DB::table("movimiento_producto")
-                        ->join("producto", "movimiento_producto.id_producto", "=", "producto.id")
-                        ->where("movimiento_producto.id_movimiento", $producto->id)
-                        ->select("producto.id", "producto.serie", "producto.fecha_caducidad")
-                        ->get()
-                        ->toArray();
-
+                    $producto->series = $seriesPorMovimiento[$producto->id] ?? [];
                     $producto->cantidad_recepcionada_anterior = count($producto->series);
                 }
             }
