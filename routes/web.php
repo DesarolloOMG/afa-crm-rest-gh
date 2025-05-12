@@ -600,6 +600,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('data', 'AlmacenController@almacen_movimiento_crear_data');
                 $router->get('producto/{producto}', 'AlmacenController@almacen_movimiento_crear_producto');
                 $router->post('crear', 'AlmacenController@almacen_movimiento_crear_crear');
+                $router->post('confirmar', 'AlmacenController@almacen_movimiento_crear_confirmar');
                 $router->post('confirmar-authy', 'AlmacenController@almacen_movimiento_crear_confirmar_authy');
             });
 

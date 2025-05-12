@@ -1701,6 +1701,20 @@ class AlmacenController extends Controller
 //        }
 //    }
 
+    public function almacen_movimiento_crear_confirmar(Request $request)
+    {
+        $series = json_decode($request->input('series'));
+        $producto = $request->input('producto');
+
+        $validar_series = ComodinService::validar_series($series, $producto);
+
+        return response()->json([
+            'code'  => $validar_series->error ? 500 : 200,
+            'mensaje' => $validar_series->mensaje,
+            'series'    => $validar_series->series
+        ]);
+    }
+
     public function almacen_movimiento_crear_crear(Request $request)
     {
         set_time_limit(0);
