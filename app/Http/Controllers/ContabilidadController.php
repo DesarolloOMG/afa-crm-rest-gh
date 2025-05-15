@@ -1,19 +1,19 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\DocumentoService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MovimientoService;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use App\Http\Services\DocumentoService;
-use Illuminate\Http\Request;
-use Mailgun\Mailgun;
+use App\Http\Services\WhatsAppService;
 use DOMDocument;
 use Exception;
-use DateTime;
-use DB;
-use MP;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Mailgun\Mailgun;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ContabilidadController extends Controller
 {
@@ -27,10 +27,10 @@ class ContabilidadController extends Controller
         $ventas = $this->ventas_raw_data("AND usuario_empresa.id_usuario = " . $auth->id . " AND documento.pagado = 0 AND marketplace_area.publico = 0 AND documento_periodo.id = 1 AND documento.id_fase BETWEEN 2 AND 5");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas,
-            'metodos'   => $metodos,
-            'monedas'   => $monedas
+            'code' => 200,
+            'ventas' => $ventas,
+            'metodos' => $metodos,
+            'monedas' => $monedas
         ]);
     }
 
@@ -41,14 +41,14 @@ class ContabilidadController extends Controller
 
         if (!$data->terminar) {
             DB::table('seguimiento')->insert([
-                'id_documento'  => $data->documento,
-                'id_usuario'    => $auth->id,
-                'seguimiento'   => $data->seguimiento
+                'id_documento' => $data->documento,
+                'id_usuario' => $auth->id,
+                'seguimiento' => $data->seguimiento
             ]);
 
             return response()->json([
-                'code'  => 200,
-                'message'   => "Seguimiento guardado correctamente."
+                'code' => 200,
+                'message' => "Seguimiento guardado correctamente."
             ]);
         }
 
@@ -66,56 +66,56 @@ class ContabilidadController extends Controller
         # se cambia el id clasificacion a 0 ya que no existe otro
         if (empty($existe_pago)) {
             $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario'                => $auth->id,
-                'id_metodopago'             => $data->metodo_pago,
-                'id_clasificacion'          => 0,
-                'destino_importe'           => $data->importe,
-                'entidad_destino'           => $data->entidad_destino,
-                'destino_entidad'           => $data->destino,
-                'entidad_origen'            => 1, #cliente,
-                'origen_entidad'            => $rfc_cliente,
-                'referencia'                => $data->referencia,
-                'clave_rastreo'             => $data->clave_rastreo,
-                'autorizacion'              => $data->numero_aut,
-                'origen_fecha_operacion'   => date('Y-m-d'),
-                'origen_fecha_afectacion'  => $data->fecha_cobro,
-                'destino_fecha_operacion'   => date('Y-m-d'),
-                'destino_fecha_afectacion'  => $data->fecha_cobro,
-                'cuenta_cliente'            => $data->cuenta_cliente
+                'id_usuario' => $auth->id,
+                'id_metodopago' => $data->metodo_pago,
+                'id_clasificacion' => 0,
+                'destino_importe' => $data->importe,
+                'entidad_destino' => $data->entidad_destino,
+                'destino_entidad' => $data->destino,
+                'entidad_origen' => 1, #cliente,
+                'origen_entidad' => $rfc_cliente,
+                'referencia' => $data->referencia,
+                'clave_rastreo' => $data->clave_rastreo,
+                'autorizacion' => $data->numero_aut,
+                'origen_fecha_operacion' => date('Y-m-d'),
+                'origen_fecha_afectacion' => $data->fecha_cobro,
+                'destino_fecha_operacion' => date('Y-m-d'),
+                'destino_fecha_afectacion' => $data->fecha_cobro,
+                'cuenta_cliente' => $data->cuenta_cliente
             ]);
 
             DB::table('documento_pago_re')->insert([
-                'id_pago'   => $pago,
-                'id_documento'  => $data->documento
+                'id_pago' => $pago,
+                'id_documento' => $data->documento
             ]);
         } else {
             DB::table('documento_pago')->where(['id' => $existe_pago[0]->id])->update([
-                'id_metodopago'             => $data->metodo_pago,
-                'destino_importe'           => $data->importe,
-                'entidad_origen'            => 1, #cliente,
-                'origen_entidad'            => $rfc_cliente,
-                'entidad_destino'           => $data->entidad_destino,
-                'destino_entidad'           => $data->destino,
-                'referencia'                => $data->referencia,
-                'clave_rastreo'             => $data->clave_rastreo,
-                'autorizacion'              => $data->numero_aut,
-                'origen_fecha_operacion'    => date('Y-m-d'),
-                'origen_fecha_afectacion'   => $data->fecha_cobro,
-                'destino_fecha_operacion'   => date('Y-m-d'),
-                'destino_fecha_afectacion'  => $data->fecha_cobro,
-                'cuenta_cliente'            => $data->cuenta_cliente
+                'id_metodopago' => $data->metodo_pago,
+                'destino_importe' => $data->importe,
+                'entidad_origen' => 1, #cliente,
+                'origen_entidad' => $rfc_cliente,
+                'entidad_destino' => $data->entidad_destino,
+                'destino_entidad' => $data->destino,
+                'referencia' => $data->referencia,
+                'clave_rastreo' => $data->clave_rastreo,
+                'autorizacion' => $data->numero_aut,
+                'origen_fecha_operacion' => date('Y-m-d'),
+                'origen_fecha_afectacion' => $data->fecha_cobro,
+                'destino_fecha_operacion' => date('Y-m-d'),
+                'destino_fecha_afectacion' => $data->fecha_cobro,
+                'cuenta_cliente' => $data->cuenta_cliente
             ]);
         }
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         $data_documento = DB::table('documento')->where('id', $data->documento)->first();
 
-        if($data_documento->anticipada) {
+        if ($data_documento->anticipada) {
             DB::table('documento')->where(['id' => $data->documento])->update([
                 'pagado' => 1,
                 'id_fase' => 6
@@ -127,8 +127,8 @@ class ContabilidadController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento guardado correctamente."
+            'code' => 200,
+            'message' => "Documento guardado correctamente."
         ]);
     }
 
@@ -226,13 +226,13 @@ class ContabilidadController extends Controller
 
                 $factura_data->cliente = $cliente_data;
                 $factura_data->envio = 0;
-                $factura_data->descuento = (float) $comprobante->getAttribute('Descuento');
+                $factura_data->descuento = (float)$comprobante->getAttribute('Descuento');
 
                 $conceptos = $documento->getElementsByTagName('Concepto');
 
                 foreach ($conceptos as $concepto) {
                     if (strpos($concepto->getAttribute('Descripcion'), 'Envio') !== false) {
-                        $factura_data->envio += (float) $concepto->getAttribute('Importe');
+                        $factura_data->envio += (float)$concepto->getAttribute('Importe');
                     }
                 }
 
@@ -486,8 +486,8 @@ class ContabilidadController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Facturas importadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
+            'code' => 200,
+            'message' => "Facturas importadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
         ]);
     }
 
@@ -499,8 +499,8 @@ class ContabilidadController extends Controller
         $ventas = $this->ventas_raw_data("AND usuario_empresa.id_usuario = " . $auth->id . " AND documento.id_fase = 5 AND marketplace.marketplace != 'LINIO'");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas
+            'code' => 200,
+            'ventas' => $ventas
         ]);
     }
 
@@ -517,26 +517,26 @@ class ContabilidadController extends Controller
 
             if ($response->error) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => $response->mensaje
+                    'code' => 500,
+                    'message' => $response->mensaje
                 ]);
             }
 
             DB::table('documento')->where(['id' => $data->documento])->update([
-                'invoice_date'  => date('Y-m-d H:i:s'),
-                'id_fase'       => 6
+                'invoice_date' => date('Y-m-d H:i:s'),
+                'id_fase' => 6
             ]);
         }
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $data->terminar ? 'Documento guardado correctamente.' : 'Seguimiento guardado correctamente.'
+            'code' => 200,
+            'message' => $data->terminar ? 'Documento guardado correctamente.' : 'Seguimiento guardado correctamente.'
         ]);
     }
 
@@ -545,8 +545,8 @@ class ContabilidadController extends Controller
         $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
 
         return response()->json([
-            'code'  => 200,
-            'empresas'  => $empresas
+            'code' => 200,
+            'empresas' => $empresas
         ]);
     }
 
@@ -563,8 +563,8 @@ class ContabilidadController extends Controller
 
         if (empty($existe_venta)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "El número de pedido no existe."
+                'code' => 500,
+                'message' => "El número de pedido no existe."
             ]);
         }
 
@@ -580,7 +580,7 @@ class ContabilidadController extends Controller
         $venta->seguimiento = $seguimiento;
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'venta' => $venta
         ]);
     }
@@ -594,19 +594,19 @@ class ContabilidadController extends Controller
 
         if (empty($existe_venta)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "El número de pedido no existe."
+                'code' => 500,
+                'message' => "El número de pedido no existe."
             ]);
         }
 
         DB::table('documento_pago_seguimiento')->insert([
-            'id_usuario'    => $auth->id,
-            'id_documento'  => $data->documento,
-            'seguimiento'   => $data->seguimiento
+            'id_usuario' => $auth->id,
+            'id_documento' => $data->documento,
+            'seguimiento' => $data->seguimiento
         ]);
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'expired_at'    => $data->fecha
+            'expired_at' => $data->fecha
         ]);
 
         $seguimiento = DB::select("SELECT
@@ -617,9 +617,9 @@ class ContabilidadController extends Controller
                                     WHERE id_documento = " . $data->documento . "");
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Seguimiento guardado correctamente.",
-            'seguimiento'   => $seguimiento
+            'code' => 200,
+            'message' => "Seguimiento guardado correctamente.",
+            'seguimiento' => $seguimiento
         ]);
     }
 
@@ -633,13 +633,13 @@ class ContabilidadController extends Controller
         if (empty($data->entidad->select)) {
             if (empty($data->fecha_inicio) || empty($data->fecha_final)) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "Si deseas buscar por fecha, la fecha de inicio y fin no deben de estar vacias."
+                    'code' => 500,
+                    'message' => "Si deseas buscar por fecha, la fecha de inicio y fin no deben de estar vacias."
                 ]);
             }
 
-            $fecha_inicial  = explode('-', $data->fecha_inicio);
-            $fecha_final    = explode('-', $data->fecha_final);
+            $fecha_inicial = explode('-', $data->fecha_inicio);
+            $fecha_final = explode('-', $data->fecha_final);
 
             $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0] . ''));
         } else {
@@ -648,13 +648,13 @@ class ContabilidadController extends Controller
             } else {
                 if (empty($data->fecha_inicio) || empty($data->fecha_final)) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "Si deseas buscar por fecha, la fecha de inicio y fin no deben de estar vacias."
+                        'code' => 500,
+                        'message' => "Si deseas buscar por fecha, la fecha de inicio y fin no deben de estar vacias."
                     ]);
                 }
 
-                $fecha_inicial  = explode('-', $data->fecha_inicio);
-                $fecha_final    = explode('-', $data->fecha_final);
+                $fecha_inicial = explode('-', $data->fecha_inicio);
+                $fecha_final = explode('-', $data->fecha_final);
 
                 $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/RFC/' . $data->entidad->select . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0] . ''));
             }
@@ -662,15 +662,15 @@ class ContabilidadController extends Controller
 
         if (empty($response)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontraron documentos con la información proporcionada."
+                'code' => 500,
+                'message' => "No se encontraron documentos con la información proporcionada."
             ]);
         }
 
         # Estado de cuenta
         $formas_de_pago = array();
-        $spreadsheet    = new Spreadsheet();
-        $sheet          = $spreadsheet->getActiveSheet();
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
         $spreadsheet->getActiveSheet()->setTitle('ESTADO DE CUENTA GENERAL');
         $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
         $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER); # Alineación centrica
@@ -685,8 +685,8 @@ class ContabilidadController extends Controller
         $sheet->setCellValue('G1', 'FACTURAS PAGADAS');
         $sheet->setCellValue('H1', 'FECHA');
 
-        $contador_fila  = 2;
-        $total_reporte  = 0;
+        $contador_fila = 2;
+        $total_reporte = 0;
         $total_ingresos = 0;
 
         foreach ($response as $index => $empresa) {
@@ -742,8 +742,8 @@ class ContabilidadController extends Controller
                 if (!$existe_forma_pago) {
                     $forma_pago_object = new \stdClass();
 
-                    $forma_pago_object->forma_pago  = $ingreso->forma_pago;
-                    $forma_pago_object->ingresos    = array();
+                    $forma_pago_object->forma_pago = $ingreso->forma_pago;
+                    $forma_pago_object->ingresos = array();
 
                     array_push($forma_pago_object->ingresos, $ingreso);
 
@@ -799,8 +799,8 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->setTitle(substr(mb_strtoupper($forma_pago->forma_pago, 'UTF-8'), 0, 31));
             $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
             $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER); # Alineación centrica
-            $sheet          = $spreadsheet->getActiveSheet();
-            $contador_fila  = 2;
+            $sheet = $spreadsheet->getActiveSheet();
+            $contador_fila = 2;
             $total_empresa = 0;
 
             $sheet->setCellValue('A1', 'EMPRESA');
@@ -866,10 +866,10 @@ class ContabilidadController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('estado_cuenta.xlsx');
 
-        $json['code']           = 200;
-        $json['excel']          = base64_encode(file_get_contents('estado_cuenta.xlsx'));
-        $json['total']          = $total_ingresos;
-        $json['formas']         = $formas_de_pago;
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('estado_cuenta.xlsx'));
+        $json['total'] = $total_ingresos;
+        $json['formas'] = $formas_de_pago;
 
         unlink('estado_cuenta.xlsx');
 
@@ -916,8 +916,8 @@ class ContabilidadController extends Controller
 
         if (empty($response)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontraron documentos con los criterios proporcionados."
+                'code' => 500,
+                'message' => "No se encontraron documentos con los criterios proporcionados."
             ]);
         }
 
@@ -1123,7 +1123,7 @@ class ContabilidadController extends Controller
             $spreadsheet->setActiveSheetIndex(0);
             $sheet = $spreadsheet->getActiveSheet();
 
-            $total_resta_factura = round((float) $factura->documento->total * (float) $factura->documento->tc, 2);
+            $total_resta_factura = round((float)$factura->documento->total * (float)$factura->documento->tc, 2);
 
             $sheet->setCellValue('A' . $contador_fila, $factura->documento->fecha);
             $sheet->setCellValue('B' . $contador_fila, $factura->documento->serie . " " . $factura->documento->folio);
@@ -1191,8 +1191,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float) $pago->pago_monto * $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float)$pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 /* Poner la info de nuevo en la pestaña donde está todo revuelto */
                 $spreadsheet->setActiveSheetIndex(3);
@@ -1208,8 +1208,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float) $pago->pago_monto * $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float)$pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 $spreadsheet->setActiveSheetIndex(0);
                 $sheet = $spreadsheet->getActiveSheet();
@@ -1263,7 +1263,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("J" . $contador_fila . ":K" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
-                $total_resta_factura -= ((float) $pago->pago_monto * (float) $factura->documento->tc);
+                $total_resta_factura -= ((float)$pago->pago_monto * (float)$factura->documento->tc);
 
                 $contador_fila++;
             }
@@ -1302,7 +1302,7 @@ class ContabilidadController extends Controller
                 $fecha_pago = strtotime(date("Y-m-d", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
                 $diferencia = $fecha_actual - $fecha_pago;
 
-                $dias_transcurridos = (int) floor($diferencia / (60 * 60 * 24));
+                $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
                 # Se agrega saldo de la factura dependiendo los días transcurridos
                 if ($dias_transcurridos > 0) {
@@ -1357,7 +1357,7 @@ class ContabilidadController extends Controller
             $sheet = $spreadsheet->getActiveSheet();
             $contador_fila_actual = $total_resta_factura > 15 ? $contador_fila_saldo : $contador_fila_sin_saldo;
 
-            $total_resta_factura = round((float) $factura->documento->total * (float) $factura->documento->tc, 2);
+            $total_resta_factura = round((float)$factura->documento->total * (float)$factura->documento->tc, 2);
 
             $sheet->setCellValue('A' . $contador_fila_actual, $factura->documento->fecha);
             $sheet->setCellValue('B' . $contador_fila_actual, $factura->documento->serie . " " . $factura->documento->folio);
@@ -1401,8 +1401,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila_actual, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila_actual, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila_actual, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila_actual, $total_resta_factura - ((float) $pago->pago_monto * (float) $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila_actual, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila_actual, $total_resta_factura - ((float)$pago->pago_monto * (float)$factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila_actual, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 if ($data->crm) {
                     $existe_pago = DB::select("SELECT
@@ -1432,7 +1432,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("J" . $contador_fila_actual . ":K" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
-                $total_resta_factura -= (float) $pago->pago_monto * (float) $factura->documento->tc;
+                $total_resta_factura -= (float)$pago->pago_monto * (float)$factura->documento->tc;
                 $contador_fila_actual++;
             }
 
@@ -1450,7 +1450,7 @@ class ContabilidadController extends Controller
             $fecha_pago = strtotime(date("Y-m-d", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
             $diferencia = $fecha_actual - $fecha_pago;
 
-            $dias_transcurridos = (int) floor($diferencia / (60 * 60 * 24));
+            $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
             if ($total_resta_factura > 0) {
                 if ($dias_transcurridos > 0) {
@@ -1544,7 +1544,7 @@ class ContabilidadController extends Controller
 
             $total_resta_entidad_saldo += $total_resta_factura > 15 ? $total_resta_factura : 0;
             $total_resta_entidad_saldo_nuevo_edc += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda == "Peso mexicano" ? $total_resta_factura : 0) : 0 : 0;
-            $total_resta_entidad_saldo_usd += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda != "Peso mexicano" ? (float) $factura->documento->total : 0) : 0 : 0;
+            $total_resta_entidad_saldo_usd += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda != "Peso mexicano" ? (float)$factura->documento->total : 0) : 0 : 0;
 
             if ($total_resta_factura < 15) continue;
 
@@ -1731,28 +1731,28 @@ class ContabilidadController extends Controller
     }
 
     /* Facturas > Flujo */
-    public function contabilidad_ingreso_generar(Request $request)
+    public function contabilidad_ingreso_generar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        $id_empresa = DB::select("SELECT id FROM empresa WHERE bd = '" . $data->empresa . "'");
+        $id_empresa = DB::select("SELECT id FROM empresa WHERE id = '" . $data->empresa . "'");
 
         if (empty($id_empresa)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre la BD de la empresa, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró información sobre la BD de la empresa, favor de contactar a un administrador."
             ]);
         }
 
         $id_empresa = $id_empresa[0]->id;
 
         if ($data->authy->necesita_authy) {
-            $validate_authy = DocumentoService::authy($auth->id, $data->authy->authy_code);
+            $validate_wa = WhatsAppService::validateCode($auth->id, $data->whats->code);
 
-            if ($validate_authy->error) {
+            if ($validate_wa->error) {
                 return response()->json([
-                    "message" => $validate_authy->mensaje
+                    "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
                 ], 500);
             }
         }
@@ -1760,8 +1760,8 @@ class ContabilidadController extends Controller
         $crear_movimiento = MovimientoService::crearMovimiento($data, $id_empresa, $auth->id);
 
         return response()->json([
-            'code'  => $crear_movimiento->code,
-            'message'  => $crear_movimiento->message,
+            'code' => $crear_movimiento->code,
+            'message' => $crear_movimiento->message,
             'documentos' => $crear_movimiento->documentos,
             'ingresos' => $crear_movimiento->ingreso,
         ]);
@@ -1802,8 +1802,8 @@ class ContabilidadController extends Controller
         $informacion = DB::select("SELECT * FROM documento_pago WHERE tipo = 0 AND destino_entidad = '" . $entidad . "' ORDER BY created_at DESC LIMIT 1");
 
         return response()->json([
-            'code'  => 200,
-            'informacion'   => $informacion
+            'code' => 200,
+            'informacion' => $informacion
         ]);
     }
 
@@ -2188,19 +2188,19 @@ class ContabilidadController extends Controller
         $contiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $movimiento . "");
 
         DB::table('documento_pago')->where(['id' => $movimiento])->update([
-            'status'        => 0,
-            'deleted_by'    => $auth->id
+            'status' => 0,
+            'deleted_by' => $auth->id
         ]);
 
         if (!empty($contiene_documento)) {
             DB::table('documento')->where(['id' => $contiene_documento[0]->id_documento])->update([
-                'pagado'    => 0
+                'pagado' => 0
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Movimiento eliminado correctamente."
+            'code' => 200,
+            'message' => "Movimiento eliminado correctamente."
         ]);
     }
 
@@ -2227,17 +2227,17 @@ class ContabilidadController extends Controller
 
     public function contabilidad_ingreso_historial_traspaso(Request $request)
     {
-        $data                       = json_decode($request->input('data'));
-        $user_id                    = $request->input('user_id');
-        $ingresos_convertidos       = [];
-        $ingresos_no_convertidos    = [];
+        $data = json_decode($request->input('data'));
+        $user_id = $request->input('user_id');
+        $ingresos_convertidos = [];
+        $ingresos_no_convertidos = [];
 
         $id_empresa = DB::select("SELECT id FROM empresa WHERE bd = '" . $data->empresa . "'");
 
         if (empty($id_empresa)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre la BD de la empresa, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró información sobre la BD de la empresa, favor de contactar a un administrador."
             ]);
         }
 
@@ -2254,28 +2254,28 @@ class ContabilidadController extends Controller
             # se cambia el id clasificacion a 0 ya que no existe otro
 
             $documento_pago = DB::table('documento_pago')->insertGetId([
-                'id_empresa'                => $id_empresa,
-                'id_usuario'                => $user_id,
-                'id_metodopago'             => 3,
-                'id_vertical'               => $informacion_ingreso->id_vertical,
-                'id_categoria'              => $informacion_ingreso->id_categoria,
-                'id_clasificacion'          => 0,
-                'tipo'                      => "2", // traspaso
-                'folio'                     => $response->id,
-                'origen_importe'            => ($informacion_ingreso->origen_importe == 0) ? $informacion_ingreso->destino_importe : $informacion_ingreso->origen_importe,
-                'entidad_origen'            => $informacion_ingreso->entidad_destino,
-                'origen_entidad'            => $informacion_ingreso->destino_entidad,
-                'entidad_destino'           => 1,
-                'destino_entidad'           => $data->cuenta,
-                'referencia'                => $informacion_ingreso->referencia,
-                'clave_rastreo'             => $informacion_ingreso->clave_rastreo,
-                'autorizacion'              => $informacion_ingreso->autorizacion,
-                'cuenta_cliente'            => $informacion_ingreso->cuenta_cliente,
-                'destino_fecha_operacion'   => date('Y-m-d'),
-                'destino_fecha_afectacion'  => date('Y-m-d'),
-                'origen_fecha_operacion'    => date('Y-m-d'),
-                'origen_fecha_afectacion'   => date('Y-m-d'),
-                'tipo_cambio'               => $data->tipo_cambio
+                'id_empresa' => $id_empresa,
+                'id_usuario' => $user_id,
+                'id_metodopago' => 3,
+                'id_vertical' => $informacion_ingreso->id_vertical,
+                'id_categoria' => $informacion_ingreso->id_categoria,
+                'id_clasificacion' => 0,
+                'tipo' => "2", // traspaso
+                'folio' => $response->id,
+                'origen_importe' => ($informacion_ingreso->origen_importe == 0) ? $informacion_ingreso->destino_importe : $informacion_ingreso->origen_importe,
+                'entidad_origen' => $informacion_ingreso->entidad_destino,
+                'origen_entidad' => $informacion_ingreso->destino_entidad,
+                'entidad_destino' => 1,
+                'destino_entidad' => $data->cuenta,
+                'referencia' => $informacion_ingreso->referencia,
+                'clave_rastreo' => $informacion_ingreso->clave_rastreo,
+                'autorizacion' => $informacion_ingreso->autorizacion,
+                'cuenta_cliente' => $informacion_ingreso->cuenta_cliente,
+                'destino_fecha_operacion' => date('Y-m-d'),
+                'destino_fecha_afectacion' => date('Y-m-d'),
+                'origen_fecha_operacion' => date('Y-m-d'),
+                'origen_fecha_afectacion' => date('Y-m-d'),
+                'tipo_cambio' => $data->tipo_cambio
             ]);
 
             $traspaso = DB::select("SELECT * FROM documento_pago WHERE id = " . $documento_pago . "")[0];
@@ -2296,8 +2296,8 @@ class ContabilidadController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Ingresos convertidos correctamente:<br> " . implode("", $ingresos_convertidos) . "<br><br>Ingresos fallidos: " . implode(", ", $ingresos_no_convertidos) . ""
+            'code' => 200,
+            'message' => "Ingresos convertidos correctamente:<br> " . implode("", $ingresos_convertidos) . "<br><br>Ingresos fallidos: " . implode(", ", $ingresos_no_convertidos) . ""
         ]);
     }
 
@@ -2336,15 +2336,15 @@ class ContabilidadController extends Controller
                                 GROUP BY usuario.id");
 
         return response()->json([
-            'code'  => 200,
-            'cuentas'   => $cuentas,
-            'usuarios'  => $usuarios
+            'code' => 200,
+            'cuentas' => $cuentas,
+            'usuarios' => $usuarios
         ]);
     }
 
     public function contabilidad_ingreso_cuenta_sincronizar($empresa)
     {
-        $bd         = DB::select("SELECT bd FROM empresa WHERE id = " . $empresa . "")[0]->bd;
+        $bd = DB::select("SELECT bd FROM empresa WHERE id = " . $empresa . "")[0]->bd;
 
         $cuentas = @json_decode(file_get_contents(config('webservice.url') . 'api/adminpro/Consulta/CuentasBancarias/' . $bd));
 
@@ -2353,10 +2353,10 @@ class ContabilidadController extends Controller
 
             if (empty($existe_cuenta)) {
                 DB::table('documento_pago_cuenta')->insertGetId([
-                    'id_empresa'    => $empresa,
-                    'id_moneda'     => $cuenta->monedaid,
-                    'cuenta'        => $cuenta->id,
-                    'descripcion'   => $cuenta->cuenta,
+                    'id_empresa' => $empresa,
+                    'id_moneda' => $cuenta->monedaid,
+                    'cuenta' => $cuenta->id,
+                    'descripcion' => $cuenta->cuenta,
                     'saldo_inicial' => 0
                 ]);
             }
@@ -2370,8 +2370,8 @@ class ContabilidadController extends Controller
                             WHERE documento_pago_cuenta.id_empresa = " . $empresa . "");
 
         return response()->json([
-            'code'  => 200,
-            'cuentas'   => $cuentas
+            'code' => 200,
+            'cuentas' => $cuentas
         ]);
     }
 
@@ -2380,13 +2380,13 @@ class ContabilidadController extends Controller
         $cuenta = json_decode($request->input('cuenta'));
 
         DB::table('documento_pago_cuenta')->where(['id' => $cuenta->id])->update([
-            'descripcion'   => $cuenta->descripcion,
+            'descripcion' => $cuenta->descripcion,
             'saldo_inicial' => $cuenta->saldo_inicial
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Cuenta actualizada correctamente."
+            'code' => 200,
+            'message' => "Cuenta actualizada correctamente."
         ]);
     }
 
@@ -2406,92 +2406,71 @@ class ContabilidadController extends Controller
         if (!empty($existe_conciliacion)) {
             if (!$existe_conciliacion[0]->status) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "Ya existe una conciliación de la cuenta con fecha más reciente. ¿Deseas desconciliarlo?",
-                    'registro'  => $existe_conciliacion[0]->id
+                    'code' => 500,
+                    'message' => "Ya existe una conciliación de la cuenta con fecha más reciente. ¿Deseas desconciliarlo?",
+                    'registro' => $existe_conciliacion[0]->id
                 ]);
             }
 
             DB::table('documento_pago_cuenta_conciliacion')->where(['id' => $existe_conciliacion[0]->id])->update([
-                'status'        => 0,
-                'concilied_by'  => $auth->id
+                'status' => 0,
+                'concilied_by' => $auth->id
             ]);
 
             return response()->json([
-                'code'  => 200,
-                'message'   => "Día conciliado correctamente."
+                'code' => 200,
+                'message' => "Día conciliado correctamente."
             ]);
         }
 
         DB::table('documento_pago_cuenta_conciliacion')->insert([
-            'id_cuenta'     => $data->cuenta,
-            'fecha'         => $data->fecha,
-            'status'        => 0,
-            'concilied_by'  => $auth->id
+            'id_cuenta' => $data->cuenta,
+            'fecha' => $data->fecha,
+            'status' => 0,
+            'concilied_by' => $auth->id
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Día conciliado correctamente."
+            'code' => 200,
+            'message' => "Día conciliado correctamente."
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_desconciliar(Request $request)
+    public function contabilidad_ingreso_cuenta_desconciliar(Request $request): JsonResponse
     {
-        $registro   = $request->input('registro');
-        $token      = $request->input('token');
-        $authy      = $request->input('authy');
+        $data = json_decode($request->input("data"));
+        $registro = $request->input('registro');
 
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
+        $validate_wa = WhatsAppService::validateCode($data->usuario, $data->token);
 
-        if (empty($authy_user_id)) {
+        if ($validate_wa->error) {
             return response()->json([
-                'code'  => 403,
-                'message'   => "Usuario no encontrado, favor de contactar a un administrador."
-            ]);
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
+            ], 500);
         }
 
-        $authy_user_id = $authy_user_id[0]->id;
+        DB::table('documento_pago_cuenta_conciliacion')->where(['id' => $registro])->update([
+            'status' => 1
+        ]);
 
-        $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
+        return response()->json([
+            'code' => 200,
+            'message' => "Día desconciliado correctamente."
+        ]);
 
-        try {
-            $verification = $authy_request->verifyToken($authy, $token);
-
-            if ($verification->ok()) {
-                DB::table('documento_pago_cuenta_conciliacion')->where(['id' => $registro])->update([
-                    'status'    => 1
-                ]);
-
-                return response()->json([
-                    'code'  => 200,
-                    'message'   => "Día desconciliado correctamente."
-                ]);
-            } else {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "Token incorrecto"
-                ]);
-            }
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => "Token incorrecto. " . $e->getMessage()
-            ]);
-        }
     }
 
     public function contabilidad_ingreso_cuenta_estado(Request $request)
     {
         $data = json_decode($request->input('data'));
 
-        $saldo_final_cuenta     = 0;
-        $saldo_inicial_cuenta   = DB::select("SELECT saldo_inicial FROM documento_pago_cuenta WHERE cuenta = " . $data->cuenta . "");
+        $saldo_final_cuenta = 0;
+        $saldo_inicial_cuenta = DB::select("SELECT saldo_inicial FROM documento_pago_cuenta WHERE cuenta = " . $data->cuenta . "");
 
         if (empty($saldo_inicial_cuenta)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontró la cuenta, favor de contactar a un administrador."
+                'code' => 404,
+                'message' => "No se encontró la cuenta, favor de contactar a un administrador."
             ]);
         }
 
@@ -2499,48 +2478,48 @@ class ContabilidadController extends Controller
 
         if (empty($estado_cuenta)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible obtener el estado de cuenta de Comercial."
+                'code' => 500,
+                'message' => "No fue posible obtener el estado de cuenta de Comercial."
             ]);
         }
 
         $saldo_inicial_cuenta = $saldo_inicial_cuenta[0]->saldo_inicial;
 
-        $total_ingreso_mes_antes    = (is_null($estado_cuenta->IE_parte_1->ingreso)) ? 0 : $estado_cuenta->IE_parte_1->ingreso;
-        $total_egreso_mes_antes     = (is_null($estado_cuenta->IE_parte_1->egreso)) ? 0 : $estado_cuenta->IE_parte_1->egreso;
+        $total_ingreso_mes_antes = (is_null($estado_cuenta->IE_parte_1->ingreso)) ? 0 : $estado_cuenta->IE_parte_1->ingreso;
+        $total_egreso_mes_antes = (is_null($estado_cuenta->IE_parte_1->egreso)) ? 0 : $estado_cuenta->IE_parte_1->egreso;
 
-        $saldo_inicial_cuenta       = (float) $saldo_inicial_cuenta + (float) $total_ingreso_mes_antes - (float) $total_egreso_mes_antes;
+        $saldo_inicial_cuenta = (float)$saldo_inicial_cuenta + (float)$total_ingreso_mes_antes - (float)$total_egreso_mes_antes;
 
-        $total_ingreso_mes_actual   = (is_null($estado_cuenta->IE_parte_2->ingreso)) ? 0 : $estado_cuenta->IE_parte_2->ingreso;
-        $total_egreso_mes_actual    = (is_null($estado_cuenta->IE_parte_2->egreso)) ? 0 : $estado_cuenta->IE_parte_2->egreso;
+        $total_ingreso_mes_actual = (is_null($estado_cuenta->IE_parte_2->ingreso)) ? 0 : $estado_cuenta->IE_parte_2->ingreso;
+        $total_egreso_mes_actual = (is_null($estado_cuenta->IE_parte_2->egreso)) ? 0 : $estado_cuenta->IE_parte_2->egreso;
 
-        $saldo_final_cuenta = $saldo_inicial_cuenta + (float) $total_ingreso_mes_actual - (float) $total_egreso_mes_actual;
+        $saldo_final_cuenta = $saldo_inicial_cuenta + (float)$total_ingreso_mes_actual - (float)$total_egreso_mes_actual;
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'saldo_inicial' => $saldo_inicial_cuenta,
-            'saldo_final'   => $saldo_final_cuenta,
-            'movimientos'   => $$estado_cuenta->IE_parte_2->ingresos_egresos_raw
+            'saldo_final' => $saldo_final_cuenta,
+            'movimientos' => $$estado_cuenta->IE_parte_2->ingresos_egresos_raw
         ]);
     }
 
     public function contabilidad_ingreso_cuenta_crear(Request $request)
     {
-        $data           = json_decode($request->input('data'));
-        $empresa        = $request->input('empresa');
-        $rfc_entidad    = $request->input('rfc_entidad');
+        $data = json_decode($request->input('data'));
+        $empresa = $request->input('empresa');
+        $rfc_entidad = $request->input('rfc_entidad');
 
         $array_pro = array(
-            'bd'        => $empresa,
-            'password'  => config("webservice.token"),
-            'empresa'   => $rfc_entidad,
-            'nombre'    => $data->nombre,
-            'banco'     => $data->banco,
-            'razon'     => $data->razon_social_banco,
-            'rfc'       => $data->rfc_banco,
-            'cuenta'    => $data->no_cuenta,
-            'clabe'     => $data->clabe,
-            'divisa'    => $data->divisa
+            'bd' => $empresa,
+            'password' => config("webservice.token"),
+            'empresa' => $rfc_entidad,
+            'nombre' => $data->nombre,
+            'banco' => $data->banco,
+            'razon' => $data->razon_social_banco,
+            'rfc' => $data->rfc_banco,
+            'cuenta' => $data->no_cuenta,
+            'clabe' => $data->clabe,
+            'divisa' => $data->divisa
         );
 
         $response = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/Empresas/Cuentas/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
@@ -2551,14 +2530,14 @@ class ContabilidadController extends Controller
 
         if ($response->error == 1) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "Error al generar el documento, mensaje de error: " . $response->mensaje
+                'code' => 500,
+                'message' => "Error al generar el documento, mensaje de error: " . $response->mensaje
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Cuenta creada correctamente."
+            'code' => 200,
+            'message' => "Cuenta creada correctamente."
         ]);
     }
 
@@ -2568,9 +2547,9 @@ class ContabilidadController extends Controller
         $verticales = DB::select("SELECT * FROM documento_pago_vertical");
 
         return response()->json([
-            'code'  => 200,
-            'categorias'    => $categorias,
-            'verticales'    => $verticales
+            'code' => 200,
+            'categorias' => $categorias,
+            'verticales' => $verticales
         ]);
     }
 
@@ -2583,19 +2562,19 @@ class ContabilidadController extends Controller
 
             if (empty($existe_vertical)) {
                 $vertical = DB::table('documento_pago_vertical')->insertGetId([
-                    'vertical'  => TRIM($data->vertical)
+                    'vertical' => TRIM($data->vertical)
                 ]);
 
                 return response()->json([
-                    'code'  => 200,
-                    'message'   => "Vertical creada correctamente",
-                    'vertical'  => $vertical
+                    'code' => 200,
+                    'message' => "Vertical creada correctamente",
+                    'vertical' => $vertical
                 ]);
             }
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ya éxiste una vertical con el nombre proporcionado."
+                'code' => 500,
+                'message' => "Ya éxiste una vertical con el nombre proporcionado."
             ]);
         } else {
             $existe_vertical = DB::select("SELECT id FROM documento_pago_vertical WHERE vertical = '" . TRIM($data->vertical) . "' AND id != " . $data->id . "");
@@ -2606,13 +2585,13 @@ class ContabilidadController extends Controller
                 ]);
 
                 return response()->json([
-                    'code'  => 200,
-                    'message'   => "Vertical actualizada correctamente."
+                    'code' => 200,
+                    'message' => "Vertical actualizada correctamente."
                 ]);
             } else {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "Ya éxiste una vertical con el nombre proporcionado."
+                    'code' => 500,
+                    'message' => "Ya éxiste una vertical con el nombre proporcionado."
                 ]);
             }
         }
@@ -2627,42 +2606,42 @@ class ContabilidadController extends Controller
 
             if (empty($existe_categoria)) {
                 $categoria = DB::table('documento_pago_categoria')->insertGetId([
-                    'categoria'     => TRIM($data->categoria),
-                    'tipo_gasto'    => TRIM($data->tipo_gasto),
-                    'afectacion'    => TRIM($data->afectacion),
-                    'familia'       => TRIM($data->familia)
+                    'categoria' => TRIM($data->categoria),
+                    'tipo_gasto' => TRIM($data->tipo_gasto),
+                    'afectacion' => TRIM($data->afectacion),
+                    'familia' => TRIM($data->familia)
                 ]);
 
                 return response()->json([
-                    'code'  => 200,
-                    'message'   => "Categoria creada correctamente.",
+                    'code' => 200,
+                    'message' => "Categoria creada correctamente.",
                     'categoria' => $categoria
                 ]);
             }
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ya éxiste una categoria con el nombre proporcionado."
+                'code' => 500,
+                'message' => "Ya éxiste una categoria con el nombre proporcionado."
             ]);
         } else {
             $existe_categoria = DB::select("SELECT id FROM documento_pago_categoria WHERE categoria = '" . TRIM($data->categoria) . "' AND id != " . $data->id . "");
 
             if (empty($existe_categoria)) {
                 DB::table('documento_pago_categoria')->where(['id' => $data->id])->update([
-                    'categoria'     => TRIM($data->categoria),
-                    'tipo_gasto'    => TRIM($data->tipo_gasto),
-                    'afectacion'    => TRIM($data->afectacion),
-                    'familia'       => trim($data->familia)
+                    'categoria' => TRIM($data->categoria),
+                    'tipo_gasto' => TRIM($data->tipo_gasto),
+                    'afectacion' => TRIM($data->afectacion),
+                    'familia' => trim($data->familia)
                 ]);
 
                 return response()->json([
-                    'code'  => 200,
-                    'message'   => "Categoria actualizada correctamente."
+                    'code' => 200,
+                    'message' => "Categoria actualizada correctamente."
                 ]);
             }
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ya éxiste una Categoria con el nombre proporcionado."
+                'code' => 500,
+                'message' => "Ya éxiste una Categoria con el nombre proporcionado."
             ]);
         }
     }
@@ -2694,8 +2673,8 @@ class ContabilidadController extends Controller
                                 WHERE documento_entidad.rfc = '" . trim($rfc) . "'");
 
         return response()->json([
-            'code'  => 200,
-            'archivos'  => $archivos
+            'code' => 200,
+            'archivos' => $archivos
         ]);
     }
 
@@ -2715,11 +2694,11 @@ class ContabilidadController extends Controller
 
         if (empty($existe_entidad)) {
             $entidad = DB::table('documento_entidad')->insertGetId([
-                'tipo'          => 2,
-                'razon_social'  => mb_strtoupper($data->entidad->razon, 'UTF-8'),
-                'rfc'           => mb_strtoupper($data->entidad->rfc, 'UTF-8'),
-                'telefono'      => $data->entidad->telefono,
-                'correo'        => $data->entidad->email
+                'tipo' => 2,
+                'razon_social' => mb_strtoupper($data->entidad->razon, 'UTF-8'),
+                'rfc' => mb_strtoupper($data->entidad->rfc, 'UTF-8'),
+                'telefono' => $data->entidad->telefono,
+                'correo' => $data->entidad->email
             ]);
         } else {
             $entidad = $existe_entidad[0]->id;
@@ -2738,17 +2717,17 @@ class ContabilidadController extends Controller
                         ->send();
 
                     DB::table('documento_entidad_archivo')->insert([
-                        'id_entidad'    =>  $entidad,
-                        'id_usuario'    =>  $auth->id,
-                        'nombre'        =>  $archivo->nombre,
-                        'dropbox'       =>  $response->body->id
+                        'id_entidad' => $entidad,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
                     ]);
                 }
             }
         } catch (Exception $e) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible subir el archivo " . $archivo->nombre . "a dropbox, los archivos anteriores a este fueron subidos correctamente. Mensaje de error: " . $e->getMessage()
+                'code' => 500,
+                'message' => "No fue posible subir el archivo " . $archivo->nombre . "a dropbox, los archivos anteriores a este fueron subidos correctamente. Mensaje de error: " . $e->getMessage()
             ]);
         }
 
@@ -2760,9 +2739,9 @@ class ContabilidadController extends Controller
                                 WHERE id_entidad = " . $entidad . "");
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Archivos subidos correctamente.",
-            'archivos'  => $archivos
+            'code' => 200,
+            'message' => "Archivos subidos correctamente.",
+            'archivos' => $archivos
         ]);
     }
 
@@ -2901,10 +2880,10 @@ class ContabilidadController extends Controller
                                         INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
                                         WHERE marketplace_area_empresa.id_marketplace_area = " . $venta->id_marketplace_area . "");
 
-            $venta->seguimiento     = $seguimiento;
-            $venta->productos       = $productos;
-            $venta->archivos        = $archivos;
-            $venta->pago            = (!empty($pago)) ? $pago[0] : "";
+            $venta->seguimiento = $seguimiento;
+            $venta->productos = $productos;
+            $venta->archivos = $archivos;
+            $venta->pago = (!empty($pago)) ? $pago[0] : "";
             $venta->total_productos = $total_productos;
         }
 
@@ -2999,8 +2978,8 @@ class ContabilidadController extends Controller
             ]);
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se pudo importar el documento. Mensaje de Error: " . $response->mensaje,
+                'code' => 500,
+                'message' => "No se pudo importar el documento. Mensaje de Error: " . $response->mensaje,
             ]);
         }
 
@@ -3011,8 +2990,8 @@ class ContabilidadController extends Controller
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Importado correctamente",
+            'code' => 200,
+            'message' => "Importado correctamente",
             'response' => $response
         ]);
     }
@@ -3209,8 +3188,8 @@ class ContabilidadController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Facturas globalizadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
+            'code' => 200,
+            'message' => "Facturas globalizadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
         ]);
     }
 
@@ -3631,7 +3610,7 @@ class ContabilidadController extends Controller
             $spreadsheet->setActiveSheetIndex(0);
             $sheet = $spreadsheet->getActiveSheet();
 
-            $total_resta_factura = round((float) $factura->documento->total * (float) $factura->documento->tc, 2);
+            $total_resta_factura = round((float)$factura->documento->total * (float)$factura->documento->tc, 2);
 
             $sheet->setCellValue('A' . $contador_fila, $factura->documento->fecha);
             $sheet->setCellValue('B' . $contador_fila, $factura->documento->serie . " " . $factura->documento->folio);
@@ -3694,8 +3673,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float) $pago->pago_monto * $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float)$pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 /* Poner la info de nuevo en la pestaña donde está todo revuelto */
                 $spreadsheet->setActiveSheetIndex(3);
@@ -3711,8 +3690,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float) $pago->pago_monto * $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila, $total_resta_factura - ((float)$pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 $spreadsheet->setActiveSheetIndex(0);
                 $sheet = $spreadsheet->getActiveSheet();
@@ -3763,7 +3742,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("J" . $contador_fila . ":K" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
-                $total_resta_factura -= ((float) $pago->pago_monto * (float) $factura->documento->tc);
+                $total_resta_factura -= ((float)$pago->pago_monto * (float)$factura->documento->tc);
 
                 $contador_fila++;
             }
@@ -3802,7 +3781,7 @@ class ContabilidadController extends Controller
                 $fecha_pago = strtotime(date("Y-m-d", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
                 $diferencia = $fecha_actual - $fecha_pago;
 
-                $dias_transcurridos = (int) floor($diferencia / (60 * 60 * 24));
+                $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
                 # Se agrega saldo de la factura dependiendo los días transcurridos
                 if ($dias_transcurridos > 0) {
@@ -3857,7 +3836,7 @@ class ContabilidadController extends Controller
             $sheet = $spreadsheet->getActiveSheet();
             $contador_fila_actual = $total_resta_factura > 15 ? $contador_fila_saldo : $contador_fila_sin_saldo;
 
-            $total_resta_factura = round((float) $factura->documento->total * (float) $factura->documento->tc, 2);
+            $total_resta_factura = round((float)$factura->documento->total * (float)$factura->documento->tc, 2);
 
             $sheet->setCellValue('A' . $contador_fila_actual, $factura->documento->fecha);
             $sheet->setCellValue('B' . $contador_fila_actual, $factura->documento->serie . " " . $factura->documento->folio);
@@ -3898,8 +3877,8 @@ class ContabilidadController extends Controller
                 $sheet->setCellValue('G' . $contador_fila_actual, $pago->pago_monto);
                 $sheet->setCellValue('H' . $contador_fila_actual, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_fecha : $pago->info_operacion->op_fecha);
                 $sheet->setCellValue('I' . $contador_fila_actual, ($pago->pago_operacion == 0) ? $pago->info_documento->pwd_folio . " " . $pago->info_documento->pwd_folio : $pago->info_operacion->op_cuentadestino);
-                $sheet->setCellValue('J' . $contador_fila_actual, $total_resta_factura - ((float) $pago->pago_monto * (float) $factura->documento->tc));
-                $sheet->setCellValue('K' . $contador_fila_actual, ((float) $pago->pago_monto * $pago->pago_tc) - ((float) $pago->pago_monto * $factura->documento->tc));
+                $sheet->setCellValue('J' . $contador_fila_actual, $total_resta_factura - ((float)$pago->pago_monto * (float)$factura->documento->tc));
+                $sheet->setCellValue('K' . $contador_fila_actual, ((float)$pago->pago_monto * $pago->pago_tc) - ((float)$pago->pago_monto * $factura->documento->tc));
 
                 $existe_pago = DB::select("SELECT
                                                         documento_pago.referencia,
@@ -3925,7 +3904,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("J" . $contador_fila_actual . ":K" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
-                $total_resta_factura -= (float) $pago->pago_monto * (float) $factura->documento->tc;
+                $total_resta_factura -= (float)$pago->pago_monto * (float)$factura->documento->tc;
                 $contador_fila_actual++;
             }
 
@@ -3943,7 +3922,7 @@ class ContabilidadController extends Controller
             $fecha_pago = strtotime(date("Y-m-d", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
             $diferencia = $fecha_actual - $fecha_pago;
 
-            $dias_transcurridos = (int) floor($diferencia / (60 * 60 * 24));
+            $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
             if ($total_resta_factura > 0) {
                 if ($dias_transcurridos > 0) {
@@ -4037,7 +4016,7 @@ class ContabilidadController extends Controller
 
             $total_resta_entidad_saldo += $total_resta_factura > 15 ? $total_resta_factura : 0;
             $total_resta_entidad_saldo_nuevo_edc += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda == "Peso mexicano" ? $total_resta_factura : 0) : 0 : 0;
-            $total_resta_entidad_saldo_usd += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda != "Peso mexicano" ? (float) $factura->documento->total : 0) : 0 : 0;
+            $total_resta_entidad_saldo_usd += $dias_transcurridos > 0 ? $total_resta_factura > 15 ? ($factura->documento->moneda != "Peso mexicano" ? (float)$factura->documento->total : 0) : 0 : 0;
 
             if ($total_resta_factura < 15) continue;
 
@@ -4229,5 +4208,14 @@ class ContabilidadController extends Controller
         );
 
         unlink($archivo);
+    }
+
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'DAD'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }

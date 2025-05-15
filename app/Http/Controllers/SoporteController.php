@@ -1,8 +1,9 @@
-<?php
+<?php /** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
 use App\Http\Services\InventarioService;
+use App\Http\Services\WhatsAppService;
 use App\Models\Enums\DocumentoTipo;
 use App\Models\Enums\DocumentoFase;
 use App\Models\Enums\DocumentoStatus;
@@ -17,10 +18,11 @@ use App\Models\Paqueteria;
 use App\Models\DocumentoGarantiaCausa;
 
 use App\Http\Services\DocumentoService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Events\PusherEvent;
 use Exception;
-use DB;
+use Illuminate\Support\Facades\DB;
 
 class SoporteController extends Controller
 {
@@ -76,16 +78,16 @@ class SoporteController extends Controller
         ]);
     }
 
-    public function soporte_garantia_devolucion_eliminar_documento(Request $request)
+    public function soporte_garantia_devolucion_eliminar_documento(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -3038,5 +3040,14 @@ class SoporteController extends Controller
         header('Content-Type: application/json');
 
         return json_encode($json);
+    }
+
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'SC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'RTE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 }

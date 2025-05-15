@@ -4,6 +4,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\InventarioService;
+use App\Http\Services\WhatsAppService;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -1220,13 +1221,13 @@ class GeneralController extends Controller
         $option = json_decode($request->input("option"));
 
         if ($data->necesita_token) {
-            $validate_authy = DocumentoService::authy($auth->id, $data->token);
 
-            if ($validate_authy->error) {
+            $validate_wa = WhatsAppService::validateCode($auth->id, $data->token);
+
+            if ($validate_wa->error) {
                 return response()->json([
-                    "code" => 500,
-                    "message" => $validate_authy->mensaje
-                ]);
+                    "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
+                ], 500);
             }
         }
 

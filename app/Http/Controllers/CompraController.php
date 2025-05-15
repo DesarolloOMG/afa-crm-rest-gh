@@ -132,8 +132,9 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_crear_data(Request $request)
+    public function compra_compra_crear_data(Request $request): JsonResponse
     {
+        /** @noinspection PhpUndefinedFieldInspection */
         $auth = json_decode($request->auth);
 
         $empresas = DB::select("SELECT
@@ -143,16 +144,17 @@ class CompraController extends Controller
                                 FROM empresa
                                 INNER JOIN usuario_empresa ON empresa.id = usuario_empresa.id_empresa
                                 WHERE empresa.status = 1 AND empresa.id != 0
-                                AND usuario_empresa.id_usuario = " . $auth->id . "");
+                                AND usuario_empresa.id_usuario = " . $auth->id);
         $monedas = DB::select("SELECT id, moneda FROM moneda");
         $metodos = DB::select("SELECT * FROM metodo_pago");
         $periodos = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
         $usos_cfdi = DB::select("SELECT * FROM documento_uso_cfdi");
         $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
 
-        $usuarios_authy = DB::select("SELECT
-                                    usuario.authy,
+        $usuarios_whats = DB::select("SELECT
+                                    usuario.id,
                                     usuario.nombre,
+                                    usuario.celular,
                                     nivel.nivel
                                 FROM usuario
                                 INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
@@ -178,12 +180,6 @@ class CompraController extends Controller
             $empresa->almacenes = $almacenes;
         }
 
-        $json['usuarios'] = [];
-
-        if (!empty($usuarios)) {
-            $json['usuarios'] = json_decode($usuarios[0]->configuracion);
-        }
-
         return response()->json([
             'code' => 200,
             'empresas' => $empresas,
@@ -192,7 +188,7 @@ class CompraController extends Controller
             'periodos' => $periodos,
             'usos' => $usos_cfdi,
             'tipos' => $tipos,
-            'usuarios_authy' => $usuarios_authy
+            'usuarios_whats' => $usuarios_whats
         ]);
     }
 
