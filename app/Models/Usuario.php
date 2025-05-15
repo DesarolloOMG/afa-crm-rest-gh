@@ -3,18 +3,15 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Database\Eloquent\SoftDeletes;
-
-use App\Models\UsuarioEmpresa;
-use App\Models\UsuarioMarketplaceArea;
-use App\Models\UsuarioSubnivelNivel;
-use App\Models\SubnivelNivel;
 
 //use Illuminate\Database\Eloquent\Eloquent\HasFactory;
 
 /**
  * @method static where(string $string, $usuario)
+ * @method static find($id)
+ * @method static v_existe_usuario(array|string|null $user_id)
+ * @method static existe_usuario(array|string|null $email)
  */
 class Usuario extends Model
 {
