@@ -1,53 +1,54 @@
-<?php
+<?php /** @noinspection PhpUnused */
+
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
-use App\Http\Services\BitacoraService;
-use App\Http\Services\CorreoService;
-use App\Http\Services\InventarioService;
-use http\Env\Response;
-use Illuminate\Support\Facades\Crypt;
-use Illuminate\Http\Request;
-use App\Events\PickingEvent;
 use App\Events\PusherEvent;
-use Illuminate\Support\Facades\DB;
-use SimpleXMLElement;
-use Mailgun\Mailgun;
-use Exception;
-
-use App\Models\Usuario;
-use App\Models\Enums\UsuarioNivel;
-use App\Models\Paqueteria;
-use App\Models\DocumentoGarantiaCausa;
-
-use App\Http\Services\ElektraService;
-use App\Http\Services\MercadolibreService;
-use App\Http\Services\ClaroshopService;
+use App\Http\Services\AmazonService;
+use App\Http\Services\BitacoraService;
+use App\Http\Services\ClaroshopServiceV2;
+use App\Http\Services\CoppelService;
+use App\Http\Services\CorreoService;
+use App\Http\Services\CTService;
 use App\Http\Services\DocumentoService;
+use App\Http\Services\ElektraService;
+use App\Http\Services\ExelDelNorteService;
+use App\Http\Services\GeneralService;
+use App\Http\Services\InventarioService;
+use App\Http\Services\LinioService;
+use App\Http\Services\LiverpoolService;
+use App\Http\Services\MercadolibreService;
 use App\Http\Services\ShopifyService;
 use App\Http\Services\WalmartService;
-use App\Http\Services\AmazonService;
-use App\Http\Services\LinioService;
-use App\Http\Services\ClaroshopServiceV2;
-use App\Http\Services\AromeService;
-use App\Http\Services\CoppelService;
-use App\Http\Services\LiverpoolService;
-use App\Http\Services\ExelDelNorteService;
-use App\Http\Services\CTService;
-use App\Http\Services\GeneralService;
-
+use App\Http\Services\WhatsAppService;
+use App\Models\DocumentoGarantiaCausa;
+use App\Models\Enums\UsuarioNivel;
 use App\Models\MarketplaceArea;
+use App\Models\Paqueteria;
+use App\Models\Usuario;
+use Exception;
+use Httpful\Exception\ConnectionErrorException;
+use Httpful\Mime;
+use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Mailgun\Mailgun;
+use stdClass;
+use Throwable;
 
 class VentaController extends Controller
 {
     /* Venta > Venta > Crear */
-    public function venta_venta_crear(Request $request)
+    /**
+     * @throws Throwable
+     */
+    public function venta_venta_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $modificacion   = 0;
-        $pedidos_creados = "";
-        $archivos = array();
 
         $existe_venta = DB::select("SELECT 
                                         documento.id,
@@ -61,12 +62,11 @@ class VentaController extends Controller
                                     AND documento.id_marketplace_area = " . $data->documento->marketplace . " AND documento.status = 1");
 
         if (!empty($existe_venta)) {
-            if ($existe_venta[0]->id_marketplace != 19 && !in_array($existe_venta[0]->marketplace, ["WALMART"])) {
-                $log = self::logVariableLocation();
+            if ($existe_venta[0]->id_marketplace != 19 && $existe_venta[0]->marketplace != "WALMART") {
 
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe_venta[0]->id . ""
+                    'code' => 500,
+                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe_venta[0]->id . self::logVariableLocation()
                 ]);
             }
         }
@@ -78,11 +78,11 @@ class VentaController extends Controller
                 $existe_modelo = DB::select("SELECT id, sku FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
 
                 if (empty($existe_modelo)) {
-                    $log = self::logVariableLocation();
 
                     return response()->json([
                         "code" => 500,
-                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, favor de verificar e intentar de nuevo."
+                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, 
+                        favor de verificar e intentar de nuevo. " . self::logVariableLocation()
                     ]);
                 }
 
@@ -93,11 +93,11 @@ class VentaController extends Controller
                     ->first();
 
                 if (empty($existe_modelo_proveedor)) {
-                    $log = self::logVariableLocation();
 
                     return response()->json([
                         "code" => 500,
-                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, favor de verificar e intentar de nuevo."
+                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, 
+                        favor de verificar e intentar de nuevo." . self::logVariableLocation()
                     ]);
                 }
 
@@ -109,11 +109,10 @@ class VentaController extends Controller
                     ->first();
 
                 if (empty($inventario)) {
-                    $log = self::logVariableLocation();
 
                     return response()->json([
                         "code" => 500,
-                        "message" => "No hay inventario suficiente del codigo " . $existe_modelo[0]->sku . " en ningun almacén del proveedor."
+                        "message" => "No hay inventario suficiente del codigo " . $existe_modelo[0]->sku . " en ningun almacén del proveedor. " . self::logVariableLocation()
                     ]);
                 }
             }
@@ -134,17 +133,17 @@ class VentaController extends Controller
             ]);
         }
 
-        $marketplace_name = DB::table("marketplace_area")
-            ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
-            ->where("marketplace_area.id", $data->documento->marketplace)
-            ->first();
-
-        $mkp_area_name = DB::table("marketplace_area")
-            ->join("area", "marketplace_area.id_area", "=", "area.id")
-            ->where("marketplace_area.id", $data->documento->marketplace)->first();
+//        $marketplace_name = DB::table("marketplace_area")
+//            ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
+//            ->where("marketplace_area.id", $data->documento->marketplace)
+//            ->first();
+//
+//        $mkp_area_name = DB::table("marketplace_area")
+//            ->join("area", "marketplace_area.id_area", "=", "area.id")
+//            ->where("marketplace_area.id", $data->documento->marketplace)->first();
 
         $documento = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa'  => $data->documento->almacen,
+            'id_almacen_principal_empresa' => $data->documento->almacen,
             'id_periodo' => $data->documento->periodo,
             'id_cfdi' => $data->documento->uso_venta,
             'id_marketplace_area' => $data->documento->marketplace,
@@ -193,25 +192,24 @@ class VentaController extends Controller
 
         foreach ($data->documento->productos as $producto) {
             DB::table('movimiento')->insertGetId([
-                'id_documento'  => $documento,
-                'id_modelo'     => $producto->id,
-                'cantidad'      => $producto->cantidad,
-                'precio'        => $producto->precio,
-                'garantia'      => $producto->garantia,
-                'retencion'     => $producto->ret,
-                'modificacion'  => $producto->modificacion,
-                'comentario'    => $producto->comentario,
-                'addenda'       => $producto->addenda,
-                'regalo'        => $producto->regalo
+                'id_documento' => $documento,
+                'id_modelo' => $producto->id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->precio,
+                'garantia' => $producto->garantia,
+                'retencion' => $producto->ret,
+                'modificacion' => $producto->modificacion,
+                'comentario' => $producto->comentario,
+                'addenda' => $producto->addenda,
+                'regalo' => $producto->regalo
             ]);
 
             if (TRIM($producto->modificacion) != "") {
                 DB::table('documento')->where(['id' => $documento])->update([
-                    'modificacion'  => 1,
-                    'id_fase'       => 2
+                    'modificacion' => 1,
+                    'id_fase' => 2
                 ]);
 
-                $modificacion = 1;
             }
         }
 
@@ -244,23 +242,22 @@ class VentaController extends Controller
                         ->send();
 
                     DB::table('documento_archivo')->insert([
-                        'id_documento'  => $documento,
-                        'id_usuario'    => $auth->id,
-                        'tipo'          => $archivo->guia,
-                        'id_impresora'  => $archivo->impresora,
-                        'nombre'        => $archivo->nombre,
-                        'dropbox'       => $response->body->id
+                        'id_documento' => $documento,
+                        'id_usuario' => $auth->id,
+                        'tipo' => $archivo->guia,
+                        'id_impresora' => $archivo->impresora,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
                     ]);
                 }
             }
         } catch (Exception $e) {
-            $log = self::logVariableLocation();
 
             DB::table('documento')->where(['id' => $documento])->delete();
 
             return response()->json([
                 'code' => 500,
-                'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage(),
+                'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage() . self::logVariableLocation(),
                 'raw' => $e
             ]);
         }
@@ -280,36 +277,36 @@ class VentaController extends Controller
                 if (!empty($administradores)) {
                     $usuarios = array();
 
-                    $notificacion['titulo']     = "Autorización requerida";
-                    $notificacion['message']    = "El pedido " . $documento . " requiere una autorización por no alcanzar el 5% de utilidad en el total de la venta.";
-                    $notificacion['tipo']       = "warning"; // success, warning, danger
-                    $notificacion['link']       = "/venta/venta/autorizar/" . $documento;
+                    $notificacion['titulo'] = "Autorización requerida";
+                    $notificacion['message'] = "El pedido " . $documento . " requiere una autorización por no alcanzar el 5% de utilidad en el total de la venta.";
+                    $notificacion['tipo'] = "warning"; // success, warning, danger
+                    $notificacion['link'] = "/venta/venta/autorizar/" . $documento;
 
                     $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data'  => json_encode($notificacion)
+                        'data' => json_encode($notificacion)
                     ]);
 
-                    $notificacion['id']         = $notificacion_id;
+                    $notificacion['id'] = $notificacion_id;
 
                     foreach ($administradores as $usuario) {
                         DB::table('notificacion_usuario')->insert([
-                            'id_usuario'        => $usuario->id,
-                            'id_notificacion'   => $notificacion_id
+                            'id_usuario' => $usuario->id,
+                            'id_notificacion' => $notificacion_id
                         ]);
 
-                        array_push($usuarios, $usuario->id);
+                        $usuarios[] = $usuario->id;
                     }
 
                     if (!empty($usuarios)) {
-                        $notificacion['usuario']    = $usuarios;
+                        $notificacion['usuario'] = $usuarios;
 
                         event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
-                $log = self::logVariableLocation();
 
-                $message .= "<br><br>No fue posible notificar a los administradores para la autorización del pedido por baja utilidad.";
+
+                $message .= "<br><br>No fue posible notificar a los administradores para la autorización del pedido por baja utilidad. " .self::logVariableLocation();
             }
         }
 
@@ -317,7 +314,7 @@ class VentaController extends Controller
             $response = InventarioService::aplicarMovimiento($documento);
 
             if ($response->error) {
-                $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento . "");
+                $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento);
 
                 foreach ($pagos as $pago) {
                     DB::table('documento_pago')->where(['id' => $pago->id_pago])->delete();
@@ -326,7 +323,7 @@ class VentaController extends Controller
                 DB::table('documento')->where(['id' => $documento])->delete();
 
                 return response()->json([
-                    'code'  => 500,
+                    'code' => 500,
                     'message' => $response->mensaje,
                     'raw' => property_exists($response, 'raw') ? $response->raw : 0,
                     'data' => property_exists($response, 'data') ? $response->data : 0
@@ -349,19 +346,18 @@ class VentaController extends Controller
                                             FROM marketplace_area
                                             INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
                                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                            WHERE marketplace_area.id = " . $data->documento->marketplace . "");
+                                            WHERE marketplace_area.id = " . $data->documento->marketplace);
 
             if (!empty($marketplace_info)) {
                 $marketplace_info = $marketplace_info[0];
-                $nombre = "etiqueta_" . trim($data->documento->venta) . ".pdf";
-                $paqueteria = DB::select("SELECT paqueteria FROM paqueteria WHERE id = " . $data->documento->paqueteria . "")[0]->paqueteria;
+                $paqueteria = DB::select("SELECT paqueteria FROM paqueteria WHERE id = " . $data->documento->paqueteria)[0]->paqueteria;
 
                 if (strpos($marketplace_info->marketplace, 'LINIO') !== false) {
                     $response = LinioService::cambiarEstadoVenta(trim($data->documento->referencia), $data->documento->marketplace, $paqueteria);
 
                     if ($response->error) {
                         if (strpos($response->mensaje, 'E073') === false) {
-                            $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento . "");
+                            $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento);
 
                             foreach ($pagos as $pago) {
                                 DB::table('documento_pago')->where(['id' => $pago->id_pago])->delete();
@@ -371,7 +367,7 @@ class VentaController extends Controller
 
                             return response()->json([
                                 "code" => 500,
-                                "message" => "No fue posible cargar los documentos de embarque correspondientes a la venta en dropbox, creación cancelada, mensaje de error: " . $response->mensaje . "",
+                                "message" => "No fue posible cargar los documentos de embarque correspondientes a la venta en dropbox, creación cancelada, mensaje de error: " . $response->mensaje,
                                 "data" => property_exists($response, "data") ? $response->data : 0,
                                 "a" => $response
                             ]);
@@ -391,24 +387,22 @@ class VentaController extends Controller
 
         if (!empty($data->documento->proveedor)) {
             return response()->json([
-                'code'  => 200,
-                'message'   => $message,
-                'file' => $pdf->data_odc,
-                'name' => $pdf->name,
+                'code' => 200,
+                'message' => $message,
+//                'file' => $pdf->data_odc,
+//                'name' => $pdf->name,
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $message
+            'code' => 200,
+            'message' => $message
         ]);
     }
 
-    public function venta_venta_crear_data(Request $request)
+    public function venta_venta_crear_data(Request $request): JsonResponse
     {
-        $auth       = json_decode($request->auth);
-        $json       = array();
-        $cast       = array();
+        $auth = json_decode($request->auth);
 
         $usuarios_agro = DB::table('usuarios_agro')->get()->toArray();
         $proveedores = DB::select("SELECT id, razon_social FROM modelo_proveedor WHERE status = 1 AND id != 0");
@@ -426,8 +420,7 @@ class VentaController extends Controller
                                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id 
                                             WHERE marketplace_area.publico = 1 GROUP BY marketplace.marketplace");
         $monedas = DB::select("SELECT * FROM moneda");
-        $niveles = DB::select("SELECT id_subnivel_nivel FROM usuario_subnivel_nivel WHERE id_usuario = " . $auth->id . "");
-        $administrador = 0;
+        $niveles = DB::select("SELECT id_subnivel_nivel FROM usuario_subnivel_nivel WHERE id_usuario = " . $auth->id);
         $usuarios = DB::select("SELECT
                                                 usuario.id,
                                                 usuario.nombre
@@ -449,22 +442,16 @@ class VentaController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
 
         if (empty($niveles)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontraron los niveles del usuario, favor de contactar al administrador."
+                'code' => 404,
+                'message' => "No se encontraron los niveles del usuario, favor de contactar al administrador."
             ]);
-        }
-
-        foreach ($niveles as $nivel) {
-            if ($nivel->id_subnivel_nivel == 1) {
-                $administrador = 1;
-            }
         }
 
         $areas = DB::select("SELECT
@@ -495,7 +482,6 @@ class VentaController extends Controller
                                         GROUP BY marketplace_area.id");
 
             if (empty($marketplaces)) {
-                unset($areas[$k]);
                 continue;
             }
 
@@ -504,31 +490,30 @@ class VentaController extends Controller
                                                     empresa.bd
                                                 FROM marketplace_area_empresa
                                                 INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                                WHERE marketplace_area_empresa.id_marketplace_area = " . $marketplace->id . "");
+                                                WHERE marketplace_area_empresa.id_marketplace_area = " . $marketplace->id);
             }
 
             $area->marketplaces = $marketplaces;
 
-            array_push($cast, $area);
         }
 
         foreach ($paqueterias as $paqueteria) {
-            $paqueteria->tipos = DB::select("SELECT tipo, codigo FROM paqueteria_tipo WHERE id_paqueteria = " . $paqueteria->id . "");
+            $paqueteria->tipos = DB::select("SELECT tipo, codigo FROM paqueteria_tipo WHERE id_paqueteria = " . $paqueteria->id);
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'areas' => $areas,
-            'metodos'   => $metodos,
-            'monedas'   => $monedas,
-            'usuarios'  => $usuarios,
-            'periodos'  => $periodos,
-            'empresas'  => $empresas,
+            'metodos' => $metodos,
+            'monedas' => $monedas,
+            'usuarios' => $usuarios,
+            'periodos' => $periodos,
+            'empresas' => $empresas,
             'almacenes' => $almacenes,
-            'impresoras'    => $impresoras,
-            'usos_venta'    => $usos_venta,
-            'paqueterias'   => $paqueterias,
-            'marketplaces'  => $marketplaces_publico,
+            'impresoras' => $impresoras,
+            'usos_venta' => $usos_venta,
+            'paqueterias' => $paqueterias,
+            'marketplaces' => $marketplaces_publico,
             'proveedores' => $proveedores,
             'estados' => $estados,
             'usuarios_agro' => $usuarios_agro,
@@ -536,12 +521,13 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_venta_crear_buscar_cliente($criterio) {
+    public function venta_venta_crear_buscar_cliente($criterio): JsonResponse
+    {
         $clientes = DB::table("documento_entidad")
-                        ->where("tipo", 1)
-                        ->where("rfc", $criterio)
-                        ->orWhere("razon_social", "like", "%" . $criterio . "%")
-                        ->get();
+            ->where("tipo", 1)
+            ->where("rfc", $criterio)
+            ->orWhere("razon_social", "like", "%" . $criterio . "%")
+            ->get();
 
 
         return response()->json([
@@ -550,7 +536,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_venta_crear_cliente_direccion($rfc)
+    public function venta_venta_crear_cliente_direccion($rfc): JsonResponse
     {
         $direccion = DB::select("SELECT
                                     documento_direccion.*
@@ -571,32 +557,32 @@ class VentaController extends Controller
                                 WHERE documento_entidad.rfc = '" . $rfc . "' ORDER BY documento.created_at DESC LIMIT 1");
 
         return response()->json([
-            'direccion' => empty($direccion) ? new \stdClass() : $direccion[0],
-            'informacion'   => empty($informacion) ? new \stdClass() : $informacion[0]
+            'direccion' => empty($direccion) ? new stdClass() : $direccion[0],
+            'informacion' => empty($informacion) ? new stdClass() : $informacion[0]
         ]);
     }
 
-    public function venta_venta_crear_existe($venta, $marketplace)
+    public function venta_venta_crear_existe($venta, $marketplace): JsonResponse
     {
         $marketplace = MarketplaceArea::with("marketplace")->find($marketplace);
 
-        if ((!empty($venta) && $venta != '.') && !in_array($marketplace->marketplace->marketplace, ["WALMART"])) {
+        if ((!empty($venta) && $venta != '.') && $marketplace->marketplace->marketplace != "WALMART") {
             $existe = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta . "' AND id_marketplace_area = " . $marketplace->id . " AND status = 1");
 
             if (!empty($existe)) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe[0]->id . ""
+                    'code' => 500,
+                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe[0]->id
                 ]);
             }
         }
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
-    public function venta_venta_crear_informacion(Request $request)
+    public function venta_venta_crear_informacion(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -632,12 +618,6 @@ class VentaController extends Controller
                 $informacion = AmazonService::venta($venta, $marketplace);
                 break;
 
-                // case 'claroshop':
-                // case 'sears':
-                //     $informacion = ClaroshopService::venta($venta, $marketplace);
-                //     break;
-                //!! RELEASE T1 reempalzar
-
             case 'claroshop':
             case 'sears':
             case 'sanborns':
@@ -657,10 +637,10 @@ class VentaController extends Controller
             case 'walmart':
                 $informacion = WalmartService::venta($venta, $marketplace->id);
 
-                if($informacion->error){
+                if ($informacion->error) {
                     $informacion2 = WalmartService::venta($venta, $marketplace->id, 1);
 
-                    if(!$informacion2->error) {
+                    if (!$informacion2->error) {
                         $informacion = $informacion2;
                     }
                 }
@@ -678,7 +658,7 @@ class VentaController extends Controller
                 break;
 
             default:
-                $informacion = new \stdClass();
+                $informacion = new stdClass();
                 $informacion->error = 1;
                 $informacion->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador. <br/> Error: BVC1048";
 
@@ -694,19 +674,19 @@ class VentaController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'venta' => $informacion->data
         ]);
     }
 
-    public function venta_venta_crear_producto_existencia($producto, $almacen, $cantidad, Request $request)
+    public function venta_venta_crear_producto_existencia($producto, $almacen, $cantidad): JsonResponse
     {
         $empresa = DB::select("SELECT
                                     empresa.id,
                                     empresa.bd
                                 FROM empresa_almacen
                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                WHERE empresa_almacen.id = " . $almacen . "");
+                                WHERE empresa_almacen.id = " . $almacen);
 
         if (empty($empresa)) {
             return response()->json([
@@ -756,7 +736,7 @@ class VentaController extends Controller
                                                     promocion_modelo.regalo
                                                 FROM promocion_modelo
                                                 INNER JOIN modelo ON promocion_modelo.id_modelo = modelo.id
-                                                WHERE promocion_modelo.id_promocion = " . $promocion->id . "");
+                                                WHERE promocion_modelo.id_promocion = " . $promocion->id);
         }
 
         return response()->json([
@@ -766,14 +746,14 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_venta_crear_producto_proveedor_existencia($producto, $almacen, $cantidad, $proveedor, Request $request)
+    public function venta_venta_crear_producto_proveedor_existencia($producto, $almacen, $cantidad): JsonResponse
     {
         $empresa = DB::select("SELECT
                                     empresa.id,
                                     empresa.bd
                                 FROM empresa_almacen
                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                WHERE empresa_almacen.id = " . $almacen . "");
+                                WHERE empresa_almacen.id = " . $almacen);
 
         if (empty($empresa)) {
             return response()->json([
@@ -788,12 +768,12 @@ class VentaController extends Controller
 
         $total =
             DB::table('modelo_proveedor_producto')
-            ->select('modelo_proveedor_producto_existencia.existencia')
-            ->join('modelo_proveedor_producto_existencia', 'modelo_proveedor_producto.id', '=', 'modelo_proveedor_producto_existencia.id_modelo')
-            ->where('modelo_proveedor_producto.id_modelo', '=', $modelo->id)
-            ->where('modelo_proveedor_producto_existencia.existencia', '>=', $cantidad)
-            ->get()
-            ->first();
+                ->select('modelo_proveedor_producto_existencia.existencia')
+                ->join('modelo_proveedor_producto_existencia', 'modelo_proveedor_producto.id', '=', 'modelo_proveedor_producto_existencia.id_modelo')
+                ->where('modelo_proveedor_producto.id_modelo', '=', $modelo->id)
+                ->where('modelo_proveedor_producto_existencia.existencia', '>=', $cantidad)
+                ->get()
+                ->first();
 
         $promociones = DB::select("SELECT
                                         promocion.id,
@@ -818,7 +798,7 @@ class VentaController extends Controller
                                                     promocion_modelo.regalo
                                                 FROM promocion_modelo
                                                 INNER JOIN modelo ON promocion_modelo.id_modelo = modelo.id
-                                                WHERE promocion_modelo.id_promocion = " . $promocion->id . "");
+                                                WHERE promocion_modelo.id_promocion = " . $promocion->id);
         }
 
         return response()->json([
@@ -828,114 +808,111 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_venta_crear_envio_cotizar(Request $request)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function venta_venta_crear_envio_cotizar(Request $request): JsonResponse
     {
-        $productos          = json_decode($request->input('productos'));
-        $data               = json_decode($request->input('data'));
-        $tipo_envio         = $request->input('tipo_envio');
-        $json               = array();
-        $largo              = 0;
-        $ancho              = 0;
-        $alto               = 0;
-        $peso               = 0;
-
-        $json['estafeta']   = array();
-        $json['fedex']      = array();
-        $json['dhl']        = array();
-        $json['ups']        = array();
+        $productos = json_decode($request->input('productos'));
+        $data = json_decode($request->input('data'));
+        $tipo_envio = $request->input('tipo_envio');
+        $largo = 0;
+        $ancho = 0;
+        $alto = 0;
+        $peso = 0;
 
         foreach ($productos as $producto) {
-            $largo  += $producto->largo == 0 ? 1 : $producto->largo;
-            $ancho  += $producto->ancho == 0 ? 1 : $producto->ancho;
-            $alto   += $producto->alto == 0 ? 1 : $producto->alto;
-            $peso   += $producto->peso == 0 ? 1 : $producto->peso;
+            $largo += $producto->largo == 0 ? 1 : $producto->largo;
+            $ancho += $producto->ancho == 0 ? 1 : $producto->ancho;
+            $alto += $producto->alto == 0 ? 1 : $producto->alto;
+            $peso += $producto->peso == 0 ? 1 : $producto->peso;
         }
 
         $cotizar_estafeta = [
-            'destino'                   => $data->ciudad,
-            'peso'                      => $peso,
-            'tipo'                      => ($tipo_envio == 1) ? "78" : "68",
-            'largo'                     => $largo,
-            'ancho'                     => $ancho,
-            'alto'                      => $alto,
-            'cp_ini'                    => "45130",
-            'cp_end'                    => $data->codigo_postal,
-            'from_cord_exists'          => $data->remitente_cord_found,
-            'from_lat'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
-            'from_lng'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
-            'to_cord_exists'            => $data->destino_cord_found,
-            'to_lng'                    => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
-            'to_lat'                    => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
+            'destino' => $data->ciudad,
+            'peso' => $peso,
+            'tipo' => ($tipo_envio == 1) ? "78" : "68",
+            'largo' => $largo,
+            'ancho' => $ancho,
+            'alto' => $alto,
+            'cp_ini' => "45130",
+            'cp_end' => $data->codigo_postal,
+            'from_cord_exists' => $data->remitente_cord_found,
+            'from_lat' => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
+            'from_lng' => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
+            'to_cord_exists' => $data->destino_cord_found,
+            'to_lng' => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
+            'to_lat' => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
         ];
 
         $cotizar_fedex = [
-            'tipo'                      => ($tipo_envio == 1) ? "FEDEX_EXPRESS_SAVER" : "STANDARD_OVERNIGHT",
-            'destino'                   => $data->ciudad,
-            'peso'                      => $peso,
-            'cp_ini'                    => "45130",
-            'cp_end'                    => $data->codigo_postal,
-            'from_cord_exists'          => $data->remitente_cord_found,
-            'from_lat'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
-            'from_lng'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
-            'to_cord_exists'            => $data->destino_cord_found,
-            'to_lng'                    => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
-            'to_lat'                    => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
+            'tipo' => ($tipo_envio == 1) ? "FEDEX_EXPRESS_SAVER" : "STANDARD_OVERNIGHT",
+            'destino' => $data->ciudad,
+            'peso' => $peso,
+            'cp_ini' => "45130",
+            'cp_end' => $data->codigo_postal,
+            'from_cord_exists' => $data->remitente_cord_found,
+            'from_lat' => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
+            'from_lng' => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
+            'to_cord_exists' => $data->destino_cord_found,
+            'to_lng' => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
+            'to_lat' => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
         ];
 
         $cotizar_dhl = [
-            'destino'                   => $data->ciudad,
-            'peso'                      => $peso,
-            'tipo'                      => ($tipo_envio == 1) ? "G" : "N",
-            'largo'                     => $largo,
-            'ancho'                     => $ancho,
-            'alto'                      => $alto,
-            'cp_ini'                    => "45130",
-            'cp_end'                    => $data->codigo_postal,
-            'from_cord_exists'          => $data->remitente_cord_found,
-            'from_lat'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
-            'from_lng'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
-            'to_cord_exists'            => $data->destino_cord_found,
-            'to_lng'                    => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
-            'to_lat'                    => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
+            'destino' => $data->ciudad,
+            'peso' => $peso,
+            'tipo' => ($tipo_envio == 1) ? "G" : "N",
+            'largo' => $largo,
+            'ancho' => $ancho,
+            'alto' => $alto,
+            'cp_ini' => "45130",
+            'cp_end' => $data->codigo_postal,
+            'from_cord_exists' => $data->remitente_cord_found,
+            'from_lat' => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
+            'from_lng' => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
+            'to_cord_exists' => $data->destino_cord_found,
+            'to_lng' => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
+            'to_lat' => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
         ];
 
         $cotizar_ups = [
-            'service_code'              => ($tipo_envio == 1) ? "65" : "07",
-            'service_description'       => '',
-            'packagingtype_code'        => '02',
-            'peso'                      => $peso,
-            'largo'                     => $largo,
-            'ancho'                     => $ancho,
-            'alto'                      => $alto,
-            'shipper_postalcode'        => mb_strtoupper($data->codigo_postal, 'UTF-8'),
-            'shipto_name'               => mb_strtoupper($data->contacto, 'UTF-8'),
-            'shipto_addressline1'       => mb_strtoupper($data->calle . " " . $data->numero, 'UTF-8'),
-            'shipto_addressline2'       => mb_strtoupper($data->colonia, 'UTF-8'),
-            'shipto_addressline3'       => mb_strtoupper('', 'UTF-8'),
-            'shipto_postalcode'         => mb_strtoupper($data->codigo_postal, 'UTF-8'),
-            'shipfrom_name'             => mb_strtoupper('OMG International SA DE CV', 'UTF-8'),
-            'shipfrom_addressline1'     => mb_strtoupper('INDUSTRIA VIDRIERA #105', 'UTF-8'),
-            'shipfrom_addressline2'     => mb_strtoupper('FRACC. INDUSTRIAL ZAPOPAN NORTE', 'UTF-8'),
-            'shipfrom_addressline3'     => mb_strtoupper('', 'UTF-8'),
-            'shipfrom_postalcode'       => mb_strtoupper('45130', 'UTF-8'),
-            'from_cord_exists'          => $data->remitente_cord_found,
-            'from_lat'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
-            'from_lng'                  => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
-            'to_cord_exists'            => $data->destino_cord_found,
-            'to_lng'                    => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
-            'to_lat'                    => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
+            'service_code' => ($tipo_envio == 1) ? "65" : "07",
+            'service_description' => '',
+            'packagingtype_code' => '02',
+            'peso' => $peso,
+            'largo' => $largo,
+            'ancho' => $ancho,
+            'alto' => $alto,
+            'shipper_postalcode' => mb_strtoupper($data->codigo_postal, 'UTF-8'),
+            'shipto_name' => mb_strtoupper($data->contacto, 'UTF-8'),
+            'shipto_addressline1' => mb_strtoupper($data->calle . " " . $data->numero, 'UTF-8'),
+            'shipto_addressline2' => mb_strtoupper($data->colonia, 'UTF-8'),
+            'shipto_addressline3' => mb_strtoupper('', 'UTF-8'),
+            'shipto_postalcode' => mb_strtoupper($data->codigo_postal, 'UTF-8'),
+            'shipfrom_name' => mb_strtoupper('OMG International SA DE CV', 'UTF-8'),
+            'shipfrom_addressline1' => mb_strtoupper('INDUSTRIA VIDRIERA #105', 'UTF-8'),
+            'shipfrom_addressline2' => mb_strtoupper('FRACC. INDUSTRIAL ZAPOPAN NORTE', 'UTF-8'),
+            'shipfrom_addressline3' => mb_strtoupper('', 'UTF-8'),
+            'shipfrom_postalcode' => mb_strtoupper('45130', 'UTF-8'),
+            'from_cord_exists' => $data->remitente_cord_found,
+            'from_lat' => ($data->remitente_cord_found) ? $data->remitente_cord->lat : 'not_found',
+            'from_lng' => ($data->remitente_cord_found) ? $data->remitente_cord->lng : 'not_found',
+            'to_cord_exists' => $data->destino_cord_found,
+            'to_lng' => ($data->destino_cord_found) ? $data->destino_cord->lng : 'not_found',
+            'to_lat' => ($data->destino_cord_found) ? $data->destino_cord->lat : 'not_found'
         ];
 
         return response()->json([
-            'code'  => 200,
-            'estafeta'  => $this->cotizar_paqueteria('Estafeta', $cotizar_estafeta),
+            'code' => 200,
+            'estafeta' => $this->cotizar_paqueteria('Estafeta', $cotizar_estafeta),
             'fedex' => $this->cotizar_paqueteria('Fedex', $cotizar_fedex),
-            'dhl'   => $this->cotizar_paqueteria('DHL', $cotizar_dhl),
-            'ups'   => $this->cotizar_paqueteria('UPS', $cotizar_ups)
+            'dhl' => $this->cotizar_paqueteria('DHL', $cotizar_dhl),
+            'ups' => $this->cotizar_paqueteria('UPS', $cotizar_ups)
         ]);
     }
 
-    public function venta_venta_crear_authy(Request $request)
+    public function venta_venta_crear_authy(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -954,40 +931,44 @@ class VentaController extends Controller
     }
 
     /* Venta > Venta > Autorizar */
-    public function venta_venta_autorizar(Request $request)
+    public function venta_venta_autorizar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'autorizado'    => 1,
+            'autorizado' => 1,
             'autorizado_by' => $auth->id
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento autorizado correctamente."
+            'code' => 200,
+            'message' => "Documento autorizado correctamente."
         ]);
     }
 
-    public function venta_venta_autorizar_data(Request $request)
+    public function venta_venta_autorizar_data(): JsonResponse
     {
         $documentos = $this->obtener_ventas("AND documento.id_fase = 3 AND documento.autorizado = 0");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
     /* Venta > Venta > Editar */
-    public function venta_venta_editar(Request $request)
+    /**
+     * @throws Throwable
+     * @throws ConnectionErrorException
+     */
+    public function venta_venta_editar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -995,7 +976,7 @@ class VentaController extends Controller
         if ($data->cliente->rfc != 'XAXX010101000') {
             $id_entidad = $data->cliente->select;
         } else {
-            $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento . "")[0]->id_entidad;
+            $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento)[0]->id_entidad;
 
             # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
             DB::table('documento_entidad')->where(['id' => $id_entidad])->update([
@@ -1022,14 +1003,14 @@ class VentaController extends Controller
 
         if (!$documento_data->solicitar_refacturacion && $data->documento->refacturacion) {
             $usuarios_notificacion = array();
-            $notificacion = new \stdClass();
+            $notificacion = new stdClass();
 
             $usuario_data = DB::table("usuario")
                 ->where("id", $auth->id)
                 ->first();
 
             $notificacion->titulo = "Solicitud de refacturacón.";
-            $notificacion->message = "El usuario " . $usuario_data->nombre . " solicitó refacturación para el pedido " . $data->documento->documento . "";
+            $notificacion->message = "El usuario " . $usuario_data->nombre . " solicitó refacturación para el pedido " . $data->documento->documento;
             $notificacion->tipo = "success"; // success, warning, danger
             $notificacion->link = "/general/busqueda/venta/id/" . $data->documento->documento;
 
@@ -1039,6 +1020,7 @@ class VentaController extends Controller
 
             $notificacion->id = $notificacion_id;
 
+            /** @noinspection PhpParamsInspection */
             $usuarios_contabilidad = DB::table("usuario")
                 ->select("usuario.id")
                 ->join("usuario_subnivel_nivel", "usuario.id", "=", "usuario_subnivel_nivel.id_usuario")
@@ -1053,7 +1035,7 @@ class VentaController extends Controller
                     'id_notificacion' => $notificacion_id
                 ]);
 
-                array_push($usuarios_notificacion, $usuario->id);
+                $usuarios_notificacion[] = $usuario->id;
             }
 
             $notificacion->usuario = $usuarios_notificacion;
@@ -1079,50 +1061,50 @@ class VentaController extends Controller
             'zoom_guia' => $data->documento->zoom_guia ?? 0,
         ]);
 
-        $tiene_direccion = DB::select("SELECT id FROM documento_direccion WHERE id_documento = " . $data->documento->documento . "");
+        $tiene_direccion = DB::select("SELECT id FROM documento_direccion WHERE id_documento = " . $data->documento->documento);
 
         if (empty($tiene_direccion)) {
             DB::table('documento_direccion')->insert([
-                'id_documento'      => $data->documento->documento,
-                'id_direccion_pro'  => $data->documento->direccion_envio->colonia,
-                'calle'             => $data->documento->direccion_envio->calle,
-                'numero'            => $data->documento->direccion_envio->numero,
-                'numero_int'        => $data->documento->direccion_envio->numero_int,
-                'colonia'           => $data->documento->direccion_envio->colonia_text,
-                'ciudad'            => $data->documento->direccion_envio->ciudad,
-                'estado'            => $data->documento->direccion_envio->estado,
-                'codigo_postal'     => $data->documento->direccion_envio->codigo_postal,
-                'referencia'        => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
-                'contenido'         => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
-                'tipo_envio'        => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
+                'id_documento' => $data->documento->documento,
+                'id_direccion_pro' => $data->documento->direccion_envio->colonia,
+                'calle' => $data->documento->direccion_envio->calle,
+                'numero' => $data->documento->direccion_envio->numero,
+                'numero_int' => $data->documento->direccion_envio->numero_int,
+                'colonia' => $data->documento->direccion_envio->colonia_text,
+                'ciudad' => $data->documento->direccion_envio->ciudad,
+                'estado' => $data->documento->direccion_envio->estado,
+                'codigo_postal' => $data->documento->direccion_envio->codigo_postal,
+                'referencia' => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
+                'contenido' => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
+                'tipo_envio' => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
             ]);
         } else {
             DB::table('documento_direccion')->where(['id_documento' => $data->documento->documento])->update([
-                'id_direccion_pro'  => $data->documento->direccion_envio->colonia,
-                'calle'             => $data->documento->direccion_envio->calle,
-                'numero'            => $data->documento->direccion_envio->numero,
-                'numero_int'        => $data->documento->direccion_envio->numero_int,
-                'colonia'           => $data->documento->direccion_envio->colonia_text,
-                'ciudad'            => $data->documento->direccion_envio->ciudad,
-                'estado'            => $data->documento->direccion_envio->estado,
-                'codigo_postal'     => $data->documento->direccion_envio->codigo_postal,
-                'referencia'        => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
-                'contenido'         => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
-                'tipo_envio'        => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
+                'id_direccion_pro' => $data->documento->direccion_envio->colonia,
+                'calle' => $data->documento->direccion_envio->calle,
+                'numero' => $data->documento->direccion_envio->numero,
+                'numero_int' => $data->documento->direccion_envio->numero_int,
+                'colonia' => $data->documento->direccion_envio->colonia_text,
+                'ciudad' => $data->documento->direccion_envio->ciudad,
+                'estado' => $data->documento->direccion_envio->estado,
+                'codigo_postal' => $data->documento->direccion_envio->codigo_postal,
+                'referencia' => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
+                'contenido' => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
+                'tipo_envio' => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
             ]);
         }
 
         foreach ($data->documento->productos as $producto) {
             $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
 
-            if($existencia->error) {
+            if ($existencia->error) {
                 return response()->json([
                     'code' => 500,
                     'message' => $existencia->mensaje
                 ]);
             }
 
-            if($existencia->disponible < $producto->cantidad) {
+            if ($existencia->disponible < $producto->cantidad) {
                 return response()->json([
                     'code' => 500,
                     'message' => 'No hay suficiente existencia para procesar la venta'
@@ -1130,13 +1112,13 @@ class VentaController extends Controller
             }
 
             $movimiento = DB::table('movimiento')->insertGetId([
-                'id_documento'  => $data->documento->documento,
-                'id_modelo'     => $producto->id,
-                'cantidad'      => $producto->cantidad,
-                'precio'        => $producto->precio,
-                'garantia'      => $producto->garantia,
-                'modificacion'  => $producto->modificacion,
-                'regalo'        => $producto->regalo
+                'id_documento' => $data->documento->documento,
+                'id_modelo' => $producto->id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->precio,
+                'garantia' => $producto->garantia,
+                'modificacion' => $producto->modificacion,
+                'regalo' => $producto->regalo
             ]);
         }
 
@@ -1152,12 +1134,12 @@ class VentaController extends Controller
                     ->send();
 
                 DB::table('documento_archivo')->insert([
-                    'id_documento'  => $data->documento->documento,
-                    'id_usuario'    => $auth->id,
-                    'tipo'          => $archivo->guia,
-                    'id_impresora'  => $archivo->impresora,
-                    'nombre'        => $archivo->nombre,
-                    'dropbox'       => $response->body->id
+                    'id_documento' => $data->documento->documento,
+                    'id_usuario' => $auth->id,
+                    'tipo' => $archivo->guia,
+                    'id_impresora' => $archivo->impresora,
+                    'nombre' => $archivo->nombre,
+                    'dropbox' => $response->body->id
                 ]);
             }
         }
@@ -1170,7 +1152,7 @@ class VentaController extends Controller
 
         $info_documento = DB::table('documento')->where('id', $data->documento->documento)->first();
 
-        if($info_documento->pagado == 1 && $info_documento->id_fase == 3) {
+        if ($info_documento->pagado == 1 && $info_documento->id_fase == 3) {
             DB::table('seguimiento')->insert([
                 'id_documento' => $data->documento->documento,
                 'id_usuario' => $auth->id,
@@ -1179,20 +1161,20 @@ class VentaController extends Controller
         }
 
         DB::table('documento_updates_by')->insert([
-            'id_documento'  => $data->documento->documento,
-            'id_usuario'    => $auth->id
+            'id_documento' => $data->documento->documento,
+            'id_usuario' => $auth->id
         ]);
 
-        $tiene_pago = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $data->documento->documento . "");
+        $tiene_pago = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $data->documento->documento);
 
         if (!empty($tiene_pago)) {
             DB::table('documento_pago')->where(['id' => $tiene_pago[0]->id_pago])->update([
-                'origen_entidad'    => $data->cliente->rfc
+                'origen_entidad' => $data->cliente->rfc
             ]);
         }
 
         if ($data->documento->id_fase != 2) {
-            $esta_importado = DB::select("SELECT importado FROM documento WHERE id = " . $data->documento->documento . "")[0]->importado;
+            $esta_importado = DB::select("SELECT importado FROM documento WHERE id = " . $data->documento->documento)[0]->importado;
 
             if ($data->documento->fulfillment && !$esta_importado) {
                 //Aqui ta
@@ -1219,12 +1201,12 @@ class VentaController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Venta editada correctamente."
+            'code' => 200,
+            'message' => "Venta editada correctamente."
         ]);
     }
 
-    public function venta_venta_editar_documento($documento)
+    public function venta_venta_editar_documento($documento): JsonResponse
     {
         $informacion = DB::select("SELECT
                                     documento.*,
@@ -1248,8 +1230,8 @@ class VentaController extends Controller
 
         if (empty($informacion)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información de la venta."
+                'code' => 500,
+                'message' => "No se encontró información de la venta."
             ]);
         }
 
@@ -1257,8 +1239,8 @@ class VentaController extends Controller
 
         if ($informacion->anticipada) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No es posible editar la venta por que ha sido marcada como factura anticipada, favor de cancelar la factura y generar una nueva."
+                'code' => 404,
+                'message' => "No es posible editar la venta por que ha sido marcada como factura anticipada, favor de cancelar la factura y generar una nueva."
             ]);
         }
 
@@ -1266,7 +1248,7 @@ class VentaController extends Controller
                                                     empresa.bd
                                                 FROM marketplace_area_empresa
                                                 INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                                WHERE marketplace_area_empresa.id_marketplace_area = " . $informacion->id_marketplace_area . "");
+                                                WHERE marketplace_area_empresa.id_marketplace_area = " . $informacion->id_marketplace_area);
 
         $productos = DB::select("SELECT
                                     movimiento.id,
@@ -1280,38 +1262,38 @@ class VentaController extends Controller
                                     modelo.costo
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
 
-        $seguimiento        = DB::select("SELECT 
+        $seguimiento = DB::select("SELECT 
                                             seguimiento.*, 
                                             usuario.nombre 
                                         FROM seguimiento 
                                         INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                        WHERE id_documento = " . $documento . "");
+                                        WHERE id_documento = " . $documento);
 
-        $archivos           = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $documento . " AND status = 1");
+        $archivos = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $documento . " AND status = 1");
 
-        $informacion->seguimiento   = $seguimiento;
-        $informacion->productos     = $productos;
-        $informacion->archivos      = $archivos;
+        $informacion->seguimiento = $seguimiento;
+        $informacion->productos = $productos;
+        $informacion->archivos = $archivos;
 
         return response()->json([
-            'code'  => 200,
-            'informacion'   => $informacion
+            'code' => 200,
+            'informacion' => $informacion
         ]);
     }
 
-    public function venta_venta_editar_producto_borrar($movimiento)
+    public function venta_venta_editar_producto_borrar($movimiento): JsonResponse
     {
         DB::table('movimiento')->where(['id' => $movimiento])->delete();
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
     /* Venta > Venta > Cancelar */
-    public function venta_venta_cancelar_data()
+    public function venta_venta_cancelar_data(): JsonResponse
     {
         $usuarios = DB::select("SELECT
                                     usuario.authy,
@@ -1327,92 +1309,55 @@ class VentaController extends Controller
                                 AND usuario.id != 1
                                 GROUP BY usuario.id");
         return response()->json([
-            'code'  => 200,
-            'usuarios'  => $usuarios
+            'code' => 200,
+            'usuarios' => $usuarios
         ]);
     }
 
-    public function venta_venta_cancelar(Request $request)
+    public function venta_venta_cancelar(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
         $documento = $request->input('documento');
-        $token = $request->input('token');
-        $authy = $request->input('authy');
         $motivo = $request->input('motivo');
         $garantia = ($request->input('garantia') == "true") ? 1 : ($request->input('garantia') == "1") ? 1 : 0;
         $message = "";
 
-        $existe_garantia_devolucion = DB::select("SELECT id FROM documento_garantia_re WHERE id_documento = " . $documento . "");
+        $existe_garantia_devolucion = DB::select("SELECT id FROM documento_garantia_re WHERE id_documento = " . $documento);
 
         if (!empty($existe_garantia_devolucion)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se puede cancelar el documento ya que tiene una garantía o devolución activa, favor de verificar."
+                'code' => 500,
+                'message' => "No se puede cancelar el documento ya que tiene una garantía o devolución activa, favor de verificar."
             ]);
         }
 
         $user_nombre = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id . " AND status = 1")[0]->nombre;
 
-        if (empty($token)) {
-            $documento_fase = DB::select("SELECT id_fase, status, anticipada FROM documento WHERE id = " . $documento . " AND id_tipo = 2");
+        $documento_fase = DB::select("SELECT id_fase, status, anticipada FROM documento WHERE id = " . $documento . " AND id_tipo = 2");
 
-            if (empty($documento_fase)) {
-                return response()->json([
-                    'code'  => 400,
-                    'message'   => "Documento no encontrado, favor de verificar e intentar de nuevo."
-                ]);
-            }
+        if (empty($documento_fase)) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Documento no encontrado, favor de verificar e intentar de nuevo."
+            ]);
+        }
 
-            $existe_garantia_devolucion = DB::select("SELECT id FROM documento_garantia_re WHERE id_documento = " . $documento . "");
+        $existe_garantia_devolucion = DB::select("SELECT id FROM documento_garantia_re WHERE id_documento = " . $documento);
 
-            if (!empty($existe_garantia_devolucion)) {
-                return response()->json([
-                    'code'  => 500,
-                    'message'   => "No se puede cancelar el documento ya que tiene una garantía o devolución activa, favor de verificar."
-                ]);
-            }
+        if (!empty($existe_garantia_devolucion)) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No se puede cancelar el documento ya que tiene una garantía o devolución activa, favor de verificar."
+            ]);
+        }
 
-            $documento_fase = $documento_fase[0];
+        $documento_fase = $documento_fase[0];
 
-            if ($documento_fase->status == 0) {
-                return response()->json([
-                    'code'  => 500,
-                    'message'   => "El documento ya ha sido cancelado."
-                ]);
-            }
-        } else {
-            $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $authy . "' AND status = 1");
-
-            if (empty($authy_user_id)) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "No se encontró el usuario que ha autorizado la cancelación."
-                ]);
-            }
-
-            try {
-                $authy_user_id = $authy_user_id[0]->id;
-
-                $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-                $verification = $authy_request->verifyToken($authy, $token);
-
-                if (!$verification->ok()) {
-                    return response()->json([
-                        'code'  => 403,
-                        'message'   => "El token ingresado no es valido."
-                    ]);
-                }
-
-                DB::table('documento')->where(['id' => $documento])->update([
-                    'canceled_authorized_by' => $authy_user_id
-                ]);
-            } catch (\Authy\AuthyFormatException $e) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-                ]);
-            }
+        if ($documento_fase->status == 0) {
+            return response()->json([
+                'code' => 500,
+                'message' => "El documento ya ha sido cancelado."
+            ]);
         }
 
         $info_documento = DB::select("SELECT
@@ -1438,7 +1383,7 @@ class VentaController extends Controller
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi
                                     INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                     INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         $productos = DB::select("SELECT
                                     movimiento.id AS id_movimiento,
@@ -1453,44 +1398,43 @@ class VentaController extends Controller
                                     16 as impuesto
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE id_documento = " . $documento . "");
+                                WHERE id_documento = " . $documento);
 
         $info_documento = $info_documento[0];
         /* Si no es venta de FBA, se hace un traspaso a garantias */
-        $venta_fba = (((strtolower($info_documento->marketplace) == "amazon") && $info_documento->fulfillment)) ? true : false;
+        $venta_fba = (strtolower($info_documento->marketplace) == "amazon") && $info_documento->fulfillment;
 
         if (!$venta_fba && $garantia && $info_documento->id_fase > 3) {
-            $series_cambiadas = array();
 
             $documento_traspaso = DB::table('documento')->insertGetId([
-                'id_almacen_principal_empresa'  => $info_documento->almacen_devolucion_garantia_sistema,
+                'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
                 'id_almacen_secundario_empresa' => $info_documento->id_almacen_principal_empresa,
-                'id_tipo'                       => 5,
-                'id_periodo'                    => 1,
-                'id_cfdi'                       => 1,
-                'id_marketplace_area'           => $info_documento->id_marketplacea_area,
-                'id_usuario'                    => $auth->id,
-                'id_moneda'                     => 3,
-                'id_paqueteria'                 => 6,
-                'id_fase'                       => 100,
-                'autorizado_by'                 => isset($authy_user_id) ? $authy_user_id : 1,
-                'autorizado'                    => 1,
-                'factura_folio'                 => 'N/A',
-                'tipo_cambio'                   => 1,
-                'referencia'                    => 'N/A',
-                'info_extra'                    => 'N/A',
-                'observacion'                   => 'Traspaso entre almacenes por cancelacion de venta ' . $documento, // Status de la compra
+                'id_tipo' => 5,
+                'id_periodo' => 1,
+                'id_cfdi' => 1,
+                'id_marketplace_area' => $info_documento->id_marketplacea_area,
+                'id_usuario' => $auth->id,
+                'id_moneda' => 3,
+                'id_paqueteria' => 6,
+                'id_fase' => 100,
+                'autorizado_by' => $authy_user_id ?? 1,
+                'autorizado' => 1,
+                'factura_folio' => 'N/A',
+                'tipo_cambio' => 1,
+                'referencia' => 'N/A',
+                'info_extra' => 'N/A',
+                'observacion' => 'Traspaso entre almacenes por cancelacion de venta ' . $documento, // Status de la compra
             ]);
 
             foreach ($productos as $index => $producto) {
                 $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento'          => $documento_traspaso,
-                    'id_modelo'             => $producto->id_modelo,
-                    'cantidad'              => $producto->cantidad,
-                    'precio'                => $producto->precio_unitario,
-                    'garantia'              => 0,
-                    'modificacion'          => 'N/A',
-                    'regalo'                => 0
+                    'id_documento' => $documento_traspaso,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio_unitario,
+                    'garantia' => 0,
+                    'modificacion' => 'N/A',
+                    'regalo' => 0
                 ]);
 
                 if ($producto->serie) {
@@ -1501,20 +1445,18 @@ class VentaController extends Controller
                                     FROM movimiento
                                     INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento.id = " . $producto->id_movimiento . "");
+                                    WHERE movimiento.id = " . $producto->id_movimiento);
 
                     foreach ($series as $serie) {
                         DB::table('producto')->where(['id' => $serie->id])->update([
-                            'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
-                            'status'        => 1
+                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                            'status' => 1
                         ]);
 
                         DB::table('movimiento_producto')->insert([
                             'id_movimiento' => $movimiento,
-                            'id_producto'   => $serie->id
+                            'id_producto' => $serie->id
                         ]);
-
-                        array_push($series_cambiadas, $serie);
                     }
                 }
             }
@@ -1524,7 +1466,7 @@ class VentaController extends Controller
                                         modelo.serie
                                     FROM movimiento
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $documento . "");
+                                    WHERE movimiento.id_documento = " . $documento);
 
             foreach ($productos as $producto) {
                 if ($producto->serie) {
@@ -1533,7 +1475,7 @@ class VentaController extends Controller
                                         FROM movimiento
                                         INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                         INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                        WHERE movimiento.id = " . $producto->id . "");
+                                        WHERE movimiento.id = " . $producto->id);
 
                     foreach ($series as $serie) {
                         DB::table('producto')->where(['id' => $serie->id])->update(['status' => 1]);
@@ -1554,13 +1496,13 @@ class VentaController extends Controller
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento cancelado correctamente."
+            'code' => 200,
+            'message' => "Documento cancelado correctamente."
         ]);
     }
 
     /* Venta > Venta > Problema */
-    public function venta_venta_problema(Request $request)
+    public function venta_venta_problema(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -1568,32 +1510,32 @@ class VentaController extends Controller
         DB::table('documento')->where(['id' => $data->documento])->update(['problema' => $data->problema]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Seguimiento guardado correctamente."
+            'code' => 200,
+            'message' => "Seguimiento guardado correctamente."
         ]);
     }
 
-    public function venta_venta_problema_data()
+    public function venta_venta_problema_data(): JsonResponse
     {
         $documentos = $this->obtener_ventas("AND documento.id_fase = 3 AND documento.problema = 1");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
     /* Venta > Venta > Nota */
     /**
-     * @throws \Throwable
+     * @throws Throwable
      */
-    public function venta_venta_nota(Request $request)
+    public function venta_venta_nota(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -1626,8 +1568,8 @@ class VentaController extends Controller
 
         if (empty($existe_documento)) {
             return response()->json([
-                'code'  => 400,
-                'message'   => "El documento proporcionado no fue encontrado."
+                'code' => 400,
+                'message' => "El documento proporcionado no fue encontrado."
             ]);
         }
 
@@ -1638,7 +1580,7 @@ class VentaController extends Controller
                                         empresa.logo
                                     FROM marketplace_area_empresa
                                     INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                    WHERE marketplace_area_empresa.id_marketplace_area = " . $existe_documento->id_marketplace_area . "");
+                                    WHERE marketplace_area_empresa.id_marketplace_area = " . $existe_documento->id_marketplace_area);
 
         $cliente = DB::select("SELECT
                                     documento_entidad.razon_social AS cliente,
@@ -1651,7 +1593,7 @@ class VentaController extends Controller
                                 FROM documento 
                                 INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                WHERE documento.id = " . $data->documento . "")[0];
+                                WHERE documento.id = " . $data->documento)[0];
 
         $productos = DB::select("SELECT 
                                 modelo.sku, 
@@ -1661,7 +1603,7 @@ class VentaController extends Controller
                                 ROUND((movimiento.precio * 1.16), 2) AS precio
                             FROM movimiento 
                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                            WHERE id_documento = " . $data->documento . "");
+                            WHERE id_documento = " . $data->documento);
 
         $pago = DB::select("SELECT
                                 metodo_pago.id,
@@ -1669,7 +1611,7 @@ class VentaController extends Controller
                             FROM documento_pago_re
                             INNER JOIN documento_pago ON documento_pago_re.id_pago = documento_pago.id
                             INNER JOIN metodo_pago ON documento_pago.id_metodopago = metodo_pago.id
-                            WHERE documento_pago_re.id_documento = " . $data->documento . "");
+                            WHERE documento_pago_re.id_documento = " . $data->documento);
 
         if (empty($pago)) {
             $forma_pago = "99 - Por definir";
@@ -1680,7 +1622,7 @@ class VentaController extends Controller
         }
 
         foreach ($productos as $producto) {
-            $total += (float) $producto->precio * (float) $producto->cantidad;
+            $total += (float)$producto->precio * (float)$producto->cantidad;
 
             $informacion_producto = @json_decode(file_get_contents(config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $existe_documento->bd . '/' . rawurlencode(trim($producto->sku))));
 
@@ -1729,6 +1671,7 @@ class VentaController extends Controller
         $pdf->Ln(5);
         $pdf->Cell(20, 10, 'Nombre: ');
         $pdf->SetFont('Arial', '', 10);
+        /** @noinspection PhpComposerExtensionStubsInspection */
         $pdf->Cell(80, 10, iconv('UTF-8', 'windows-1252', mb_strtoupper($cliente->cliente, 'UTF-8')));
 
         $pdf->SetFont('Arial', 'B', 10);
@@ -1803,7 +1746,7 @@ class VentaController extends Controller
             $pdf->Cell(25, 5, $producto->sku, "T");
             $pdf->Cell(80, 5, substr($producto->descripcion, 0, 40), "T");
             $pdf->Cell(20, 5, "$ " . $producto->precio, "T");
-            $pdf->Cell(20, 5, "$ " . round((float) $producto->precio * (float) $producto->cantidad, 2), "T");
+            $pdf->Cell(20, 5, "$ " . round((float)$producto->precio * (float)$producto->cantidad, 2), "T");
             $pdf->Ln();
 
             $pdf->Cell(20, 5, "");
@@ -1849,12 +1792,12 @@ class VentaController extends Controller
         $pdf->SetFont('Arial', '', 10);
         $pdf->Cell(10, 10, "$ " . round($total), 2);
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "NOTA_" . $data->documento . "_" . $cliente->cliente . "_" . uniqid() . ".pdf";
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
+        $file_name = "NOTA_" . $data->documento . "_" . $cliente->cliente . "_" . uniqid() . ".pdf";
 
         if (!empty($data->correo)) {
-            $vendedor = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id . "")[0]->nombre;
+            $vendedor = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id)[0]->nombre;
             $html = view('email.notificacion_reporte_diario')->with([
                 'anio' => date('Y'),
                 'vendedor' => $vendedor,
@@ -1870,10 +1813,10 @@ class VentaController extends Controller
             $mg->messages()->send(
                 $domain,
                 array(
-                    'from'  => 'Reportes OMG International <crm@omg.com.mx>',
-                    'to'      => $data->correo,
+                    'from' => 'Reportes OMG International <crm@omg.com.mx>',
+                    'to' => $data->correo,
                     'subject' => 'Nota de venta para el pedido ' . $data->documento,
-                    'html'    => $html->render()
+                    'html' => $html->render()
                 ),
                 array(
                     'attachment' => array(
@@ -1885,20 +1828,20 @@ class VentaController extends Controller
             unlink($pdf_name);
 
             return response()->json([
-                'code'  => 200,
+                'code' => 200,
                 'message' => "La nota de venta fue enviada correctamente al correo electronico proporcionado."
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'file'  => base64_encode($pdf_data),
-            'name'  => $file_name
+            'code' => 200,
+            'file' => base64_encode($pdf_data),
+            'name' => $file_name
         ]);
     }
 
     /* Venta > Venta > Importacion */
-    public function venta_venta_importacion_data(Request $request)
+    public function venta_venta_importacion_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -1925,19 +1868,19 @@ class VentaController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
 
         return response()->json([
-            'code'  => 200,
-            'marketplaces'  => $marketplaces,
-            'empresas'  => $empresas
+            'code' => 200,
+            'marketplaces' => $marketplaces,
+            'empresas' => $empresas
         ]);
     }
 
-    public function venta_venta_importacion(Request $request)
+    public function venta_venta_importacion(Request $request): JsonResponse
     {
         $marketplace = json_decode($request->input('marketplace'));
         $auth = json_decode($request->auth);
@@ -1954,13 +1897,6 @@ class VentaController extends Controller
             case 'linio':
                 $response = LinioService::importarVentas($marketplace->id, $auth->id, $marketplace->ventas, $marketplace->almacen);
                 break;
-
-                // case 'claroshop':
-                // case 'sears':
-                //     $response = ClaroshopService::importarVentasMasiva($marketplace->id, $auth->id, $marketplace->almacen, $marketplace->empresa);
-                //     break;
-                //!! RELEASE T1 reempalzar
-
             case 'claroshop':
             case 'sears':
             case 'sanborns':
@@ -1968,7 +1904,7 @@ class VentaController extends Controller
                 break;
 
             default:
-                $response = new \stdClass();
+                $response = new stdClass();
                 $response->error = 1;
                 $response->mensaje = "El marketplace no ha sido configurado para la importación de ventas masivamente.<br/> Error: BVC2488";
 
@@ -1977,14 +1913,14 @@ class VentaController extends Controller
 
         if ($response->error) {
             return response()->json([
-                'code'  => 500,
-                'message'   => $response->mensaje
+                'code' => 500,
+                'message' => $response->mensaje
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $response->mensaje,
+            'code' => 200,
+            'message' => $response->mensaje,
             'excel' => $marketplace->marketplace == 'amazon' ? $response->excel : '',
             'archivo' => $marketplace->marketplace == 'amazon' ? $response->archivo : '',
 
@@ -1992,7 +1928,7 @@ class VentaController extends Controller
     }
 
     /* Venta > Venta > Mensaje */
-    public function venta_venta_mensaje_data(Request $request)
+    public function venta_venta_mensaje_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2008,12 +1944,12 @@ class VentaController extends Controller
                                     AND marketplace.marketplace IN('MERCADOLIBRE')");
 
         return response()->json([
-            'code'  => 200,
-            'marketplaces'  => $marketplaces
+            'code' => 200,
+            'marketplaces' => $marketplaces
         ]);
     }
 
-    public function venta_venta_mensaje(Request $request)
+    public function venta_venta_mensaje(Request $request): JsonResponse
     {
         $marketplace = json_decode($request->input('marketplace'));
         $responses = array();
@@ -2023,23 +1959,21 @@ class VentaController extends Controller
         // $response = MercadolibreService::enviarMensaje($marketplace->id, $venta->venta, $venta->mensaje);
 
 
-        array_push($responses, $response);
+        $responses[] = $response;
         // }
 
         return response()->json([
             'code' => 200,
             'message' => "Mensajes enviados correctamente.",
-            'data'  => $responses
+            'data' => $responses
         ]);
     }
 
     /* Venta > Venta > Pedido de venta */
-    public function venta_venta_pedido_crear(Request $request)
+    public function venta_venta_pedido_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $modificacion   = 0;
-        $pedidos_creados = "";
 
         $existe_venta = DB::select("SELECT 
                                         documento.id,
@@ -2054,8 +1988,8 @@ class VentaController extends Controller
         if (!empty($existe_venta)) {
             if ($existe_venta[0]->id_marketplace != 19) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe_venta[0]->id . ""
+                    'code' => 500,
+                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe_venta[0]->id
                 ]);
             }
         }
@@ -2064,81 +1998,81 @@ class VentaController extends Controller
             $cliente = $data->cliente->select;
         } else {
             $cliente = DB::table('documento_entidad')->insertGetId([
-                'id_erp'        => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
-                'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
+                'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
+                'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+                'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
             ]);
         }
 
         $documento = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa'  => $data->documento->almacen,
-            'id_periodo'                    => $data->documento->periodo,
-            'id_cfdi'                       => $data->documento->uso_venta,
-            'id_marketplace_area'           => $data->documento->marketplace,
-            'id_usuario'                    => $auth->id,
-            'id_moneda'                     => $data->documento->moneda,
-            'id_paqueteria'                 => $data->documento->paqueteria,
-            'id_fase'                       => 1,
-            'no_venta'                      => TRIM($data->documento->venta),
-            'tipo_cambio'                   => $data->documento->tipo_cambio,
-            'referencia'                    => TRIM($data->documento->referencia),
-            'observacion'                   => TRIM($data->documento->observacion),
-            'info_extra'                    => $data->documento->info_extra,
-            'fulfillment'                   => $data->documento->fulfillment,
-            'series_factura'                => $data->documento->series_factura,
-            'autorizado'                    => ($data->documento->baja_utilidad) ? 0 : 1,
-            'anticipada'                    => 0,
-            'id_entidad'                    => $cliente,
-            'addenda_orden_compra'          => $data->addenda->orden_compra,
-            'addenda_solicitud_pago'        => $data->addenda->solicitud_pago,
-            'addenda_tipo_documento'        => $data->addenda->tipo_documento,
-            'addenda_factura_asociada'      => $data->addenda->factura_asociada,
-            'mkt_fee'                       => $data->documento->mkt_fee,
-            'mkt_shipping_total'            => $data->documento->costo_envio,
-            'mkt_shipping_total_cost'       => $data->documento->costo_envio_total,
-            'mkt_shipping_id'               => $data->documento->mkt_shipping,
-            'mkt_user_total'                => $data->documento->total_user,
-            'mkt_total'                     => $data->documento->total,
-            'mkt_publicacion'               => $data->documento->mkt_publicacion,
-            'mkt_created_at'                => $data->documento->mkt_created_at,
-            'started_at'                    => $data->documento->fecha_inicio
+            'id_almacen_principal_empresa' => $data->documento->almacen,
+            'id_periodo' => $data->documento->periodo,
+            'id_cfdi' => $data->documento->uso_venta,
+            'id_marketplace_area' => $data->documento->marketplace,
+            'id_usuario' => $auth->id,
+            'id_moneda' => $data->documento->moneda,
+            'id_paqueteria' => $data->documento->paqueteria,
+            'id_fase' => 1,
+            'no_venta' => TRIM($data->documento->venta),
+            'tipo_cambio' => $data->documento->tipo_cambio,
+            'referencia' => TRIM($data->documento->referencia),
+            'observacion' => TRIM($data->documento->observacion),
+            'info_extra' => $data->documento->info_extra,
+            'fulfillment' => $data->documento->fulfillment,
+            'series_factura' => $data->documento->series_factura,
+            'autorizado' => ($data->documento->baja_utilidad) ? 0 : 1,
+            'anticipada' => 0,
+            'id_entidad' => $cliente,
+            'addenda_orden_compra' => $data->addenda->orden_compra,
+            'addenda_solicitud_pago' => $data->addenda->solicitud_pago,
+            'addenda_tipo_documento' => $data->addenda->tipo_documento,
+            'addenda_factura_asociada' => $data->addenda->factura_asociada,
+            'mkt_fee' => $data->documento->mkt_fee,
+            'mkt_shipping_total' => $data->documento->costo_envio,
+            'mkt_shipping_total_cost' => $data->documento->costo_envio_total,
+            'mkt_shipping_id' => $data->documento->mkt_shipping,
+            'mkt_user_total' => $data->documento->total_user,
+            'mkt_total' => $data->documento->total,
+            'mkt_publicacion' => $data->documento->mkt_publicacion,
+            'mkt_created_at' => $data->documento->mkt_created_at,
+            'started_at' => $data->documento->fecha_inicio
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->documento->seguimiento
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->documento->seguimiento
         ]);
 
         foreach ($data->documento->productos as $producto) {
             DB::table('movimiento')->insertGetId([
-                'id_documento'  => $documento,
-                'id_modelo'     => $producto->id,
-                'cantidad'      => $producto->cantidad,
-                'precio'        => $producto->precio,
-                'garantia'      => $producto->garantia,
-                'modificacion'  => $producto->modificacion,
-                'comentario'    => $producto->comentario,
-                'addenda'       => $producto->addenda,
-                'regalo'        => $producto->regalo
+                'id_documento' => $documento,
+                'id_modelo' => $producto->id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->precio,
+                'garantia' => $producto->garantia,
+                'modificacion' => $producto->modificacion,
+                'comentario' => $producto->comentario,
+                'addenda' => $producto->addenda,
+                'regalo' => $producto->regalo
             ]);
         }
 
         DB::table('documento_direccion')->insert([
-            'id_documento'      => $documento,
-            'id_direccion_pro'  => $data->documento->direccion_envio->colonia,
-            'contacto'          => $data->documento->direccion_envio->contacto,
-            'calle'             => $data->documento->direccion_envio->calle,
-            'numero'            => $data->documento->direccion_envio->numero,
-            'numero_int'        => $data->documento->direccion_envio->numero_int,
-            'colonia'           => $data->documento->direccion_envio->colonia_text,
-            'ciudad'            => $data->documento->direccion_envio->ciudad,
-            'estado'            => $data->documento->direccion_envio->estado,
-            'codigo_postal'     => $data->documento->direccion_envio->codigo_postal,
-            'referencia'        => $data->documento->direccion_envio->referencia
+            'id_documento' => $documento,
+            'id_direccion_pro' => $data->documento->direccion_envio->colonia,
+            'contacto' => $data->documento->direccion_envio->contacto,
+            'calle' => $data->documento->direccion_envio->calle,
+            'numero' => $data->documento->direccion_envio->numero,
+            'numero_int' => $data->documento->direccion_envio->numero_int,
+            'colonia' => $data->documento->direccion_envio->colonia_text,
+            'ciudad' => $data->documento->direccion_envio->ciudad,
+            'estado' => $data->documento->direccion_envio->estado,
+            'codigo_postal' => $data->documento->direccion_envio->codigo_postal,
+            'referencia' => $data->documento->direccion_envio->referencia
         ]);
 
         try {
@@ -2154,10 +2088,10 @@ class VentaController extends Controller
                         ->send();
 
                     DB::table('documento_archivo')->insert([
-                        'id_documento'  =>  $documento,
-                        'id_usuario'    =>  $auth->id,
-                        'nombre'        =>  $archivo->nombre,
-                        'dropbox'       =>  $response->body->id
+                        'id_documento' => $documento,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
                     ]);
                 }
             }
@@ -2165,41 +2099,41 @@ class VentaController extends Controller
             DB::table('documento')->where(['id' => $documento])->delete();
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+                'code' => 500,
+                'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
             ]);
         }
 
         $message = "Venta creada correctamente. " . $documento;
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $message
+            'code' => 200,
+            'message' => $message
         ]);
     }
 
-    public function venta_venta_pedido_pendiente_data(Request $request)
+    public function venta_venta_pedido_pendiente_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
         $auth = json_decode($request->auth);
         $marketplaces = array();
 
-        $marketplaces_usuario = DB::select("SELECT id_marketplace_area FROM usuario_marketplace_area WHERE id_usuario = " . $auth->id . "");
+        $marketplaces_usuario = DB::select("SELECT id_marketplace_area FROM usuario_marketplace_area WHERE id_usuario = " . $auth->id);
 
         foreach ($marketplaces_usuario as $marketplace) {
-            array_push($marketplaces, $marketplace->id_marketplace_area);
+            $marketplaces[] = $marketplace->id_marketplace_area;
         }
 
         $documentos = $this->obtener_ventas("AND documento.id_fase = 1 AND marketplace_area.id IN (" . implode(",", $marketplaces) . ")");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
-    public function venta_venta_pedido_pendiente_convertir($documento, Request $request)
+    public function venta_venta_pedido_pendiente_convertir($documento, Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
         $message = "";
@@ -2220,12 +2154,12 @@ class VentaController extends Controller
                                             INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
                                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                            WHERE documento.id = " . $documento . "");
+                                            WHERE documento.id = " . $documento);
 
         if (empty($informacion_documento)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información del documento, favor de verificar e intentar de nuevo."
+                'code' => 500,
+                'message' => "No se encontró información del documento, favor de verificar e intentar de nuevo."
             ]);
         }
 
@@ -2237,12 +2171,12 @@ class VentaController extends Controller
                                     movimiento.cantidad
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
 
         if (empty($productos)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información de los productos del documento, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró información de los productos del documento, favor de contactar a un administrador."
             ]);
         }
 
@@ -2252,16 +2186,16 @@ class VentaController extends Controller
 
                 if ($total->error) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => $total->mensaje
+                        'code' => 500,
+                        'message' => $total->mensaje
                     ]);
                 }
 
                 if ($total->tipo == 1) { /* Sí es producto se toman en cuenta la existencia, si es servicio, no */
                     if ($total->disponible < $producto->cantidad) {
                         return response()->json([
-                            'code'  => 500,
-                            'message'   => "Producto " . $producto->sku . " sin suficiente existencias.<br><br>Requerida: " . $producto->cantidad . "<br>Disponible: " . $total->disponible
+                            'code' => 500,
+                            'message' => "Producto " . $producto->sku . " sin suficiente existencias.<br><br>Requerida: " . $producto->cantidad . "<br>Disponible: " . $total->disponible
                         ]);
                     }
                 }
@@ -2270,8 +2204,8 @@ class VentaController extends Controller
 
         if ($informacion_documento->id_fase > 2) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "El pedido seleccionado ya fue convertido."
+                'code' => 500,
+                'message' => "El pedido seleccionado ya fue convertido."
             ]);
         }
 
@@ -2288,28 +2222,28 @@ class VentaController extends Controller
                 if (!empty($administradores)) {
                     $usuarios = array();
 
-                    $notificacion['titulo']     = "Autorización requerida";
-                    $notificacion['message']    = "El pedido de venta " . $documento . " requiere una autorización por no alcanzar el 5% de utilidad en el total de la venta.";
-                    $notificacion['tipo']       = "warning"; // success, warning, danger
-                    $notificacion['link']       = "/venta/venta/autorizar/" . $documento;
+                    $notificacion['titulo'] = "Autorización requerida";
+                    $notificacion['message'] = "El pedido de venta " . $documento . " requiere una autorización por no alcanzar el 5% de utilidad en el total de la venta.";
+                    $notificacion['tipo'] = "warning"; // success, warning, danger
+                    $notificacion['link'] = "/venta/venta/autorizar/" . $documento;
 
                     $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data'  => json_encode($notificacion)
+                        'data' => json_encode($notificacion)
                     ]);
 
-                    $notificacion['id']         = $notificacion_id;
+                    $notificacion['id'] = $notificacion_id;
 
                     foreach ($administradores as $usuario) {
                         DB::table('notificacion_usuario')->insert([
-                            'id_usuario'        => $usuario->id,
-                            'id_notificacion'   => $notificacion_id
+                            'id_usuario' => $usuario->id,
+                            'id_notificacion' => $notificacion_id
                         ]);
 
-                        array_push($usuarios, $usuario->id);
+                        $usuarios[] = $usuario->id;
                     }
 
                     if (!empty($usuarios)) {
-                        $notificacion['usuario']    = $usuarios;
+                        $notificacion['usuario'] = $usuarios;
 
                         event(new PusherEvent(json_encode($notificacion)));
                     }
@@ -2330,28 +2264,28 @@ class VentaController extends Controller
                 if (!empty($tecnicos)) {
                     $usuarios = array();
 
-                    $notificacion['titulo']     = "Modificación para el pedido " . $documento . "";
-                    $notificacion['message']    = "El pedido de venta " . $documento . " requiere una modificación el alguno de sus productos, favor de revisar en la sección de pendientes de revisión.";
-                    $notificacion['tipo']       = "success"; // success, warning, danger
-                    $notificacion['link']       = "/soporte/revision/" . $documento;
+                    $notificacion['titulo'] = "Modificación para el pedido " . $documento;
+                    $notificacion['message'] = "El pedido de venta " . $documento . " requiere una modificación el alguno de sus productos, favor de revisar en la sección de pendientes de revisión.";
+                    $notificacion['tipo'] = "success"; // success, warning, danger
+                    $notificacion['link'] = "/soporte/revision/" . $documento;
 
                     $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data'  => json_encode($notificacion)
+                        'data' => json_encode($notificacion)
                     ]);
 
-                    $notificacion['id']         = $notificacion_id;
+                    $notificacion['id'] = $notificacion_id;
 
                     foreach ($tecnicos as $usuario) {
                         DB::table('notificacion_usuario')->insert([
-                            'id_usuario'        => $usuario->id,
-                            'id_notificacion'   => $notificacion_id
+                            'id_usuario' => $usuario->id,
+                            'id_notificacion' => $notificacion_id
                         ]);
 
-                        array_push($usuarios, $usuario->id);
+                        $usuarios[] = $usuario->id;
                     }
 
                     if (!empty($usuarios)) {
-                        $notificacion['usuario']    = $usuarios;
+                        $notificacion['usuario'] = $usuarios;
 
                         event(new PusherEvent(json_encode($notificacion)));
                     }
@@ -2367,8 +2301,8 @@ class VentaController extends Controller
 
             if ($response->error) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => $response->mensaje
+                    'code' => 500,
+                    'message' => $response->mensaje
                 ]);
             }
         }
@@ -2382,20 +2316,20 @@ class VentaController extends Controller
         # Si la venta es de ClaroShop, Laptop México ó Linio y es enviada de Amazon, se tiene que enviar una carta (por eso se manda a logistica)
         if ($informacion_documento->id_almacen_principal_empresa == 5 && in_array($informacion_documento->id_marketplace_area, [11, 14, 21]) && !$informacion_documento->fulfillment) {
             DB::table('documento')->where(['id' => $documento])->update([
-                'id_fase'   => 4
+                'id_fase' => 4
             ]);
         }
 
         $message .= "Documento actualizado correctamente.<br><br>";
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $message
+            'code' => 200,
+            'message' => $message
         ]);
     }
 
     /* Venta > Publicación */
-    public function venta_publicacion_data(Request $request)
+    public function venta_publicacion_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -2418,7 +2352,7 @@ class VentaController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
@@ -2429,7 +2363,7 @@ class VentaController extends Controller
 
             foreach ($marketplace->publicaciones as $publicacion) {
                 if (!empty($publicacion->competencias)) {
-                    array_push($publicaciones_precios, $publicacion);
+                    $publicaciones_precios[] = $publicacion;
                 }
 
                 foreach ($publicacion->ofertas as $oferta) {
@@ -2440,32 +2374,32 @@ class VentaController extends Controller
                             }
                         }
 
-                        array_push($publicaciones_oferta, $publicacion);
+                        $publicaciones_oferta[] = $publicacion;
                     }
                 }
             }
 
-            $marketplace_data_precio = new \stdClass();
+            $marketplace_data_precio = new stdClass();
             $marketplace_data_precio->id = $marketplace->id;
             $marketplace_data_precio->marketplace = $marketplace->marketplace;
             $marketplace_data_precio->extra_2 = $marketplace->extra_2;
             $marketplace_data_precio->publicaciones = $publicaciones_precios;
 
-            array_push($marketplaces_precios, $marketplace_data_precio);
+            $marketplaces_precios[] = $marketplace_data_precio;
 
-            $marketplace_data_oferta = new \stdClass();
+            $marketplace_data_oferta = new stdClass();
             $marketplace_data_oferta->id = $marketplace->id;
             $marketplace_data_oferta->marketplace = $marketplace->marketplace;
             $marketplace_data_oferta->extra_2 = $marketplace->extra_2;
             $marketplace_data_oferta->publicaciones = $publicaciones_oferta;
 
-            array_push($marketplaces_oferta, $marketplace_data_oferta);
+            $marketplaces_oferta[] = $marketplace_data_oferta;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'marketplaces' => $marketplaces,
-            'empresas'  => $empresas,
+            'empresas' => $empresas,
             'proveedores' => $proveedores,
             'marketplaces_oferta' => $marketplaces_oferta,
             'marketplaces_precios' => $marketplaces_precios,
@@ -2473,7 +2407,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_publicacion_competencia($competencia_id)
+    public function venta_publicacion_competencia($competencia_id): JsonResponse
     {
         DB::table('marketplace_publicacion_competencia')->where(['id' => $competencia_id])->delete();
 
@@ -2482,7 +2416,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_publicacion_oferta($oferta)
+    public function venta_publicacion_oferta($oferta): JsonResponse
     {
         DB::table('marketplace_publicacion_oferta')->where(['id' => $oferta])->delete();
 
@@ -2491,10 +2425,8 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_publicacion_15_dias($publicacion_id)
+    public function venta_publicacion_15_dias($publicacion_id): JsonResponse
     {
-        $surtido_sugerido = 0;
-        $ventas_15_dias = 0;
 
         $publicacion = DB::table("marketplace_publicacion")
             ->select("cantidad_disponible")
@@ -2507,7 +2439,7 @@ class VentaController extends Controller
             ->whereBetween("created_at", [date("Y-m-d 00:00:00", strtotime("-15 days")), date("Y-m-d 23:59:59")])
             ->first()->total;
 
-        $surtido_sugerido = !$ventas_15_dias ? 0 : (($ventas_15_dias / 15) * 30 - (int) $publicacion->cantidad_disponible) < 1 ? 0 : (($ventas_15_dias / 15) * 30 - (int) $publicacion->cantidad_disponible);
+        $surtido_sugerido = !$ventas_15_dias ? 0 : (($ventas_15_dias / 15) * 30 - (int)$publicacion->cantidad_disponible) < 1 ? 0 : (($ventas_15_dias / 15) * 30 - (int)$publicacion->cantidad_disponible);
 
         return response()->json([
             "code" => 200,
@@ -2516,7 +2448,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_publicacion_guardar(Request $request)
+    public function venta_publicacion_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -2552,25 +2484,25 @@ class VentaController extends Controller
 
             if (empty($existe_modelo)) {
                 $modelo = DB::table('modelo')->insertGetId([
-                    'sku'           => mb_strtoupper(trim($producto->sku), 'UTF-8'),
-                    'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                    'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                    'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                    'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                    'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                    'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8'),
+                    'sku' => mb_strtoupper(trim($producto->sku), 'UTF-8'),
+                    'descripcion' => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
+                    'costo' => mb_strtoupper(trim($producto->costo), 'UTF-8'),
+                    'alto' => mb_strtoupper(trim($producto->alto), 'UTF-8'),
+                    'ancho' => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
+                    'largo' => mb_strtoupper(trim($producto->largo), 'UTF-8'),
+                    'peso' => mb_strtoupper(trim($producto->peso), 'UTF-8'),
                 ]);
             } else {
                 $modelo = $existe_modelo[0]->id;
             }
 
             DB::table('marketplace_publicacion_producto')->insert([
-                'id_publicacion'    => $data->id,
-                'id_modelo'         => $modelo,
-                'garantia'          => $producto->garantia,
-                'cantidad'          => $producto->cantidad,
-                'regalo'            => $producto->regalo,
-                'etiqueta'          => $producto->etiqueta
+                'id_publicacion' => $data->id,
+                'id_modelo' => $modelo,
+                'garantia' => $producto->garantia,
+                'cantidad' => $producto->cantidad,
+                'regalo' => $producto->regalo,
+                'etiqueta' => $producto->etiqueta
             ]);
         }
 
@@ -2603,7 +2535,7 @@ class VentaController extends Controller
             if ($oferta->id == 0) {
                 DB::table('marketplace_publicacion_oferta')->insert([
                     'id_publicacion' => $data->id,
-                    'precio' => (float) $oferta->precio,
+                    'precio' => (float)$oferta->precio,
                     'inicio' => date('Y-m-d H:i:s', strtotime($oferta->inicio)),
                     'final' => date('Y-m-d H:i:s', strtotime($oferta->final)),
                     'promocion' => $oferta->promocion
@@ -2628,13 +2560,13 @@ class VentaController extends Controller
                 }
 
                 DB::table('marketplace_publicacion_competencia')->where(['id' => $publicacion_competencia_id])->update([
-                    'precio' => (float) $response->data->price - 1,
-                    'precio_cambiado' => (float) $response->data->price
+                    'precio' => (float)$response->data->price - 1,
+                    'precio_cambiado' => (float)$response->data->price
                 ]);
 
                 DB::table('marketplace_publicacion_competencia_bitacora')->insert([
                     'id_competencia' => $publicacion_competencia_id,
-                    'precio' => (float) $response->data->price
+                    'precio' => (float)$response->data->price
                 ]);
             }
         }
@@ -2644,7 +2576,7 @@ class VentaController extends Controller
                                             FROM marketplace_publicacion
                                             INNER JOIN marketplace_area ON marketplace_publicacion.id_marketplace_area = marketplace_area.id
                                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                            WHERE marketplace_publicacion.id = " . $data->id . "")[0]->marketplace;
+                                            WHERE marketplace_publicacion.id = " . $data->id)[0]->marketplace;
 
         $publicacion_data = DB::select("SELECT
                                         marketplace_publicacion.id,
@@ -2663,7 +2595,7 @@ class VentaController extends Controller
                                     FROM marketplace_publicacion
                                     INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    WHERE marketplace_publicacion.id = " . $data->id . "");
+                                    WHERE marketplace_publicacion.id = " . $data->id);
 
         if (!empty($publicacion_data)) {
             $publicacion_data[0]->productos = DB::select("SELECT
@@ -2676,12 +2608,12 @@ class VentaController extends Controller
                                                     marketplace_publicacion_producto.etiqueta
                                                 FROM marketplace_publicacion_producto
                                                 INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion_data[0]->id . "");
+                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion_data[0]->id);
 
-            $publicacion_data[0]->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion_data[0]->id . "");
-            $publicacion_data[0]->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion_data[0]->id . " ORDER BY precio ASC");
+            $publicacion_data[0]->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion_data[0]->id);
+            $publicacion_data[0]->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion_data[0]->id . " ORDER BY precio");
             $publicacion_data[0]->competencia = empty($publicacion->competencias) ? "Sín competencia" : "$ " . $publicacion_data[0]->competencias[0]->precio_cambiado;
-            $publicacion_data[0]->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion_data[0]->id . "");
+            $publicacion_data[0]->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion_data[0]->id);
 
             foreach ($publicacion_data[0]->ofertas as $oferta) {
                 $fecha_inicio = strtotime(date("Y-m-d H:i:s"));
@@ -2716,13 +2648,13 @@ class VentaController extends Controller
         */
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Publicación actualizada correctamente.",
+            'code' => 200,
+            'message' => "Publicación actualizada correctamente.",
             'publicacion' => empty($publicacion_data) ? 0 : $publicacion_data[0]
         ]);
     }
 
-    public function venta_publicacion_actualizar($marketplace_id, Request $request)
+    public function venta_publicacion_actualizar($marketplace_id, Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -2733,7 +2665,7 @@ class VentaController extends Controller
                                         marketplace.marketplace
                                     FROM marketplace_area
                                     INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE marketplace_area.id = " . $marketplace_id . "");
+                                    WHERE marketplace_area.id = " . $marketplace_id);
 
         if (empty($marketplace)) {
             return response()->json([
@@ -2760,7 +2692,7 @@ class VentaController extends Controller
 
 
             default:
-                $response = new \stdClass();
+                $response = new stdClass();
                 $response->error = 1;
                 $response->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador. <br/> Error: BVC3621";
 
@@ -2769,20 +2701,20 @@ class VentaController extends Controller
 
         if ($response->error) {
             return response()->json([
-                'code'  => 500,
-                'message'   => $response->mensaje
+                'code' => 500,
+                'message' => $response->mensaje
             ]);
         }
 
         $marketplaces = $this->publicaciones_raw_data($auth->id);
 
         return response()->json([
-            'code'  => 200,
-            'marketplaces'  => $marketplaces
+            'code' => 200,
+            'marketplaces' => $marketplaces
         ]);
     }
 
-    public function venta_publicacion_pretransferencia(Request $request)
+    public function venta_publicacion_pretransferencia(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -2801,7 +2733,7 @@ class VentaController extends Controller
                 if ($response->existencia < $producto->cantidad) {
                     return response()->json([
                         "code" => 500,
-                        "message" => "No hay suficiente existencia del codigo " . $producto->sku . "<br><br><b>Cantidad solicitada: " . $producto->cantidad . "</b><br><b>Cantidad disponible</b>: " . $response->existencia . ""
+                        "message" => "No hay suficiente existencia del codigo " . $producto->sku . "<br><br><b>Cantidad solicitada: " . $producto->cantidad . "</b><br><b>Cantidad disponible</b>: " . $response->existencia
                     ]);
                 }
             }
@@ -2834,7 +2766,7 @@ class VentaController extends Controller
             'factura_folio' => 'N/A',
             'tipo_cambio' => 1,
             'referencia' => 'N/A',
-            'info_extra' => json_encode(new \stdClass()),
+            'info_extra' => json_encode(new stdClass()),
             'observacion' => $data->observacion
         ]);
 
@@ -2895,13 +2827,13 @@ class VentaController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'message' => "Solicitud creada correctamente con el ID " . $documento . "."
         ]);
     }
 
     /* Nota de credito */
-    public function venta_nota_credito_get_data(Request $request)
+    public function venta_nota_credito_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2952,13 +2884,14 @@ class VentaController extends Controller
 
     /* Mercadolibre */
 
-    public function venta_mercadolibre_token($marketplace_id){
+    public function venta_mercadolibre_token($marketplace_id): JsonResponse
+    {
         $response = MercadolibreService::getMarketplaceData($marketplace_id);
 
-        if ($response->error){
+        if ($response->error) {
             return response()->json([
                 'Respuesta' => "No se pudo obtener la informacion del marketplace"
-            ],400);
+            ], 400);
         }
         $marketplace_data = $response->marketplace_data;
 
@@ -2968,7 +2901,8 @@ class VentaController extends Controller
             'token' => $token
         ]);
     }
-    public function venta_mercadolibre_pregunta_respuesta_get_data(Request $request)
+
+    public function venta_mercadolibre_pregunta_respuesta_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2977,7 +2911,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_pregunta_respuesta_get_preguntas($marketplace_id)
+    public function venta_mercadolibre_pregunta_respuesta_get_preguntas($marketplace_id): JsonResponse
     {
         $data = MercadolibreService::buscarPreguntas($marketplace_id);
 
@@ -2986,7 +2920,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_pregunta_respuesta_post_responder(Request $request)
+    public function venta_mercadolibre_pregunta_respuesta_post_responder(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -2998,7 +2932,7 @@ class VentaController extends Controller
         ], $response->error ? 500 : 200);
     }
 
-    public function venta_mercadolibre_pregunta_respuesta_post_borrar(Request $request)
+    public function venta_mercadolibre_pregunta_respuesta_post_borrar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -3010,7 +2944,7 @@ class VentaController extends Controller
         ], $response->error ? 500 : 200);
     }
 
-    public function venta_mercadolibre_pregunta_respuesta_post_bloquear_usuario(Request $request)
+    public function venta_mercadolibre_pregunta_respuesta_post_bloquear_usuario(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -3022,7 +2956,7 @@ class VentaController extends Controller
         ], $response->error ? 500 : 200);
     }
 
-    public function venta_mercadolibre_nueva_publicacion(Request $request)
+    public function venta_mercadolibre_nueva_publicacion(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -3033,7 +2967,7 @@ class VentaController extends Controller
         ], $response->error ? 500 : 200);
     }
 
-    public function venta_mercadolibre_publicaciones_data(Request $request)
+    public function venta_mercadolibre_publicaciones_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -3063,6 +2997,7 @@ class VentaController extends Controller
             ->get()
             ->toArray();
 
+        /** @noinspection PhpParamsInspection */
         $tipos_logistica = DB::table("marketplace_publicacion")
             ->select("logistic_type")
             ->where("logistic_type", "<>", "N/A")
@@ -3078,10 +3013,10 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_publicaciones_busqueda(Request $request)
+    public function venta_mercadolibre_publicaciones_busqueda(Request $request): JsonResponse
     {
         set_time_limit(0);
-        
+
         $data = json_decode($request->input("data"));
 
         $publicaciones = DB::table("marketplace_publicacion")
@@ -3105,6 +3040,7 @@ class VentaController extends Controller
 
         $publicacionIds = $publicaciones->pluck('id')->toArray();
 
+        /** @noinspection PhpParamsInspection */
         $productosCounts = DB::table("marketplace_publicacion_producto")
             ->whereIn("id_publicacion", $publicacionIds)
             ->select("id_publicacion", DB::raw("COUNT(*) as count"))
@@ -3123,7 +3059,7 @@ class VentaController extends Controller
             ->pluck('almacen', 'empresa_almacen.id');
 
         foreach ($publicaciones as $publicacion) {
-            $publicacion->productos = isset($productosCounts[$publicacion->id]) ? true : false;
+            $publicacion->productos = isset($productosCounts[$publicacion->id]);
             $publicacion->almacendrop = $almacenes[$publicacion->id_almacen_empresa] ?? '';
             $publicacion->almacenfull = $almacenes[$publicacion->id_almacen_empresa_fulfillment] ?? '';
         }
@@ -3134,7 +3070,7 @@ class VentaController extends Controller
     }
 
 
-    public function venta_mercadolibre_publicaciones_publicacion_data($publicacion_id)
+    public function venta_mercadolibre_publicaciones_publicacion_data($publicacion_id): JsonResponse
     {
         $publicacion = DB::table("marketplace_publicacion")->find($publicacion_id);
 
@@ -3161,7 +3097,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_publicaciones_actualizar(Request $request)
+    public function venta_mercadolibre_publicaciones_actualizar(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -3194,7 +3130,7 @@ class VentaController extends Controller
                 break;
 
             default:
-                $response = new \stdClass();
+                $response = new stdClass();
                 $response->error = 1;
                 $response->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador.<br/> Error: BVC4207";
 
@@ -3229,7 +3165,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_publicaciones_guardar(Request $request)
+    public function venta_mercadolibre_publicaciones_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -3306,14 +3242,14 @@ class VentaController extends Controller
 
     public function venta_mercadolibre_publicaciones_guardar_marketplace(Request $request)
     {
-
+        $auth = json_decode($request->auth);
         $data = json_decode($request->input("data"));
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->auth_code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -3332,7 +3268,7 @@ class VentaController extends Controller
 
         switch (strtolower($publicacion->marketplace)) {
             case 'mercadolibre':
-                $data_to_update = new \stdClass();
+                $data_to_update = new stdClass();
                 $data_to_update->id = $data->id;
                 $data_to_update->title = $data->title;
                 $data_to_update->variations = $data->variations;
@@ -3345,14 +3281,13 @@ class VentaController extends Controller
                 $data_to_update->listing_type = $data->listing_type;
                 $data_to_update->warranty = $data->warranty;
 
-                return (array) $data_to_update;
+                return (array)$data_to_update;
 
-                $response = MercadolibreService::actualizarPublicacion($data_to_update);
-
-                break;
+//                $response = MercadolibreService::actualizarPublicacion($data_to_update);
+//                break;
 
             default:
-                $response = new \stdClass();
+                $response = new stdClass();
                 $response->error = 1;
                 $response->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador.<br/> Error: BVC4364";
 
@@ -3365,7 +3300,7 @@ class VentaController extends Controller
         ], $response->error ? 500 : 200);
     }
 
-    public function venta_mercadolibre_validar_ventas_data(Request $request)
+    public function venta_mercadolibre_validar_ventas_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -3406,7 +3341,7 @@ class VentaController extends Controller
                 ->where('id_documento', $venta->id)
                 ->get();
 
-            $venta->productos   = $productos;
+            $venta->productos = $productos;
         }
 
         return response()->json([
@@ -3415,7 +3350,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_mercadolibre_valida_venta(Request $request)
+    public function venta_mercadolibre_valida_venta(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -3471,7 +3406,7 @@ class VentaController extends Controller
         $total_pago = 0;
 
         BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-        "Se actualiza el almacen a " . $response->almacen . " y se actualiza el paqueteria a " . $response->paqueteria . " con el id " . $response->id);
+            "Se actualiza el almacen a " . $response->almacen . " y se actualiza el paqueteria a " . $response->paqueteria . " con el id " . $response->id);
 
         BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se borran los productos que tenia el pedido.");
 
@@ -3501,7 +3436,7 @@ class VentaController extends Controller
 
                 if ($existencia->error) {
                     BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                    "Error al consultar la existencia. Error: " . $existencia->mensaje);
+                        "Error al consultar la existencia. Error: " . $existencia->mensaje);
 
                     DB::table("seguimiento")->insert([
                         'id_documento' => $venta->id,
@@ -3530,7 +3465,7 @@ class VentaController extends Controller
                 'id_documento' => $venta->id,
                 'id_modelo' => $producto->id_modelo,
                 'cantidad' => $producto->cantidad,
-                'precio' => (float) ($producto->precio) / 1.16,
+                'precio' => (float)($producto->precio) / 1.16,
                 'garantia' => $producto->garantia,
                 'modificacion' => '',
                 'regalo' => $producto->regalo
@@ -3678,7 +3613,7 @@ class VentaController extends Controller
                         break;
 
                     default:
-                        $crear_pedido_btob = new \stdClass();
+                        $crear_pedido_btob = new stdClass();
 
                         $crear_pedido_btob->error = 1;
                         $crear_pedido_btob->mensaje = "El proveedor no ha sido configurado";
@@ -3761,7 +3696,7 @@ class VentaController extends Controller
                     'mensaje' => "El pedido aun no tiene la guia de embarque se actualiza la fase del pedido."
                 ]);
             } else {
-                DB::table('documento')->where('id',$venta->id)->update([
+                DB::table('documento')->where('id', $venta->id)->update([
                     'id_fase' => 1,
                     'validated_at' => date("Y-m-d H:i:s")
                 ]);
@@ -3785,9 +3720,9 @@ class VentaController extends Controller
 
         if ($venta->fulfillment) {
             //Aqui ta
-            if(!$hayError) {
+            if (!$hayError) {
 //                $factura = DocumentoService::crearFactura($venta->id, 0, 0);
-                $factura =InventarioService::aplicarMovimiento($venta->id);
+                $factura = InventarioService::aplicarMovimiento($venta->id);
                 if (!$factura->error) {
                     DB::table('documento')->where(['id' => $venta->id])->update([
                         'id_fase' => 6,
@@ -3802,7 +3737,7 @@ class VentaController extends Controller
                         'mensaje' => "Documento actualizado correctamente"
                     ]);
                 } else {
-                    DB::table('documento')->where('id',$venta->id)->update([
+                    DB::table('documento')->where('id', $venta->id)->update([
                         'id_fase' => 6,
                         'validated_at' => date("Y-m-d H:i:s")
                     ]);
@@ -3846,10 +3781,9 @@ class VentaController extends Controller
     }
 
     /* Lino */
-    public function venta_shopify_importar_ventas(Request $request)
+    public function venta_shopify_importar_ventas(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
-        $auth = json_decode($request->auth);
 
         $invalido = 0;
 
@@ -3882,13 +3816,13 @@ class VentaController extends Controller
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $documento = $data->documento;
         $usuario = $auth->id;
 
-        $direccion = DB::select("SELECT * FROM documento_direccion WHERE id_documento = " . $documento . "");
+        $direccion = DB::select("SELECT * FROM documento_direccion WHERE id_documento = " . $documento);
 
         if (empty($direccion)) {
             $log = self::logVariableLocation();
@@ -3918,7 +3852,7 @@ class VentaController extends Controller
                                         documento_entidad.*
                                     FROM documento
                                     INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         if (empty($informacion_cliente)) {
             $log = self::logVariableLocation();
@@ -3941,10 +3875,10 @@ class VentaController extends Controller
 
         $paqueterias =
             DB::table('paqueteria_tipo')
-            ->select('*')
-            ->where('id_paqueteria', '>', 100)
-            ->get()
-            ->toArray();
+                ->select('*')
+                ->where('id_paqueteria', '>', 100)
+                ->get()
+                ->toArray();
 
         return response()->json([
             "code" => 200,
@@ -3954,21 +3888,19 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_walmart_importar_ventas(Request $request)
+    public function venta_walmart_importar_ventas(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input("data"));
-        $auth = json_decode($request->auth);
-        $ventas = [];
 
         $marketplace_area =
             DB::table('marketplace_area')
-            ->select('id')
-            ->where('id_area', $data->area)
-            ->where('id_marketplace', $data->marketplace)
-            ->first();
+                ->select('id')
+                ->where('id_area', $data->area)
+                ->where('id_marketplace', $data->marketplace)
+                ->first();
 
-        if($data->excel && $data->fulfillment) {
+        if ($data->excel && $data->fulfillment) {
             $ventas = $data->data;
             foreach ($ventas as $venta) {
                 $existe = DB::select("SELECT * FROM documento WHERE no_venta = " . $venta->orden);
@@ -3983,17 +3915,13 @@ class VentaController extends Controller
                     $info_venta = WalmartService::venta($venta->orden, 64, 1);
 
                     $importar = WalmartService::importarVentaIndividual($info_venta->data, $marketplace_area->id, 1);
+                    $venta->Error = $importar->error;
+                    $venta->purchaseOrderId = "N/A";
+                    $venta->customerOrderId = $venta->orden;
+                    $venta->ErrorMessage = $importar->mensaje;
                     if ($importar->error) {
-                        $venta->Error = $importar->error;
-                        $venta->purchaseOrderId = "N/A";
-                        $venta->customerOrderId = $venta->orden;
-                        $venta->ErrorMessage = $importar->mensaje;
                         $venta->Documentos = "";
                     } else {
-                        $venta->Error = $importar->error;
-                        $venta->purchaseOrderId = "N/A";
-                        $venta->customerOrderId = $venta->orden;
-                        $venta->ErrorMessage = $importar->mensaje;
                         $venta->Documentos = $importar->documentos;
                     }
                 }
@@ -4035,11 +3963,10 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_liverpool_importar_ventas(Request $request)
+    public function venta_liverpool_importar_ventas(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input("data"));
-        $auth = json_decode($request->auth);
 
         $marketplace_area =
             DB::table('marketplace_area')
@@ -4050,7 +3977,7 @@ class VentaController extends Controller
 
         $importar = LiverpoolService::importar_ventas($data->data, $marketplace_area->id, $data->almacen);
 
-         
+
         return response()->json([
             "code" => 200,
             "message" => "Proceso terminado",
@@ -4058,7 +3985,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_liverpool_getData()
+    public function venta_liverpool_getData(): JsonResponse
     {
         $empresas = DB::table("empresa")->where("status", 1)->whereIn("id", [1, 2])->get();
 
@@ -4072,20 +3999,20 @@ class VentaController extends Controller
                                     WHERE empresa_almacen.id_empresa = " . $empresa->id . "
                                     AND almacen.status = 1
                                     AND almacen.id != 0
-                                    ORDER BY almacen.almacen ASC");
+                                    ORDER BY almacen.almacen");
 
             $empresa->almacenes = $almacenes;
         }
 
         return response()->json([
-            'code'  => 200,
-            'empresas'  => $empresas,
+            'code' => 200,
+            'empresas' => $empresas,
             'almacenes' => $almacenes,
         ]);
     }
 
     /* Rawinfo */
-    private function publicaciones_raw_data($usuario, $query_extra = "")
+    private function publicaciones_raw_data($usuario, $query_extra = ""): array
     {
         $marketplaces = DB::select("SELECT
                                         marketplace_area.id,
@@ -4133,7 +4060,7 @@ class VentaController extends Controller
                                             ) AS empresa_almacen_secundario
                                         FROM marketplace_publicacion
                                         WHERE marketplace_publicacion.id_marketplace_area = " . $marketplace->id . "
-                                        " . $query_extra . "");
+                                        " . $query_extra);
 
             foreach ($publicaciones as $publicacion) {
                 $publicacion->productos = DB::select("SELECT
@@ -4147,12 +4074,12 @@ class VentaController extends Controller
                                             marketplace_publicacion_producto.etiqueta
                                         FROM marketplace_publicacion_producto
                                         INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                        WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id . "");
+                                        WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
 
-                $publicacion->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion->id . "");
-                $publicacion->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion->id . " ORDER BY precio ASC");
+                $publicacion->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion->id);
+                $publicacion->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion->id . " ORDER BY precio");
                 $publicacion->competencia = empty($publicacion->competencias) ? "Sín competencia" : "$ " . $publicacion->competencias[0]->precio_cambiado;
-                $publicacion->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion->id . "");
+                $publicacion->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion->id);
 
                 foreach ($publicacion->ofertas as $oferta) {
                     $fecha_inicio = strtotime(date("Y-m-d H:i:s"));
@@ -4168,7 +4095,7 @@ class VentaController extends Controller
         return $marketplaces;
     }
 
-    private function obtener_ventas($query_extra)
+    private function obtener_ventas($query_extra): array
     {
         $ventas = DB::select("SELECT 
                                 documento.id, 
@@ -4208,7 +4135,7 @@ class VentaController extends Controller
                             LEFT JOIN documento_guia ON documento.id = documento_guia.id_documento
                             WHERE documento.id_tipo = 2
                             AND documento.status = 1
-                            " . $query_extra . "");
+                            " . $query_extra);
 
         foreach ($ventas as $venta) {
             $total = 0;
@@ -4228,7 +4155,7 @@ class VentaController extends Controller
             $direccion = DB::select("SELECT
                                         *
                                     FROM documento_direccion
-                                    WHERE id_documento = " . $venta->id . "");
+                                    WHERE id_documento = " . $venta->id);
 
             $productos = DB::select("SELECT 
                                     movimiento.id,
@@ -4239,10 +4166,10 @@ class VentaController extends Controller
                                     ROUND((movimiento.precio * 1.16), 2) AS precio
                                 FROM movimiento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                WHERE id_documento = " . $venta->id . "");
+                                WHERE id_documento = " . $venta->id);
 
             foreach ($productos as $producto) {
-                $total += round((int) $producto->cantidad * (float) $producto->precio, 2);
+                $total += round((int)$producto->cantidad * (float)$producto->precio, 2);
             }
 
             $archivos = DB::select("SELECT
@@ -4254,25 +4181,26 @@ class VentaController extends Controller
                                     INNER JOIN usuario ON documento_archivo.id_usuario = usuario.id
                                     WHERE documento_archivo.id_documento = " . $venta->id . " AND documento_archivo.status = 1");
 
-            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id . "");
+            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id);
 
             $venta->seguimiento = $seguimiento;
-            $venta->productos   = $productos;
-            $venta->direccion   = (empty($direccion)) ? 0 : $direccion[0];
-            $venta->archivos    = $archivos;
-            $venta->total       = $total;
+            $venta->productos = $productos;
+            $venta->direccion = (empty($direccion)) ? 0 : $direccion[0];
+            $venta->archivos = $archivos;
+            $venta->total = $total;
         }
 
         return $ventas;
     }
 
-    private function cotizar_paqueteria($paqueteria, $array)
+    /**
+     * @throws ConnectionErrorException
+     */
+    private function cotizar_paqueteria($paqueteria, $array): string
     {
-        $message = "";
-
         $cotizar = \Httpful\Request::post('http://apipaqueterias.crmomg.mx/api/' . $paqueteria . '/Cotizar')
             ->addHeader('authorization', 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjA4Njk2YjQxODczZTM4YTRkM2E1NjBjNTI2YTY3NmRhZmQ0YWNmOWUzNTFmNTkxZWM2NTIyOGRiOTJmODBlMmE0ZjNhNWJlZjcyNjg1ODQ3In0.eyJhdWQiOiIxIiwianRpIjoiMDg2OTZiNDE4NzNlMzhhNGQzYTU2MGM1MjZhNjc2ZGFmZDRhY2Y5ZTM1MWY1OTFlYzY1MjI4ZGI5MmY4MGUyYTRmM2E1YmVmNzI2ODU4NDciLCJpYXQiOjE1NTIwNzEzNzksIm5iZiI6MTU1MjA3MTM3OSwiZXhwIjoxNTgzNjkzNzc5LCJzdWIiOiIxIiwic2NvcGVzIjpbXX0.h6nCD2mqyp-QkXBd73BEM3kiwzry9JZJ5I35VJAcYesJc_kup3zVKrRIKz0wSsFt5zIGzg91LCnxgyr78GyIBpBkH-TVzzGSjTVNf5uFZhWGUVINM7SsKtbCHHyrUhOdOI2zgfO4_BIvkafnw_mYIgULMcwQU1w5G7XXnWeYaIxIooLEkw0TmtT0pD4aAYh9J15ak5cvVhTcoe-UO6XF63CkbAQmmeYpAjkxyLG_y5WIZIBXe5lhMYABjnKiBDlM6Ig8tcjXQ8egaLrAAsrRzFDwwzn23O3qTUo7pwxyHNn5guBXfaLpG7Pr5an-GslArwHApA6Ipdg4n5Qt4M42EHfO0KwrwAFMFHo1yDr3vcK7S05K_p9d9cAuZTZyYGo-39PUXcWoluR9W6KVA3X7tlZr3R8d7XLjDJ3Gp--tTmZpDsXKGLCh_uiFIHdmBXuN-eKbvrsxMnbgyK9EPY4PNbG35Ii6O6vZDVvfKia0tkpXof03uAs2OIcmlc5belFSpl7OHEO6HDXKfCmPjOMQFyxyAPrdEsJNJgz55tbdFPNZzpQSsWILVUgDq3pjpy503uyTS0NCvicIByBVwmOOXLm8l40dKhX-aaFOMiTzqxO0m9NJjoBwRsscUUYSXFOexYXGSiHXT4dqq_E4dAhEewKLSo1-RwwUtP0VGgmkiUo')
-            ->body($array, \Httpful\Mime::FORM)
+            ->body($array, Mime::FORM)
             ->send();
 
         $cotizar_res = @json_decode($cotizar->raw_body);
@@ -4285,12 +4213,12 @@ class VentaController extends Controller
             return "Ocurrió un error, favor de contactar al adminsitrador. Mensaje de error: " . $cotizar_res->mensaje;
         }
 
-        $costo_total = (float) $cotizar_res->base + (float) $cotizar_res->extra;
+        $costo_total = (float)$cotizar_res->base + (float)$cotizar_res->extra;
 
         return "$ " . $costo_total;
     }
 
-    private function areas_marketplaces($usuario, $marketplace)
+    private function areas_marketplaces($usuario, $marketplace): array
     {
         $areas_cast = array();
 
@@ -4299,8 +4227,6 @@ class VentaController extends Controller
             ->where('area', '!=', 'N/A')
             ->get()
             ->toArray();
-
-        if($marketplace == "MERCADOLIBRE"){}
 
         foreach ($areas as $i => $area) {
             $area->marketplaces = DB::table("marketplace_area")
@@ -4316,39 +4242,39 @@ class VentaController extends Controller
                 ->toArray();
 
             if (!empty($area->marketplaces)) {
-                array_push($areas_cast, $area);
+                $areas_cast[] = $area;
             }
         }
 
         return $areas_cast;
     }
 
-    public function venta_nota_autorizar_get_data(Request $request)
+    public function venta_nota_autorizar_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
         $pendientes =
             DB::table('documento_nota_autorizacion')
-            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
-            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-            ->where('estado', 1)
-            ->where('modulo', 'Ventas')
-            ->get()
-            ->toArray();
+                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
+                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+                ->where('estado', 1)
+                ->where('modulo', 'Ventas')
+                ->get()
+                ->toArray();
 
         $terminados =
             DB::table('documento_nota_autorizacion')
-            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
-            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-            ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
-            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-            ->where('estado', '!=', 1)
-            ->where('modulo', 'Ventas')
-            ->get()
-            ->toArray();
+                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
+                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+                ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
+                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+                ->where('estado', '!=', 1)
+                ->where('modulo', 'Ventas')
+                ->get()
+                ->toArray();
 
         $personales = DB::table('documento_nota_autorizacion')
             ->select('documento_nota_autorizacion.*', 'documento.no_venta')
@@ -4367,32 +4293,32 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_sin_venta_nota_autorizar_get_data(Request $request)
+    public function venta_sin_venta_nota_autorizar_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
         $pendientes =
             DB::table('documento_nota_autorizacion')
-            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
-            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-            ->where('estado', 1)
-            ->where('modulo', 'Sin Venta')
-            ->get()
-            ->toArray();
+                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
+                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+                ->where('estado', 1)
+                ->where('modulo', 'Sin Venta')
+                ->get()
+                ->toArray();
 
         $terminados =
             DB::table('documento_nota_autorizacion')
-            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
-            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-            ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
-            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-            ->where('estado', '!=', 1)
-            ->where('modulo', 'Sin Venta')
-            ->get()
-            ->toArray();
+                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
+                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+                ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
+                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+                ->where('estado', '!=', 1)
+                ->where('modulo', 'Sin Venta')
+                ->get()
+                ->toArray();
 
         $personales = DB::table('documento_nota_autorizacion')
             ->select('documento_nota_autorizacion.*', 'documento.no_venta')
@@ -4442,7 +4368,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_nota_autorizar_soporte_get_data(Request $request)
+    public function venta_nota_autorizar_soporte_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -4457,23 +4383,23 @@ class VentaController extends Controller
 
         $terminados =
             DB::table('garantia_nota_autorizacion')
-            ->select('garantia_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente')
-            ->leftJoin('usuario as a', 'garantia_nota_autorizacion.usuario', '=', 'a.id')
-            ->leftJoin('usuario as b', 'garantia_nota_autorizacion.autoriza', '=', 'b.id')
-            ->leftJoin('usuario as c', 'garantia_nota_autorizacion.rechaza', '=', 'c.id')
-            ->where('estado', '!=', 1)
-            ->orderBy('created_at', 'DESC')
-            ->get()
-            ->toArray();
+                ->select('garantia_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente')
+                ->leftJoin('usuario as a', 'garantia_nota_autorizacion.usuario', '=', 'a.id')
+                ->leftJoin('usuario as b', 'garantia_nota_autorizacion.autoriza', '=', 'b.id')
+                ->leftJoin('usuario as c', 'garantia_nota_autorizacion.rechaza', '=', 'c.id')
+                ->where('estado', '!=', 1)
+                ->orderBy('created_at', 'DESC')
+                ->get()
+                ->toArray();
 
         $personales =
             DB::table('garantia_nota_autorizacion')
-            ->select('*')
-            ->where('usuario', $auth->id)
-            ->where('estado', '!=', 1)
-            ->orderBy('created_at', 'DESC')
-            ->get()
-            ->toArray();
+                ->select('*')
+                ->where('usuario', $auth->id)
+                ->where('estado', '!=', 1)
+                ->orderBy('created_at', 'DESC')
+                ->get()
+                ->toArray();
 
 
         foreach ($pendientes as $key) {
@@ -4505,7 +4431,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_nota_autorizar_autorizado(Request $request)
+    public function venta_nota_autorizar_autorizado(Request $request): JsonResponse
     {
 
         $id = json_decode($request->input('id'));
@@ -4519,9 +4445,9 @@ class VentaController extends Controller
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "<p>Se autoriza la creación de la nota de crédito</p>"
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "<p>Se autoriza la creación de la nota de crédito</p>"
         ]);
 
         return response()->json([
@@ -4529,7 +4455,8 @@ class VentaController extends Controller
             "message" => 'Autorizado para continuar'
         ]);
     }
-    public function venta_nota_autorizar_garantia_autorizado(Request $request)
+
+    public function venta_nota_autorizar_garantia_autorizado(Request $request): JsonResponse
     {
 
         $documento = json_decode($request->input('documento'));
@@ -4543,9 +4470,9 @@ class VentaController extends Controller
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "<p>Se autoriza la creación de la nota de crédito</p>"
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "<p>Se autoriza la creación de la nota de crédito</p>"
         ]);
 
         return response()->json([
@@ -4553,7 +4480,8 @@ class VentaController extends Controller
             "message" => 'Autorizado, se coninua con el proceso. Nota de crédito se creará.'
         ]);
     }
-    public function venta_nota_sin_venta_autorizar_autorizado(Request $request)
+
+    public function venta_nota_sin_venta_autorizar_autorizado(Request $request): JsonResponse
     {
         $id = json_decode($request->input('id'));
         $auth = json_decode($request->auth);
@@ -4569,7 +4497,8 @@ class VentaController extends Controller
             "message" => 'Autorizado para continuar'
         ]);
     }
-    public function venta_nota_autorizar_rechazado(Request $request)
+
+    public function venta_nota_autorizar_rechazado(Request $request): JsonResponse
     {
 
         $id = json_decode($request->input('id'));
@@ -4584,9 +4513,9 @@ class VentaController extends Controller
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "<p>Se rechaza la creación de la nota de crédito</p><p>Motivo de rechazo: " . $motivo . "</p>"
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "<p>Se rechaza la creación de la nota de crédito</p><p>Motivo de rechazo: " . $motivo . "</p>"
         ]);
 
         return response()->json([
@@ -4594,7 +4523,8 @@ class VentaController extends Controller
             "message" => 'Solicitud rechazada correctamente'
         ]);
     }
-    public function venta_nota_autorizar_garantia_rechazado(Request $request)
+
+    public function venta_nota_autorizar_garantia_rechazado(Request $request): JsonResponse
     {
         $documento = json_decode($request->input('documento'));
         $garantia = json_decode($request->input('garantia'));
@@ -4609,9 +4539,9 @@ class VentaController extends Controller
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "<p>Se rechaza la creación de la nota de crédito</p><p>Motivo de rechazo: " . $motivo . "</p>"
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "<p>Se rechaza la creación de la nota de crédito</p><p>Motivo de rechazo: " . $motivo . "</p>"
         ]);
 
         return response()->json([
@@ -4619,7 +4549,8 @@ class VentaController extends Controller
             "message" => 'Solicitud rechazada correctamente'
         ]);
     }
-    public function venta_nota_sin_venta_autorizar_rechazado(Request $request)
+
+    public function venta_nota_sin_venta_autorizar_rechazado(Request $request): JsonResponse
     {
         $id = json_decode($request->input('id'));
         $auth = json_decode($request->auth);
@@ -4638,19 +4569,17 @@ class VentaController extends Controller
         ]);
     }
 
-    public static function logVariableLocation()
+    public static function logVariableLocation(): string
     {
         // $log = self::logVariableLocation();
         $sis = 'BE'; //Front o Back
         $ini = 'VC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
         $fin = 'NTA'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
-        $text = ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
-
-        return $text;
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 
-    public function venta_publicaciones_data(Request $request)
+    public function venta_publicaciones_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -4659,18 +4588,18 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_publicaciones_crear(Request $request)
+    public function venta_publicaciones_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $productos = json_decode($request->input("productos"));
         $auth = json_decode($request->auth);
-        $response = new \stdClass();
+        $response = new stdClass();
 
-        $validate_authy = DocumentoService::authy($auth->id, $data->authy_code);
+        $validate_wa = WhatsAppService::validateCode($auth->id, $data->auth_code);
 
-        if ($validate_authy->error) {
+        if ($validate_wa->error) {
             return response()->json([
-                "message" => $validate_authy->mensaje
+                "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
             ], 500);
         }
 
@@ -4749,7 +4678,7 @@ class VentaController extends Controller
             ]);
 
             DB::commit();
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             $response->error = 1;
@@ -4765,30 +4694,30 @@ class VentaController extends Controller
 
         return response()->json([
             "message" => $response->mensaje
-        ], $response->error ? 500 : 200);
+        ]);
     }
 
-    public function venta_marketplaces_autorizados_data(Request $request)
+    public function venta_marketplaces_autorizados_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
         $data =
             DB::table('marketplace_publicacion_marketplaces')
-            ->select('marketplace_publicacion_marketplaces.*', 'marketplace.marketplace', 'area.area')
-            ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', '=', 'marketplace_area.id')
-            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
-            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
-            ->where('marketplace_publicacion_marketplaces.estatus', 1)
-            ->get()->toArray();
+                ->select('marketplace_publicacion_marketplaces.*', 'marketplace.marketplace', 'area.area')
+                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', '=', 'marketplace_area.id')
+                ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+                ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+                ->where('marketplace_publicacion_marketplaces.estatus', 1)
+                ->get()->toArray();
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             "data" => self::areas_marketplaces_publicaciones($auth->id),
             'marketplaces' => $data
         ]);
     }
 
-    public function venta_marketplaces_autorizados_gestion(Request $request)
+    public function venta_marketplaces_autorizados_gestion(Request $request): JsonResponse
     {
         $data = json_decode($request->data);
 
@@ -4834,8 +4763,6 @@ class VentaController extends Controller
                     'message' => 'Se actualizó el registro correctamente'
                 ]);
 
-                break;
-
             case 2:
                 $existe = DB::table('marketplace_publicacion_marketplaces')->where('id_marketplace_area', $data->extra)->first();
 
@@ -4863,55 +4790,54 @@ class VentaController extends Controller
                     'code' => 200,
                     'message' => 'Se actualizó el registro correctamente'
                 ]);
-                break;
 
             default:
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => 'hubo un error al procesar ' . self::logVariableLocation()
+                    'code' => 500,
+                    'message' => 'hubo un error al procesar ' . self::logVariableLocation()
                 ]);
-                break;
         }
     }
 
-    private function areas_publicaciones($usuario)
+    private function areas_publicaciones($usuario): array
     {
         $areas_cast = array();
 
+        /** @noinspection PhpParamsInspection */
         $areas =
             DB::table('marketplace_publicacion_marketplaces')
-            ->select('area.*')
-            ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area',  'marketplace_area.id')
-            ->join('area', 'area.id',  'marketplace_area.id_area')
-            ->groupBy('area.area')
-            ->where('marketplace_publicacion_marketplaces.estatus', 1)
+                ->select('area.*')
+                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
+                ->join('area', 'area.id', 'marketplace_area.id_area')
+                ->groupBy('area.area')
+                ->where('marketplace_publicacion_marketplaces.estatus', 1)
                 ->where('area.area', '!=', 'N/A')
-            ->get()
-            ->toArray();
+                ->get()
+                ->toArray();
 
         foreach ($areas as $i => $area) {
             $area->marketplaces = DB::table('marketplace_publicacion_marketplaces')
                 ->select('marketplace_area.id', 'marketplace.marketplace', 'marketplace_api.extra_2')
-                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area',  'marketplace_area.id')
-                ->join('marketplace', 'marketplace_area.id_marketplace',  'marketplace.id')
-                ->leftJoin('marketplace_api', 'marketplace_area.id',  'marketplace_api.id_marketplace_area')
-                ->join('usuario_marketplace_area', 'marketplace_area.id',  'usuario_marketplace_area.id_marketplace_area')
-                ->where('usuario_marketplace_area.id_usuario',  $usuario)
-                ->where('marketplace_area.status',  1)
-                ->where('marketplace_area.id_area',  $area->id)
-                ->where('marketplace_publicacion_marketplaces.estatus',  1)
+                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
+                ->join('marketplace', 'marketplace_area.id_marketplace', 'marketplace.id')
+                ->leftJoin('marketplace_api', 'marketplace_area.id', 'marketplace_api.id_marketplace_area')
+                ->join('usuario_marketplace_area', 'marketplace_area.id', 'usuario_marketplace_area.id_marketplace_area')
+                ->where('usuario_marketplace_area.id_usuario', $usuario)
+                ->where('marketplace_area.status', 1)
+                ->where('marketplace_area.id_area', $area->id)
+                ->where('marketplace_publicacion_marketplaces.estatus', 1)
                 ->get()
                 ->toArray();
 
             if (!empty($area->marketplaces)) {
-                array_push($areas_cast, $area);
+                $areas_cast[] = $area;
             }
         }
 
         return $areas_cast;
     }
 
-    private function areas_marketplaces_publicaciones($usuario)
+    private function areas_marketplaces_publicaciones($usuario): array
     {
         $areas_cast = array();
 
@@ -4934,14 +4860,14 @@ class VentaController extends Controller
                 ->toArray();
 
             if (!empty($area->marketplaces)) {
-                array_push($areas_cast, $area);
+                $areas_cast[] = $area;
             }
         }
 
         return $areas_cast;
     }
 
-    public function venta_amazon_publicaciones_data(Request $request)
+    public function venta_amazon_publicaciones_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -4987,7 +4913,7 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_claroshop_publicaciones_data(Request $request)
+    public function venta_claroshop_publicaciones_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -5032,9 +4958,10 @@ class VentaController extends Controller
             "empresas" => $empresas
         ]);
     }
-    private function ordenes_generar_pdf($documento, $auth)
+
+    private function ordenes_generar_pdf($documento, $auth): stdClass
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $informacion_documento = DB::select("SELECT
                                                 documento.id,
@@ -5054,7 +4981,7 @@ class VentaController extends Controller
                                             INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
                                             INNER JOIN moneda ON documento.id_moneda = moneda.id
                                             INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                            WHERE documento.id = " . $documento . "");
+                                            WHERE documento.id = " . $documento);
 
         if (empty($informacion_documento)) {
             $response->error = 1;
@@ -5189,7 +5116,7 @@ class VentaController extends Controller
             $pdf->Cell($product_description_height, 5, substr($producto->descripcion, 0, 60), 'LR', false, 'C');
             $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2, '.', ','), 'LR', false, 'C');
             $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2, '.', ','), 'LR', false, 'C');
-            $pdf->Cell($product_total_height, 5, "$ " . number_format((float) $producto->cantidad * (float) $producto->costo, 2, '.', ','), 'LR', false, 'C');
+            $pdf->Cell($product_total_height, 5, "$ " . number_format((float)$producto->cantidad * (float)$producto->costo, 2, '.', ','), 'LR', false, 'C');
             $pdf->Ln();
 
             $current_height_product += 5;
@@ -5492,11 +5419,11 @@ class VentaController extends Controller
             //                # $current_height_product = 5;
             //            }
 
-            $total += (float) $producto->cantidad * (float) $producto->costo;
-            $total_discount += $producto->descuento > 0 ? (($producto->cantidad * (float) $producto->costo) * $producto->descuento / 100) : 0;
+            $total += (float)$producto->cantidad * (float)$producto->costo;
+            $total_discount += $producto->descuento > 0 ? (($producto->cantidad * (float)$producto->costo) * $producto->descuento / 100) : 0;
         }
 
-        $total = $total * (float) $impuesto;
+        $total = $total * (float)$impuesto;
 
         $pdf->Cell($product_qty_height, 10, "", 'LBR', false, 'C');
         $pdf->Cell($product_code_height, 10, "", 'LBR', false, 'C');
@@ -5513,7 +5440,7 @@ class VentaController extends Controller
         $pdf->Cell(130, 7, "Thanks you for your business", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Subtotal", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total / (float) $impuesto, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total / (float)$impuesto, 2, '.', ','), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5521,7 +5448,7 @@ class VentaController extends Controller
         $pdf->Cell(130, 7, "Special Comments ", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Tax", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float) $impuesto), 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float)$impuesto), 2, '.', ','), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5538,40 +5465,30 @@ class VentaController extends Controller
         if (strlen($informacion_documento->info_extra->comentarios) > 90) {
             $pdf->SetFont('Arial', '', 8);
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 90, 90), 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         } else {
             $pdf->Cell(130, 7, "", 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         }
+
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
+        $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Ln();
+        $current_height_product += 5;
 
         if (strlen($informacion_documento->info_extra->comentarios) > 180) {
             $pdf->SetFont('Arial', '', 8);
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 180, 90), 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         } else {
             $pdf->Cell(130, 7, "", 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         }
+
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
+        $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Ln();
+        $current_height_product += 5;
 
         if (strlen($informacion_documento->info_extra->comentarios) > 270) {
             $pdf->SetFont('Arial', '', 8);
@@ -5648,9 +5565,9 @@ class VentaController extends Controller
             $pdf->Image($informacion_documento->firma, 50, 250, 100, 40, 'png');
         }
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
+        $file_name = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
 
         $response->error = 0;
         $response->data = base64_encode($pdf_data);
