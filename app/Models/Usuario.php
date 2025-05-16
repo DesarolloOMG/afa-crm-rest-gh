@@ -7,12 +7,6 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 //use Illuminate\Database\Eloquent\Eloquent\HasFactory;
 
-/**
- * @method static where(string $string, $usuario)
- * @method static find($id)
- * @method static v_existe_usuario(array|string|null $user_id)
- * @method static existe_usuario(array|string|null $email)
- */
 class Usuario extends Model
 {
     // use HasFactory;
@@ -27,8 +21,7 @@ class Usuario extends Model
         'email',
         'tag',
         'celular',
-        'contrasena',
-        'authy'
+        'contrasena'
     ];
 
     public function marketplaces() {

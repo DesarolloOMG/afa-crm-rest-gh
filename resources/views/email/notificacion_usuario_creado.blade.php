@@ -1,4 +1,5 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<!--suppress HtmlUnknownTarget, CssUnusedSymbol, HtmlUnknownAttribute -->
 <html xmlns="http://www.w3.org/1999/xhtml">
 
     <head>
@@ -54,19 +55,6 @@
                     Correo electronico: <b>{{ $correo }}</b>
                     <br>
                     Contraseña: <b>{{ $contrasena }}</b>
-                    <br>
-                    <br>
-
-                    Adicional, recibirás un mensaje de texto con la invitación a la aplicación de Authy, si no lo recibiste, puedes descargarla aquí:
-                    <br>
-                    <br>
-                    <b>Google Play:</b> <a href="https://play.google.com/store/apps/details?id=com.authy.authy&hl=es_419&gl=US&pli=1" target="_blank">Haz click aquí</a>
-                    <br>
-                    <br>
-                    <b>Apple Store:</b> <a href="https://apps.apple.com/es/app/authy/id494168017" target="_blank">Haz click aquí</a>
-                    <br>
-                    <br>
-                    Una vez que tengas instalada la aplicación en tu movil, puedes acceder al CRM OMG International con este link: <a href="http://crmomg.mx/" target="_blank">CRM OMG International</a> 
                     <br>
                     <br>
 

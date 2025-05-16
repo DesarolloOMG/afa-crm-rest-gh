@@ -1,4 +1,8 @@
-<?php
+<?php /** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUnusedLocalVariableInspection */
+/** @noinspection PhpUnusedLocalVariableInspection */
+/** @noinspection PhpUnused */
+/** @noinspection PhpUndefinedFieldInspection */
 
 namespace App\Http\Controllers;
 
@@ -23,6 +27,7 @@ use App\Models\MovimientoProducto;
 use App\Models\Paqueteria;
 use App\Models\Producto;
 use Exception;
+use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,13 +37,14 @@ use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Picqer\Barcode\BarcodeGeneratorJPG;
+use Picqer\Barcode\Exceptions\BarcodeException;
 use stdClass;
 use Throwable;
 
 class AlmacenController extends Controller
 {
     /* Almacen > Packing */
-    public function almacen_packing_data(Request $request)
+    public function almacen_packing_data(Request $request): JsonResponse
     {
         set_time_limit(0);
         $auth = json_decode($request->auth);
@@ -50,7 +56,8 @@ class AlmacenController extends Controller
             'ventas'    => $ventas
         ]);
     }
-    public function almacen_packing_empresa_almacen($usuario)
+
+    public function almacen_packing_empresa_almacen($usuario): JsonResponse
     {
         set_time_limit(0);
 
@@ -66,7 +73,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_packing_confirmar(Request $request)
+    public function almacen_packing_confirmar(Request $request): JsonResponse
     {
         $series = json_decode($request->input('series'));
         $producto = $request->input('producto');
@@ -80,16 +87,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_packing_confirmar_authy(Request $request)
-    {
-        $data = json_decode($request->input("data"));
-            return response()->json([
-                "code" => 404
-            ]);
-
-    }
-
-    public function almacen_packing_guardar(Request $request)
+    public function almacen_packing_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -160,7 +158,7 @@ class AlmacenController extends Controller
                 if ($usuario_documento->id_usuario > 1) {
                     $notificacion['titulo']     = "Pedido en problemas.";
                     $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-                    $notificacion['tipo']       = "warning"; // success, warning, danger
+                    $notificacion['tipo'] = "warning";
                     $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
 
                     $notificacion_id = DB::table('notificacion')->insertGetId([
@@ -255,7 +253,7 @@ class AlmacenController extends Controller
                             )
                             ->get();
 
-                        array_push($series_cambiadas, $existe[0]->id);
+                        $series_cambiadas[] = $existe[0]->id;
 
                         DB::table('producto')->where(['id' => $existe[0]->id])->update([
                             'id_almacen' => $info_documento->id_almacen,
@@ -277,7 +275,7 @@ class AlmacenController extends Controller
 
                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error : Documento CRM: " . $data->documento . " ; Mensaje: No se encontró el movimento relacionado con el producto " . $producto->producto . ", por lo tanto no se generó la relación de las series." . PHP_EOL, FILE_APPEND);
 
-                array_push($errores, "Mensaje: No se encontró el movimento relacionado con el producto " . $producto->producto . ", por lo tanto no se generó la relación de las series." . " " . self::logVariableLocation());
+                $errores[] = "Mensaje: No se encontró el movimento relacionado con el producto " . $producto->producto . ", por lo tanto no se generó la relación de las series." . " " . self::logVariableLocation();
             }
         }
 
@@ -336,7 +334,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        $ventas = $this->picking_packing_raw_data(" AND usuario_empresa.id_usuario = " . $auth->id . "");
+        $ventas = $this->picking_packing_raw_data(" AND usuario_empresa.id_usuario = " . $auth->id);
 
         return response()->json([
             'code'  => 200,
@@ -345,7 +343,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_busqueda_serie_vs_sku(Request $request)
+    public function almacen_busqueda_serie_vs_sku(Request $request): JsonResponse
     {
         $serie = $request->input('serie');
 
@@ -373,7 +371,7 @@ class AlmacenController extends Controller
         }
     }
 
-    public function almacen_busqueda_serie_vs_almacen(Request $request)
+    public function almacen_busqueda_serie_vs_almacen(Request $request): JsonResponse
     {
         $serie = $request->input('serie');
         $almacen = $request->input('almacen');
@@ -393,7 +391,7 @@ class AlmacenController extends Controller
         }
     }
 
-    public function almacen_packing_documento($documento, $usuario)
+    public function almacen_packing_documento($documento, $usuario): JsonResponse
     {
         set_time_limit(0);
 
@@ -484,25 +482,6 @@ class AlmacenController extends Controller
                         'id_usuario' => 1,
                         'seguimiento' => "El pedido ya fue surtido. Se manda a fase de Terminado."
                     ]);
-
-//                    if ($documento_info->documento_extra == "N/A") {
-//                        $crear_factura = InventarioService::aplicarMovimiento($documento);
-//
-//                        if ($crear_factura->error) {
-//                            file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al crear la factura " . $documento . " en packing v2." . PHP_EOL, FILE_APPEND);
-//
-//
-//                            DB::table('documento')->where(['id' => $documento])->update([
-//                                'id_fase' => 5,
-//                            ]);
-//
-//                            DB::table('seguimiento')->insert([
-//                                'id_documento' => $documento,
-//                                'id_usuario' => 1,
-//                                'seguimiento' => "Ocurrio un error al generar la factura y se manda a fase Factura." . $crear_factura->mensaje
-//                            ]);
-//                        }
-//                    }
 
                     return response()->json([
                         "code" => 500,
@@ -625,7 +604,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        if (in_array($informacion->id_marketplace_area, [1]) && $informacion->shipping_null != 1) {
+        if ($informacion->id_marketplace_area == 1 && $informacion->shipping_null != 1) {
             $validar_buffered = MercadolibreService::validarPendingBuffered($informacion->id);
 
             if ($validar_buffered->error) {
@@ -747,11 +726,11 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_packing_guardar_guia(Request $request)
+    public function almacen_packing_guardar_guia(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
-        $esta_remisionado = DB::select("SELECT id, id_fase, status, no_venta, id_paqueteria, id_marketplace_area FROM documento WHERE id = " . $data->documento . "");
+        $esta_remisionado = DB::select("SELECT id, id_fase, status, no_venta, id_paqueteria, id_marketplace_area FROM documento WHERE id = " . $data->documento);
 
         if (empty($esta_remisionado)) {
             return response()->json([
@@ -787,7 +766,7 @@ class AlmacenController extends Controller
         if (!empty($existe_guia)) {
             return response()->json([
                 "code" => 500,
-                "message" => "La guía ya está relacionada a un pedido, " . $existe_guia[0]->documento_id . "" . " " . self::logVariableLocation()
+                "message" => "La guía ya está relacionada a un pedido, " . $existe_guia[0]->documento_id . " " . self::logVariableLocation()
             ]);
         }
 
@@ -827,52 +806,54 @@ class AlmacenController extends Controller
     }
 
     /* V2 */
-    public function almacen_packing_v2_data()
+    public function almacen_packing_v2_data(): JsonResponse
     {
+        $problemas = DB::table('problema_surtido')
+            ->select('codigo', 'problema')
+            ->where('status', 1)
+            ->get();
 
-        $problemas = DB::select("SELECT codigo, problema FROM problema_surtido WHERE status = 1");
+        /** @noinspection PhpParamsInspection */
+        $usuarios = DB::table('usuario')
+            ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
+            ->join('subnivel_nivel', 'usuario_subnivel_nivel.id_subnivel_nivel', '=', 'subnivel_nivel.id')
+            ->join('nivel', 'subnivel_nivel.id_nivel', '=', 'nivel.id')
+            ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
+            ->select('usuario.id', 'usuario.nombre', 'usuario.celular', 'nivel.nivel')
+            ->whereIn('nivel.nivel', ['ALMACEN', 'ADMINISTRADOR'])
+            ->where('subnivel.subnivel', 'ADMINISTRADOR')
+            ->where('usuario.id', '!=', 1)
+            ->where('usuario.status', 1)
+            ->groupBy('usuario.id', 'usuario.nombre', 'usuario.celular', 'nivel.nivel')
+            ->get();
 
-        $usuarios = DB::select("SELECT
-                                    usuario.authy,
-                                    usuario.id,
-                                    usuario.nombre,
-                                    nivel.nivel
-                                FROM usuario
-                                INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                                INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                                INNER JOIN nivel ON subnivel_nivel.id_nivel = nivel.id
-                                INNER JOIN subnivel ON subnivel_nivel.id_subnivel = subnivel.id
-                                WHERE nivel.nivel IN ('ALMACEN', 'ADMINISTRADOR')
-                                AND subnivel.subnivel = 'ADMINISTRADOR'
-                                AND usuario.id != 1
-                                AND usuario.status = 1
-                                GROUP BY usuario.id");
-
-        $impresoras = DB::table("impresora")
-            ->where("tamanio", "4x8")
-            ->where("status", 1)
-            ->select("id", "nombre")
+        $impresoras = DB::table('impresora')
+            ->select('id', 'nombre')
+            ->where([
+                ['tamanio', '=', '4x8'],
+                ['status', '=', 1]
+            ])
             ->get();
 
         return response()->json([
-            "code" => 200,
-            "problemas" => $problemas,
-            "usuarios" => $usuarios,
-            "impresoras" => $impresoras
+            'code' => 200,
+            'problemas' => $problemas,
+            'usuarios' => $usuarios,
+            'impresoras' => $impresoras
         ]);
     }
+
 
     /**
      * @throws Throwable
      */
-    public function almacen_packing_guardar_v2(Request $request)
+    public function almacen_packing_guardar_v2(Request $request): JsonResponse
     {
         $backup = 0;
 
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $errores = array();
-        $series_cambiadas = array();
         $solicitar_guia = 1;
 
         $info_documento = DB::select("SELECT
@@ -939,7 +920,7 @@ class AlmacenController extends Controller
                                                     usuario.nombre
                                                 FROM documento 
                                                 INNER JOIN usuario ON documento.id_usuario = usuario.id 
-                                                WHERE documento.id = " . $data->documento . "")[0];
+                                                WHERE documento.id = " . $data->documento)[0];
 
                 if ($usuario_documento->id_usuario > 1) {
                     $notificacion['titulo'] = "Pedido en problemas.";
@@ -1062,7 +1043,6 @@ class AlmacenController extends Controller
                                         AND modelo.sku = '" . $producto->sku . "'");
 
                         if (!empty($existe)) {
-                            array_push($series_cambiadas, $existe[0]->id);
 
                             DB::table('producto')->where(['id' => $existe[0]->id])->update([
                                 'id_almacen' => $info_documento->id_almacen,
@@ -1074,12 +1054,12 @@ class AlmacenController extends Controller
                                 'id_producto' => $existe[0]->id
                             ]);
                         } else {
-                            array_push($errores, "La serie " . $serie . " no existe en el producto " . trim($producto->sku));
+                            $errores[] = "La serie " . $serie . " no existe en el producto " . trim($producto->sku);
                         }
                     }
                 }
             } else {
-                array_push($errores, "Mensaje: No se encontró el movimiento relacionado con el producto " . $producto->sku . ", por lo tanto no se generó la relación de las series. " . self::logVariableLocation());
+                $errores[] = "Mensaje: No se encontró el movimiento relacionado con el producto " . $producto->sku . ", por lo tanto no se generó la relación de las series. " . self::logVariableLocation();
             }
         }
 
@@ -1228,7 +1208,7 @@ class AlmacenController extends Controller
                 $pdf = "";
 
                 if($auth->id != 9999) {
-                    $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token") . ""));
+                    $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token")));
                     $impresion = @$impresion_raw;
 
                     if (empty($impresion)) {
@@ -1387,7 +1367,7 @@ class AlmacenController extends Controller
         }
     }
 
-    public function almacen_packing_v2_reimprimir(Request $request)
+    public function almacen_packing_v2_reimprimir(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -1415,7 +1395,7 @@ class AlmacenController extends Controller
             ->where("id", $data->impresora)
             ->first();
 
-        $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token") . ""));
+        $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token")));
         $impresion = @$impresion_raw;
 
         if (empty($impresion)) {
@@ -1458,7 +1438,7 @@ class AlmacenController extends Controller
     }
 
     /* Almacen > Movimiento */
-    public function almacen_movimiento_crear_data(Request $request)
+    public function almacen_movimiento_crear_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -1482,7 +1462,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_data_producto($producto)
+    public function almacen_movimiento_data_producto($producto): JsonResponse
     {
         $productos = DB::table('modelo')
             ->where('descripcion', 'like', '%' . $producto . '%')
@@ -1496,7 +1476,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_crear_producto($producto)
+    public function almacen_movimiento_crear_producto($producto): JsonResponse
     {
         $producto  = DB::select("SELECT serie FROM modelo WHERE sku = '" . TRIM($producto) . "'");
 
@@ -1701,7 +1681,7 @@ class AlmacenController extends Controller
 //        }
 //    }
 
-    public function almacen_movimiento_crear_confirmar(Request $request)
+    public function almacen_movimiento_crear_confirmar(Request $request): JsonResponse
     {
         $series = json_decode($request->input('series'));
         $producto = $request->input('producto');
@@ -1715,7 +1695,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_crear_crear(Request $request)
+    public function almacen_movimiento_crear_crear(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -1872,7 +1852,7 @@ class AlmacenController extends Controller
                                 $serie_afectada->id = $existe_serie->id;
                                 $serie_afectada->almacen_previo = $existe_serie->id_almacen;
                                 $serie_afectada->status_previo = $existe_serie->status;
-                                array_push($series_afectadas, $serie_afectada);
+                                $series_afectadas[] = $serie_afectada;
                             }
 
                             MovimientoProducto::create([
@@ -1886,7 +1866,7 @@ class AlmacenController extends Controller
 
             $mensaje = "Documento creado correctamente con el ID " . $documento;
 
-            if (!in_array($data->tipo, [EnumDocumentoTipo::TRASPASO])) {
+            if ($data->tipo != EnumDocumentoTipo::TRASPASO) {
                 $response = DocumentoService::afectarMovimiento($documento);
 
                 if ($response->error) {
@@ -1927,24 +1907,7 @@ class AlmacenController extends Controller
         }
     }
 
-
-    public function almacen_movimiento_crear_confirmar_authy(Request $request)
-    {
-        $auth = json_decode($request->auth);
-        $authy_code = json_decode($request->input("authy_code"));
-
-        $validate_authy = DocumentoService::authy($auth->id, $authy_code);
-
-        if ($validate_authy->error) {
-            return response()->json([
-                "message" => $validate_authy->mensaje . " " . self::logVariableLocation()
-            ], 500);
-        }
-
-        return response()->json();
-    }
-
-    public function almacen_movimiento_historial()
+    public function almacen_movimiento_historial(): JsonResponse
     {
         $tipos_documento = DB::table("documento_tipo")
             ->select("id", "tipo")
@@ -1957,7 +1920,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_historial_data(Request $request)
+    public function almacen_movimiento_historial_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -2026,7 +1989,7 @@ class AlmacenController extends Controller
                                 INNER JOIN documento_tipo ON documento.id_tipo = documento_tipo.id
                                 WHERE documento.id_usuario != 1
                                 AND documento.status = 1
-                                " . $query_filter . "");
+                                " . $query_filter);
 
         foreach ($documentos as $documento) {
             $productos = DB::select("SELECT
@@ -2039,8 +2002,9 @@ class AlmacenController extends Controller
                                         0 AS almacen
                                     FROM movimiento
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $documento->id . "");
+                                    WHERE movimiento.id_documento = " . $documento->id);
 
+            /** @noinspection PhpUnusedLocalVariableInspection */
             foreach ($productos as $k => $producto) {
                 if ($producto->serie) {
                     $series = DB::select("SELECT
@@ -2048,7 +2012,7 @@ class AlmacenController extends Controller
                                         producto.serie
                                     FROM movimiento_producto
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
 
                     $producto->series = $series;
                 }
@@ -2157,7 +2121,7 @@ class AlmacenController extends Controller
                                 FROM movimiento
                                 INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                 INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                WHERE movimiento.id_documento = " . $data->document . "");
+                                WHERE movimiento.id_documento = " . $data->document);
 
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
@@ -2181,11 +2145,11 @@ class AlmacenController extends Controller
         }
     }
 
-    public function almacen_movimiento_historial_interno(Request $request)
+    public function almacen_movimiento_historial_interno(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
-        $almacen_documento = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario . "");
+        $almacen_documento = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario);
 
         if (empty($almacen_documento)) {
             return response()->json([
@@ -2222,11 +2186,6 @@ class AlmacenController extends Controller
                 }
 
                 foreach ($producto->series_afectar as $serie) {
-                    //                    $apos = `'`;
-                    //                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                    //                    if (str_contains($serie, $apos)) {
-                    //                        $serie = addslashes($serie);
-                    //                    }
                     $serie = str_replace(["'", '\\'], '', $serie);
                     $existe_serie = DB::select("SELECT
                                                     producto.id,
@@ -2256,14 +2215,14 @@ class AlmacenController extends Controller
                     if ($existe_serie->sku != $producto->sku) {
                         return response()->json([
                             'code'  => 404,
-                            'message'   => "La serie " . trim($serie) . " del producto " . $producto->sku . " no pertenece al producto ingresado.<br><br>SKU de la serie: " . $existe_serie->sku . "<br>SKU de la partida: " . $producto->sku . "" . self::logVariableLocation()
+                            'message' => "La serie " . trim($serie) . " del producto " . $producto->sku . " no pertenece al producto ingresado.<br><br>SKU de la serie: " . $existe_serie->sku . "<br>SKU de la partida: " . $producto->sku . self::logVariableLocation()
                         ]);
                     }
 
                     if ($existe_serie->id_almacen != $almacen_documento->id_almacen) {
                         return response()->json([
                             'code'  => 404,
-                            'message'   => "La serie " . trim($serie) . " del producto " . $producto->sku . " no se encuentra en el almacén seleccionado para su salida.<br><br>Almacén de la serie: " . $existe_serie->almacen . "<br>Almacén del documento: " . $data->almacen_secundario . "" . self::logVariableLocation()
+                            'message' => "La serie " . trim($serie) . " del producto " . $producto->sku . " no se encuentra en el almacén seleccionado para su salida.<br><br>Almacén de la serie: " . $existe_serie->almacen . "<br>Almacén del documento: " . $data->almacen_secundario . self::logVariableLocation()
                         ]);
                     }
                 }
@@ -2282,11 +2241,6 @@ class AlmacenController extends Controller
         foreach ($data->productos as $producto) {
             if ($producto->serie) {
                 foreach ($producto->series_afectar as $serie) {
-                    //                    $apos = `'`;
-                    //                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                    //                    if (str_contains($serie, $apos)) {
-                    //                        $serie = addslashes($serie);
-                    //                    }
                     $serie = str_replace(["'", '\\'], '', $serie);
                     $id_serie = DB::select("SELECT id FROM producto WHERE serie = '" . trim($serie) . "'")[0]->id;
 
@@ -2305,7 +2259,7 @@ class AlmacenController extends Controller
                                                     producto.serie
                                                 FROM producto
                                                 INNER JOIN movimiento_producto ON movimiento_producto.id_producto = producto.id
-                                                WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                                WHERE movimiento_producto.id_movimiento = " . $producto->id);
             }
         }
 
@@ -2320,9 +2274,13 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_movimiento_documento($documento)
+    /**
+     * @throws BarcodeException
+     * @noinspection PhpConditionAlreadyCheckedInspection
+     */
+    public function almacen_movimiento_documento($documento): JsonResponse
     {
-        $total      = 0;
+        $total = 0;
 
         $informacion_documento = DB::select("SELECT
                                                 usuario.nombre,
@@ -2353,12 +2311,12 @@ class AlmacenController extends Controller
                                             INNER JOIN usuario ON documento.id_usuario = usuario.id
                                             INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                                             INNER JOIN documento_tipo ON documento.id_tipo = documento_tipo.id
-                                            WHERE documento.id = " . $documento . "");
+                                            WHERE documento.id = " . $documento);
 
         if (empty($informacion_documento)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre el documento." . self::logVariableLocation()
+                'code' => 500,
+                'message' => "No se encontró información sobre el documento." . self::logVariableLocation()
             ]);
         }
 
@@ -2373,7 +2331,7 @@ class AlmacenController extends Controller
                                 movimiento.precio as costo
                             FROM movimiento 
                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                            WHERE id_documento = " . $documento . "");
+                            WHERE id_documento = " . $documento);
 
 
         # Formato de celda: X -> Tamaño de la celda, Y -> Margen de arriba, Z -> Texto
@@ -2385,7 +2343,7 @@ class AlmacenController extends Controller
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "")[0];
+                                    WHERE documento.id = " . $documento)[0];
         } else {
             $informacion_empresa = DB::select("SELECT
                                         empresa.logo,
@@ -2393,15 +2351,14 @@ class AlmacenController extends Controller
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "")[0];
+                                    WHERE documento.id = " . $documento)[0];
         }
 
         $barcode = new BarcodeGeneratorJPG();
-        $barcode_image = "data://text/plain;base64," . base64_encode($barcode->getBarcode(substr($informacion_documento->tipo, 0, 4) . "&"  . $documento, $barcode::TYPE_CODE_128));
+        $barcode_image = "data://text/plain;base64," . base64_encode($barcode->getBarcode(substr($informacion_documento->tipo, 0, 4) . "&" . $documento, $barcode::TYPE_CODE_128));
         $fontsize = 8;
         $pageline = 3;
         $anchotexto = 60;
-        $alturatexto = 5;
 
         $pdf = app('FPDF');
 
@@ -2561,7 +2518,7 @@ class AlmacenController extends Controller
     }
 
     /* Almacen > Pretransferencias */
-    public function almacen_pretransferencia_solicitud_get_data(Request $request)
+    public function almacen_pretransferencia_solicitud_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2588,7 +2545,10 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_solicitud_crear(Request $request)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function almacen_pretransferencia_solicitud_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -2778,7 +2738,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_solicitud_get_publicacion($marketplace, $publicacion)
+    public function almacen_pretransferencia_solicitud_get_publicacion($marketplace, $publicacion): JsonResponse
     {
         $publicacion = str_replace("%20", " ", $publicacion);
 
@@ -2811,7 +2771,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_solicitud_get_publicacion_productos(Request $request)
+    public function almacen_pretransferencia_solicitud_get_publicacion_productos(Request $request): JsonResponse
     {
         $id_etiqueta = $request->input('etiqueta');
         $publicacion_text = $request->input('publicacion');
@@ -2847,7 +2807,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_pendiente_guardar(Request $request)
+    public function almacen_pretransferencia_pendiente_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -2935,7 +2895,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_pendiente_eliminar(Request $request)
+    public function almacen_pretransferencia_pendiente_eliminar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -2957,7 +2917,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_confirmacion_data()
+    public function almacen_pretransferencia_confirmacion_data(): JsonResponse
     {
         $solicitudes = $this->prestransferencias_raw_data(401);
 
@@ -2967,7 +2927,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_confirmacion_guardar(Request $request)
+    public function almacen_pretransferencia_confirmacion_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -2994,7 +2954,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_autorizacion_data(Request $request)
+    public function almacen_pretransferencia_autorizacion_data(): JsonResponse
     {
         $solicitudes = $this->prestransferencias_raw_data(402);
 
@@ -3004,7 +2964,12 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_autorizacion_guardar(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Reader\Exception
+     */
+    public function almacen_pretransferencia_autorizacion_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -3031,7 +2996,7 @@ class AlmacenController extends Controller
             }
         }
 
-        $productos_ingresados = DB::select("SELECT id FROM movimiento WHERE id_documento = " . $data->id . "");
+        $productos_ingresados = DB::select("SELECT id FROM movimiento WHERE id_documento = " . $data->id);
 
         if (COUNT($productos_ingresados) != COUNT($data->productos)) {
             $regresar = 1;
@@ -3198,7 +3163,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_envio_data()
+    public function almacen_pretransferencia_envio_data(): JsonResponse
     {
         $solicitudes = $this->prestransferencias_raw_data(403);
 
@@ -3208,11 +3173,10 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_envio_guardar(Request $request)
+    public function almacen_pretransferencia_envio_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $series_afectadas = array();
         $regresar = $request->input('regresar');
 
         if ($regresar) {
@@ -3226,14 +3190,14 @@ class AlmacenController extends Controller
             ]);
         }
 
-        $id_almacen_entrada = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_principal . "")[0];
-        $id_almacen_salida  = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario . "")[0];
+        $id_almacen_entrada = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_principal)[0];
+        $id_almacen_salida = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario)[0];
 
         $bd = DB::select("SELECT
                             empresa.bd
                         FROM empresa_almacen
                         INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                        WHERE empresa_almacen.id = " . $data->id_almacen_principal . "");
+                        WHERE empresa_almacen.id = " . $data->id_almacen_principal);
 
         if (empty($bd)) {
             return response()->json([
@@ -3241,8 +3205,6 @@ class AlmacenController extends Controller
                 'message'   => "No se encontró información sobre la BD de la empresa, favor de contactar con un administrador." . self::logVariableLocation()
             ]);
         }
-
-        $bd = $bd[0]->bd;
 
         $documento = DB::table('documento')->insertGetId([
             'id_almacen_principal_empresa'  => $data->id_almacen_principal,
@@ -3315,12 +3277,6 @@ class AlmacenController extends Controller
             # Se debe validar que la serie no éxista cuando es una entrada
             if ($producto->serie) {
                 foreach ($producto->series as $serie) {
-                    //Aqui se quita
-                    //                    $apos = `'`;
-                    //                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                    //                    if (str_contains($serie, $apos)) {
-                    //                        $serie = addslashes($serie);
-                    //                    }
                     $serie = str_replace(["'", '\\'], '', $serie);
                     $existe_serie = DB::select("SELECT id, id_almacen FROM producto WHERE serie = '" . TRIM($serie) . "'");
 
@@ -3352,11 +3308,6 @@ class AlmacenController extends Controller
                         'id_producto' => $producto_id
                     ]);
 
-                    $serie_afectada = new stdClass();
-                    $serie_afectada->id = $producto_id;
-                    $serie_afectada->almacen_previo = empty($existe_serie) ? $id_almacen_salida->id_almacen : $existe_serie[0]->id_almacen;
-
-                    array_push($series_afectadas, $serie_afectada);
                 }
             }
         }
@@ -3385,6 +3336,9 @@ class AlmacenController extends Controller
         ]);
     }
 
+    /**
+     * @throws ConnectionErrorException
+     */
     public function almacen_pretransferencia_envio_etiqueta($documento, $publicacion, $etiqueta, Request $request)
     {
         $etiquetas = array();
@@ -3452,7 +3406,7 @@ class AlmacenController extends Controller
                 $etiqueta_data->cantidad = $informacion_publicacion->cantidad;
                 $etiqueta_data->extra = $color;
 
-                array_push($etiquetas, $etiqueta_data);
+                $etiquetas[] = $etiqueta_data;
 
                 break;
 
@@ -3460,13 +3414,13 @@ class AlmacenController extends Controller
                 $etiquetas_amazon = DB::table('movimiento')
                     ->join('modelo_amazon', 'modelo_amazon.id_modelo', '=', 'movimiento.id_modelo')
                     ->where('movimiento.id_documento', 1186900)
-                    ->select('modelo_amazon.*') // Selecciona todos los campos de modelo_amazon
+                    ->select('modelo_amazon.*')
                     ->get();
 
                 $movimientos = DB::table('movimiento')
                     ->join('modelo', 'modelo.id', '=', 'movimiento.id_modelo')
                     ->where('movimiento.id_documento', 1186900)
-                    ->select('movimiento.*', 'modelo.descripcion') // Selecciona todos los campos de modelo_amazon
+                    ->select('movimiento.*', 'modelo.descripcion')
                     ->get();
 
                 foreach ($etiquetas_amazon as $etiqueta) {
@@ -3480,7 +3434,7 @@ class AlmacenController extends Controller
                     }
                     $etiqueta_data->extra = "";
 
-                    array_push($etiquetas, $etiqueta_data);
+                    $etiquetas[] = $etiqueta_data;
                 }
 
                 break;
@@ -3514,21 +3468,11 @@ class AlmacenController extends Controller
             ->send();
 
         $impresion_raw = $impresion->raw_body;
-        $impresion = @json_decode($impresion_raw);
 
         return (array) $impresion_raw;
-        /*
-        if (empty($impresion)) {
-            GeneralService::sendEmailToAdmins($url, "No fue posible imprimir el picking", $impresion_raw);
-        }
-
-        if ($impresion->code != 200) {
-            GeneralService::sendEmailToAdmins($url, "No fue posible imprimir el picking del documento, mensaje de error: " . $impresion->mensaje . "", 0);
-        }
-        */
     }
 
-    public function almacen_pretransferencia_historial_data(Request $request)
+    public function almacen_pretransferencia_historial_data(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -3552,9 +3496,8 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_historial_factura($documento, Request $request)
+    public function almacen_pretransferencia_historial_factura($documento): JsonResponse
     {
-        $auth = json_decode($request->auth);
         $total = 0;
 
         $informacion_documento = DB::table('documento')
@@ -3601,7 +3544,7 @@ class AlmacenController extends Controller
                                     movimiento.regalo
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
 
         if (empty($productos)) {
             return response()->json([
@@ -3622,9 +3565,6 @@ class AlmacenController extends Controller
 
         $pdf = app('FPDF');
 
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
-
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);
         $pdf->SetTextColor(69, 90, 100);
@@ -3635,7 +3575,7 @@ class AlmacenController extends Controller
         }
 
         # EL jimmy puso mal la parte de "adminpro" y puso "dminpro", por eso se pone la URL completa
-        $informacion_empresa = @json_decode(file_get_contents("http://201.7.208.53:11903/api/dminpro/Empresas/Informacion/BD/" . $informacion_documento->bd . "/RFC/" . $informacion_documento->rfc . ""));
+        $informacion_empresa = @json_decode(file_get_contents("http://201.7.208.53:11903/api/dminpro/Empresas/Informacion/BD/" . $informacion_documento->bd . "/RFC/" . $informacion_documento->rfc));
 
         if (empty($informacion_empresa)) {
             return response()->json([
@@ -3777,9 +3717,9 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_historial_nc($documento)
+    public function almacen_pretransferencia_historial_nc($documento): JsonResponse
     {
-        $existe_factura = DB::select("SELECT factura_folio FROM documento WHERE id = " . $documento . "");
+        $existe_factura = DB::select("SELECT factura_folio FROM documento WHERE id = " . $documento);
 
         if (empty($existe_factura)) {
             return response()->json([
@@ -3828,7 +3768,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_historial_guardar(Request $request)
+    public function almacen_pretransferencia_historial_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -3994,7 +3934,7 @@ class AlmacenController extends Controller
         ]);
     }
 
-    public function almacen_pretransferencia_con_diferencias_guardar(Request $request)
+    public function almacen_pretransferencia_con_diferencias_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -4053,7 +3993,7 @@ class AlmacenController extends Controller
     }
 
     /* Almacen > Common Routes */
-    public function almacen_pretransferencia_get_documentos($fase)
+    public function almacen_pretransferencia_get_documentos($fase): JsonResponse
     {
         set_time_limit(0);
         $documentos = $this->prestransferencias_raw_data(0, "AND documento.id_fase = '" . $fase . "'");
@@ -4064,6 +4004,9 @@ class AlmacenController extends Controller
     }
 
     /* Etiqueta */
+    /**
+     * @throws ConnectionErrorException
+     */
     public function almacen_etiqueta(Request $request)
     {
         $tipo = $request->input("tipo");
@@ -4115,12 +4058,11 @@ class AlmacenController extends Controller
             ->send();
 
         $impresion_raw = $impresion->raw_body;
-        $impresion = @json_decode($impresion_raw);
 
         return (array) json_decode($impresion_raw);
     }
 
-    public function almacen_etiqueta_get_data(Request $request)
+    public function almacen_etiqueta_get_data(): JsonResponse
     {
         $impresoras = DB::table("impresora")
             ->where("status", 1)
@@ -4140,13 +4082,16 @@ class AlmacenController extends Controller
         ]);
     }
 
+    /**
+     * @throws ConnectionErrorException
+     */
     public function almacen_etiqueta_serie(Request $request)
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
         $etiquetas = array();
         $series = array();
-
+        $impresion_raw = '';
         $cantidad = explode(".", $data->cantidad);
 
         $impresora = DB::table("impresora")
@@ -4183,36 +4128,30 @@ class AlmacenController extends Controller
             $existe_codigo = $existe_sinonimo;
         }
 
-        $prefijo = "";
         $cantidad_id = substr($existe_codigo->id, -5);
         $fecha = date("mY");
 
-        for ($y = 0; $y < (5 - strlen($cantidad_id)); $y++) {
-            $prefijo .= "0";
-        }
+        $prefijo = str_repeat("0", (5 - strlen($cantidad_id)));
 
         $prefijo .= $cantidad_id;
 
         for ($i = 0; $i < (int) $cantidad[0]; $i++) {
             $consecutivo = (int) $existe_codigo->consecutivo + $i + 1;
             $cantidad_consecutivo = strlen((string) $consecutivo);
-            $sufijo = "";
 
-            for ($y = 0; $y < (6 - $cantidad_consecutivo); $y++) {
-                $sufijo .= "0";
-            }
+            $sufijo = str_repeat("0", (6 - $cantidad_consecutivo));
 
             $sufijo .= $consecutivo;
 
             $etiqueta_data = new stdClass();
-            $etiqueta_data->serie = (string) $prefijo . $fecha . $sufijo;
+            $etiqueta_data->serie = $prefijo . $fecha . $sufijo;
             $etiqueta_data->codigo = $data->codigo;
             $etiqueta_data->descripcion = $data->descripcion;
             $etiqueta_data->cantidad = 1;
             $etiqueta_data->extra = property_exists($data, "extra") ? $data->extra : "";
 
-            array_push($etiquetas, $etiqueta_data);
-            array_push($series, $etiqueta_data->serie);
+            $etiquetas[] = $etiqueta_data;
+            $series[] = $etiqueta_data->serie;
         }
 
         $consecutivo = (((int) $existe_codigo->consecutivo + (int) $cantidad[0]) >= 800000) ? 1 : ((int) $existe_codigo->consecutivo + (int) $cantidad[0]);
@@ -4243,9 +4182,6 @@ class AlmacenController extends Controller
                     ->send();
 
                 $impresion_raw = $impresion->raw_body;
-                $impresion = @json_decode($impresion_raw);
-
-                return (array) $impresion_raw;
             }
         } else {
             $data_etiqueta = array(
@@ -4260,12 +4196,15 @@ class AlmacenController extends Controller
                 ->send();
 
             $impresion_raw = $impresion->raw_body;
-            $impresion = @json_decode($impresion_raw);
 
             return (array) $impresion_raw;
         }
+        return (array)$impresion_raw;
     }
 
+    /**
+     * @throws ConnectionErrorException
+     */
     public function almacen_etiqueta_serie_qr(Request $request)
     {
         $data = json_decode($request->input("data"));
@@ -4294,19 +4233,21 @@ class AlmacenController extends Controller
             ->send();
 
         $impresion_raw = $impresion->raw_body;
-        $impresion = @json_decode($impresion_raw);
 
         return (array) $impresion_raw;
     }
 
     /* Raw */
-    public function rawinfo_almacen_picking(Request $request)
+    /**
+     * @throws Throwable
+     */
+    public function rawinfo_almacen_picking(): array
     {
         set_time_limit(0);
 
         $responses = array();
         $url = "";
-//
+
         $servidores = DB::select("SELECT
                                 impresora.servidor
                             FROM documento
@@ -4352,7 +4293,6 @@ class AlmacenController extends Controller
                             LIMIT 30");
 
                 if (!empty($ventas)) {
-                    //Borrar for si no salen pickings
                     foreach ($ventas as $index => $venta) {
                         $movimientos = DB::table('movimiento')->where('id_documento', $venta->id)->first();
 
@@ -4399,7 +4339,7 @@ class AlmacenController extends Controller
                         $impresion_raw = $impresion->raw_body;
                         $impresion = @json_decode($impresion_raw);
 
-                        array_push($responses, $impresion_raw);
+                        $responses[] = $impresion_raw;
 
                         if (empty($impresion)) {
                             GeneralService::sendEmailToAdmins($url, "No fue posible imprimir el picking, servidor: " . $servidor->servidor . " " . self::logVariableLocation(), $impresion_raw);
@@ -4409,25 +4349,16 @@ class AlmacenController extends Controller
                             GeneralService::sendEmailToAdmins($url, "No fue posible imprimir el picking del documento, servidor: " . $servidor->servidor . " " . self::logVariableLocation(), json_encode($impresion->data));
                         }
                     } catch (Exception $e) {
-                        GeneralService::sendEmailToAdmins($url, "No fue posible imprimir los picking del servidor " . $servidor->servidor . ", error: " . $e->getMessage() . "" . " " . self::logVariableLocation(), "");
+                        GeneralService::sendEmailToAdmins($url, "No fue posible imprimir los picking del servidor " . $servidor->servidor . ", error: " . $e->getMessage() . " " . self::logVariableLocation(), "");
                     }
                 }
-
-                //            foreach ($ventas as $index => $venta) {
-                //                if ($venta->publico == 0 && $venta->pagado == 0 && $venta->id_periodo == 1) {
-                //                    unset($ventas[$index]);
-                //                    continue;
-                //                }
-                //                array_push($ventas_filtered, $venta);
-                //            }
-                //            if (empty($ventas_filtered)) continue;
             }
         }
         return $responses;
     }
 
 
-    private function picking_packing_raw_data($extra_data = "")
+    private function picking_packing_raw_data($extra_data = ""): array
     {
         $ventas_re = [];
 
@@ -4469,7 +4400,6 @@ class AlmacenController extends Controller
             ->where('documento.autorizado', 1)
             ->orderBy('documento.created_at', 'ASC');
 
-        // Si existe extra_data, agregar partes RAW adicionales a la consulta
         if (!empty($extra_data)) {
             $ventas->whereRaw($extra_data);
         }
@@ -4506,13 +4436,13 @@ class AlmacenController extends Controller
                 ->where('status', 1)
                 ->get();
 
-            array_push($ventas_re, $venta);
+            $ventas_re[] = $venta;
         }
 
         return $ventas_re;
     }
 
-    private function prestransferencias_raw_data($fase, $fecha = "")
+    private function prestransferencias_raw_data($fase, $fecha = ""): array
     {
         set_time_limit(0);
         $fase = ($fase == 0) ? '' : 'AND documento.id_fase = ' . $fase;
@@ -4572,7 +4502,7 @@ class AlmacenController extends Controller
                                 AND documento.id_usuario != 1
                                 AND documento.status = 1
                                 " . $fase . "
-                                " . $fecha . "");
+                                " . $fecha);
 
         foreach ($solicitudes as $solicitud) {
             $solicitud->productos = DB::select("SELECT
@@ -4590,7 +4520,7 @@ class AlmacenController extends Controller
                                         0 AS modificar
                                     FROM movimiento
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $solicitud->id . "");
+                                    WHERE movimiento.id_documento = " . $solicitud->id);
 
             $solicitud->publicaciones = DB::table("marketplace_publicacion_etiqueta_envio")
                 ->select("marketplace_publicacion.id AS publicacion_id", "marketplace_publicacion.publicacion_id AS id", "marketplace_publicacion.publicacion AS titulo", "marketplace_publicacion_etiqueta_envio.cantidad", "marketplace_publicacion_etiqueta_envio.etiqueta", "marketplace_publicacion_etiqueta.valor AS etiqueta_text")
@@ -4616,7 +4546,7 @@ class AlmacenController extends Controller
                                                                 usuario.nombre 
                                                             FROM seguimiento 
                                                             INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                            WHERE id_documento = " . $solicitud->id . "");
+                                                            WHERE id_documento = " . $solicitud->id);
 
             $solicitud->archivos = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $solicitud->id . " AND status = 1");
 
@@ -4635,7 +4565,7 @@ class AlmacenController extends Controller
                                             producto.serie
                                         FROM movimiento_producto
                                         INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                        WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                        WHERE movimiento_producto.id_movimiento = " . $producto->id);
                 }
             }
         }
@@ -4643,7 +4573,10 @@ class AlmacenController extends Controller
         return $solicitudes;
     }
 
-    private function prestamos_raw_data($fase, $fecha = "")
+    /** @noinspection PhpUnusedPrivateMethodInspection
+     * @noinspection PhpSameParameterValueInspection
+     */
+    private function prestamos_raw_data($fase, $fecha = ""): array
     {
         $fase = ($fase == 0) ? '' : 'AND documento.id_fase = ' . $fase;
         $fecha = ($fecha == '') ? '' : $fecha;
@@ -4680,7 +4613,7 @@ class AlmacenController extends Controller
                                 AND documento.id_usuario != 1
                                 AND documento.status = 1
                                 " . $fase . "
-                                " . $fecha . "");
+                                " . $fecha);
 
         foreach ($solicitudes as $solicitud) {
             $productos = DB::select("SELECT
@@ -4693,7 +4626,7 @@ class AlmacenController extends Controller
                                         movimiento.comentario AS comentarios
                                     FROM movimiento
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $solicitud->id . "");
+                                    WHERE movimiento.id_documento = " . $solicitud->id);
 
             foreach ($productos as $producto) {
                 if ($producto->serie) {
@@ -4702,17 +4635,16 @@ class AlmacenController extends Controller
                                             FROM movimiento
                                             INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                             INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE movimiento.id = " . $producto->id . "");
+                                            WHERE movimiento.id = " . $producto->id);
 
                     $arreglo_series = array();
 
                     foreach ($series as $serie) {
                         $apos = `'`;
-                        //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
                         if (str_contains($serie->serie, $apos)) {
                             $serie->serie = addslashes($serie->serie);
                         }
-                        array_push($arreglo_series, $serie->serie);
+                        $arreglo_series[] = $serie->serie;
                     }
 
                     $producto->series_anteriores    = $arreglo_series;
@@ -4725,7 +4657,7 @@ class AlmacenController extends Controller
                                         usuario.nombre 
                                     FROM seguimiento 
                                     INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                    WHERE id_documento = " . $solicitud->id . "");
+                                    WHERE id_documento = " . $solicitud->id);
 
             $archivos = DB::select("SELECT * FROM documento_archivo WHERE id_documento = " . $solicitud->id . " AND status = 1");
 
@@ -4738,15 +4670,12 @@ class AlmacenController extends Controller
         return $solicitudes;
     }
 
-    public static function logVariableLocation()
+    public static function logVariableLocation(): string
     {
-        // $log = self::logVariableLocation();
         $sis = 'BE'; //Front o Back
         $ini = 'AC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
         $fin = 'CEN'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
-        $text = ('<br>' . $sis . $ini . $trace['line'] . $fin);
-
-        return $text;
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }

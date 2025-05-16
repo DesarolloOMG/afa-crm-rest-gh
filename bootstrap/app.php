@@ -134,6 +134,5 @@ $app->configure('webservice');
 $app->configure('twilio');
 $app->configure('keys');
 $app->configure('mailgun');
-$app->configure('authy');
 
 return $app;

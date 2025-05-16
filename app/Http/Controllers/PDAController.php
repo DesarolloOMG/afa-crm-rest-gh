@@ -1,14 +1,17 @@
-<?php
+<?php /** @noinspection PhpUnused */
 
 namespace App\Http\Controllers;
 
-use DB;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use stdClass;
 
 class PDAController extends Controller
 {
     #RECEPCION
-    public function pda_recepcion_data()
+    public function pda_recepcion_data(): JsonResponse
     {
         set_time_limit(0);
         $documentos = $this->general_ordenes_raw_data("documento.id_fase = 606");
@@ -18,8 +21,9 @@ class PDAController extends Controller
             ->where('id', '!=', 0)
             ->get();
 
+        /** @noinspection PhpParamsInspection */
         $usuarios = DB::table('usuario')
-            ->select('usuario.authy', 'usuario.nombre', 'nivel.nivel')
+            ->select('usuario.id', 'usuario.celular', 'usuario.nombre', 'nivel.nivel')
             ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
             ->join('subnivel_nivel', 'usuario_subnivel_nivel.id_subnivel_nivel', '=', 'subnivel_nivel.id')
             ->join('nivel', 'subnivel_nivel.id_nivel', '=', 'nivel.id')
@@ -46,7 +50,8 @@ class PDAController extends Controller
     #INVENTARIO
 
     #GENERAL
-    private function general_ordenes_raw_data($extra_data)
+    /** @noinspection PhpSameParameterValueInspection */
+    private function general_ordenes_raw_data($extra_data): Collection
     {
         set_time_limit(0);
         $twoMonthsAgo = Carbon::now()->format('m');
@@ -55,6 +60,7 @@ class PDAController extends Controller
 
         $monthString = '2024-' . $twoMonthsAgo . '-01 00:00:00';
 
+        /** @noinspection PhpParamsInspection */
         $documentos = DB::table('documento')
             ->select(
                 'documento.id',
@@ -139,6 +145,7 @@ class PDAController extends Controller
             ->whereIn('seguimiento.id_documento', $documentIds)
             ->get();
 
+        /** @noinspection PhpParamsInspection */
         $recepciones = DB::table("documento_recepcion")
             ->select("documento_recepcion.documento_erp", "documento_recepcion.documento_erp_compra", "usuario.nombre", "documento_recepcion.created_at")
             ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
@@ -153,7 +160,7 @@ class PDAController extends Controller
             $documento->seguimiento = $seguimientos->where('id_documento', $documento->id)->values();
             $documento->recepciones = $recepciones->where('id_documento', $documento->id)->values();
 
-            $documento->proveedor = new \stdClass();
+            $documento->proveedor = new stdClass();
             $documento->proveedor->id = $documento->id_erp;
             $documento->proveedor->rfc = $documento->rfc;
             $documento->proveedor->razon = $documento->razon_social;

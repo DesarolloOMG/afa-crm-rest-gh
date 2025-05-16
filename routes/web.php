@@ -167,7 +167,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('uuid', 'CompraController@compra_compra_crear_uuid');
                 $router->get('usuario/{criterio}', 'CompraController@compra_compra_crear_usuario');
                 $router->get('recepcion/{recepcion}', 'CompraController@compra_compra_crear_get_recepcion');
-                $router->post('authy', 'CompraController@compra_compra_crear_post_token');
             });
 
             $router->group(['prefix' => 'editar'], function () use ($router) {
@@ -228,7 +227,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->group(['prefix' => 'recepcion'], function () use ($router) {
                 $router->get('data', 'CompraController@compra_orden_recepcion_data');
                 $router->post('guardar', 'CompraController@compra_orden_recepcion_guardar');
-                $router->post('whatsapp', 'CompraController@compra_orden_recepcion_whatsapp');
             });
 
             $router->group(['prefix' => 'historial'], function () use ($router) {
@@ -326,7 +324,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 });
 
                 $router->get('existe/{venta}/{marketplace}', 'VentaController@venta_venta_crear_existe');
-                $router->post('authy', 'VentaController@venta_venta_crear_authy');
                 $router->post('guardar', 'VentaController@venta_autorizar_guardar');
             });
 
@@ -583,7 +580,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('data', 'AlmacenController@almacen_packing_data');
             $router->get('empresa-almacen/{usuario}', 'AlmacenController@almacen_packing_empresa_almacen');
             $router->post('confirmar', 'AlmacenController@almacen_packing_confirmar');
-            $router->post('confirmar-authy', 'AlmacenController@almacen_packing_confirmar_authy');
             $router->post('guardar', 'AlmacenController@almacen_packing_guardar');
             $router->post('guardar-v2', 'AlmacenController@almacen_packing_guardar_v2');
             $router->get('documento/{documento}/{usuario}', 'AlmacenController@almacen_packing_documento');
@@ -601,7 +597,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('producto/{producto}', 'AlmacenController@almacen_movimiento_crear_producto');
                 $router->post('crear', 'AlmacenController@almacen_movimiento_crear_crear');
                 $router->post('confirmar', 'AlmacenController@almacen_movimiento_crear_confirmar');
-                $router->post('confirmar-authy', 'AlmacenController@almacen_movimiento_crear_confirmar_authy');
             });
 
             $router->get('data/producto/{producto}', 'AlmacenController@almacen_movimiento_data_producto');

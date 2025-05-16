@@ -1,4 +1,7 @@
-<?php /** @noinspection PhpUnused */
+<?php /** @noinspection PhpRedundantOptionalArgumentInspection */
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedFieldInspection */
+/** @noinspection PhpUnused */
 
 /** @noinspection PhpComposerExtensionStubsInspection */
 
@@ -11,7 +14,6 @@ use App\Http\Services\ClaroshopServiceV2;
 use App\Http\Services\CoppelService;
 use App\Http\Services\CorreoService;
 use App\Http\Services\CTService;
-use App\Http\Services\DocumentoService;
 use App\Http\Services\ElektraService;
 use App\Http\Services\ExelDelNorteService;
 use App\Http\Services\GeneralService;
@@ -912,23 +914,6 @@ class VentaController extends Controller
         ]);
     }
 
-    public function venta_venta_crear_authy(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-
-        $response = DocumentoService::authy($data->usuario, $data->token);
-
-        if ($response->error) {
-            return response()->json([
-                'code' => 500,
-                'message' => $response->mensaje
-            ]);
-        }
-
-        return response()->json([
-            'code' => 200
-        ]);
-    }
 
     /* Venta > Venta > Autorizar */
     public function venta_venta_autorizar(Request $request): JsonResponse
@@ -967,6 +952,7 @@ class VentaController extends Controller
     /**
      * @throws Throwable
      * @throws ConnectionErrorException
+     * @noinspection PhpUnusedLocalVariableInspection
      */
     public function venta_venta_editar(Request $request): JsonResponse
     {
@@ -1296,7 +1282,8 @@ class VentaController extends Controller
     public function venta_venta_cancelar_data(): JsonResponse
     {
         $usuarios = DB::select("SELECT
-                                    usuario.authy,
+                                    usuario.id,
+                                    usuario.celular,
                                     usuario.nombre,
                                     nivel.nivel
                                 FROM usuario
@@ -1314,6 +1301,7 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_venta_cancelar(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -1417,7 +1405,7 @@ class VentaController extends Controller
                 'id_moneda' => 3,
                 'id_paqueteria' => 6,
                 'id_fase' => 100,
-                'autorizado_by' => $authy_user_id ?? 1,
+                'autorizado_by' => 1,
                 'autorizado' => 1,
                 'factura_folio' => 'N/A',
                 'tipo_cambio' => 1,
@@ -1633,9 +1621,6 @@ class VentaController extends Controller
 
         $pdf = app('FPDF');
 
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
-
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);
         $pdf->SetTextColor(69, 90, 100);
@@ -1810,6 +1795,7 @@ class VentaController extends Controller
 
             $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
             $domain = "omg.com.mx";
+            /** @noinspection PhpMethodParametersCountMismatchInspection */
             $mg->messages()->send(
                 $domain,
                 array(
@@ -2571,6 +2557,7 @@ class VentaController extends Controller
             }
         }
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         $marketplace_publicacion = DB::select("SELECT
                                                 marketplace.marketplace
                                             FROM marketplace_publicacion
@@ -2714,6 +2701,7 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_publicacion_pretransferencia(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -3070,6 +3058,7 @@ class VentaController extends Controller
     }
 
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_mercadolibre_publicaciones_publicacion_data($publicacion_id): JsonResponse
     {
         $publicacion = DB::table("marketplace_publicacion")->find($publicacion_id);
@@ -3165,6 +3154,7 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_mercadolibre_publicaciones_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -3785,18 +3775,9 @@ class VentaController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $invalido = 0;
+        $marketplace = intval($data->marketplace);
 
-        if (intval($data->marketplace) != 35 && $invalido == 0) {
-            $invalido = 1;
-        }
-        if (intval($data->marketplace) != 60 && $invalido == 1) {
-            $invalido = 1;
-        } else {
-            $invalido = 0;
-        }
-
-        if ($invalido == 1) {
+        if ($marketplace !== 35 && $marketplace !== 60) {
             return response()->json([
                 "code" => 500,
                 "message" => "Marketplace Invalido",
@@ -4218,6 +4199,7 @@ class VentaController extends Controller
         return "$ " . $costo_total;
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     private function areas_marketplaces($usuario, $marketplace): array
     {
         $areas_cast = array();
@@ -4588,6 +4570,7 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_publicaciones_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -4799,6 +4782,7 @@ class VentaController extends Controller
         }
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     private function areas_publicaciones($usuario): array
     {
         $areas_cast = array();
@@ -4837,6 +4821,7 @@ class VentaController extends Controller
         return $areas_cast;
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
     private function areas_marketplaces_publicaciones($usuario): array
     {
         $areas_cast = array();
@@ -4959,6 +4944,8 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedPrivateMethodInspection
+     */
     private function ordenes_generar_pdf($documento, $auth): stdClass
     {
         $response = new stdClass();
@@ -5010,8 +4997,6 @@ class VentaController extends Controller
 
         $pdf = app('FPDF');
 
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 20);
@@ -5554,6 +5539,7 @@ class VentaController extends Controller
         if (strlen($informacion_documento->info_extra->comentarios) > 1170) {
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1170, 90), 0, false, 'L');
             $pdf->Ln();
+            /** @noinspection PhpUnusedLocalVariableInspection */
             $current_height_product += 5;
         }
 

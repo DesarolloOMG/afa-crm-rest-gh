@@ -1,4 +1,4 @@
-<?php
+<?php /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUnused */
 
 /** @noinspection PhpComposerExtensionStubsInspection */
@@ -12,7 +12,6 @@ use App\Models\NoficacionUsuario;
 use App\Models\Usuario;
 use App\Models\UsuarioIP;
 use App\Models\UsuarioLoginError;
-use Authy\AuthyApi;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Illuminate\Http\JsonResponse;
@@ -182,7 +181,6 @@ class AuthController extends Controller
             ], 400);
         }
 
-
         $existe_celular = Usuario::where("celular", $data->celular)
             ->where("id", "<>", $data->id)
             ->first();
@@ -194,20 +192,6 @@ class AuthController extends Controller
         }
 
         $usuario_data = Usuario::find($data->id);
-
-        if ($usuario_data->celular != $data->celular) {
-            $authy_request = new AuthyApi(config("authy.token"));
-
-            $authy_user = $authy_request->registerUser($data->email, $data->celular, 52);
-
-            if (!$authy_user->ok()) {
-                return response()->json([
-                    'message' => "Ocurrió un error al registrar el nuevo celular en la aplicación de Authy."
-                ], 500);
-            }
-
-            $usuario_data->authy = $authy_user->id();
-        }
 
         $usuario_data->nombre = mb_strtoupper($data->nombre, 'UTF-8');
         $usuario_data->email = $data->email;
@@ -337,8 +321,6 @@ class AuthController extends Controller
         }
 
         $json['code'] = 200;
-        $json['message'] = "Por favor ingresa el token de la aplicación Authy.";
-        $json['authy'] = $existe_usuario->authy;
 
         return $this->make_json($json);
     }

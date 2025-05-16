@@ -1,4 +1,9 @@
-<?php /** @noinspection PhpComposerExtensionStubsInspection */
+<?php
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpRedundantOptionalArgumentInspection */
+/** @noinspection PhpUndefinedFieldInspection */
+/** @noinspection PhpUnused */
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
@@ -8,22 +13,27 @@ use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
 use Exception;
+use Httpful\Exception\ConnectionErrorException;
+use Httpful\Mime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Mailgun\Mailgun;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use stdClass;
+use Throwable;
 
 class CompraController extends Controller
 {
     /* Compra > Compra */
-    public function compra_compra_crear(Request $request)
+    public function compra_compra_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $error = 0;
 
         $data->serie_documento = (property_exists($data, "serie_documento")) ? $data->serie_documento : "";
 
@@ -71,7 +81,7 @@ class CompraController extends Controller
                 'factura_serie' => $data->serie_documento,
                 'factura_folio' => $data->folio,
                 'tipo_cambio' => $data->tipo_cambio,
-                'referencia' => $data->recepcion != 0 ? "Compra creada a partir de la recepción de compra con el ID " . $data->recepcion . "" : "N/A",
+                'referencia' => $data->recepcion != 0 ? "Compra creada a partir de la recepción de compra con el ID " . $data->recepcion : "N/A",
                 'observacion' => $data->recepcion != 0 ? "1" : "N/A",
                 'info_extra' => 'N/A',
                 'comentario' => $data->metodo_pago,
@@ -86,6 +96,7 @@ class CompraController extends Controller
             ]);
 
             foreach ($data->productos as $producto) {
+                /** @noinspection PhpUnusedLocalVariableInspection */
                 $movimiento = DB::table('movimiento')->insertGetId([
                     'id_documento' => $documento,
                     'id_modelo' => $producto->id,
@@ -192,7 +203,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_crear_usuario($criterio)
+    public function compra_compra_crear_usuario($criterio): JsonResponse
     {
         $usuarios = DB::select("SELECT id, nombre FROM usuario WHERE nombre LIKE '%" . $criterio . "%'");
 
@@ -203,7 +214,7 @@ class CompraController extends Controller
     }
 
     /** @noinspection PhpParamsInspection */
-    public function compra_compra_crear_get_recepcion($recepcion)
+    public function compra_compra_crear_get_recepcion($recepcion): JsonResponse
     {
         $recepciones = explode(",", $recepcion);
 
@@ -217,7 +228,7 @@ class CompraController extends Controller
             if ($compra->documento_erp_compra != 'N/A') {
                 return response()->json([
                     "code" => 500,
-                    "message" => "La recepcion " . $compra->documento_erp . " ya cuenta con una compra creada con el ID " . $compra->documento_erp_compra . ""
+                    "message" => "La recepcion " . $compra->documento_erp . " ya cuenta con una compra creada con el ID " . $compra->documento_erp_compra
                 ]);
             }
         }
@@ -251,46 +262,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_crear_post_token(Request $request)
-    {
-        $data = json_decode($request->input("data"));
-
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
-
-        if (empty($authy_user_id)) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "No se encontró el usuario que ha autorizado la finalización."
-            ]);
-        }
-
-        try {
-            $authy_user_id = $authy_user_id[0]->id;
-
-            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-            $verification = $authy_request->verifyToken($data->usuario, $data->token);
-
-            if (!$verification->ok()) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido."
-                ]);
-            }
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-            ]);
-        }
-
-        return response()->json([
-            "code" => 200,
-            "message" => "Token autorizado"
-        ]);
-    }
-
-    public function compra_compra_editar_data($serie, $folio)
+    public function compra_compra_editar_data($serie, $folio): JsonResponse
     {
         $serie = $serie == 'na' ? '' : $serie;
 
@@ -319,7 +291,7 @@ class CompraController extends Controller
                                     documento_entidad.*
                                 FROM documento
                                 INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                WHERE documento.id = " . $informacion->id . "");
+                                WHERE documento.id = " . $informacion->id);
 
         if (empty($proveedor)) {
             return response()->json([
@@ -349,7 +321,7 @@ class CompraController extends Controller
                                     0 AS existe
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $informacion->id . "");
+                                WHERE movimiento.id_documento = " . $informacion->id);
 
         if (empty($productos)) {
             return response()->json([
@@ -369,7 +341,7 @@ class CompraController extends Controller
                                                     usuario.nombre 
                                                 FROM seguimiento 
                                                 INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                WHERE id_documento = " . $informacion->id . "");
+                                                WHERE id_documento = " . $informacion->id);
 
         return response()->json([
             'code'  => 200,
@@ -377,11 +349,10 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_editar_guardar(Request $request)
+    public function compra_compra_editar_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $productos_compra   = array();
 
         $data->serie_documento = (property_exists($data, "serie_documento")) ? $data->serie_documento : "";
 
@@ -394,7 +365,7 @@ class CompraController extends Controller
                                         AND documento.factura_serie = '" . TRIM($data->serie_documento) . "'
                                         AND documento_entidad.rfc = '" . $data->proveedor->rfc . "'
                                         AND documento.id_almacen_principal_empresa = " . $data->almacen . "
-                                        AND documento.id != " . $data->documento . "");
+                                        AND documento.id != " . $data->documento);
 
         if (!empty($existe_documento)) {
             return response()->json([
@@ -431,8 +402,9 @@ class CompraController extends Controller
             'expired_at'                    => $data->fecha
         ]);
 
-        $movimientos_documento = DB::select("SELECT id, id_modelo, cantidad, 0 AS editado FROM movimiento WHERE id_documento = " . $data->documento . "");
+        $movimientos_documento = DB::select("SELECT id, id_modelo, cantidad, 0 AS editado FROM movimiento WHERE id_documento = " . $data->documento);
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         foreach ($data->productos as $index => $producto) {
             DB::table('movimiento')->where(['id' => $producto->id])->update([
                 'id_modelo' => $producto->id,
@@ -478,7 +450,7 @@ class CompraController extends Controller
                     'id_notificacion'   => $notificacion_id
                 ]);
 
-                array_push($usuarios, $usuario->id);
+                $usuarios[] = $usuario->id;
             }
 
             if (!empty($usuarios)) {
@@ -502,7 +474,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_crear_producto(Request $request)
+    public function compra_compra_crear_producto(Request $request): JsonResponse
     {
         $descripcion = $request->input('descripcion');
 
@@ -518,7 +490,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_crear_uuid(Request $request)
+    public function compra_compra_crear_uuid(Request $request): JsonResponse
     {
         $uuid = $request->input('uuid');
 
@@ -527,7 +499,7 @@ class CompraController extends Controller
         if (!empty($compras)) {
             return response()->json([
                 'code' => 500,
-                'message' => "Ya existe una compra registrada con el UUID del XML, " . $compras[0]->factura_serie . " " . $compras[0]->factura_folio . ""
+                'message' => "Ya existe una compra registrada con el UUID del XML, " . $compras[0]->factura_serie . " " . $compras[0]->factura_folio
             ]);
         }
 
@@ -536,7 +508,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_corroborar_data()
+    public function compra_compra_corroborar_data(): JsonResponse
     {
         $compras = $this->compras_raw_data("AND documento.id_fase = 91");
 
@@ -546,7 +518,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_corroborar_guardar(Request $request)
+    public function compra_compra_corroborar_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -573,7 +545,7 @@ class CompraController extends Controller
                 $modelo = $existe_producto[0]->id;
             }
 
-            $movimiento = DB::table('movimiento')->insertGetId([
+            DB::table('movimiento')->insertGetId([
                 'id_documento' => $data->documento,
                 'id_modelo' => $modelo,
                 'cantidad' => $producto->cantidad,
@@ -620,7 +592,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_autorizar_data()
+    public function compra_compra_autorizar_data(): JsonResponse
     {
         $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
         $compras = $this->compras_raw_data("AND documento.id_fase = 92");
@@ -632,7 +604,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_autorizar_guardar(Request $request)
+    public function compra_compra_autorizar_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -697,7 +669,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_autorizar_cancelar($documento, Request $request)
+    public function compra_compra_autorizar_cancelar($documento, Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
         $info_documento = DB::select("SELECT id_fase FROM documento WHERE id = " . $documento . " AND status = 1 AND id_tipo = 1");
@@ -727,7 +699,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_pendiente_data()
+    public function compra_compra_pendiente_data(): JsonResponse
     {
         $empresas   = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
         $compras = $this->compras_raw_data("AND documento.id_fase = 93");
@@ -753,7 +725,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_pendiente_confirmar(Request $request)
+    public function compra_compra_pendiente_confirmar(Request $request): JsonResponse
     {
         $documento = $request->input('documento');
         $seriesJson = $request->input('series');
@@ -764,17 +736,16 @@ class CompraController extends Controller
         // Verificar duplicidades en el array recibido
         foreach ($series as $serie) {
             if (in_array($serie['serie'], $seriesUnicas)) {
-                $object = new \stdClass();
+                $object = new stdClass();
                 $object->serie = $serie['serie'];
                 $object->status = 0; // Marcar como duplicada
-                array_push($array, $object);
             } else {
                 $seriesUnicas[] = $serie['serie'];
-                $object = new \stdClass();
+                $object = new stdClass();
                 $object->serie = $serie['serie'];
                 $object->status = 1; // Asumir inicialmente que es válida
-                array_push($array, $object);
             }
+            $array[] = $object;
         }
 
         // Verificación de existencia en la base de datos para series no duplicadas
@@ -801,21 +772,18 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_pendiente_guardar(Request $request)
+    public function compra_compra_pendiente_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $terminada = 1;
-        $error = 0;
-        $error_text = "";
-        $series_agregadas = array();
 
         $almacen = DB::select("SELECT
                                 empresa_almacen.id_almacen,
                                 documento.id_almacen_principal_empresa
                             FROM documento
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            WHERE documento.id = " . $data->documento . "");
+                            WHERE documento.id = " . $data->documento);
 
         if (empty($almacen)) {
             return response()->json([
@@ -824,20 +792,12 @@ class CompraController extends Controller
             ]);
         }
 
-        $proveedor = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento . "")[0]->id_entidad;
-
         foreach ($data->productos as $producto) {
             if ($producto->serie) {
                 $total_series = 0;
 
                 foreach ($producto->series as $serie) {
                     $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
-                    //Aqui se quita
-                    //                    $apos = `'`;
-                    //                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                    //                    if (str_contains($serie->serie, $apos)) {
-                    //                        $serie->serie = addslashes($serie->serie);
-                    //                    }
                     $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
                     if ($serie->status) $total_series++;
 
@@ -845,21 +805,6 @@ class CompraController extends Controller
                         $existe_serie = DB::select("SELECT id, status FROM producto WHERE serie = '" . TRIM($serie->serie) . "'");
 
                         if (!empty($existe_serie)) {
-                            /*
-                            if ($existe_serie[0]->status) {
-                                $error = 1;
-                                $error_text = "La serie " . $serie->serie . " ya se encuentra registrada en el sistema con status disponible.<br>";
-
-                                continue;
-                            }
-                            else {
-                                DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
-                                    "id_almacen" => $almacen[0]->id_almacen,
-                                    "status" => 1
-                                ]);
-                            }
-                            */
-
                             DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
                                 "id_almacen" => $almacen[0]->id_almacen,
                                 "id_modelo" => $movimiento->id_modelo,
@@ -878,8 +823,6 @@ class CompraController extends Controller
                             'id_movimiento' => $producto->id,
                             'id_producto'   => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
                         ]);
-
-                        array_push($series_agregadas, empty($existe_serie) ? $id_serie : $existe_serie[0]->id);
                     }
                 }
 
@@ -889,7 +832,7 @@ class CompraController extends Controller
                                         producto.serie
                                     FROM movimiento_producto
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
 
                 $producto->cantidad_recibida = $total_series;
 
@@ -908,17 +851,6 @@ class CompraController extends Controller
 
                 $producto->cantidad_recibida = $producto->cantidad_aceptada;
             }
-        }
-
-        if ($error) {
-            foreach ($series_agregadas as $serie) {
-                DB::table('producto')->where(['id' => $serie])->delete();
-            }
-
-            return response()->json([
-                'code'  => 500,
-                'message'   => "Ocurrió un error al actualizar la compra.<br><br>" . $error_text
-            ]);
         }
 
         if ($terminada) {
@@ -941,7 +873,7 @@ class CompraController extends Controller
                                         documento_entidad.razon_social
                                     FROM documento
                                     INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                    WHERE documento.id = " . $data->documento . "");
+                                    WHERE documento.id = " . $data->documento);
 
         if (!empty($info_compra)) {
             $pdf = app('FPDF');
@@ -986,7 +918,7 @@ class CompraController extends Controller
                                                 modelo.descripcion
                                             FROM movimiento
                                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id = " . $producto->id . "");
+                                            WHERE movimiento.id = " . $producto->id);
 
                 $pdf->Cell(40, 10, $producto_data[0]->sku, "T");
                 $pdf->Cell(110, 10, (strlen($producto_data[0]->descripcion) > 60) ? substr($producto_data[0]->descripcion, 0, 60) . " .." : $producto_data[0]->descripcion, "T");
@@ -1017,7 +949,11 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_compra_historial_data(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function compra_compra_historial_data(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -1034,7 +970,7 @@ class CompraController extends Controller
         $fila = 2;
 
         $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
 
         # Cabecera
         $sheet->setCellValue('A1', 'FOLIO');
@@ -1079,10 +1015,10 @@ class CompraController extends Controller
             $sheet->setCellValue('V' . $fila, $compra->nombre);
 
             if (!empty($compra->ordenes)) {
-                $ordenes = array();
+                $ordenes = [];
 
                 foreach ($compra->ordenes as $orden) {
-                    array_push($ordenes, $orden->id);
+                    $ordenes[] = $orden->id;
                 }
             }
 
@@ -1117,7 +1053,7 @@ class CompraController extends Controller
                 }
 
                 $spreadsheet->getActiveSheet()->getStyle("G" . $fila . ":H" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $sheet->getCellByColumnAndRow(11, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getCellByColumnAndRow(11, $fila)->setValueExplicit($producto->sku, DataType::TYPE_STRING);
                 $spreadsheet->getActiveSheet()->getStyle("N" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
 
                 $fila++;
@@ -1146,7 +1082,7 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_compra_historial_guardar(Request $request)
+    public function compra_compra_historial_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -1160,12 +1096,12 @@ class CompraController extends Controller
         }
 
         if ($data->actualizar_uuid) {
-            $id_documento = DB::select("SELECT documento_extra, factura_serie, factura_folio FROM documento WHERE id = " . $data->documento . "");
+            $id_documento = DB::select("SELECT documento_extra, factura_serie, factura_folio FROM documento WHERE id = " . $data->documento);
 
             $id_documento = $id_documento[0];
 
             if ($id_documento->documento_extra == 'N/A' || $id_documento->documento_extra == '') {
-                $response = @json_decode(file_get_contents(config('webservice.url') . 'FacturaCompra/Consulta/7/Serie/' . $id_documento->factura_serie . '/' . $id_documento->factura_folio . ''));
+                $response = @json_decode(file_get_contents(config('webservice.url') . 'FacturaCompra/Consulta/7/Serie/' . $id_documento->factura_serie . '/' . $id_documento->factura_folio));
 
                 if (empty($response)) {
                     return response()->json([
@@ -1189,7 +1125,7 @@ class CompraController extends Controller
                             FROM documento
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                            WHERE documento.id = " . $data->documento . "")[0]->bd;
+                            WHERE documento.id = " . $data->documento)[0]->bd;
 
             try {
                 $array_compra = [
@@ -1200,7 +1136,7 @@ class CompraController extends Controller
                 ];
 
                 $response = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                    ->body($array_compra, \Httpful\Mime::FORM)
+                    ->body($array_compra, Mime::FORM)
                     ->send();
 
                 $response_raw = $response->raw_body;
@@ -1252,10 +1188,12 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_compra_historial_saldar(Request $request)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function compra_compra_historial_saldar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
-        $productos = array();
 
         $info_compra = DB::select("SELECT
                                             empresa_almacen.id_erp,
@@ -1266,7 +1204,7 @@ class CompraController extends Controller
                                         FROM documento
                                         INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                         INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                        WHERE documento.id = " . $data->compra . "");
+                                        WHERE documento.id = " . $data->compra);
 
         if (empty($info_compra)) {
             return response()->json([
@@ -1312,7 +1250,7 @@ class CompraController extends Controller
         );
 
         $crear_nc_compra = \Httpful\Request::post(config('webservice.url') . 'DevolucionCompra/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($nota_data, \Httpful\Mime::FORM)
+            ->body($nota_data, Mime::FORM)
             ->send();
 
         $crear_nc_compra_raw = $crear_nc_compra->raw_body;
@@ -1330,7 +1268,7 @@ class CompraController extends Controller
         if ($crear_nc_compra->error) {
             return response()->json([
                 "code" => 500,
-                "message" => "Ocurrió un error al crear la nota de credito, favor de contactar a un administrador, mensaje de error: " . $crear_nc_compra->mensaje . "",
+                "message" => "Ocurrió un error al crear la nota de credito, favor de contactar a un administrador, mensaje de error: " . $crear_nc_compra->mensaje,
                 "data" => $nota_data
             ]);
         }
@@ -1347,14 +1285,14 @@ class CompraController extends Controller
     }
 
     /* Compra > Orden */
-    public function compra_orden_requisicion_data()
+    public function compra_orden_requisicion_data(): JsonResponse
     {
-//        $marketplaces = DB::select("SELECT id, marketplace FROM marketplace");
         $marketplaces = DB::table('marketplace_area')
             ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
             ->select('marketplace.marketplace', 'marketplace_area.id')
             ->get();
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         $requisiciones = DB::select("SELECT
                                         SUM(movimiento.precio * movimiento.cantidad) AS total
                                     FROM documento
@@ -1365,6 +1303,7 @@ class CompraController extends Controller
                                     AND documento.status = 1
                                     AND documento.created_at BETWEEN '" . date("Y-m-d", strtotime("monday this week")) . " 00:00:00' AND '" . date("Y-m-d", strtotime("sunday this week")) . " 23:59:59'")[0]->total;
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         $ordenes = DB::select("SELECT
                                         SUM(movimiento.precio * movimiento.cantidad) AS total
                                     FROM documento
@@ -1380,7 +1319,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_requisicion(Request $request)
+    public function compra_orden_requisicion(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -1430,7 +1369,7 @@ class CompraController extends Controller
             ]);
         }
 
-        $nombre = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id . "")[0]->nombre;
+        $nombre = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id)[0]->nombre;
         
         $view = view('email.notificacion_requisicion_crear')->with([
             'anio' => date('Y'),
@@ -1453,6 +1392,7 @@ class CompraController extends Controller
                                     WHERE subnivel_nivel.id_nivel = 8 AND subnivel_nivel.id_subnivel = 1");
 
             foreach ($usuarios as $usuario) {
+                /** @noinspection PhpUnusedLocalVariableInspection */
                 $emails .= $usuario->email . ";";
 
                 $notificados[] = $usuario->id;
@@ -1491,7 +1431,7 @@ class CompraController extends Controller
                 'code' => 200,
                 'message' => "La requisición fue creada correctamente con el ID " . $documento . " pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return response()->json([
                 'code' => 200,
                 'message' => "La requisición fue creada correctamente con el ID " . $documento . " pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
@@ -1504,7 +1444,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_autorizacion_requisicion_data()
+    public function compra_orden_autorizacion_requisicion_data(): JsonResponse
     {
         $documentos = $this->ordenes_raw_data("AND documento.id_fase = 601");
 
@@ -1514,7 +1454,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_autorizacion_requisicion_guardar(Request $request)
+    public function compra_orden_autorizacion_requisicion_guardar(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
         $documento = $request->input('documento');
@@ -1532,7 +1472,7 @@ class CompraController extends Controller
             ]);
         }
 
-        $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id . "")[0];
+        $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id)[0];
 
         $view = view('email.notificacion_requisicion_autorizacion')->with([
             'anio' => date('Y'),
@@ -1574,7 +1514,7 @@ class CompraController extends Controller
                 'code'  => 200,
                 'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             return response()->json([
                 'code'  => 200,
                 'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
@@ -1587,7 +1527,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_autorizacion_requisicion_cancelar(Request $request)
+    public function compra_orden_autorizacion_requisicion_cancelar(Request $request): JsonResponse
     {
         $seguimiento = $request->input('seguimiento');
         $documento = $request->input('documento');
@@ -1610,7 +1550,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_orden_data()
+    public function compra_orden_orden_data(): JsonResponse
     {
         $empresas = DB::select("SELECT id, bd, rfc, empresa FROM empresa WHERE status = 1 AND id != 0");
         $periodos = DB::select("SELECT id, periodo_en FROM documento_periodo WHERE status = 1");
@@ -1766,7 +1706,7 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_orden_modificacion_data()
+    public function compra_orden_modificacion_data(): JsonResponse
     {
         $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
         $empresas   = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
@@ -1782,12 +1722,10 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_modificacion_eliminar($documento, $eliminar, Request $request)
+    public function compra_orden_modificacion_eliminar($documento, $eliminar): JsonResponse
     {
-        $auth = json_decode($request->auth);
-
         if (!$eliminar) {
-            $requisiciones = DB::select("SELECT observacion FROM documento WHERE id = " . $documento . "");
+            $requisiciones = DB::select("SELECT observacion FROM documento WHERE id = " . $documento);
 
             if (!empty($requisiciones)) {
                 $requisiciones = explode(',', $requisiciones[0]->observacion);
@@ -1810,7 +1748,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_modificacion_guardar(Request $request)
+    public function compra_orden_modificacion_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -1861,7 +1799,7 @@ class CompraController extends Controller
             'id_entidad'    => $proveedor_id
         ]);
 
-        $info_extra = json_decode(DB::select("SELECT info_extra FROM documento WHERE id = " . $data->id . "")[0]->info_extra);
+        $info_extra = json_decode(DB::select("SELECT info_extra FROM documento WHERE id = " . $data->id)[0]->info_extra);
         $info_extra->productos = $data->productos;
         $info_extra->invoice = $data->invoice;
         $info_extra->fob = $data->fob;
@@ -1952,16 +1890,13 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_recepcion_guardar(Request $request)
+    /** @noinspection PhpUnusedLocalVariableInspection */
+    public function compra_orden_recepcion_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $terminada = 1;
-        $error = 0;
-        $error_text = "";
-        $series_agregadas = array();
         $movimientos_recepcionados = array();
-        $movimientos_producto = array();
 
         $documento_fase = DB::table("documento")
             ->select("id_fase")
@@ -2033,7 +1968,7 @@ class CompraController extends Controller
                                 documento.id_almacen_principal_empresa
                             FROM documento
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            WHERE documento.id = " . $data->id . "");
+                            WHERE documento.id = " . $data->id);
 
         if (empty($almacen)) {
             return response()->json([
@@ -2053,7 +1988,6 @@ class CompraController extends Controller
             }
         }
 
-        $proveedor = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->id . "")[0]->id_entidad;
         $simulacion_documento_erp = uniqid();
 
         foreach ($data->productos as $producto) {
@@ -2085,13 +2019,11 @@ class CompraController extends Controller
                             ]);
                         }
 
+                        /** @noinspection PhpUnusedLocalVariableInspection */
                         $movimiento_producto = DB::table('movimiento_producto')->insertGetId([
                             'id_movimiento' => $producto->id,
                             'id_producto' => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
                         ]);
-
-                        array_push($series_agregadas, empty($existe_serie) ? $id_serie : $existe_serie[0]->id);
-                        array_push($movimientos_producto, $movimiento_producto);
                     }
                 }
 
@@ -2101,7 +2033,7 @@ class CompraController extends Controller
                                         producto.serie
                                     FROM movimiento_producto
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
 
                 $producto->cantidad_recibida = $total_series;
             } else {
@@ -2128,7 +2060,7 @@ class CompraController extends Controller
                     "afectado" => $aplicar_recepcion->error ? 0 : 1,
                 ]);
 
-                array_push($movimientos_recepcionados, $movimiento_recepcionado);
+                $movimientos_recepcionados[] = $movimiento_recepcionado;
             }
         }
 
@@ -2147,7 +2079,7 @@ class CompraController extends Controller
                                                         FROM movimiento
                                                         INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                                         INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                                        WHERE movimiento.id = " . $producto->id . "")[0]->cantidad;
+                                                        WHERE movimiento.id = " . $producto->id)[0]->cantidad;
 
                 if ($total_series_recepcionadas != $producto->cantidad) {
                     $terminada = 0;
@@ -2188,46 +2120,11 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_orden_recepcion_whatsapp(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input("data"));
-
-        $authy_user_id = DB::select("SELECT id FROM usuario WHERE authy = '" . $data->usuario . "' AND status = 1");
-
-        if (empty($authy_user_id)) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "No se encontró el usuario que ha autorizado la finalización."
-            ]);
-        }
-
-        try {
-            $authy_user_id = $authy_user_id[0]->id;
-
-            $authy_request = new \Authy\AuthyApi('qPXDpKmDp7A71cxk7JBPspwbB9oFJb4t');
-
-            $verification = $authy_request->verifyToken($data->usuario, $data->token);
-
-            if (!$verification->ok()) {
-                return response()->json([
-                    'code'  => 403,
-                    'message'   => "El token ingresado no es valido."
-                ]);
-            }
-        } catch (\Authy\AuthyFormatException $e) {
-            return response()->json([
-                'code'  => 403,
-                'message'   => "El token ingresado no es valido, error: " . $e->getMessage()
-            ]);
-        }
-
-        return response()->json([
-            "code" => 200,
-            "message" => "Token autorizado"
-        ]);
-    }
-
-    public function compra_orden_historial_data(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function compra_orden_historial_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -2261,7 +2158,7 @@ class CompraController extends Controller
         $fila = 2;
 
         $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
 
         # Cabecera
         $sheet->setCellValue('A1', 'DOCUMENTO');
@@ -2334,7 +2231,7 @@ class CompraController extends Controller
 
                 $spreadsheet->getActiveSheet()->getStyle("G" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $sheet->getCellByColumnAndRow(12, $fila)->setValueExplicit($producto->codigo, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getCellByColumnAndRow(12, $fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
                 $spreadsheet->getActiveSheet()->getStyle("P" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
 
                 $fila++;
@@ -2364,7 +2261,7 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    public function compra_orden_historial_descargar($documento, Request $request)
+    public function compra_orden_historial_descargar($documento, Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2384,10 +2281,8 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_historial_descargar_recepcion_pdf($recepcion, Request $request)
+    public function compra_orden_historial_descargar_recepcion_pdf($recepcion): JsonResponse
     {
-        $auth = json_decode($request->auth);
-
         $documento = DB::table("documento_recepcion")
             ->select("movimiento.id_documento", "documento_recepcion.id_usuario")
             ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
@@ -2404,7 +2299,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_historial_guardar(Request $request)
+    public function compra_orden_historial_guardar(Request $request): JsonResponse
     {
         $seguimiento = $request->input('seguimiento');
         $documento = $request->input('documento');
@@ -2422,7 +2317,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_orden_historial_crear_orden_copia(Request $request)
+    public function compra_orden_historial_crear_orden_copia(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -2495,7 +2390,7 @@ class CompraController extends Controller
         DB::table('seguimiento')->insert([
             'id_usuario' => $auth->id,
             'id_documento' => $documento,
-            'seguimiento' => "ODC creada a partir de la ODC con el ID " . $data->id . ""
+            'seguimiento' => "ODC creada a partir de la ODC con el ID " . $data->id
         ]);
 
         $archivos = DB::table("documento_archivo")
@@ -2545,11 +2440,11 @@ class CompraController extends Controller
     }
 
     /* Compra > producto */
-    public function compra_producto_gestion_data(Request $request)
+    public function compra_producto_gestion_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
-        $empresas = DB::select("SELECT empresa.id, empresa.bd, empresa.empresa FROM empresa INNER JOIN usuario_empresa ON empresa.id = usuario_empresa.id_empresa WHERE empresa.status = 1 AND empresa.id != 0 AND usuario_empresa.id_usuario = " . $auth->id . "");
+        $empresas = DB::select("SELECT empresa.id, empresa.bd, empresa.empresa FROM empresa INNER JOIN usuario_empresa ON empresa.id = usuario_empresa.id_empresa WHERE empresa.status = 1 AND empresa.id != 0 AND usuario_empresa.id_usuario = " . $auth->id);
         $proveedores = DB::select("SELECT id, razon_social FROM modelo_proveedor WHERE status = 1 AND id != 0 AND id != 4");
 
         $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
@@ -2570,7 +2465,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_gestion_producto(Request $request)
+    public function compra_producto_gestion_producto(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input('data'));
@@ -2639,16 +2534,16 @@ class CompraController extends Controller
                 $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
             }
 
-            $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id . "");
+            $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
 
-            $amazon_data = new \stdClass();
+            $amazon_data = new stdClass();
 
             $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
             $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
 
             $producto->amazon = $amazon_data;
 
-            $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id . "");
+            $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
 
             $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
         }
@@ -2660,7 +2555,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_gestion_productos(Request $request)
+    public function compra_producto_gestion_productos(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input('data'));
@@ -2732,16 +2627,16 @@ class CompraController extends Controller
                     $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
                 }
 
-                $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id . "");
+                $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
 
-                $amazon_data = new \stdClass();
+                $amazon_data = new stdClass();
 
                 $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
                 $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
 
                 $producto->amazon = $amazon_data;
 
-                $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id . "");
+                $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
 
                 $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
             }
@@ -2754,7 +2649,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_buscar_codigo_sat(Request $request)
+    public function compra_producto_buscar_codigo_sat(Request $request): JsonResponse
     {
         $criterio = $request->input('criterio');
         $existe_codigo = DB::table('modelo_sat')->where('clave_sat', trim($criterio))->first();
@@ -2793,19 +2688,13 @@ class CompraController extends Controller
         }
     }
 
-    public function compra_producto_gestion_crear(Request $request)
+    public function compra_producto_gestion_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $empresa = $request->input('empresa');
 
-        $codigo_anterior = $data->sku;
-
-        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id . "");
-
-        if ($data->id != 0) {
-            $codigo_anterior = DB::select("SELECT sku FROM modelo WHERE id = " . $data->id . "")[0]->sku;
-        }
+        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
 
         $informacion_empresa = DB::table("empresa")->find($empresa);
 
@@ -2818,7 +2707,7 @@ class CompraController extends Controller
         if ($data->id != 0) { # Ya existe el producto en el crm
             $modelo_id = $data->id;
 
-            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id . "");
+            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id);
 
             if (!empty($existe_producto)) {
                 return response()->json([
@@ -2849,7 +2738,7 @@ class CompraController extends Controller
                 'caducidad' => $data->caducidad,
             ]);
 
-            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id . "");
+            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
 
             DB::table('modelo_edits')->insert([
                 'id_modelo' => $data->id,
@@ -2858,7 +2747,7 @@ class CompraController extends Controller
                 'informacion_despues' => json_encode($producto_data_actual[0])
             ]);
 
-            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id . "");
+            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id);
 
             if (empty($existe_amazon)) {
                 DB::table("modelo_amazon")->insert([
@@ -3089,7 +2978,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_gestion_imagen($dropbox)
+    public function compra_producto_gestion_imagen($dropbox): JsonResponse
     {
         DB::table('modelo_imagen')->where(['dropbox' => $dropbox])->delete();
 
@@ -3098,7 +2987,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_gestion_producto_proveedor(Request $request)
+    public function compra_producto_gestion_producto_proveedor(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -3133,7 +3022,11 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_importacion_crear(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function compra_producto_importacion_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -3153,7 +3046,7 @@ class CompraController extends Controller
         $sheet->setCellValue('G1', 'SAT');
         $sheet->setCellValue('H1', 'RESULTADO');
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('5FE4DB'); # Fondo de la cabecera de color azul
+        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('5FE4DB'); # Fondo de la cabecera de color azul
 
         foreach ($data->productos as $producto) {
             $medidas = explode("X", $producto->medidas);
@@ -3166,6 +3059,7 @@ class CompraController extends Controller
 
             if (empty($existe_producto_crm)) {
                 try {
+                    /** @noinspection PhpUnusedLocalVariableInspection */
                     $modelo_id = DB::table('modelo')->insertGetId([
                         'id_tipo'       => $producto->tipo,
                         'sku'           => $producto->codigo,
@@ -3226,7 +3120,7 @@ class CompraController extends Controller
             $sheet->setCellValue('G' . $contador_fila, $producto->sat);
             $sheet->setCellValue('H' . $contador_fila, $resultado);
 
-            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->codigo, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
 
             $contador_fila++;
         }
@@ -3254,7 +3148,7 @@ class CompraController extends Controller
     }
 
     /* Compra > Categoria */
-    public function compra_producto_categoria_get_data()
+    public function compra_producto_categoria_get_data(): JsonResponse
     {
         return response()->json([
             'code' => 200,
@@ -3262,7 +3156,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_categoria_post_crear(Request $request)
+    public function compra_producto_categoria_post_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $raw_data = $request->input('data');
@@ -3307,7 +3201,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_sinonimo_post_producto(Request $request)
+    public function compra_producto_sinonimo_post_producto(Request $request): JsonResponse
     {
         $criterio = $request->input("data");
 
@@ -3337,7 +3231,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_sinonimo_post_guardar(Request $request)
+    public function compra_producto_sinonimo_post_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
         $auth = json_decode($request->auth);
@@ -3360,7 +3254,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_producto_sinonimo_post_sinonimo(Request $request)
+    public function compra_producto_sinonimo_post_sinonimo(Request $request): JsonResponse
     {
         $data = $request->input("data");
 
@@ -3377,7 +3271,7 @@ class CompraController extends Controller
     }
 
     /* Compra > producto > buscar */
-    public function compra_producto_buscar($criterio)
+    public function compra_producto_buscar($criterio): JsonResponse
     {
         $criterio = urldecode(trim($criterio));
 
@@ -3430,7 +3324,7 @@ class CompraController extends Controller
 
 
     /* Compra > presupuesto */
-    public function compra_presupuesto_data()
+    public function compra_presupuesto_data(): JsonResponse
     {
         $presupuesto = DB::select("SELECT presupuesto FROM documento_presupuesto WHERE created_at BETWEEN '" . date("Y-m-d", strtotime("monday this week")) . " 00:00:00' AND '" . date("Y-m-d", strtotime("sunday this week")) . " 23:59:59' ORDER BY created_at DESC");
 
@@ -3440,7 +3334,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_presupuesto_guardar($presupuesto)
+    public function compra_presupuesto_guardar($presupuesto): JsonResponse
     {
         DB::table('documento_presupuesto')->insert([
             'presupuesto'   => $presupuesto
@@ -3453,7 +3347,7 @@ class CompraController extends Controller
     }
 
     /* Compra > Tipo de cambio */
-    public function compra_tipo_cambio_data()
+    public function compra_tipo_cambio_data(): JsonResponse
     {
 //        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
 
@@ -3463,7 +3357,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_tipo_cambio_guardar($tc)
+    public function compra_tipo_cambio_guardar($tc): JsonResponse
     {
         DB::table('documento_tipo_cambio')->insert([
             'tipo_cambio'   => (float) $tc
@@ -3476,7 +3370,7 @@ class CompraController extends Controller
     }
 
     /* Compra backorder */
-    public function compra_compra_backorder()
+    public function compra_compra_backorder(): JsonResponse
     {
         $publicaciones = DB::select("SELECT
                                         marketplace_publicacion.id,
@@ -3497,10 +3391,10 @@ class CompraController extends Controller
                                                     modelo.descripcion
                                                 FROM marketplace_publicacion_producto
                                                 INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id . "");
+                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
 
             foreach ($publicacion->productos as $producto) {
-                $producto->ventas = new \stdClass();
+                $producto->ventas = new stdClass();
 
                 $ventas = DB::select("SELECT
                                         movimiento.cantidad,
@@ -3510,7 +3404,7 @@ class CompraController extends Controller
                                     WHERE documento.id_fase = 1
                                     AND documento.id_tipo = 2
                                     AND documento.status = 1
-                                    AND movimiento.id_modelo = " . $producto->id . "");
+                                    AND movimiento.id_modelo = " . $producto->id);
 
                 foreach ($ventas as $venta) {
                     $fecha = $venta->fecha;
@@ -3524,7 +3418,7 @@ class CompraController extends Controller
                         $fecha_entrega = strtotime($fecha_entrega);
                         $diferencia = $fecha_entrega - $fecha_actual;
 
-                        $producto->ventas->$fecha = new \stdClass();
+                        $producto->ventas->$fecha = new stdClass();
                         $producto->ventas->$fecha->fecha = $fecha;
                         $producto->ventas->$fecha->cantidad = $venta->cantidad;
                         $producto->ventas->$fecha->resta = floor($diferencia / (60 * 60 * 24));
@@ -3544,7 +3438,8 @@ class CompraController extends Controller
     }
 
     /* Compra proveedor */
-    public function compra_proveedor_data() {
+    public function compra_proveedor_data(): JsonResponse
+    {
         $regimenes = DB::table("cat_regimen")->get();
         $paises = DB::table("cat_pais")->get();
         $periodos = DB::table("documento_periodo")->where('status', 1)->get();
@@ -3557,7 +3452,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_proveedor_get_data($criterio)
+    public function compra_proveedor_get_data($criterio): JsonResponse
     {
         $criterio = str_replace("%20", " ", $criterio);
 
@@ -3585,7 +3480,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_proveedor_post_guardar(Request $request)
+    public function compra_proveedor_post_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -3615,11 +3510,12 @@ class CompraController extends Controller
                                 ->where("status", 1)
                                 ->first();
 
-        $info_extra = new \stdClass();
+        $info_extra = new stdClass();
         $info_extra->pais = $data->pais;
         $info_extra->regimen = $data->regimen;
 
         if (empty($existe_proveedor)) {
+            /** @noinspection PhpUnusedLocalVariableInspection */
             $entidad_id = DB::table('documento_entidad')->insertGetId([
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
@@ -3662,7 +3558,7 @@ class CompraController extends Controller
     }
 
     /* Compra cliente */
-    public function compra_cliente_get_data($criterio, $empresa)
+    public function compra_cliente_get_data($criterio): JsonResponse
     {
         $criterio = str_replace("%20", " ", $criterio);
 
@@ -3672,6 +3568,7 @@ class CompraController extends Controller
             $proveedores = DB::select("SELECT * FROM documento_entidad WHERE razon_social LIKE '%" . $criterio . "%' AND tipo = 1 AND status = 1 AND id != 0");
         }
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         foreach ($proveedores as $key => $proveedor) {
             if (!empty($proveedor->info_extra)) {
                 $info_extra = json_decode($proveedor->info_extra);
@@ -3692,7 +3589,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function compra_cliente_post_guardar(Request $request)
+    public function compra_cliente_post_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -3719,7 +3616,7 @@ class CompraController extends Controller
             ]);
         }
 
-        $info_extra = new \stdClass();
+        $info_extra = new stdClass();
         $info_extra->pais = $data->pais;
         $info_extra->regimen = $data->regimen;
         $info_extra->fiscal = $data->fiscal;
@@ -3811,7 +3708,10 @@ class CompraController extends Controller
         ]);
     }
 
-    public function rawinfo_compra_uuid()
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function rawinfo_compra_uuid(): string
     {
         set_time_limit(0);
 
@@ -3836,13 +3736,13 @@ class CompraController extends Controller
                 "uuid"      => $compra->uuid
             ];
 
-            \Httpful\Request::post(config('webservice.url') . 'Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')->body($array_compra, \Httpful\Mime::FORM)->send();
+            \Httpful\Request::post(config('webservice.url') . 'Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')->body($array_compra, Mime::FORM)->send();
         }
 
         return "Terminado";
     }
 
-    public function rawinfo_compra_huawei()
+    public function rawinfo_compra_huawei(): array
     {
         $compras = DB::select("SELECT id FROM documento WHERE factura_serie = 'E' AND status = 1 AND id_fase = 93");
 
@@ -3854,10 +3754,11 @@ class CompraController extends Controller
                                         movimiento.cantidad
                                     FROM movimiento
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $compra->id . "");
+                                    WHERE movimiento.id_documento = " . $compra->id);
 
             foreach ($productos as $producto) {
                 if ($producto->serie) {
+                    /** @noinspection PhpUnusedLocalVariableInspection */
                     $series = DB::select("SELECT
                                             COUNT(producto.*) AS cantidad
                                         FROM documento
@@ -3877,7 +3778,7 @@ class CompraController extends Controller
     }
 
     /* Pedimento */
-    public function compra_pedimento_crear_get_data()
+    public function compra_pedimento_crear_get_data(): JsonResponse
     {
         $empresas = DB::table("empresa")
             ->select("id", "bd", "empresa")
@@ -3896,7 +3797,7 @@ class CompraController extends Controller
         ]);
     }
 
-    public function rawinfo_categorias()
+    public function rawinfo_categorias(): array
     {
         $categorias = DB::select("SELECT * FROM modelo_categoria");
         $categorias_uno = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 1 ORDER BY categoria DESC");
@@ -3913,7 +3814,7 @@ class CompraController extends Controller
         ];
     }
 
-    private function compras_raw_data($extra_data)
+    private function compras_raw_data($extra_data): array
     {
         $compras = DB::select("SELECT
                                     documento.id,
@@ -3971,14 +3872,14 @@ class CompraController extends Controller
                                             FROM documento
                                             INNER JOIN documento_updates_by ON documento_updates_by.id_documento = documento.id
                                             INNER JOIN usuario ON documento_updates_by.id_usuario = usuario.id
-                                            WHERE documento_updates_by.id_documento = " . $compra->id . "");
+                                            WHERE documento_updates_by.id_documento = " . $compra->id);
 
             $compra->seguimiento = DB::select("SELECT
                                                     seguimiento.*, 
                                                     usuario.nombre 
                                                 FROM seguimiento 
                                                 INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                WHERE id_documento = " . $compra->id . "");
+                                                WHERE id_documento = " . $compra->id);
 
             $compra->productos = DB::select("SELECT
                                                 movimiento.id,
@@ -4002,7 +3903,7 @@ class CompraController extends Controller
                                                 1 AS existe
                                             FROM movimiento
                                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id_documento = " . $compra->id . "");
+                                            WHERE movimiento.id_documento = " . $compra->id);
 
             $compra->ordenes = DB::select("SELECT
                                                 documento.id
@@ -4013,6 +3914,7 @@ class CompraController extends Controller
                                             AND documento_recepcion.documento_erp_compra = '" . $compra->documento_extra . "'
                                             GROUP BY documento.id");
 
+            /** @noinspection PhpUnusedLocalVariableInspection */
             foreach ($compra->productos as $k => $producto) {
                 $total_documento += (int) $producto->cantidad * (float) $producto->costo;
 
@@ -4023,7 +3925,7 @@ class CompraController extends Controller
                                         producto.serie
                                     FROM movimiento_producto
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id . "");
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
 
                     $producto->series           = $series;
                 }
@@ -4213,7 +4115,7 @@ class CompraController extends Controller
                 ? array_values($recepcionesPorDocumento[$documento->id])
                 : [];
 
-            $documento->proveedor = new \stdClass();
+            $documento->proveedor = new stdClass();
             $documento->proveedor->id = $documento->id_erp;
             $documento->proveedor->rfc = $documento->rfc;
             $documento->proveedor->razon = $documento->razon_social;
@@ -4261,9 +4163,9 @@ class CompraController extends Controller
         return $documentos;
     }
 
-    private function ordenes_generar_pdf($documento, $auth)
+    private function ordenes_generar_pdf($documento, $auth): stdClass
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $informacion_documento = DB::select("SELECT
                                                 documento.id,
@@ -4283,7 +4185,7 @@ class CompraController extends Controller
                                             INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
                                             INNER JOIN moneda ON documento.id_moneda = moneda.id
                                             INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                            WHERE documento.id = " . $documento . "");
+                                            WHERE documento.id = " . $documento);
 
         if (empty($informacion_documento)) {
             $response->error = 1;
@@ -4311,9 +4213,6 @@ class CompraController extends Controller
         $impuesto = "1." . $informacion_documento->info_extra->impuesto;
 
         $pdf = app('FPDF');
-
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 20);
@@ -4771,40 +4670,28 @@ class CompraController extends Controller
         if (strlen($informacion_documento->info_extra->comentarios) > 90) {
             $pdf->SetFont('Arial', '', 8);
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 90, 90), 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         } else {
             $pdf->Cell(130, 7, "", 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         }
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
+        $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Ln();
+        $current_height_product += 5;
 
         if (strlen($informacion_documento->info_extra->comentarios) > 180) {
             $pdf->SetFont('Arial', '', 8);
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 180, 90), 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         } else {
             $pdf->Cell(130, 7, "", 0, false, 'L');
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-            $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Ln();
-            $current_height_product += 5;
         }
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
+        $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Ln();
+        $current_height_product += 5;
 
         if (strlen($informacion_documento->info_extra->comentarios) > 270) {
             $pdf->SetFont('Arial', '', 8);
@@ -4870,6 +4757,7 @@ class CompraController extends Controller
         if (strlen($informacion_documento->info_extra->comentarios) > 1170) {
             $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 1170, 90), 0, false, 'L');
             $pdf->Ln();
+            /** @noinspection PhpUnusedLocalVariableInspection */
             $current_height_product += 5;
         }
 
@@ -4892,7 +4780,7 @@ class CompraController extends Controller
         return $response;
     }
 
-    private function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id)
+    private function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id): stdClass
     {
         $info_compra = DB::select("SELECT
                                         documento.factura_folio,
@@ -4904,7 +4792,7 @@ class CompraController extends Controller
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         $info_compra = $info_compra[0];
 
@@ -4983,7 +4871,7 @@ class CompraController extends Controller
 
         $pdf->Ln(150);
         $pdf->SetFont('Arial', 'B', 12);
-        $pdf->Cell(100, 0, utf8_decode(mb_strtoupper("FECHA: " .  strftime("%d de %B del %Y", strtotime($fecha_recepcion->created_at)) . "", 'UTF-8')), 0, 0);
+        $pdf->Cell(100, 0, utf8_decode(mb_strtoupper("FECHA: " . strftime("%d de %B del %Y", strtotime($fecha_recepcion->created_at)), 'UTF-8')), 0, 0);
         $pdf->SetFont('Arial', '', 12);
 
         $pdf->Ln(10);
@@ -5007,7 +4895,7 @@ class CompraController extends Controller
         $pdf_data = $pdf->Output($pdf_name, 'S');
         $file_name = uniqid() . ".pdf";
 
-        $pdf_data_o = new \stdClass();
+        $pdf_data_o = new stdClass();
         $pdf_data_o->name = $file_name;
         $pdf_data_o->data = $pdf_data;
 
