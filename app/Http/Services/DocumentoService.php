@@ -1,21 +1,29 @@
 <?php
+/** @noinspection PhpUnusedLocalVariableInspection */
+/** @noinspection PhpUnused */
+/** @noinspection PhpUndefinedVariableInspection */
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Services;
 
 use App\Models\Enums\DocumentoTipo;
 use App\Models\Enums\DocumentoFase;
-use App\Models\Enums\DocumentoPaqueteria;
-
-use App\Events\PusherEvent;
+use DOMDocument;
 use Exception;
-use DB;
+use Httpful\Exception\ConnectionErrorException;
+use Httpful\Mime;
+use Httpful\Request;
+use Illuminate\Support\Facades\DB;
+use SoapClient;
+use stdClass;
 
 class DocumentoService
 {
-    public static function crearOrdenCompra($documento)
+    public static function crearOrdenCompra($documento): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $info_documento = DB::select("SELECT
@@ -34,7 +42,7 @@ class DocumentoService
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                                     INNER JOIN documento_uso_cfdi ON documento.id_cfdi = documento_uso_cfdi.id
                                     INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         if (empty($info_documento)) {
             $response->mensaje = "No se encontró información sobre el documento proporcionado" . self::logVariableLocation();
@@ -55,10 +63,10 @@ class DocumentoService
                                     IF ('" . $info_documento->rfc . "' = 'XEXX010101000', 2, 5) AS impuesto
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
         # Sí no se encuentran productos de la compra, se regresa un error
         if (empty($productos)) {
-            $response->mensaje = "No se encontró información de los productos de la orden de compra " . $documento . "" . self::logVariableLocation();
+            $response->mensaje = "No se encontró información de los productos de la orden de compra " . $documento . self::logVariableLocation();
 
             return $response;
         }
@@ -90,8 +98,8 @@ class DocumentoService
                 'productos' => json_encode($productos)
             );
 
-            $crear_orden_compra = \Httpful\Request::post(config('webservice.url') . 'ordenes/compra/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                ->body($array_pro, \Httpful\Mime::FORM)
+            $crear_orden_compra = Request::post(config('webservice.url') . 'ordenes/compra/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                ->body($array_pro, Mime::FORM)
                 ->send();
 
             $crear_orden_compra_raw = $crear_orden_compra->raw_body;
@@ -105,7 +113,7 @@ class DocumentoService
             }
 
             if ($crear_orden_compra->error == 1) {
-                $response->mensaje = "No fue posible crear la compra orden de compra en comercial, error: " . $crear_orden_compra->mensaje . "" . self::logVariableLocation();
+                $response->mensaje = "No fue posible crear la compra orden de compra en comercial, error: " . $crear_orden_compra->mensaje . self::logVariableLocation();
 
                 return $response;
             }
@@ -115,7 +123,7 @@ class DocumentoService
                 'imported_at' => date("Y-m-d H:i:s")
             ]);
         } catch (Exception $e) {
-            $response->mensaje = "Ocurrió un error al crear la orden de compra, mensaje de error: " . $e->getMessage() . "" . self::logVariableLocation();
+            $response->mensaje = "Ocurrió un error al crear la orden de compra, mensaje de error: " . $e->getMessage() . self::logVariableLocation();
 
             return $response;
         }
@@ -125,11 +133,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearFactura($documento, $refacturacion, $cce)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function crearFactura($documento, $refacturacion, $cce): ?stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
-        $errores_seguimiento = "";
+        $response = new stdClass();
         $extra_message = "";
 
         $producto_url = config('webservice.url') . "producto/Consulta/Productos/SKU/";
@@ -216,7 +226,7 @@ class DocumentoService
                                     id_metodopago
                                 FROM documento_pago 
                                 INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                WHERE id_documento = " . $documento . "");
+                                WHERE id_documento = " . $documento);
             # Si no se encuentra información del pago, se genera uno generico con metodo de pago 31 (intermediario pagos)
             if ($info_documento->publico == 0) {
                 if (empty($forma_pago)) {
@@ -253,12 +263,12 @@ class DocumentoService
                                         destino_entidad
                                     FROM documento_pago 
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
                 }
 
                 $forma_pago = $forma_pago[0];
             } else {
-                $forma_pago = new \stdClass();
+                $forma_pago = new stdClass();
 
                 $forma_pago->id_metodopago = 31;
                 $forma_pago->destino_entidad = 1;
@@ -281,7 +291,7 @@ class DocumentoService
                                     0 AS descuento
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
             # Si no se encuentran productos, se regresa un mensaje de error
             if (empty($productos)) {
                 $response->error = 1;
@@ -295,8 +305,8 @@ class DocumentoService
 
             $response->error = 0;
             $response->data = $info_documento;
-            # Si el pedido no es de linio y no es anticipada, y si es anticipada tiene que estar en la fase 3 para poder generar la factura
-            if (!$info_documento->anticipada || ($info_documento->anticipada && $info_documento->id_fase == 3)) {
+            # Si el pedido no es de linio y no es anticipada, y si es anticipada tiene que estar en la fase 3 para poder generar la factura.
+            if (!$info_documento->anticipada || $info_documento->id_fase == 3) {
                 $total_documento = 0;
 
                 # Sí el marketplace tiene registrada una empresa externa, el pedido se hace a nombre de esa empresa en pro y en la base de datos de la empresa se hace el pedo a nombre del cliente
@@ -322,7 +332,7 @@ class DocumentoService
                                                 producto.serie
                                             FROM movimiento_producto
                                             INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE movimiento_producto.id_movimiento = " . $producto->id_movimiento . "");
+                                            WHERE movimiento_producto.id_movimiento = " . $producto->id_movimiento);
 
                             foreach ($series as $serie) {
                                 //                                $apos = `'`;
@@ -341,9 +351,9 @@ class DocumentoService
                     if (empty($producto_data)) {
                         $response->error = 1;
                         $response->key = 0;
-                        $response->mensaje = "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . "" . self::logVariableLocation();
+                        $response->mensaje = "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . self::logVariableLocation();
 
-                        ComodinService::insertar_seguimiento($documento, "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . "" . self::logVariableLocation());
+                        ComodinService::insertar_seguimiento($documento, "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . self::logVariableLocation());
 
                         return $response;
                     }
@@ -354,7 +364,7 @@ class DocumentoService
                     $producto->precio_original = $producto->precio;
                     $producto->precio_unitario = $producto->precio;
                     $producto->precio_utilidad = $producto->precio;
-                    $producto->costo = (float)$producto_data[0]->ultimo_costo < 1 ? 1 : (float)$producto_data[0]->ultimo_costo;
+                    $producto->costo = max((float)$producto_data[0]->ultimo_costo, 1);
 
                     $total_documento += $producto->cantidad * $producto->precio * 1.16 * $info_documento->tipo_cambio;
 
@@ -377,7 +387,7 @@ class DocumentoService
                                 $response->mensaje = "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", ya que no se encontró el producto: " . trim(rawurlencode($producto->sku)) . " en la empresa principal" . self::logVariableLocation();
 
                                 ComodinService::insertar_seguimiento($documento, "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD: "
-                                    . $empresa_externa[0]->bd . ", ya que no se encontró el producto: " . trim(rawurlencode($producto->sku)) . " en la empresa principal" . "" . self::logVariableLocation());
+                                    . $empresa_externa[0]->bd . ", ya que no se encontró el producto: " . trim(rawurlencode($producto->sku)) . " en la empresa principal" . self::logVariableLocation());
 
                                 return $response;
                             }
@@ -403,8 +413,8 @@ class DocumentoService
                                     'unidad' => $producto_data->unidad,
                                 );
 
-                                $crear_producto = \Httpful\Request::post(config('webservice.url') . "producto/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                                    ->body($array_producto, \Httpful\Mime::FORM)
+                                $crear_producto = Request::post(config('webservice.url') . "producto/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                                    ->body($array_producto, Mime::FORM)
                                     ->send();
 
                                 $crear_producto_raw = $crear_producto->raw_body;
@@ -437,9 +447,9 @@ class DocumentoService
                             } catch (Exception $e) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . self::logVariableLocation();
 
-                                ComodinService::insertar_seguimiento($documento, "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation());
+                                ComodinService::insertar_seguimiento($documento, "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . self::logVariableLocation());
 
                                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -492,8 +502,8 @@ class DocumentoService
                         "cce" => $cce
                     );
 
-                    $crear_documento = \Httpful\Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                        ->body($array_pro, \Httpful\Mime::FORM)
+                    $crear_documento = Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                        ->body($array_pro, Mime::FORM)
                         ->send();
 
                     $crear_documento_raw = $crear_documento->raw_body;
@@ -529,9 +539,9 @@ class DocumentoService
                     # Si sucedio algo mal, se regresa un mensaje de error
                     $response->error = 1;
                     $response->key = 0;
-                    $response->mensaje = "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+                    $response->mensaje = "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . self::logVariableLocation();
 
-                    ComodinService::insertar_seguimiento($documento, "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation());
+                    ComodinService::insertar_seguimiento($documento, "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . self::logVariableLocation());
 
                     file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura del documento " . $documento . " en el ERP con la BD: " . $info_documento->bd . ", Mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -592,8 +602,8 @@ class DocumentoService
                                 "cce" => $cce
                             );
 
-                            $crear_documento_externa = \Httpful\Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                                ->body($array_pro, \Httpful\Mime::FORM)
+                            $crear_documento_externa = Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                                ->body($array_pro, Mime::FORM)
                                 ->send();
 
                             $crear_documento_externa_raw = $crear_documento_externa->raw_body;
@@ -604,7 +614,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                 $response->raw = $crear_documento_externa;
 
                                 return $response;
@@ -615,7 +625,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $crear_documento_externa->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $crear_documento_externa->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -627,12 +637,12 @@ class DocumentoService
                             ]);
 
                             # Al crear la factura, también se tiene que crear la compra (para saldar el inventario)
-                            $documento_compra_data = DB::select("SELECT * FROM documento WHERE id = " . $documento . "");
+                            $documento_compra_data = DB::select("SELECT * FROM documento WHERE id = " . $documento);
 
                             if (empty($documento_compra_data)) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible obtener información del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible obtener información del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -648,7 +658,7 @@ class DocumentoService
                             $documento_compra_data[0]->comentario = 3;
                             $documento_compra_data[0]->expired_at = $documento_compra_data[0]->created_at;
                             $documento_compra_data[0]->id_cfdi = 1;
-                            $documento_compra_data[0]->observacion = "Compra generada a partir del pedido " . $documento . ", para saldar el inventario de la empresa con la BD " . $empresa_externa[0]->bd . "";
+                            $documento_compra_data[0]->observacion = "Compra generada a partir del pedido " . $documento . ", para saldar el inventario de la empresa con la BD " . $empresa_externa[0]->bd;
 
                             $id_almacen_empresa = DB::select("SELECT
                                                         empresa_almacen.id
@@ -660,7 +670,7 @@ class DocumentoService
                             if (empty($id_almacen_empresa)) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible obtener el almacén del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible obtener el almacén del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -711,7 +721,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la compra del pedido " . $documento . " en la empresa con la BD " . $empresa_externa[0]->bd . ", mensaje de error: " . $crear_compra_omg->mensaje . ". " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la compra del pedido " . $documento . " en la empresa con la BD " . $empresa_externa[0]->bd . ", mensaje de error: " . $crear_compra_omg->mensaje . ". " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                 $response->raw = property_exists($crear_compra_omg, 'raw') ? $crear_compra_omg->raw : 0;
 
                                 return $response;
@@ -727,8 +737,8 @@ class DocumentoService
 
                             $response->error = 1;
                             $response->key = 0;
-                            $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "<br><br>" . $e->getTraceAsString() . "<br><br>, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
-                            $response->raw = isset($crear_documento_externa_raw) ? $crear_documento_externa_raw : 0;
+                            $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "<br><br>" . $e->getTraceAsString() . "<br><br>, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
+                            $response->raw = $crear_documento_externa_raw ?? 0;
 
                             return $response;
                         }
@@ -758,54 +768,34 @@ class DocumentoService
 
                             if ($info_documento->publico) {
                                 try {
-                                    $id_cuenta_bancaria = 1;
-
                                     switch ($info_documento->marketplace) {
                                         case 'MERCADOLIBRE':
-
                                             $id_cuenta_bancaria = $empresa_ingreso == '7' ? 11 : ($empresa_ingreso == '2' || $empresa_ingreso == 8 ? 1 : 8);
-
                                             break;
 
                                         case 'LINIO':
-
                                             $id_cuenta_bancaria = ($empresa_ingreso == '7') ? 13 : 1;
-
                                             break;
 
                                         case 'AMAZON':
-
                                             $id_cuenta_bancaria = ($empresa_ingreso == '7') ? 246 : 1;
-
                                             break;
-
-                                            // case 'CLAROSHOP':
-                                            // case 'SEARS':
-
-                                            //     $id_cuenta_bancaria = ($empresa_ingreso == '7') ? 264 : 1;
-
-                                            //     break;
-                                            //!! RELEASE T1 reempalzar
 
                                         case 'CLAROSHOP':
                                         case 'SEARS':
                                         case 'SANBORNS':
-
                                             $id_cuenta_bancaria = ($empresa_ingreso == '7') ? 264 : 1;
-
                                             break;
 
                                         case 'WALMART':
-
                                             $id_cuenta_bancaria = ($empresa_ingreso == '7') ? 245 : 1;
-
                                             break;
 
                                         default:
-                                            $id_cuenta_bancaria = $forma_pago->destino_entidad; # Cuenta a la que se hará el ingreso del documento para luego pagar la factura
-
+                                            $id_cuenta_bancaria = $forma_pago->destino_entidad;
                                             break;
                                     }
+
 
                                     #280125 si el cupon es mayor a 0, se resta el cupon
                                     if ($info_documento->mkt_coupon > 0){
@@ -832,8 +822,8 @@ class DocumentoService
                                         "comentarios" => ""
                                     );
 
-                                    $crear_ingreso = \Httpful\Request::post(config('webservice.url') . "Ingresos/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                                        ->body($ingreso, \Httpful\Mime::FORM)
+                                    $crear_ingreso = Request::post(config('webservice.url') . "Ingresos/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                                        ->body($ingreso, Mime::FORM)
                                         ->send();
 
                                     $crear_ingreso_raw = $crear_ingreso->raw_body;
@@ -850,7 +840,7 @@ class DocumentoService
 
                                         $response->error = 1;
                                         $response->key = 0;
-                                        $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                        $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                         $response->raw = $crear_ingreso_raw;
                                         $response->data = $ingreso;
 
@@ -869,7 +859,7 @@ class DocumentoService
 
                                         $response->error = 1;
                                         $response->key = 0;
-                                        $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", Mensaje de error: " . $crear_ingreso->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                        $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", Mensaje de error: " . $crear_ingreso->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                         $response->data = $ingreso;
 
                                         return $response;
@@ -887,7 +877,7 @@ class DocumentoService
 
                                     $response->error = 1;
                                     $response->key = 0;
-                                    $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", Mensaje de error: " . $e->getMessage() . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                    $response->mensaje = "No fue posible crear el ingreso del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", Mensaje de error: " . $e->getMessage() . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                     return $response;
                                 }
@@ -902,8 +892,8 @@ class DocumentoService
                                         "operacion" => $id_ingreso
                                     );
 
-                                    $saldar_factura = \Httpful\Request::post(config('webservice.url') . "CobroCliente/Pagar/FacturaCliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                                        ->body($saldar_factura_data, \Httpful\Mime::FORM)
+                                    $saldar_factura = Request::post(config('webservice.url') . "CobroCliente/Pagar/FacturaCliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                                        ->body($saldar_factura_data, Mime::FORM)
                                         ->send();
 
                                     $saldar_factura_raw = $saldar_factura->raw_body;
@@ -916,7 +906,7 @@ class DocumentoService
 
                                         $response->error = 1;
                                         $response->key = 0;
-                                        $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . "" . self::logVariableLocation();
+                                        $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . self::logVariableLocation();
                                         $response->data = $saldar_factura_data;
                                         $response->raw = $saldar_factura_raw;
 
@@ -930,13 +920,13 @@ class DocumentoService
 
                                         $response->error = 1;
                                         $response->key = 0;
-                                        $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . "" . self::logVariableLocation();
+                                        $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . self::logVariableLocation();
                                         $response->data = $saldar_factura_data;
 
                                         return $response;
                                     }
 
-                                    $existe_ingreso = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento . "");
+                                    $existe_ingreso = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento);
 
                                     if (empty($existe_ingreso)) {
                                         $pago = DB::table('documento_pago')->insertGetId([
@@ -965,24 +955,21 @@ class DocumentoService
                                             'id_pago' => $pago
                                         ]);
 
-                                        DB::table('documento')->where(['id' => $documento])->update([
-                                            'pagado' => 1
-                                        ]);
                                     } else {
                                         DB::table('documento_pago')->where(['id' => $existe_ingreso[0]->id_pago])->update([
                                             'folio' => $id_ingreso
                                         ]);
 
-                                        DB::table('documento')->where(['id' => $documento])->update([
-                                            'pagado' => 1
-                                        ]);
                                     }
+                                    DB::table('documento')->where(['id' => $documento])->update([
+                                        'pagado' => 1
+                                    ]);
                                 } catch (Exception $e) {
                                     $eliminar_ingreso = self::__eliminarMovimientoFlujo($id_ingreso, $documento, $empresa_ingreso);
 
                                     $response->error = 1;
                                     $response->key = 0;
-                                    $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . "" . self::logVariableLocation();
+                                    $response->mensaje = "No fue posible saldar la factura con el ingreso " . $id_ingreso . " del documento " . $documento . " en el ERP con la BD: " . $empresa_ingreso . ", error desconocido, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "." . $eliminar_ingreso->mensaje . self::logVariableLocation();
 
                                     return $response;
                                 }
@@ -991,7 +978,7 @@ class DocumentoService
                                                     documento_pago.*
                                                 FROM documento_pago
                                                 INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                                WHERE documento_pago_re.id_documento = " . $documento . "");
+                                                WHERE documento_pago_re.id_documento = " . $documento);
 
                                 if (!empty($tiene_ingreso) && !$info_documento->anticipada) {
                                     if (empty($tiene_ingreso[0]->folio)) {
@@ -1029,11 +1016,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearFacturaAutoAzur($documento, $cce)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function crearFacturaAutoAzur($documento, $cce): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
-        $errores_seguimiento = "";
+        $response = new stdClass();
         $extra_message = "";
 
         $producto_url = config('webservice.url') . "producto/Consulta/Productos/SKU/";
@@ -1109,7 +1098,7 @@ class DocumentoService
                                     id_metodopago
                                 FROM documento_pago 
                                 INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                WHERE id_documento = " . $documento . "");
+                                WHERE id_documento = " . $documento);
             # Si no se encuentra información del pago, se genera uno generico con metodo de pago 31 (intermediario pagos)
             if ($info_documento->publico == 0) {
                 if (empty($forma_pago)) {
@@ -1146,12 +1135,12 @@ class DocumentoService
                                         destino_entidad
                                     FROM documento_pago 
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
                 }
 
                 $forma_pago = $forma_pago[0];
             } else {
-                $forma_pago = new \stdClass();
+                $forma_pago = new stdClass();
 
                 $forma_pago->id_metodopago = 31;
                 $forma_pago->destino_entidad = 1;
@@ -1174,7 +1163,7 @@ class DocumentoService
                                     0 AS descuento
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
             # Si no se encuentran productos, se regresa un mensaje de error
             if (empty($productos)) {
                 $response->error = 1;
@@ -1187,7 +1176,7 @@ class DocumentoService
             $response->error = 0;
             $response->data = $info_documento;
             # Si el pedido no es de linio y no es anticipada, y si es anticipada tiene que estar en la fase 3 para poder generar la factura
-            if (!$info_documento->anticipada || ($info_documento->anticipada && $info_documento->id_fase == 3)) {
+            if (!$info_documento->anticipada || $info_documento->id_fase == 3) {
                 $total_documento = 0;
 
                 # Sí el marketplace tiene registrada una empresa externa, el pedido se hace a nombre de esa empresa en pro y en la base de datos de la empresa se hace el pedo a nombre del cliente
@@ -1213,7 +1202,7 @@ class DocumentoService
                                                 producto.serie
                                             FROM movimiento_producto
                                             INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE movimiento_producto.id_movimiento = " . $producto->id_movimiento . "");
+                                            WHERE movimiento_producto.id_movimiento = " . $producto->id_movimiento);
 
                             foreach ($series as $serie) {
                                 $serie = str_replace(["'", '\\'], '', $serie);
@@ -1227,7 +1216,7 @@ class DocumentoService
                     if (empty($producto_data)) {
                         $response->error = 1;
                         $response->key = 0;
-                        $response->mensaje = "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . "" . self::logVariableLocation();
+                        $response->mensaje = "Ocurrió un error al buscar el producto " . trim(rawurlencode($producto->sku)) . " en el ERP del documento " . $documento . " en la empresa: " . $info_documento->bd . self::logVariableLocation();
 
                         return $response;
                     }
@@ -1238,7 +1227,7 @@ class DocumentoService
                     $producto->precio_original = $producto->precio;
                     $producto->precio_unitario = $producto->precio;
                     $producto->precio_utilidad = $producto->precio;
-                    $producto->costo = (float)$producto_data[0]->ultimo_costo < 1 ? 1 : (float)$producto_data[0]->ultimo_costo;
+                    $producto->costo = max((float)$producto_data[0]->ultimo_costo, 1);
 
                     $total_documento += $producto->cantidad * $producto->precio * 1.16 * $info_documento->tipo_cambio;
 
@@ -1284,8 +1273,8 @@ class DocumentoService
                                     'unidad' => $producto_data->unidad,
                                 );
 
-                                $crear_producto = \Httpful\Request::post(config('webservice.url') . "producto/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                                    ->body($array_producto, \Httpful\Mime::FORM)
+                                $crear_producto = Request::post(config('webservice.url') . "producto/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                                    ->body($array_producto, Mime::FORM)
                                     ->send();
 
                                 $crear_producto_raw = $crear_producto->raw_body;
@@ -1314,7 +1303,7 @@ class DocumentoService
                             } catch (Exception $e) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD " . $empresa_externa[0]->bd . ", error: " . $e->getMessage() . self::logVariableLocation();
 
                                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el producto " . trim(rawurlencode($producto->sku)) . " del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -1356,8 +1345,8 @@ class DocumentoService
                         "cce" => $cce
                     );
 
-                    $crear_documento = \Httpful\Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                        ->body($array_pro, \Httpful\Mime::FORM)
+                    $crear_documento = Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+                        ->body($array_pro, Mime::FORM)
                         ->send();
 
                     $crear_documento_raw = $crear_documento->raw_body;
@@ -1389,7 +1378,7 @@ class DocumentoService
                     # Si sucedio algo mal, se regresa un mensaje de error
                     $response->error = 1;
                     $response->key = 0;
-                    $response->mensaje = "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+                    $response->mensaje = "No fue posible crear la factura en el ERP con la BD: " . $info_documento->bd . ", error: " . $e->getMessage() . self::logVariableLocation();
 
                     file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura del documento " . $documento . " en el ERP con la BD: " . $info_documento->bd . ", Mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -1450,8 +1439,8 @@ class DocumentoService
                                 "cce" => $cce
                             );
 
-                            $crear_documento_externa = \Httpful\Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                                ->body($array_pro, \Httpful\Mime::FORM)
+                            $crear_documento_externa = Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                                ->body($array_pro, Mime::FORM)
                                 ->send();
 
                             $crear_documento_externa_raw = $crear_documento_externa->raw_body;
@@ -1462,7 +1451,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                 $response->raw = $crear_documento_externa;
 
                                 return $response;
@@ -1473,7 +1462,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $crear_documento_externa->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $crear_documento_externa->mensaje . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -1485,12 +1474,12 @@ class DocumentoService
                             ]);
 
                             # Al crear la factura, también se tiene que crear la compra (para saldar el inventario)
-                            $documento_compra_data = DB::select("SELECT * FROM documento WHERE id = " . $documento . "");
+                            $documento_compra_data = DB::select("SELECT * FROM documento WHERE id = " . $documento);
 
                             if (empty($documento_compra_data)) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible obtener información del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible obtener información del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -1506,7 +1495,7 @@ class DocumentoService
                             $documento_compra_data[0]->comentario = 3;
                             $documento_compra_data[0]->expired_at = $documento_compra_data[0]->created_at;
                             $documento_compra_data[0]->id_cfdi = 1;
-                            $documento_compra_data[0]->observacion = "Compra generada a partir del pedido " . $documento . ", para saldar el inventario de la empresa con la BD " . $empresa_externa[0]->bd . "";
+                            $documento_compra_data[0]->observacion = "Compra generada a partir del pedido " . $documento . ", para saldar el inventario de la empresa con la BD " . $empresa_externa[0]->bd;
 
                             $id_almacen_empresa = DB::select("SELECT
                                                         empresa_almacen.id
@@ -1518,7 +1507,7 @@ class DocumentoService
                             if (empty($id_almacen_empresa)) {
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible obtener el almacén del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible obtener el almacén del documento " . $documento . " para generar la compra en la empresa externa con la BD " . $empresa_externa[0]->bd . ", favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
 
                                 return $response;
                             }
@@ -1569,7 +1558,7 @@ class DocumentoService
 
                                 $response->error = 1;
                                 $response->key = 0;
-                                $response->mensaje = "No fue posible crear la compra del pedido " . $documento . " en la empresa con la BD " . $empresa_externa[0]->bd . ", mensaje de error: " . $crear_compra_omg->mensaje . ". " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
+                                $response->mensaje = "No fue posible crear la compra del pedido " . $documento . " en la empresa con la BD " . $empresa_externa[0]->bd . ", mensaje de error: " . $crear_compra_omg->mensaje . ". " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
                                 $response->raw = property_exists($crear_compra_omg, 'raw') ? $crear_compra_omg->raw : 0;
 
                                 return $response;
@@ -1585,8 +1574,8 @@ class DocumentoService
 
                             $response->error = 1;
                             $response->key = 0;
-                            $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "<br><br>" . $e->getTraceAsString() . "<br><br>, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . "" . self::logVariableLocation();
-                            $response->raw = isset($crear_documento_externa_raw) ? $crear_documento_externa_raw : 0;
+                            $response->mensaje = "No fue posible crear la factura del documento " . $documento . " en la empresa externa con la BD: " . $empresa_externa[0]->bd . ", Mensaje de error: " . $e->getMessage() . "<br><br>" . $e->getTraceAsString() . "<br><br>, favor de no volver a tratar de crear el documento hasta que un administrador le indique. " . self::__eliminarFactura($documento)->mensaje . self::logVariableLocation();
+                            $response->raw = $crear_documento_externa_raw ?? 0;
 
                             return $response;
                         }
@@ -1604,10 +1593,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearRefacturacion($documento, $option)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function crearRefacturacion($documento, $option): ?stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
         $pagos_asociados = array();
         $seguimiento = "";
 
@@ -1667,7 +1659,7 @@ class DocumentoService
                                     IF(movimiento.retencion, 15, 5) AS impuesto
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE id_documento = " . $documento . "");
+                                WHERE id_documento = " . $documento);
 
         if (empty($productos)) {
             $response->error = 1;
@@ -1701,7 +1693,7 @@ class DocumentoService
                                 id_metodopago
                             FROM documento_pago 
                             INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                            WHERE id_documento = " . $documento . "");
+                            WHERE id_documento = " . $documento);
 
         if ($info_documento[0]->publico == 0) {
             if (empty($forma_pago)) {
@@ -1738,12 +1730,12 @@ class DocumentoService
                                         id_metodopago
                                     FROM documento_pago 
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
             }
 
             $forma_pago = $forma_pago[0];
         } else {
-            $forma_pago = new \stdClass();
+            $forma_pago = new stdClass();
 
             $forma_pago->id_metodopago = 31;
         }
@@ -1764,7 +1756,7 @@ class DocumentoService
                                     FROM documento
                                     INNER JOIN marketplace_area_empresa ON documento.id_marketplace_area = marketplace_area_empresa.id_marketplace_area
                                     INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         $empresa_movimiento = empty($empresa_externa) ? $info_documento->bd : $empresa_externa[0]->bd;
 
@@ -1806,12 +1798,11 @@ class DocumentoService
 
                     $eliminar_relacion = self::desaplicarPagoFactura($documento, $pago_id);
 
+                    $relacion_texto = ($pago->pago_con_operacion == 0) ? 'de la nc' : 'del pago';
                     if ($eliminar_relacion->error) {
-                        $relacion_texto = ($pago->pago_con_operacion == 0) ? 'de la nc' : 'del pago';
 
                         $seguimiento .= "<p>No fue posible eliminar la relación " . $relacion_texto . " con el ID " . $pago_id . ", mensaje de error: " . $eliminar_relacion->mensaje . ".</p>";
                     } else {
-                        $relacion_texto = ($pago->pago_con_operacion == 0) ? 'de la nc' : 'del pago';
 
                         $seguimiento .= "<p>Se eliminó la relación " . $relacion_texto . " con el ID " . $pago_id . ", correctamente.</p>";
                     }
@@ -1833,11 +1824,11 @@ class DocumentoService
         }
 
         # Despues, se genera un pedido con nueva información del cliente
-        $documento_anterior = DB::select("SELECT * FROM documento WHERE id = " . $documento . "")[0];
-        $documento_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $documento . "")[0];
-        $movimientos_anterior = DB::select("SELECT * FROM movimiento WHERE id_documento = " . $documento . "");
-        $documento_direccion = DB::select("SELECT * FROM documento_direccion WHERE id_documento = " . $documento . "");
-        $documento_pago = DB::select("SELECT * FROM documento_pago INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago WHERE documento_pago_re.id_documento = " . $documento . "");
+        $documento_anterior = DB::select("SELECT * FROM documento WHERE id = " . $documento)[0];
+        $documento_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $documento)[0];
+        $movimientos_anterior = DB::select("SELECT * FROM movimiento WHERE id_documento = " . $documento);
+        $documento_direccion = DB::select("SELECT * FROM documento_direccion WHERE id_documento = " . $documento);
+        $documento_pago = DB::select("SELECT * FROM documento_pago INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago WHERE documento_pago_re.id_documento = " . $documento);
 
         $documento_nuevo = DB::table('documento')->insertGetId([
             'id_tipo' => $documento_anterior->id_tipo,
@@ -1897,7 +1888,7 @@ class DocumentoService
                 'regalo'        => $movimiento_anterior->regalo
             ]);
 
-            $productos_anteriores = DB::select("SELECT id_producto FROM movimiento_producto WHERE id_movimiento = " . $movimiento_anterior->id . "");
+            $productos_anteriores = DB::select("SELECT id_producto FROM movimiento_producto WHERE id_movimiento = " . $movimiento_anterior->id);
 
             foreach ($productos_anteriores as $producto_anterior) {
                 DB::table('movimiento_producto')->insert([
@@ -1993,8 +1984,8 @@ class DocumentoService
                 "comentarios" => $info_documento->observacion,
             );
 
-            $crear_factura_nueva = \Httpful\Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                ->body($array_pro, \Httpful\Mime::FORM)
+            $crear_factura_nueva = Request::post(config('webservice.url') . 'facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                ->body($array_pro, Mime::FORM)
                 ->send();
 
             $crear_factura_nueva_raw = $crear_factura_nueva->raw_body;
@@ -2010,7 +2001,7 @@ class DocumentoService
 
             if ($crear_factura_nueva->error) {
                 $response->error = 1;
-                $response->mensaje = "No fue posible generar la refacturación en la empresa externa, error: " . $crear_factura_nueva->mensaje . "" . self::logVariableLocation();
+                $response->mensaje = "No fue posible generar la refacturación en la empresa externa, error: " . $crear_factura_nueva->mensaje . self::logVariableLocation();
 
                 return $response;
             }
@@ -2067,8 +2058,8 @@ class DocumentoService
                 'modulo' => 5
             );
 
-            $mover_documento = \Httpful\Request::post(config('webservice.url') . "documento/cambiarmodulo")
-                ->body($array_mover, \Httpful\Mime::FORM)
+            $mover_documento = Request::post(config('webservice.url') . "documento/cambiarmodulo")
+                ->body($array_mover, Mime::FORM)
                 ->send();
 
             $mover_documento_raw = $mover_documento->raw_body;
@@ -2079,23 +2070,23 @@ class DocumentoService
             }
 
             if ($mover_documento->error) {
-                $seguimiento .= "<p> No fue posible mover el documento de módulo, error: " . $mover_documento->mensaje . "" . self::logVariableLocation() . "</p>";
+                $seguimiento .= "<p> No fue posible mover el documento de módulo, error: " . $mover_documento->mensaje . self::logVariableLocation() . "</p>";
             }
         }
 
         $seguimiento = (empty($seguimiento) ? '' : '<br>' . $seguimiento);
 
         $response->error = 0;
-        $response->mensaje = "Refacturación creada correctamente, nueva factura con folio " . $documento_nuevo . " " . $seguimiento . "" . self::logVariableLocation();
+        $response->mensaje = "Refacturación creada correctamente, nueva factura con folio " . $documento_nuevo . " " . $seguimiento . self::logVariableLocation();
         $response->seguimiento = $seguimiento;
 
         return $response;
     }
 
-    public static function crearMovimiento($documento)
+    public static function crearMovimiento($documento): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $response->error = 0;
         $response->mensaje = "Exito!";
@@ -2104,42 +2095,42 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearMovimientoFlujo($pago, $bd)
+//    public static function crearMovimientoFlujo($pago, $bd)
+//    {
+//        set_time_limit(0);
+//        $response = new stdClass();
+//
+//        $tiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $pago->id);
+//
+//        if ($pago->tipo == 1 || $pago->tipo == 0) {
+//            # Se busca al cliente por RFC para verificar que exista
+//            $entidad = $pago->tipo == 1 ? $pago->origen_entidad : $pago->destino_entidad;
+//            $entidad_tipo = $pago->tipo == 1 ? $pago->entidad_origen : $pago->entidad_destino;
+//
+//            $existe_entidad = new stdClass();
+//            $existe_entidad->razon = "";
+//            $existe_entidad->nombre_oficial = "";
+//
+//            if (!is_numeric($entidad) && ($entidad_tipo == 1 || $entidad_tipo == 2)) {
+//                $tipo_consulta = $pago->tipo == 1 ? 'Clientes' : (!empty($tiene_documento)) ? 'Clientes' : 'Proveedores';
+//                $existe_entidad = @json_decode(file_get_contents(config('webservice.url') . 'Consultas/' . $tipo_consulta . '/' . $bd . '/RFC/' . $entidad));
+//
+//                if (empty($existe_entidad)) {
+//                    $response->error = 1;
+//                    $response->mensaje = "No se encontró la entidad con el RFC " . $entidad . " para generar el movimiento." . self::logVariableLocation();
+//
+//                    return $response;
+//                }
+//
+//                $existe_entidad = $existe_entidad[0];
+//            }
+//        }
+//    }
+
+    public static function crearNotaCredito($documento, $tipo = 0): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
-
-        $tiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $pago->id . "");
-
-        if ($pago->tipo == 1 || $pago->tipo == 0) {
-            # Se busca al cliente por RFC para verificar que exista
-            $entidad = $pago->tipo == 1 ? $pago->origen_entidad : $pago->destino_entidad;
-            $entidad_tipo = $pago->tipo == 1 ? $pago->entidad_origen : $pago->entidad_destino;
-
-            $existe_entidad = new \stdClass();
-            $existe_entidad->razon = "";
-            $existe_entidad->nombre_oficial = "";
-
-            if (!is_numeric($entidad) && ($entidad_tipo == 1 || $entidad_tipo == 2)) {
-                $tipo_consulta = $pago->tipo == 1 ? 'Clientes' : (!empty($tiene_documento)) ? 'Clientes' : 'Proveedores';
-                $existe_entidad = @json_decode(file_get_contents(config('webservice.url') . 'Consultas/' . $tipo_consulta . '/' . $bd . '/RFC/' . $entidad));
-
-                if (empty($existe_entidad)) {
-                    $response->error = 1;
-                    $response->mensaje = "No se encontró la entidad con el RFC " . $entidad . " para generar el movimiento." . self::logVariableLocation();
-
-                    return $response;
-                }
-
-                $existe_entidad = $existe_entidad[0];
-            }
-        }
-    }
-
-    public static function crearNotaCredito($documento, $tipo = 0)
-    {
-        set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $info_documento = DB::select("SELECT
                                         documento.id,
@@ -2201,7 +2192,7 @@ class DocumentoService
                                         id_metodopago
                                     FROM documento_pago 
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
 
         if ($info_documento->publico == 0) {
             if (empty($forma_pago)) {
@@ -2237,12 +2228,12 @@ class DocumentoService
                                         destino_entidad
                                     FROM documento_pago 
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
             }
 
             $forma_pago = $forma_pago[0];
         } else {
-            $forma_pago = new \stdClass();
+            $forma_pago = new stdClass();
 
             $forma_pago->id_metodopago = 31;
             $forma_pago->destino_entidad = 1;
@@ -2262,7 +2253,7 @@ class DocumentoService
                                     IF(movimiento.retencion, 15, 5) AS impuesto
                                 FROM movimiento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE movimiento.id_documento = " . $documento . "");
+                                WHERE movimiento.id_documento = " . $documento);
 
         if (empty($productos)) {
             $response->error = 1;
@@ -2277,7 +2268,7 @@ class DocumentoService
                                     FROM documento
                                     INNER JOIN marketplace_area_empresa ON documento.id_marketplace_area = marketplace_area_empresa.id_marketplace_area
                                     INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         $empresa_movimiento = empty($empresa_externa) ? $info_documento->bd : $empresa_externa[0]->bd;
 
@@ -2347,8 +2338,8 @@ class DocumentoService
                 'productos' => json_encode($productos)
             );
 
-            $response_nota = \Httpful\Request::post(config('webservice.url') . 'cliente/notacredito/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                ->body($array_nota, \Httpful\Mime::FORM)
+            $response_nota = Request::post(config('webservice.url') . 'cliente/notacredito/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                ->body($array_nota, Mime::FORM)
                 ->send();
 
             $raw_response_nota = $response_nota->raw_body;
@@ -2367,7 +2358,7 @@ class DocumentoService
 
             if ($response_nota->error == 1) {
                 $response->error = 1;
-                $response->mensaje = "No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", error: " . $response_nota->mensaje . "" . self::logVariableLocation();
+                $response->mensaje = "No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", error: " . $response_nota->mensaje . self::logVariableLocation();
                 $response->data = $array_nota;
 
                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error:No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", mensaje de error: " . $response_nota->mensaje . "." . PHP_EOL, FILE_APPEND);
@@ -2382,7 +2373,7 @@ class DocumentoService
             $response->id = $response_nota->id;
         } catch (Exception $e) {
             $response->error = 1;
-            $response->mensaje = "No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+            $response->mensaje = "No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", error: " . $e->getMessage() . self::logVariableLocation();
 
             file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error:No fue posible crear la nota de credito " . $documento . " en el ERP con la BD: " . $empresa_movimiento . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -2424,7 +2415,7 @@ class DocumentoService
                                 FROM movimiento
                                 INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                 INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                WHERE movimiento.id = " . $producto->id_movimiento . "");
+                                WHERE movimiento.id = " . $producto->id_movimiento);
 
             foreach ($series as $serie) {
                 if ($tipo == 0) {
@@ -2448,10 +2439,10 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearEntidad($entidad, $bd, $tipo = 1)
+    public static function crearEntidad($entidad, $bd, $tipo = 1): stdClass
     { # Tipo 1 es clientes, 2 proveedores
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $tipo_busqueda = $tipo == 1 ? "Clientes" : "Proveedores";
         $tipo_url = $tipo == 1 ? "empresa/cliente/insertar/" : "proveedor/V3/insertar/";
@@ -2527,14 +2518,14 @@ class DocumentoService
                 }
 
                 if ($entidad->codigo_postal_fiscal != 'N/A' && !empty($entidad->codigo_postal_fiscal)) {
-                    $codigo_postal_fiscal = new \stdClass();
+                    $codigo_postal_fiscal = new stdClass();
                     $codigo_postal_fiscal->cp = $entidad->codigo_postal_fiscal;
 
                     $array_empresa["direccion_fiscal"] = json_encode($codigo_postal_fiscal);
                 }
 
-                $crear_entidad = \Httpful\Request::post(config('webservice.url') . $tipo_url . 'UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                    ->body($array_empresa, \Httpful\Mime::FORM)
+                $crear_entidad = Request::post(config('webservice.url') . $tipo_url . 'UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                    ->body($array_empresa, Mime::FORM)
                     ->send();
 
                 $crear_entidad_raw = $crear_entidad->raw_body;
@@ -2552,7 +2543,7 @@ class DocumentoService
 
                 if ($crear_entidad->error == 1) {
                     $response->error = 1;
-                    $response->mensaje = "No fue posible crear la entidad en la empresa " . $bd . ", error: " . $crear_entidad->mensaje . "" . self::logVariableLocation();
+                    $response->mensaje = "No fue posible crear la entidad en la empresa " . $bd . ", error: " . $crear_entidad->mensaje . self::logVariableLocation();
                     $response->data = $crear_entidad_raw;
 
                     file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la entidad de la empresa: " . $bd . ", mensaje de error: " . $crear_entidad->mensaje . "." . PHP_EOL, FILE_APPEND);
@@ -2562,7 +2553,7 @@ class DocumentoService
             }
         } catch (Exception $e) {
             $response->error = 1;
-            $response->mensaje = "No fue posible crear la entidad en la empresa " . $bd . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+            $response->mensaje = "No fue posible crear la entidad en la empresa " . $bd . ", error: " . $e->getMessage() . self::logVariableLocation();
 
             file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la entidad de la empresa: " . $bd . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -2574,12 +2565,12 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearPolizaIngresoEgreso($poliza, $tipo = 1)
+    public static function crearPolizaIngresoEgreso($poliza, $tipo = 1): stdClass
     {
         set_time_limit(0);
         # Poliza tipo 1 ingreso, 2 nota credito o documento
 
-        $response = new \stdClasS();
+        $response = new stdClasS();
         $response->error = 1;
 
         $movimento = DB::table("documento_pago")
@@ -2622,8 +2613,8 @@ class DocumentoService
                 "transacciones" => $poliza->transacciones
             );
 
-            $crear_poliza = \Httpful\Request::post(config('webservice.url') . "Poliza/Insertar")
-                ->body($poliza_data, \Httpful\Mime::FORM)
+            $crear_poliza = Request::post(config('webservice.url') . "Poliza/Insertar")
+                ->body($poliza_data, Mime::FORM)
                 ->send();
 
             $crear_poliza_raw = $crear_poliza->raw_body;
@@ -2644,7 +2635,7 @@ class DocumentoService
             # Si sucedio algo mal, se regresa un mensaje de error
             if ($crear_poliza->error == 1) {
                 $response->error = 1;
-                $response->mensaje = "No fue posible crear la poliza del documento " . $poliza->documento . " en el ERP con la BD: " . $empresa . ", error: " . $crear_poliza->mensaje . "" . self::logVariableLocation();
+                $response->mensaje = "No fue posible crear la poliza del documento " . $poliza->documento . " en el ERP con la BD: " . $empresa . ", error: " . $crear_poliza->mensaje . self::logVariableLocation();
                 $response->data = $poliza_data;
 
                 DB::table("documento_pago")->where("id", $movimento->id)->update([
@@ -2660,7 +2651,7 @@ class DocumentoService
                 "error_poliza_mensaje" => ""
             ]);
         } catch (Exception $e) {
-            $response->mensaje = $e->getMessage() . " " . $e->getLine() . "" . self::logVariableLocation();
+            $response->mensaje = $e->getMessage() . " " . $e->getLine() . self::logVariableLocation();
 
             return $response;
         }
@@ -2671,10 +2662,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function actualizarEntidad($entidad, $bd)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function actualizarEntidad($entidad, $bd): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $array_empresa = array(
             "bd" => $bd,
@@ -2693,14 +2687,14 @@ class DocumentoService
         }
 
         if ($entidad->codigo_postal_fiscal != 'N/A' && !empty($entidad->codigo_postal_fiscal)) {
-            $codigo_postal_fiscal = new \stdClass();
+            $codigo_postal_fiscal = new stdClass();
             $codigo_postal_fiscal->cp = $entidad->codigo_postal_fiscal;
 
             $array_empresa["direccion_fiscal"] = json_encode($codigo_postal_fiscal);
         }
 
-        $crear_entidad = \Httpful\Request::post(config('webservice.url') . 'cliente/update/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($array_empresa, \Httpful\Mime::FORM)
+        $crear_entidad = Request::post(config('webservice.url') . 'cliente/update/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+            ->body($array_empresa, Mime::FORM)
             ->send();
 
         $crear_entidad_raw = $crear_entidad->raw_body;
@@ -2719,7 +2713,7 @@ class DocumentoService
 
         if ($crear_entidad->error == 1) {
             $response->error = 1;
-            $response->mensaje = "No fue posible actualizar la entidad en la empresa " . $bd . ", error: " . $crear_entidad->mensaje . "" . self::logVariableLocation();
+            $response->mensaje = "No fue posible actualizar la entidad en la empresa " . $bd . ", error: " . $crear_entidad->mensaje . self::logVariableLocation();
             $response->raw = $crear_entidad_raw;
             $response->data = $array_empresa;
 
@@ -2735,10 +2729,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function actualizarClienteIngreso($entidad, $ingreso, $bd)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function actualizarClienteIngreso($entidad, $ingreso, $bd): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $array = array(
             "bd" => $bd,
@@ -2747,8 +2744,8 @@ class DocumentoService
             "rfc" => $entidad
         );
 
-        $update_ingreso = \Httpful\Request::post(config('webservice.url') . 'Ingreso/CobroCliente/Update/Cliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($array, \Httpful\Mime::FORM)
+        $update_ingreso = Request::post(config('webservice.url') . 'Ingreso/CobroCliente/Update/Cliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+            ->body($array, Mime::FORM)
             ->send();
 
         $update_ingreso_raw = $update_ingreso->raw_body;
@@ -2764,7 +2761,7 @@ class DocumentoService
 
         if ($update_ingreso->error == 1) {
             $response->error = 1;
-            $response->mensaje = "No fue posible actualizar la entidad del ingreso " . $ingreso . " en la bd " . $bd . ", error: " . $update_ingreso->mensaje . "" . self::logVariableLocation();
+            $response->mensaje = "No fue posible actualizar la entidad del ingreso " . $ingreso . " en la bd " . $bd . ", error: " . $update_ingreso->mensaje . self::logVariableLocation();
             $response->data = $update_ingreso_raw;
 
             return $response;
@@ -2775,10 +2772,10 @@ class DocumentoService
         return $response;
     }
 
-    public static function saldarFactura($documento, $pago_id, $tipo)
+    public static function saldarFactura($documento, $pago_id, $tipo): stdClass
     { # Tipo 0 NC, 1 Ingreso
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
         $tipo_url = ($tipo) ? "CobroCliente/Pagar/FacturaCliente" : "Saldar/FacturaCliente/Con/NotaCredito";
 
         try {
@@ -2789,7 +2786,7 @@ class DocumentoService
                                         FROM documento 
                                         INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                         INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                        WHERE documento.id = " . $documento . "")[0];
+                                        WHERE documento.id = " . $documento)[0];
 
             if (empty($info_documento->documento_extra) || $info_documento->documento_extra == 'N/A') {
                 $response->error = 1;
@@ -2803,7 +2800,7 @@ class DocumentoService
                                         FROM documento
                                         INNER JOIN marketplace_area_empresa ON documento.id_marketplace_area = marketplace_area_empresa.id_marketplace_area
                                         INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                        WHERE documento.id = " . $documento . "");
+                                        WHERE documento.id = " . $documento);
 
             $empresa_ingreso = empty($empresa_externa) ? $info_documento->bd : $empresa_externa[0]->bd;
 
@@ -2820,8 +2817,8 @@ class DocumentoService
                 $saldar_factura['notacredito'] = $pago_id;
             }
 
-            $response_nota = \Httpful\Request::post(config('webservice.url') . $tipo_url . '/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                ->body($saldar_factura, \Httpful\Mime::FORM)
+            $response_nota = Request::post(config('webservice.url') . $tipo_url . '/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                ->body($saldar_factura, Mime::FORM)
                 ->send();
 
             $raw_response_nota  = $response_nota->raw_body;
@@ -2840,7 +2837,7 @@ class DocumentoService
 
             if ($response_nota->error == 1) {
                 $response->error = 1;
-                $response->mensaje = "No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . " en la bd: " . $empresa_ingreso . ", error: " . $response_nota->mensaje . "" . self::logVariableLocation();
+                $response->mensaje = "No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . " en la bd: " . $empresa_ingreso . ", error: " . $response_nota->mensaje . self::logVariableLocation();
                 $response->data = $saldar_factura;
 
                 file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . ": " . $empresa_ingreso . ", mensaje de error: " . $response_nota->mensaje . "." . PHP_EOL, FILE_APPEND);
@@ -2854,7 +2851,7 @@ class DocumentoService
             return $response;
         } catch (Exception $e) {
             $response->error = 1;
-            $response->mensaje = "No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . ", error: " . $e->getMessage() . "" . self::logVariableLocation();
+            $response->mensaje = "No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . ", error: " . $e->getMessage() . self::logVariableLocation();
 
             file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $documento . " con " . (($tipo) ? 'el ingreso' : 'la NC') . " con el ID " . $pago_id . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
 
@@ -2862,10 +2859,10 @@ class DocumentoService
         }
     }
 
-    public static function afectarMovimiento($documento)
+    public static function afectarMovimiento($documento): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $afectar = InventarioService::aplicarMovimiento($documento);
 
@@ -2876,10 +2873,10 @@ class DocumentoService
         return $response;
     }
 
-    public static function desaplicarPagoFactura($documento, $pago_id)
+    public static function desaplicarPagoFactura($documento, $pago_id): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $info_documento = DB::select("SELECT
                                         documento.id,
@@ -2905,7 +2902,7 @@ class DocumentoService
                                     FROM documento
                                     INNER JOIN marketplace_area_empresa ON documento.id_marketplace_area = marketplace_area_empresa.id_marketplace_area
                                     INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         $info_documento = $info_documento[0];
 
@@ -2923,7 +2920,7 @@ class DocumentoService
         }
 
         try {
-            $eliminar_relacion = file_get_contents(config("webservice.url") . 'Pagos/EliminarRelacion/' . $empresa_movimiento . '/documento/' . $info_factura->documentoid . '/pago/' . $pago_id . '');
+            $eliminar_relacion = file_get_contents(config("webservice.url") . 'Pagos/EliminarRelacion/' . $empresa_movimiento . '/documento/' . $info_factura->documentoid . '/pago/' . $pago_id);
 
             $eliminar_relacion_raw  = $eliminar_relacion;
             $eliminar_relacion      = @json_decode($eliminar_relacion);
@@ -2960,10 +2957,10 @@ class DocumentoService
         }
     }
 
-    public static function existenciaProducto($producto, $almacen)
+    public static function existenciaProducto($producto, $almacen): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $empresa_almacen
             = DB::table('empresa_almacen')
@@ -3082,7 +3079,7 @@ class DocumentoService
                                         empresa_almacen.id_erp 
                                     FROM empresa_almacen 
                                     INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    WHERE empresa_almacen.id = " . $almacen . "");
+                                    WHERE empresa_almacen.id = " . $almacen);
 
         $response->error = 0;
         $response->existencia = 0;
@@ -3096,48 +3093,14 @@ class DocumentoService
         return $response;
     }
 
-    public static function authy($usuario, $token)
-    {
-        $response = new \stdClass();
 
-        $authy = DB::select("SELECT authy FROM usuario WHERE id = " . $usuario . "");
-
-        if (empty($authy)) {
-            $response->error = 1;
-            $response->mensaje = "Usuario no encontrado." . self::logVariableLocation();
-
-            return $response;
-        }
-
-        $authy = $authy[0]->authy;
-
-        try {
-            $authy_request = new \Authy\AuthyApi(config("authy.token"));
-
-            $verification = $authy_request->verifyToken($authy, $token);
-
-            if (!$verification->ok()) {
-                $response->error = 1;
-                $response->mensaje = "Token incorrecto" . self::logVariableLocation();
-
-                return $response;
-            }
-
-            $response->error = 0;
-
-            return $response;
-        } catch (\Authy\AuthyFormatException $e) {
-            $response->error = 1;
-            $response->mensaje = $e->getMessage() . "" . self::logVariableLocation();
-
-            return $response;
-        }
-    }
-
-    public static function __eliminarFactura($documento)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function __eliminarFactura($documento): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $info_documento = DB::select("SELECT
                                         documento.documento_extra,
@@ -3145,7 +3108,7 @@ class DocumentoService
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         if (empty($info_documento)) {
             $response->error = 1;
@@ -3162,7 +3125,7 @@ class DocumentoService
                                         FROM documento
                                         INNER JOIN marketplace_area_empresa ON documento.id_marketplace_area = marketplace_area_empresa.id_marketplace_area
                                         INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                        WHERE documento.id = " . $documento . "");
+                                        WHERE documento.id = " . $documento);
 
         $pagos_factura = @json_decode(file_get_contents(config('webservice.url') . $info_documento->bd . "/Documento/" . $info_documento->documento_extra . "/PagosRelacionados"));
 
@@ -3197,8 +3160,8 @@ class DocumentoService
                     "ventacrm"  => $documento
                 );
 
-                $eliminar_ingreso = \Httpful\Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                    ->body($eliminar_ingreso_data, \Httpful\Mime::FORM)
+                $eliminar_ingreso = Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                    ->body($eliminar_ingreso_data, Mime::FORM)
                     ->send();
 
                 $eliminar_ingreso_raw = $eliminar_ingreso->raw_body;
@@ -3230,8 +3193,8 @@ class DocumentoService
             "documento" => $info_documento->documento_extra
         );
 
-        $cancelar_factura = \Httpful\Request::post(config('webservice.url') . 'FacturaCliente/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($cancelar_factura_data, \Httpful\Mime::FORM)
+        $cancelar_factura = Request::post(config('webservice.url') . 'FacturaCliente/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+            ->body($cancelar_factura_data, Mime::FORM)
             ->send();
 
         $cancelar_factura_raw = $cancelar_factura->raw_body;
@@ -3293,8 +3256,8 @@ class DocumentoService
                             "ventacrm"  => $documento
                         );
 
-                        $eliminar_ingreso = \Httpful\Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                            ->body($eliminar_ingreso_data, \Httpful\Mime::FORM)
+                        $eliminar_ingreso = Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                            ->body($eliminar_ingreso_data, Mime::FORM)
                             ->send();
 
                         $eliminar_ingreso_raw = $eliminar_ingreso->raw_body;
@@ -3326,8 +3289,8 @@ class DocumentoService
                     "documento" => $empresa_externa->documento_extra
                 );
 
-                $cancelar_factura = \Httpful\Request::post(config('webservice.url') . 'FacturaCliente/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-                    ->body($cancelar_factura_data, \Httpful\Mime::FORM)
+                $cancelar_factura = Request::post(config('webservice.url') . 'FacturaCliente/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+                    ->body($cancelar_factura_data, Mime::FORM)
                     ->send();
 
                 $cancelar_factura_raw = $cancelar_factura->raw_body;
@@ -3360,10 +3323,13 @@ class DocumentoService
         return $response;
     }
 
-    public static function __eliminarMovimientoFlujo($id_movimiento, $referencia, $bd)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function __eliminarMovimientoFlujo($id_movimiento, $referencia, $bd): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $eliminar_ingreso_data = array(
             "bd"        => $bd,
@@ -3372,8 +3338,8 @@ class DocumentoService
             "ventacrm"  => $referencia
         );
 
-        $eliminar_ingreso = \Httpful\Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($eliminar_ingreso_data, \Httpful\Mime::FORM)
+        $eliminar_ingreso = Request::post(config('webservice.url') . 'Ingresos/CobroCliente/Eliminar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+            ->body($eliminar_ingreso_data, Mime::FORM)
             ->send();
 
         $eliminar_ingreso_raw = $eliminar_ingreso->raw_body;
@@ -3398,15 +3364,18 @@ class DocumentoService
         }
 
         $response->error = 0;
-        $response->mensaje = "Movimiento con el ID " . $id_movimiento . " eliminado correctamente en la BD " . $bd . " con la referencia " . $referencia . "" . self::logVariableLocation();
+        $response->mensaje = "Movimiento con el ID " . $id_movimiento . " eliminado correctamente en la BD " . $bd . " con la referencia " . $referencia . self::logVariableLocation();
 
         return $response;
     }
 
-    public static function __eliminarCompra($documento)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public static function __eliminarCompra($documento): stdClass
     {
         set_time_limit(0);
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $info_documento = DB::select("SELECT
                                         documento.documento_extra,
@@ -3414,7 +3383,7 @@ class DocumentoService
                                     FROM documento
                                     INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                     INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                    WHERE documento.id = " . $documento . "");
+                                    WHERE documento.id = " . $documento);
 
         if (empty($info_documento)) {
             $response->error = 1;
@@ -3431,8 +3400,8 @@ class DocumentoService
             "documento" => $info_documento->documento_extra
         );
 
-        $cancela_comprar = \Httpful\Request::post(config('webservice.url') . 'FacturasCompra/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($cancelar_compra_data, \Httpful\Mime::FORM)
+        $cancela_comprar = Request::post(config('webservice.url') . 'FacturasCompra/Cancelar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
+            ->body($cancelar_compra_data, Mime::FORM)
             ->send();
 
         $cancela_comprar_raw = $cancela_comprar->raw_body;
@@ -3481,9 +3450,9 @@ class DocumentoService
         $context = stream_context_create($opts);
 
         try {
-            $cliente = new \SoapClient(config('webservice.tc'), array('stream_context' => $context, 'trace' => true));
+            $cliente = new SoapClient(config('webservice.tc'), array('stream_context' => $context, 'trace' => true));
 
-            $xml_data = simplexml_load_string($cliente->tiposDeCambioBanxico(), "SimpleXMLElement");
+            $xml_data = simplexml_load_string($cliente->tiposDeCambioBanxico());
 
             $documento = new DOMDocument;
 
@@ -3508,15 +3477,12 @@ class DocumentoService
     }
 
 
-    public static function logVariableLocation()
+    public static function logVariableLocation(): string
     {
-        // $log = self::logVariableLocation();
         $sis = 'BE'; //Front o Back
         $ini = 'DS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
         $fin = 'NTO'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
-        $text = ('<br>' . $sis . $ini . $trace['line'] . $fin);
-
-        return $text;
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }

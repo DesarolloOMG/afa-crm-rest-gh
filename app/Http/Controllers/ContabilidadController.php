@@ -1,4 +1,7 @@
-<?php /** @noinspection PhpComposerExtensionStubsInspection */
+<?php /** @noinspection PhpUnused */
+/** @noinspection PhpUndefinedFieldInspection */
+
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
@@ -8,17 +11,26 @@ use App\Http\Services\MovimientoService;
 use App\Http\Services\WhatsAppService;
 use DOMDocument;
 use Exception;
+use Httpful\Exception\ConnectionErrorException;
+use Httpful\Mime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Mailgun\Mailgun;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Color;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use stdClass;
+use Throwable;
 
 class ContabilidadController extends Controller
 {
     /* Contabilidad > Pagos */
-    public function contabilidad_pagos_data(Request $request)
+    public function contabilidad_pagos_data(Request $request): JsonResponse
     {
         $metodos = DB::select("SELECT * FROM metodo_pago");
         $monedas = DB::select("SELECT * FROM moneda");
@@ -34,7 +46,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_pagos_guardar(Request $request)
+    public function contabilidad_pagos_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -56,13 +68,13 @@ class ContabilidadController extends Controller
                                     documento_pago.* 
                                 FROM documento_pago_re 
                                 INNER JOIN documento_pago ON documento_pago_re.id_pago = documento_pago.id
-                                WHERE documento_pago_re.id_documento = " . $data->documento . "");
+                                WHERE documento_pago_re.id_documento = " . $data->documento);
 
         $rfc_cliente = DB::select("SELECT
                                         documento_entidad.rfc
                                     FROM documento
                                     INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                    WHERE documento.id = " . $data->documento . "")[0]->rfc;
+                                    WHERE documento.id = " . $data->documento)[0]->rfc;
         # se cambia el id clasificacion a 0 ya que no existe otro
         if (empty($existe_pago)) {
             $pago = DB::table('documento_pago')->insertGetId([
@@ -133,366 +145,366 @@ class ContabilidadController extends Controller
     }
 
     /* Contabilidad > Linio */
-    public function contabilidad_linio_guardar(Request $request)
-    {
-        set_time_limit(0);
-
-        $facturas = array();
-        $data = json_decode($request->input('data'));
-
-        file_put_contents("logs/linio.log", "");
-
-        if (empty($data->xmls)) {
-            return response()->json([
-                'message' => "No se encontró ninguna factura para importar."
-            ], 404);
-        }
-
-        if (!$data->empresa) {
-            return response()->json([
-                "message" => "No se encontró una empresa seleccionada para generar la importación"
-            ], 404);
-        }
-
-        $informacion_empresa = DB::table("empresa")->find($data->empresa);
-
-        if (!$informacion_empresa) {
-            return response()->json([
-                "message" => "No se encontró información de la empresa seleccionada"
-            ], 404);
-        }
-
-        foreach ($data->xmls as $xml) {
-            $xml_data = simplexml_load_string($xml->path, 'SimpleXMLElement', LIBXML_NOWARNING);
-
-            if (empty($xml_data)) {
-                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: XML Invalido." . PHP_EOL, FILE_APPEND);
-
-                continue;
-            }
-
-            $documento = new DOMDocument;
-
-            $documento->loadXML($xml_data->asXML());
-
-            $comprobante = $documento->getElementsByTagName('Comprobante')->item('0');
-            $emisor = $documento->getElementsByTagName('Emisor')->item('0');
-            $receptor = $documento->getElementsByTagName('Receptor')->item('0');
-            $uuid = $documento->getElementsByTagName('TimbreFiscalDigital')->item('0');
-
-            if ($emisor->getAttribute('Rfc') === $informacion_empresa->rfc) {
-                $conceptos = $documento->getElementsByTagName('Concepto');
-
-                if (empty($conceptos)) {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El XML con el UUID " . $uuid->getAttribute('UUID') . " no contiene conceptos." . PHP_EOL, FILE_APPEND);
-
-                    continue;
-                }
-
-                foreach ($xml->ventas as $venta) {
-                    $existe_venta_crm = DB::select("SELECT
-                                                    documento.id,
-                                                    documento.id_almacen_principal_empresa,
-                                                    documento.factura_serie,
-                                                    documento.factura_folio,
-                                                    documento.created_at
-                                                FROM documento
-                                                WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F')
-                                                AND status = 1");
-
-                    if (empty($existe_venta_crm)) {
-                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: La venta " . $venta . " relacionada al UUID " . $uuid->getAttribute('UUID') . " no existe registrada en el sistema como activa." . PHP_EOL, FILE_APPEND);
-
-                        continue 2;
-                    }
-                }
-
-                $factura_data = new \stdClass();
-                $factura_data->serie = mb_strtoupper($comprobante->getAttribute('Serie'), 'UTF-8');
-                $factura_data->folio = mb_strtoupper($comprobante->getAttribute('Folio'), 'UTF-8');
-                $factura_data->uuid = $uuid->getAttribute('UUID');
-                $factura_data->moneda = $comprobante->getAttribute('Moneda');
-                $factura_data->tc = $comprobante->getAttribute('TipoCambio');
-                $factura_data->forma_pago = $comprobante->getAttribute('FormaPago');
-                $factura_data->metodo_pago = $comprobante->getAttribute('MetodoPago');
-                $factura_data->fecha = explode("T", $comprobante->getAttribute('Fecha'))[0];
-                $factura_data->anio = explode("-", $comprobante->getAttribute('Fecha'))[0];
-                $factura_data->ventas = $xml->ventas;
-
-                $cliente_data = new \stdClass();
-                $cliente_data->rfc = mb_strtoupper($receptor->getAttribute('Rfc'), 'UTF-8');
-                $cliente_data->nombre = mb_strtoupper($receptor->getAttribute('Nombre'), 'UTF-8');
-                $cliente_data->uso_cfdi = $receptor->getAttribute('UsoCFDI');
-
-                $factura_data->cliente = $cliente_data;
-                $factura_data->envio = 0;
-                $factura_data->descuento = (float)$comprobante->getAttribute('Descuento');
-
-                $conceptos = $documento->getElementsByTagName('Concepto');
-
-                foreach ($conceptos as $concepto) {
-                    if (strpos($concepto->getAttribute('Descripcion'), 'Envio') !== false) {
-                        $factura_data->envio += (float)$concepto->getAttribute('Importe');
-                    }
-                }
-
-                array_push($facturas, $factura_data);
-            } else {
-                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El emisor de la factura no corresponde a la empresa seleccionada, RFC emisor " . $emisor->getAttribute('Rfc') . "." . PHP_EOL, FILE_APPEND);
-            }
-        }
-
-        foreach ($facturas as $factura) {
-            $productos = [];
-            $total_documento = 0;
-            $bd = "7";
-
-            if (empty($factura->ventas)) {
-                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No se encontraron ventas en el CRM para la factura de " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . "" . PHP_EOL, FILE_APPEND);
-
-                continue;
-            }
-
-            foreach ($factura->ventas as $venta) {
-                $existe_venta = DB::select("SELECT
-                                                documento.id,
-                                                documento.factura_folio,
-                                                documento.factura_serie,
-                                                empresa.bd,
-                                                empresa_almacen.id_erp AS almacen
-                                            FROM documento 
-                                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                            WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F')");
-
-                if (empty($existe_venta)) {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: Venta " . $venta . " no encontrada en CRM, creación de la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . PHP_EOL, FILE_APPEND);
-
-                    continue 2;
-                }
-
-                if ($existe_venta[0]->factura_folio != 'N/A') {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: Venta " . $venta . " en la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " ya ha sido importada anteriormente con la factura " . $existe_venta[0]->factura_serie . " " . $existe_venta[0]->factura_folio . PHP_EOL, FILE_APPEND);
-
-                    continue 2;
-                }
-
-                $productos_venta = DB::select("SELECT
-                                                '' AS id,
-                                                movimiento.id AS id_movimiento,
-                                                modelo.sku,
-                                                modelo.serie,
-                                                movimiento.cantidad,
-                                                movimiento.precio AS precio_unitario,
-                                                0 AS descuento,
-                                                movimiento.comentario AS comentarios,
-                                                movimiento.addenda AS addenda_numero_entrada_almacen
-                                            FROM movimiento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id_documento = " . $existe_venta[0]->id . "");
-
-                foreach ($productos_venta as $producto) {
-                    $total_documento += $producto->cantidad * $producto->precio_unitario * 1.16;
-                }
-
-                $productos = array_merge($productos, $productos_venta);
-                $bd = $existe_venta[0]->bd;
-                $almacen = $existe_venta[0]->almacen;
-            }
-
-            if ($factura->envio > 0) {
-                $producto_envio = new \stdClass();
-
-                $producto_envio->id = "";
-                $producto_envio->sku = "ZZGZ0001";
-                $producto_envio->serie = 0;
-                $producto_envio->cantidad = 1;
-                $producto_envio->precio_unitario = $factura->envio;
-                $producto_envio->descuento = 0;
-                $producto_envio->comentarios = "";
-                $producto_envio->addenda_numero_entrada_almacen = "";
-
-                $total_documento += $factura->envio * 1.16;
-
-                array_push($productos, $producto_envio);
-            }
-
-            # Se busca al cliente por RFC para verificar que exista
-            $cliente_data = @json_decode(file_get_contents(config('webservice.url') . "Consultas/Clientes/" . $bd . "/RFC/" . $factura->cliente->rfc));
-
-            if (empty($cliente_data)) {
-                // $entidad_data = new \stdClass();
-                // $entidad_data->rfc = $factura->cliente->rfc;
-                // $entidad_data->razon_social = $factura->cliente->nombre;
-                // $entidad_data->codigo_postal_fiscal = 'N/A';
-                // $entidad_data->regimen_id = '601';
-
-                // $crear_cliente = DocumentoService::crearEntidad($entidad_data, $bd);
-
-                // if ($crear_cliente->error) {
-                //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear al cliente de la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . ", error: " . $crear_cliente->mensaje . "" . PHP_EOL, FILE_APPEND);
-
-                //     continue;
-                // }
-            }
-
-            try {
-                $array_pro = array(
-                    "bd" => $bd,
-                    "password" => config('webservice.token'),
-                    "prefijo" => $factura->serie,
-                    "folio" => $factura->folio,
-                    "uuid" => $factura->uuid,
-                    "fecha" => $factura->fecha,
-                    "cliente" => $factura->cliente->rfc,
-                    "titulo" => "Factura generada por linio",
-                    "almacen" => $almacen, # FBL
-                    "fecha_entrega_doc" => "",
-                    "divisa" => ($factura->moneda == 'MXN') ? 3 : 2,
-                    "tipo_cambio" => $factura->tc,
-                    "condicion_pago" => 1,
-                    "descuento_global" => $factura->descuento,
-                    "productos" => json_encode($productos),
-                    "metodo_pago" => $factura->metodo_pago,
-                    "forma_pago" => $factura->forma_pago,
-                    "uso_cfdi" => $factura->cliente->uso_cfdi,
-                    "comentarios" => implode(" ", $factura->ventas),
-                    'addenda' => 0,
-                    'addenda_orden_compra' => "",
-                    'addenda_solicitud_pago' => "",
-                    'addenda_tipo_documento ' => "",
-                    'addenda_factura_asociada' => ""
-                );
-
-                $crear_documento = \Httpful\Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-                    ->body($array_pro, \Httpful\Mime::FORM)
-                    ->send();
-
-                $crear_documento_raw = $crear_documento->raw_body;
-                $crear_documento = @json_decode($crear_documento);
-
-                if (empty($crear_documento)) {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $crear_documento_raw . "." . PHP_EOL, FILE_APPEND);
-
-                    continue;
-                }
-
-                if ($crear_documento->error == 1) {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $crear_documento->mensaje . "." . PHP_EOL, FILE_APPEND);
-
-
-                    continue;
-                }
-
-                foreach ($factura->ventas as $venta) {
-                    $existe_venta = DB::select("SELECT id FROM documento WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F') AND id_fase != 6");
-
-                    if (!empty($existe_venta)) {
-                        DB::table('documento')->where(['id' => $existe_venta[0]->id])->update([
-                            'factura_serie' => $factura->serie,
-                            'factura_folio' => $factura->folio,
-                            'documento_extra' => $crear_documento->id,
-                            'uuid' => $factura->uuid,
-                            'id_fase' => 6
-                        ]);
-                    }
-                }
-            } catch (Exception $e) {
-                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
-
-                continue;
-            }
-            // INGRESO LINIO
-            // $factura_id = $crear_documento->id;
-
-            // try {
-            //     # Ingreso por el total de la venta
-            //     $ingreso = array(
-            //         "bd" => $bd,
-            //         "password" => config('webservice.token'),
-            //         "folio" => "",
-            //         "monto" => $total_documento,
-            //         "fecha_operacion" => $factura->fecha,
-            //         "origen_entidad" => 1, # Tipo de entidad, 1 = Cliente
-            //         "origen_cuenta" => $factura->cliente->rfc,
-            //         "destino_entidad" => 1, # Tipo de entidad, 1 = Cuenta bancaria
-            //         "destino_cuenta" => 13, # ID de la cuenta bancaria
-            //         "forma_pago" => 31,
-            //         "cuenta" => "",
-            //         "clave_rastreo" => "",
-            //         "numero_aut" => "",
-            //         "referencia" => "",
-            //         "descripcion" => "LINIO - Ingreso de la factura " . $factura->serie . $factura->folio,
-            //         "comentarios" => ""
-            //     );
-
-            //     $crear_ingreso = \Httpful\Request::post(config('webservice.url') . "Ingresos/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-            //         ->body($ingreso, \Httpful\Mime::FORM)
-            //         ->send();
-
-            //     $crear_ingreso_raw = $crear_ingreso->raw_body;
-            //     $crear_ingreso = @json_decode($crear_ingreso);
-
-            //     if (empty($crear_ingreso)) {
-            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . base64_encode($crear_ingreso_raw) . "." . PHP_EOL, FILE_APPEND);
-
-            //         continue;
-            //     }
-
-            //     if ($crear_ingreso->error == 1) {
-            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $crear_ingreso->mensaje . "." . PHP_EOL, FILE_APPEND);
-
-            //         continue;
-            //     }
-            // } catch (Exception $e) {
-            //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
-
-            //     continue;
-            // }
-
-            // $id_ingreso = $crear_ingreso->id;
-
-            // try {
-            //     $saldar_factura_data = array(
-            //         "bd"        => $bd,
-            //         "password"  => config('webservice.token'),
-            //         "documento" => $factura_id,
-            //         "operacion" => $id_ingreso
-            //     );
-
-            //     $saldar_factura = \Httpful\Request::post(config('webservice.url') . "CobroCliente/Pagar/FacturaCliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
-            //         ->body($saldar_factura_data, \Httpful\Mime::FORM)
-            //         ->send();
-
-            //     $saldar_factura_raw = $saldar_factura->raw_body;
-            //     $saldar_factura = @json_decode($saldar_factura);
-
-            //     if (empty($saldar_factura)) {
-            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . base64_encode($saldar_factura_raw) . "." . PHP_EOL, FILE_APPEND);
-
-            //         continue;
-            //     }
-
-            //     if ($saldar_factura->error == 1) {
-            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . $saldar_factura->mensaje . "." . PHP_EOL, FILE_APPEND);
-
-            //         continue;
-            //     }
-            // } catch (Exception $e) {
-            //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
-
-            //     continue;
-            // }
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => "Facturas importadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
-        ]);
-    }
+//    public function contabilidad_linio_guardar(Request $request): JsonResponse
+//    {
+//        set_time_limit(0);
+//
+//        $facturas = array();
+//        $data = json_decode($request->input('data'));
+//
+//        file_put_contents("logs/linio.log", "");
+//
+//        if (empty($data->xmls)) {
+//            return response()->json([
+//                'message' => "No se encontró ninguna factura para importar."
+//            ], 404);
+//        }
+//
+//        if (!$data->empresa) {
+//            return response()->json([
+//                "message" => "No se encontró una empresa seleccionada para generar la importación"
+//            ], 404);
+//        }
+//
+//        $informacion_empresa = DB::table("empresa")->find($data->empresa);
+//
+//        if (!$informacion_empresa) {
+//            return response()->json([
+//                "message" => "No se encontró información de la empresa seleccionada"
+//            ], 404);
+//        }
+//
+//        foreach ($data->xmls as $xml) {
+//            $xml_data = simplexml_load_string($xml->path, 'SimpleXMLElement', LIBXML_NOWARNING);
+//
+//            if (empty($xml_data)) {
+//                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: XML Invalido." . PHP_EOL, FILE_APPEND);
+//
+//                continue;
+//            }
+//
+//            $documento = new DOMDocument;
+//
+//            $documento->loadXML($xml_data->asXML());
+//
+//            $comprobante = $documento->getElementsByTagName('Comprobante')->item('0');
+//            $emisor = $documento->getElementsByTagName('Emisor')->item('0');
+//            $receptor = $documento->getElementsByTagName('Receptor')->item('0');
+//            $uuid = $documento->getElementsByTagName('TimbreFiscalDigital')->item('0');
+//
+//            if ($emisor->getAttribute('Rfc') === $informacion_empresa->rfc) {
+//                $conceptos = $documento->getElementsByTagName('Concepto');
+//
+//                if (empty($conceptos)) {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El XML con el UUID " . $uuid->getAttribute('UUID') . " no contiene conceptos." . PHP_EOL, FILE_APPEND);
+//
+//                    continue;
+//                }
+//
+//                foreach ($xml->ventas as $venta) {
+//                    $existe_venta_crm = DB::select("SELECT
+//                                                    documento.id,
+//                                                    documento.id_almacen_principal_empresa,
+//                                                    documento.factura_serie,
+//                                                    documento.factura_folio,
+//                                                    documento.created_at
+//                                                FROM documento
+//                                                WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F')
+//                                                AND status = 1");
+//
+//                    if (empty($existe_venta_crm)) {
+//                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: La venta " . $venta . " relacionada al UUID " . $uuid->getAttribute('UUID') . " no existe registrada en el sistema como activa." . PHP_EOL, FILE_APPEND);
+//
+//                        continue 2;
+//                    }
+//                }
+//
+//                $factura_data = new stdClass();
+//                $factura_data->serie = mb_strtoupper($comprobante->getAttribute('Serie'), 'UTF-8');
+//                $factura_data->folio = mb_strtoupper($comprobante->getAttribute('Folio'), 'UTF-8');
+//                $factura_data->uuid = $uuid->getAttribute('UUID');
+//                $factura_data->moneda = $comprobante->getAttribute('Moneda');
+//                $factura_data->tc = $comprobante->getAttribute('TipoCambio');
+//                $factura_data->forma_pago = $comprobante->getAttribute('FormaPago');
+//                $factura_data->metodo_pago = $comprobante->getAttribute('MetodoPago');
+//                $factura_data->fecha = explode("T", $comprobante->getAttribute('Fecha'))[0];
+//                $factura_data->anio = explode("-", $comprobante->getAttribute('Fecha'))[0];
+//                $factura_data->ventas = $xml->ventas;
+//
+//                $cliente_data = new stdClass();
+//                $cliente_data->rfc = mb_strtoupper($receptor->getAttribute('Rfc'), 'UTF-8');
+//                $cliente_data->nombre = mb_strtoupper($receptor->getAttribute('Nombre'), 'UTF-8');
+//                $cliente_data->uso_cfdi = $receptor->getAttribute('UsoCFDI');
+//
+//                $factura_data->cliente = $cliente_data;
+//                $factura_data->envio = 0;
+//                $factura_data->descuento = (float)$comprobante->getAttribute('Descuento');
+//
+//                $conceptos = $documento->getElementsByTagName('Concepto');
+//
+//                foreach ($conceptos as $concepto) {
+//                    if (strpos($concepto->getAttribute('Descripcion'), 'Envio') !== false) {
+//                        $factura_data->envio += (float)$concepto->getAttribute('Importe');
+//                    }
+//                }
+//
+//                $facturas[] = $factura_data;
+//            } else {
+//                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El emisor de la factura no corresponde a la empresa seleccionada, RFC emisor " . $emisor->getAttribute('Rfc') . "." . PHP_EOL, FILE_APPEND);
+//            }
+//        }
+//
+//        foreach ($facturas as $factura) {
+//            $productos = [];
+//            $total_documento = 0;
+//            $bd = "7";
+//
+//            if (empty($factura->ventas)) {
+//                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No se encontraron ventas en el CRM para la factura de " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . PHP_EOL, FILE_APPEND);
+//
+//                continue;
+//            }
+//
+//            foreach ($factura->ventas as $venta) {
+//                $existe_venta = DB::select("SELECT
+//                                                documento.id,
+//                                                documento.factura_folio,
+//                                                documento.factura_serie,
+//                                                empresa.bd,
+//                                                empresa_almacen.id_erp AS almacen
+//                                            FROM documento
+//                                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+//                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+//                                            WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F')");
+//
+//                if (empty($existe_venta)) {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: Venta " . $venta . " no encontrada en CRM, creación de la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . PHP_EOL, FILE_APPEND);
+//
+//                    continue 2;
+//                }
+//
+//                if ($existe_venta[0]->factura_folio != 'N/A') {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: Venta " . $venta . " en la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " ya ha sido importada anteriormente con la factura " . $existe_venta[0]->factura_serie . " " . $existe_venta[0]->factura_folio . PHP_EOL, FILE_APPEND);
+//
+//                    continue 2;
+//                }
+//
+//                $productos_venta = DB::select("SELECT
+//                                                '' AS id,
+//                                                movimiento.id AS id_movimiento,
+//                                                modelo.sku,
+//                                                modelo.serie,
+//                                                movimiento.cantidad,
+//                                                movimiento.precio AS precio_unitario,
+//                                                0 AS descuento,
+//                                                movimiento.comentario AS comentarios,
+//                                                movimiento.addenda AS addenda_numero_entrada_almacen
+//                                            FROM movimiento
+//                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+//                                            WHERE movimiento.id_documento = " . $existe_venta[0]->id);
+//
+//                foreach ($productos_venta as $producto) {
+//                    $total_documento += $producto->cantidad * $producto->precio_unitario * 1.16;
+//                }
+//
+//                $productos = array_merge($productos, $productos_venta);
+//                $bd = $existe_venta[0]->bd;
+//                $almacen = $existe_venta[0]->almacen;
+//            }
+//
+//            if ($factura->envio > 0) {
+//                $producto_envio = new stdClass();
+//
+//                $producto_envio->id = "";
+//                $producto_envio->sku = "ZZGZ0001";
+//                $producto_envio->serie = 0;
+//                $producto_envio->cantidad = 1;
+//                $producto_envio->precio_unitario = $factura->envio;
+//                $producto_envio->descuento = 0;
+//                $producto_envio->comentarios = "";
+//                $producto_envio->addenda_numero_entrada_almacen = "";
+//
+//                $total_documento += $factura->envio * 1.16;
+//
+//                $productos[] = $producto_envio;
+//            }
+//
+//            # Se busca al cliente por RFC para verificar que exista
+//            $cliente_data = @json_decode(file_get_contents(config('webservice.url') . "Consultas/Clientes/" . $bd . "/RFC/" . $factura->cliente->rfc));
+//
+////            if (empty($cliente_data)) {
+//                // $entidad_data = new \stdClass();
+//                // $entidad_data->rfc = $factura->cliente->rfc;
+//                // $entidad_data->razon_social = $factura->cliente->nombre;
+//                // $entidad_data->codigo_postal_fiscal = 'N/A';
+//                // $entidad_data->regimen_id = '601';
+//
+//                // $crear_cliente = DocumentoService::crearEntidad($entidad_data, $bd);
+//
+//                // if ($crear_cliente->error) {
+//                //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear al cliente de la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . ", error: " . $crear_cliente->mensaje . "" . PHP_EOL, FILE_APPEND);
+//
+//                //     continue;
+//                // }
+////            }
+//
+//            try {
+//                $array_pro = array(
+//                    "bd" => $bd,
+//                    "password" => config('webservice.token'),
+//                    "prefijo" => $factura->serie,
+//                    "folio" => $factura->folio,
+//                    "uuid" => $factura->uuid,
+//                    "fecha" => $factura->fecha,
+//                    "cliente" => $factura->cliente->rfc,
+//                    "titulo" => "Factura generada por linio",
+//                    "almacen" => $almacen, # FBL
+//                    "fecha_entrega_doc" => "",
+//                    "divisa" => ($factura->moneda == 'MXN') ? 3 : 2,
+//                    "tipo_cambio" => $factura->tc,
+//                    "condicion_pago" => 1,
+//                    "descuento_global" => $factura->descuento,
+//                    "productos" => json_encode($productos),
+//                    "metodo_pago" => $factura->metodo_pago,
+//                    "forma_pago" => $factura->forma_pago,
+//                    "uso_cfdi" => $factura->cliente->uso_cfdi,
+//                    "comentarios" => implode(" ", $factura->ventas),
+//                    'addenda' => 0,
+//                    'addenda_orden_compra' => "",
+//                    'addenda_solicitud_pago' => "",
+//                    'addenda_tipo_documento ' => "",
+//                    'addenda_factura_asociada' => ""
+//                );
+//
+//                $crear_documento = \Httpful\Request::post(config('webservice.url') . "facturas/cliente/insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+//                    ->body($array_pro, Mime::FORM)
+//                    ->send();
+//
+//                $crear_documento_raw = $crear_documento->raw_body;
+//                $crear_documento = @json_decode($crear_documento);
+//
+//                if (empty($crear_documento)) {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $crear_documento_raw . "." . PHP_EOL, FILE_APPEND);
+//
+//                    continue;
+//                }
+//
+//                if ($crear_documento->error == 1) {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $crear_documento->mensaje . "." . PHP_EOL, FILE_APPEND);
+//
+//
+//                    continue;
+//                }
+//
+//                foreach ($factura->ventas as $venta) {
+//                    $existe_venta = DB::select("SELECT id FROM documento WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F') AND id_fase != 6");
+//
+//                    if (!empty($existe_venta)) {
+//                        DB::table('documento')->where(['id' => $existe_venta[0]->id])->update([
+//                            'factura_serie' => $factura->serie,
+//                            'factura_folio' => $factura->folio,
+//                            'documento_extra' => $crear_documento->id,
+//                            'uuid' => $factura->uuid,
+//                            'id_fase' => 6
+//                        ]);
+//                    }
+//                }
+//            } catch (Exception $e) {
+//                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la factura " . $factura->serie . " " . $factura->folio . " con UUID " . $factura->uuid . " en el ERP, mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
+//
+//                continue;
+//            }
+//            // INGRESO LINIO
+//            // $factura_id = $crear_documento->id;
+//
+//            // try {
+//            //     # Ingreso por el total de la venta
+//            //     $ingreso = array(
+//            //         "bd" => $bd,
+//            //         "password" => config('webservice.token'),
+//            //         "folio" => "",
+//            //         "monto" => $total_documento,
+//            //         "fecha_operacion" => $factura->fecha,
+//            //         "origen_entidad" => 1, # Tipo de entidad, 1 = Cliente
+//            //         "origen_cuenta" => $factura->cliente->rfc,
+//            //         "destino_entidad" => 1, # Tipo de entidad, 1 = Cuenta bancaria
+//            //         "destino_cuenta" => 13, # ID de la cuenta bancaria
+//            //         "forma_pago" => 31,
+//            //         "cuenta" => "",
+//            //         "clave_rastreo" => "",
+//            //         "numero_aut" => "",
+//            //         "referencia" => "",
+//            //         "descripcion" => "LINIO - Ingreso de la factura " . $factura->serie . $factura->folio,
+//            //         "comentarios" => ""
+//            //     );
+//
+//            //     $crear_ingreso = \Httpful\Request::post(config('webservice.url') . "Ingresos/Insertar/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+//            //         ->body($ingreso, \Httpful\Mime::FORM)
+//            //         ->send();
+//
+//            //     $crear_ingreso_raw = $crear_ingreso->raw_body;
+//            //     $crear_ingreso = @json_decode($crear_ingreso);
+//
+//            //     if (empty($crear_ingreso)) {
+//            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . base64_encode($crear_ingreso_raw) . "." . PHP_EOL, FILE_APPEND);
+//
+//            //         continue;
+//            //     }
+//
+//            //     if ($crear_ingreso->error == 1) {
+//            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $crear_ingreso->mensaje . "." . PHP_EOL, FILE_APPEND);
+//
+//            //         continue;
+//            //     }
+//            // } catch (Exception $e) {
+//            //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
+//
+//            //     continue;
+//            // }
+//
+//            // $id_ingreso = $crear_ingreso->id;
+//
+//            // try {
+//            //     $saldar_factura_data = array(
+//            //         "bd"        => $bd,
+//            //         "password"  => config('webservice.token'),
+//            //         "documento" => $factura_id,
+//            //         "operacion" => $id_ingreso
+//            //     );
+//
+//            //     $saldar_factura = \Httpful\Request::post(config('webservice.url') . "CobroCliente/Pagar/FacturaCliente/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw")
+//            //         ->body($saldar_factura_data, \Httpful\Mime::FORM)
+//            //         ->send();
+//
+//            //     $saldar_factura_raw = $saldar_factura->raw_body;
+//            //     $saldar_factura = @json_decode($saldar_factura);
+//
+//            //     if (empty($saldar_factura)) {
+//            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . base64_encode($saldar_factura_raw) . "." . PHP_EOL, FILE_APPEND);
+//
+//            //         continue;
+//            //     }
+//
+//            //     if ($saldar_factura->error == 1) {
+//            //         file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . $saldar_factura->mensaje . "." . PHP_EOL, FILE_APPEND);
+//
+//            //         continue;
+//            //     }
+//            // } catch (Exception $e) {
+//            //     file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible saldar la factura " . $factura->serie . " " . $factura->folio . " con el UUID " . $factura->uuid . " con el ingreso " . $id_ingreso . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
+//
+//            //     continue;
+//            // }
+//        }
+//
+//        return response()->json([
+//            'code' => 200,
+//            'message' => "Facturas importadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
+//        ]);
+//    }
 
     /* Contabilidad > Facturas */
-    public function contabilidad_facturas_pendiente_data(Request $request)
+    public function contabilidad_facturas_pendiente_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -504,7 +516,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_facturas_pendiente_guardar(Request $request)
+    public function contabilidad_facturas_pendiente_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -540,7 +552,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_facturas_saldo_data()
+    public function contabilidad_facturas_saldo_data(): JsonResponse
     {
         $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
 
@@ -550,7 +562,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_facturas_seguimiento_data($documento)
+    public function contabilidad_facturas_seguimiento_data($documento): JsonResponse
     {
         $existe_venta = DB::select("SELECT 
                                         documento.id,
@@ -575,7 +587,7 @@ class ContabilidadController extends Controller
                                         usuario.nombre 
                                     FROM documento_pago_seguimiento 
                                     INNER JOIN usuario ON documento_pago_seguimiento.id_usuario = usuario.id 
-                                    WHERE id_documento = " . $documento . "");
+                                    WHERE id_documento = " . $documento);
 
         $venta->seguimiento = $seguimiento;
 
@@ -585,7 +597,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_facturas_seguimiento_guardar(Request $request)
+    public function contabilidad_facturas_seguimiento_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -614,7 +626,7 @@ class ContabilidadController extends Controller
                                         usuario.nombre 
                                     FROM documento_pago_seguimiento 
                                     INNER JOIN usuario ON documento_pago_seguimiento.id_usuario = usuario.id 
-                                    WHERE id_documento = " . $data->documento . "");
+                                    WHERE id_documento = " . $data->documento);
 
         return response()->json([
             'code' => 200,
@@ -624,7 +636,11 @@ class ContabilidadController extends Controller
     }
 
     /* Contabilidad > Estado de cuenta */
-    public function contabilidad_estado_ingreso_reporte(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function contabilidad_estado_ingreso_reporte(Request $request): JsonResponse
     {
         set_time_limit(0);
 
@@ -641,7 +657,7 @@ class ContabilidadController extends Controller
             $fecha_inicial = explode('-', $data->fecha_inicio);
             $fecha_final = explode('-', $data->fecha_final);
 
-            $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0] . ''));
+            $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0]));
         } else {
             if (empty($data->fecha_inicio) && empty($data->fecha_final)) {
                 $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/RFC/' . $data->entidad->select));
@@ -656,7 +672,7 @@ class ContabilidadController extends Controller
                 $fecha_inicial = explode('-', $data->fecha_inicio);
                 $fecha_final = explode('-', $data->fecha_final);
 
-                $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/RFC/' . $data->entidad->select . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0] . ''));
+                $response = @json_decode(file_get_contents(config('webservice.url') . 'EstadoCuenta/Ingresos/' . $data->empresa . '/RFC/' . $data->entidad->select . '/rangofechas/De/' . $fecha_inicial[2] . '/' . $fecha_inicial[1] . '/' . $fecha_inicial[0] . '/Al/' . $fecha_final[2] . '/' . $fecha_final[1] . '/' . $fecha_final[0]));
             }
         }
 
@@ -673,7 +689,7 @@ class ContabilidadController extends Controller
         $sheet = $spreadsheet->getActiveSheet();
         $spreadsheet->getActiveSheet()->setTitle('ESTADO DE CUENTA GENERAL');
         $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER); # Alineación centrica
+        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER); # Alineación centrica
 
         # Cabecera
         $sheet->setCellValue('A1', 'EMPRESA');
@@ -689,6 +705,7 @@ class ContabilidadController extends Controller
         $total_reporte = 0;
         $total_ingresos = 0;
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         foreach ($response as $index => $empresa) {
             $sheet->setCellValue('A' . $contador_fila, $empresa->empresa);
             $sheet->setCellValue('B' . $contador_fila, '');
@@ -698,7 +715,7 @@ class ContabilidadController extends Controller
             $sheet->setCellValue('F' . $contador_fila, '');
             $sheet->setCellValue('G' . $contador_fila, '');
 
-            $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             $contador_fila++;
             $total_empresa = 0;
@@ -722,7 +739,7 @@ class ContabilidadController extends Controller
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("D" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('89D8D4');
+                $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('89D8D4');
 
                 $contador_fila++;
                 $total_ingresos++;
@@ -740,18 +757,18 @@ class ContabilidadController extends Controller
                 $ingreso->empresa = $empresa->empresa;
 
                 if (!$existe_forma_pago) {
-                    $forma_pago_object = new \stdClass();
+                    $forma_pago_object = new stdClass();
 
                     $forma_pago_object->forma_pago = $ingreso->forma_pago;
                     $forma_pago_object->ingresos = array();
 
-                    array_push($forma_pago_object->ingresos, $ingreso);
+                    $forma_pago_object->ingresos[] = $ingreso;
 
-                    array_push($formas_de_pago, $forma_pago_object);
+                    $formas_de_pago[] = $forma_pago_object;
                 } else {
                     foreach ($formas_de_pago as $forma_pago) {
                         if ($forma_pago->forma_pago == $ingreso->forma_pago) {
-                            array_push($forma_pago->ingresos, $ingreso);
+                            $forma_pago->ingresos[] = $ingreso;
                         }
                     }
                 }
@@ -798,7 +815,7 @@ class ContabilidadController extends Controller
             $spreadsheet->setActiveSheetIndex($index + 1);
             $spreadsheet->getActiveSheet()->setTitle(substr(mb_strtoupper($forma_pago->forma_pago, 'UTF-8'), 0, 31));
             $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
-            $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER); # Alineación centrica
+            $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER); # Alineación centrica
             $sheet = $spreadsheet->getActiveSheet();
             $contador_fila = 2;
             $total_empresa = 0;
@@ -831,7 +848,7 @@ class ContabilidadController extends Controller
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("D" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('89D8D4');
+                $spreadsheet->getActiveSheet()->getStyle('A' . $contador_fila . ":H" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('89D8D4');
 
                 $contador_fila++;
 
@@ -876,12 +893,15 @@ class ContabilidadController extends Controller
         return response()->json($json);
     }
 
-    public function contabilidad_estado_factura_reporte(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function contabilidad_estado_factura_reporte(Request $request): JsonResponse
     {
         set_time_limit(0);
 
         $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
 
         $tipo_busqueda = ($data->entidad->tipo == "Clientes") ? "Cliente" : "Proveedor";
         $tipo_busqueda_pago = ($data->entidad->tipo == "Clientes") ? "Ingresos" : "Egresos";
@@ -891,8 +911,8 @@ class ContabilidadController extends Controller
                 $url = config('webservice.url') . 'EstadoCuenta/' . $tipo_busqueda . '/' . $data->empresa . '/rfc/' . $data->entidad->select;
                 $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago . "/RFC/" . $data->entidad->select;
             } else {
-                $url = config('webservice.url') . 'EstadoCuenta/' . $tipo_busqueda . '/' . $data->empresa . '/rfc/' . $data->entidad->select . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final)) . '';
-                $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago . "/RFC/" . $data->entidad->select . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final)) . '';
+                $url = config('webservice.url') . 'EstadoCuenta/' . $tipo_busqueda . '/' . $data->empresa . '/rfc/' . $data->entidad->select . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final));
+                $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago . "/RFC/" . $data->entidad->select . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final));
             }
         } else {
             if (empty($data->fecha_inicial) || empty($data->fecha_final)) {
@@ -900,9 +920,9 @@ class ContabilidadController extends Controller
 
                 $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago;
             } else {
-                $url = config('webservice.url') . 'EstadoCuenta/' . $tipo_busqueda . '/' . $data->empresa . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final)) . '';
+                $url = config('webservice.url') . 'EstadoCuenta/' . $tipo_busqueda . '/' . $data->empresa . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final));
 
-                $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final)) . '';
+                $url_pagos_pendientes = config('webservice.url') . 'PendientesAplicar/' . $data->empresa . "/" . $tipo_busqueda_pago . '/rangofechas/De/' . date("d/m/Y", strtotime($data->fecha_inicial)) . '/Al/' . date("d/m/Y", strtotime($data->fecha_final));
             }
         }
 
@@ -1066,8 +1086,8 @@ class ContabilidadController extends Controller
             ->getStyle('B2:N3')
             ->getBorders()
             ->getOutline()
-            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THICK)
-            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color("101010"));
+            ->setBorderStyle(Border::BORDER_THICK)
+            ->setColor(new Color("101010"));
 
         $spreadsheet->getActiveSheet()->getStyle("B2:N2")->getFont()->setSize(14)->setBold(1);
         $spreadsheet->getActiveSheet()->getStyle("B3:N3")->getFont()->setSize(12)->setBold(1);
@@ -1096,8 +1116,8 @@ class ContabilidadController extends Controller
             ->getStyle('B8:N8')
             ->getBorders()
             ->getOutline()
-            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
-            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color("101010"));
+            ->setBorderStyle(Border::BORDER_THIN)
+            ->setColor(new Color("101010"));
 
         $sheet->getStyle('B8:N8')->getAlignment()->setHorizontal('center');
 
@@ -1108,7 +1128,7 @@ class ContabilidadController extends Controller
 
         $spreadsheet->getActiveSheet()->getStyle('L5:N6')->getFont()->setBold(1)->setSize(12)->getColor()->setARGB('FFFFFF');
 
-        $spreadsheet->getActiveSheet()->getStyle("L5:N6")->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FF1717');
+        $spreadsheet->getActiveSheet()->getStyle("L5:N6")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FF1717');
 
         $spreadsheet->getActiveSheet()->getStyle("N5")->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
         $spreadsheet->getActiveSheet()->getStyle("N6")->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -1145,7 +1165,7 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila)->getFont()->setBold(1);
 
             # Color de fondo de la venta verde
-            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             # Formato accounting
             $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -1257,7 +1277,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila)->getFont()->setBold(1);
 
                 # Color de fondo de la venta verde
-                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
+                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
 
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -1283,12 +1303,12 @@ class ContabilidadController extends Controller
             }
 
             if (!$existe_entidad) {
-                $entidad_data = new \stdClass();
+                $entidad_data = new stdClass();
                 $entidad_data->nombre = $factura->documento->nombre;
                 $entidad_data->rfc = $factura->documento->rfc;
                 $entidad_data->total = $total_resta_factura;
 
-                array_push($entidades, $entidad_data);
+                $entidades[] = $entidad_data;
             }
 
             if ($total_resta_factura > 0) {
@@ -1307,48 +1327,39 @@ class ContabilidadController extends Controller
                 # Se agrega saldo de la factura dependiendo los días transcurridos
                 if ($dias_transcurridos > 0) {
                     switch (true) {
-                        case ($dias_transcurridos > 0 && $dias_transcurridos < 16):
+                        case ($dias_transcurridos < 16):
                             $sheet->setCellValue('M' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_15_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 15 && $dias_transcurridos < 31):
+                        case ($dias_transcurridos < 31):
                             $sheet->setCellValue('N' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_30_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 30 && $dias_transcurridos < 46):
+                        case ($dias_transcurridos < 46):
                             $sheet->setCellValue('O' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_45_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 45 && $dias_transcurridos < 61):
+                        case ($dias_transcurridos < 61):
                             $sheet->setCellValue('P' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_60_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 60):
+                        default:
                             $sheet->setCellValue('Q' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_75_dias += $total_resta_factura;
-
                             break;
                     }
                 }
+
             }
 
             $total_resta_factura = round($total_resta_factura, 2);
 
             $sheet->setCellValue('L' . $contador_fila_total_documento, $total_resta_factura);
-            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_total_documento)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_total_documento)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             $contador_fila += 2;
 
@@ -1379,7 +1390,7 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila_actual)->getFont()->setBold(1);
 
             # Color de fondo de la venta verde
-            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             # Formato accounting
             $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -1426,7 +1437,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila_actual)->getFont()->setBold(1);
 
                 # Color de fondo de la venta verde
-                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
+                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
 
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -1440,9 +1451,7 @@ class ContabilidadController extends Controller
 
             $dias_pago = 0;
 
-            if ($factura->documento->pago_terminos == "CONTADO" || is_null($factura->documento->pago_terminos)) {
-                $dias_pago = 0;
-            } else {
+            if ($factura->documento->pago_terminos != "CONTADO" && !is_null($factura->documento->pago_terminos)) {
                 $dias_pago = explode(" ", $factura->documento->pago_terminos)[0];
             }
 
@@ -1452,79 +1461,67 @@ class ContabilidadController extends Controller
 
             $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
-            if ($total_resta_factura > 0) {
-                if ($dias_transcurridos > 0) {
-                    switch (true) {
-                        case ($dias_transcurridos > 0 && $dias_transcurridos < 16):
-                            $sheet->setCellValue('M' . $contador_fila_actual_total_documento, $total_resta_factura);
+            if ($total_resta_factura > 0 && $dias_transcurridos > 0) {
+                switch (true) {
+                    case ($dias_transcurridos < 16):
+                        $sheet->setCellValue('M' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_15_dias_saldo += $total_resta_factura;
+                        if ($total_resta_factura > 15) {
+                            $total_resta_15_dias_saldo += $total_resta_factura;
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('J' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                                $sheet->setCellValue('J' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                    case ($dias_transcurridos < 31):
+                        $sheet->setCellValue('N' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                            break;
+                        if ($total_resta_factura > 15) {
+                            $total_resta_30_dias_saldo += $total_resta_factura;
 
-                        case ($dias_transcurridos > 15 && $dias_transcurridos < 31):
-                            $sheet->setCellValue('N' . $contador_fila_actual_total_documento, $total_resta_factura);
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('K' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_30_dias_saldo += $total_resta_factura;
+                    case ($dias_transcurridos < 46):
+                        $sheet->setCellValue('O' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                        if ($total_resta_factura > 15) {
+                            $total_resta_45_dias_saldo += $total_resta_factura;
 
-                                $sheet->setCellValue('K' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('L' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                            break;
+                    case ($dias_transcurridos < 61):
+                        $sheet->setCellValue('P' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                        case ($dias_transcurridos > 30 && $dias_transcurridos < 46):
-                            $sheet->setCellValue('O' . $contador_fila_actual_total_documento, $total_resta_factura);
+                        if ($total_resta_factura > 15) {
+                            $total_resta_60_dias_saldo += $total_resta_factura;
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_45_dias_saldo += $total_resta_factura;
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('M' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                    default: // $dias_transcurridos >= 61
+                        $sheet->setCellValue('Q' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                                $sheet->setCellValue('L' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                        if ($total_resta_factura > 15) {
+                            $total_resta_75_dias_saldo += $total_resta_factura;
 
-                            break;
-
-                        case ($dias_transcurridos > 45 && $dias_transcurridos < 61):
-                            $sheet->setCellValue('P' . $contador_fila_actual_total_documento, $total_resta_factura);
-
-                            if ($total_resta_factura > 15) {
-                                $total_resta_60_dias_saldo += $total_resta_factura;
-
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
-
-                                $sheet->setCellValue('M' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
-
-                            break;
-
-                        case ($dias_transcurridos > 60):
-                            $sheet->setCellValue('Q' . $contador_fila_actual_total_documento, $total_resta_factura);
-
-                            if ($total_resta_factura > 15) {
-                                $total_resta_75_dias_saldo += $total_resta_factura;
-
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
-
-                                $sheet->setCellValue('N' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
-
-                            break;
-                    }
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('N' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
                 }
             }
 
@@ -1532,7 +1529,7 @@ class ContabilidadController extends Controller
             $sheet = $spreadsheet->getActiveSheet();
 
             $sheet->setCellValue('L' . $contador_fila_actual_total_documento, $total_resta_factura);
-            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_actual_total_documento)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_actual_total_documento)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             $contador_fila_actual += 2;
 
@@ -1558,7 +1555,7 @@ class ContabilidadController extends Controller
             $sheet->setCellValue('E' . $contador_fila_nuevo_edc, $factura->documento->moneda);
             $sheet->setCellValue('F' . $contador_fila_nuevo_edc, $factura->documento->total);
             $sheet->setCellValue('G' . $contador_fila_nuevo_edc, date("d/m/Y", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
-            $sheet->setCellValue('H' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? ($dias_transcurridos > 0 ? $dias_transcurridos : 0) : 0);
+            $sheet->setCellValue('H' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? (max($dias_transcurridos, 0)) : 0);
             $sheet->setCellValue('I' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? $total_resta_factura : 0);
 
             if ($total_resta_factura > 15 && $dias_transcurridos > 0) {
@@ -1571,8 +1568,8 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc . ":N" . $contador_fila_nuevo_edc)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
             $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc . ":N" . $contador_fila_nuevo_edc)->getFont()->setBold(1);
 
-            $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
-            $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
+            $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
+            $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
             $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFont()->setBold(1);
 
             $sheet->setCellValue('N5', $total_resta_entidad_saldo_nuevo_edc);
@@ -1747,7 +1744,7 @@ class ContabilidadController extends Controller
 
         $id_empresa = $id_empresa[0]->id;
 
-        if ($data->authy->necesita_authy) {
+        if ($data->whats->necesita_auth) {
             $validate_wa = WhatsAppService::validateCode($auth->id, $data->whats->code);
 
             if ($validate_wa->error) {
@@ -1767,7 +1764,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_generar_data()
+    public function contabilidad_ingreso_generar_data(): JsonResponse
     {
         $metodos = DB::select("SELECT * FROM metodo_pago");
         $verticales = DB::select("SELECT * FROM documento_pago_vertical");
@@ -1777,6 +1774,7 @@ class ContabilidadController extends Controller
         $clasificaciones = DB::select("SELECT id, clasificacion FROM documento_pago_clasificacion");
 
         foreach ($empresas as $empresa) {
+            /** @noinspection PhpParamsInspection */
             $empresa->conciliaciones = DB::table("documento_pago_cuenta AS DPC")
                 ->select("DPC.cuenta", "DPC.descripcion", DB::raw("MAX(DPCC.fecha) AS fecha"))
                 ->join("documento_pago_cuenta_conciliacion AS DPCC", "DPC.id", "=", "DPCC.id_cuenta")
@@ -1797,7 +1795,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_generar_ultimo($entidad)
+    public function contabilidad_ingreso_generar_ultimo($entidad): JsonResponse
     {
         $informacion = DB::select("SELECT * FROM documento_pago WHERE tipo = 0 AND destino_entidad = '" . $entidad . "' ORDER BY created_at DESC LIMIT 1");
 
@@ -1807,7 +1805,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_editar_cliente(Request $request)
+    public function contabilidad_ingreso_editar_cliente(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -1819,12 +1817,15 @@ class ContabilidadController extends Controller
         ], $editar_movimiento->error ? 500 : 200);
     }
 
-    public function contabilidad_ingreso_historial_data(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function contabilidad_ingreso_historial_data(Request $request): JsonResponse
     {
         set_time_limit(0);
 
         $data = json_decode($request->input("data"));
-        $cuentas = [];
 
         $extra_data = "";
 
@@ -1858,7 +1859,7 @@ class ContabilidadController extends Controller
         }
 
         if ($data->empresa != '') {
-            $extra_data .= " AND documento_pago.id_empresa = " . $data->empresa . "";
+            $extra_data .= " AND documento_pago.id_empresa = " . $data->empresa;
         }
 
         $empresa = DB::table("empresa")
@@ -1942,10 +1943,10 @@ class ContabilidadController extends Controller
                                     LEFT JOIN documento_pago_categoria ON documento_pago.id_categoria = documento_pago_categoria.id
                                     WHERE documento_pago.tipo = '" . $data->tipo . "'
                                     AND documento_pago.status = 1
-                                    " . $extra_data . "");
+                                    " . $extra_data);
 
         foreach ($documentos as $documento) {
-            $tiene_pedido = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $documento->id . "");
+            $tiene_pedido = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $documento->id);
 
             $documento->referencia .= (empty($tiene_pedido)) ? "" : " - Pedido: " . $tiene_pedido[0]->id_documento;
 
@@ -2130,7 +2131,7 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle("E" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
             if ($documento->eliminado) {
-                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":P" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E26D6D');
+                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":P" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E26D6D');
             }
 
             foreach ($documento->facturas as $factura) {
@@ -2155,7 +2156,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle("M" . $contador_fila . ":N" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
                 if ($documento->eliminado) {
-                    $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":P" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E26D6D');
+                    $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":P" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E26D6D');
                 }
 
                 $contador_fila++;
@@ -2181,11 +2182,11 @@ class ContabilidadController extends Controller
         return response()->json($json);
     }
 
-    public function contabilidad_ingreso_historial_eliminar($movimiento, Request $request)
+    public function contabilidad_ingreso_historial_eliminar($movimiento, Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
-        $contiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $movimiento . "");
+        $contiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $movimiento);
 
         DB::table('documento_pago')->where(['id' => $movimiento])->update([
             'status' => 0,
@@ -2204,7 +2205,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_historial_poliza(Request $request)
+    public function contabilidad_ingreso_historial_poliza(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -2225,7 +2226,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_historial_traspaso(Request $request)
+    public function contabilidad_ingreso_historial_traspaso(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $user_id = $request->input('user_id');
@@ -2244,10 +2245,10 @@ class ContabilidadController extends Controller
         $id_empresa = $id_empresa[0]->id;
 
         foreach ($data->ingresos as $ingreso) {
-            $informacion_ingreso = DB::select("SELECT * FROM documento_pago WHERE id = " . $ingreso . "")[0];
+            $informacion_ingreso = DB::select("SELECT * FROM documento_pago WHERE id = " . $ingreso)[0];
 
             if ($informacion_ingreso->tipo != 1) {
-                array_push($ingresos_no_convertidos, $informacion_ingreso->folio);
+                $ingresos_no_convertidos[] = $informacion_ingreso->folio;
 
                 continue;
             }
@@ -2261,7 +2262,7 @@ class ContabilidadController extends Controller
                 'id_categoria' => $informacion_ingreso->id_categoria,
                 'id_clasificacion' => 0,
                 'tipo' => "2", // traspaso
-                'folio' => $response->id,
+                'folio' => '',
                 'origen_importe' => ($informacion_ingreso->origen_importe == 0) ? $informacion_ingreso->destino_importe : $informacion_ingreso->origen_importe,
                 'entidad_origen' => $informacion_ingreso->entidad_destino,
                 'origen_entidad' => $informacion_ingreso->destino_entidad,
@@ -2278,30 +2279,30 @@ class ContabilidadController extends Controller
                 'tipo_cambio' => $data->tipo_cambio
             ]);
 
-            $traspaso = DB::select("SELECT * FROM documento_pago WHERE id = " . $documento_pago . "")[0];
+            $traspaso = DB::select("SELECT * FROM documento_pago WHERE id = " . $documento_pago)[0];
 
             $crear_traspaso = DocumentoService::crearMovimientoFlujo($traspaso, $data->empresa);
 
             if ($crear_traspaso->error) {
                 DB::table('documento_pago')->where(['id' => $documento_pago])->delete();
 
-                array_push($ingresos_no_convertidos, $informacion_ingreso->folio);
+                $ingresos_no_convertidos[] = $informacion_ingreso->folio;
 
                 continue;
             }
 
             DB::table('documento_pago')->where(['id' => $ingreso])->update(['traspasado' => 1]);
 
-            array_push($ingresos_convertidos, "Ingreso: " . $informacion_ingreso->folio . " - Traspaso: " . $crear_traspaso->id . "<br>");
+            $ingresos_convertidos[] = "Ingreso: " . $informacion_ingreso->folio . " - Traspaso: " . $crear_traspaso->id . "<br>";
         }
 
         return response()->json([
             'code' => 200,
-            'message' => "Ingresos convertidos correctamente:<br> " . implode("", $ingresos_convertidos) . "<br><br>Ingresos fallidos: " . implode(", ", $ingresos_no_convertidos) . ""
+            'message' => "Ingresos convertidos correctamente:<br> " . implode("", $ingresos_convertidos) . "<br><br>Ingresos fallidos: " . implode(", ", $ingresos_no_convertidos)
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_data($empresa)
+    public function contabilidad_ingreso_cuenta_data($empresa): JsonResponse
     {
         $cuentas = DB::select("SELECT 
                                 documento_pago_cuenta.*,
@@ -2322,7 +2323,8 @@ class ContabilidadController extends Controller
         }
 
         $usuarios = DB::select("SELECT
-                                    usuario.authy,
+                                    usuario.id,
+                                    usuario.celular,
                                     usuario.nombre,
                                     nivel.nivel
                                 FROM usuario
@@ -2342,14 +2344,14 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_sincronizar($empresa)
+    public function contabilidad_ingreso_cuenta_sincronizar($empresa): JsonResponse
     {
-        $bd = DB::select("SELECT bd FROM empresa WHERE id = " . $empresa . "")[0]->bd;
+        $bd = DB::select("SELECT bd FROM empresa WHERE id = " . $empresa)[0]->bd;
 
         $cuentas = @json_decode(file_get_contents(config('webservice.url') . 'api/adminpro/Consulta/CuentasBancarias/' . $bd));
 
         foreach ($cuentas as $cuenta) {
-            $existe_cuenta = DB::select("SELECT id FROM documento_pago_cuenta WHERE cuenta = " . $cuenta->id . " AND id_empresa = " . $empresa . "");
+            $existe_cuenta = DB::select("SELECT id FROM documento_pago_cuenta WHERE cuenta = " . $cuenta->id . " AND id_empresa = " . $empresa);
 
             if (empty($existe_cuenta)) {
                 DB::table('documento_pago_cuenta')->insertGetId([
@@ -2367,7 +2369,7 @@ class ContabilidadController extends Controller
                                 moneda.moneda 
                             FROM documento_pago_cuenta 
                             INNER JOIN moneda ON documento_pago_cuenta.id_moneda = moneda.id
-                            WHERE documento_pago_cuenta.id_empresa = " . $empresa . "");
+                            WHERE documento_pago_cuenta.id_empresa = " . $empresa);
 
         return response()->json([
             'code' => 200,
@@ -2375,7 +2377,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_actualizar(Request $request)
+    public function contabilidad_ingreso_cuenta_actualizar(Request $request): JsonResponse
     {
         $cuenta = json_decode($request->input('cuenta'));
 
@@ -2390,7 +2392,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_conciliar(Request $request)
+    public function contabilidad_ingreso_cuenta_conciliar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('conciliacion'));
         $auth = json_decode($request->auth);
@@ -2460,12 +2462,11 @@ class ContabilidadController extends Controller
 
     }
 
-    public function contabilidad_ingreso_cuenta_estado(Request $request)
+    public function contabilidad_ingreso_cuenta_estado(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
-        $saldo_final_cuenta = 0;
-        $saldo_inicial_cuenta = DB::select("SELECT saldo_inicial FROM documento_pago_cuenta WHERE cuenta = " . $data->cuenta . "");
+        $saldo_inicial_cuenta = DB::select("SELECT saldo_inicial FROM documento_pago_cuenta WHERE cuenta = " . $data->cuenta);
 
         if (empty($saldo_inicial_cuenta)) {
             return response()->json([
@@ -2474,7 +2475,7 @@ class ContabilidadController extends Controller
             ]);
         }
 
-        $estado_cuenta = @json_decode(file_get_contents(config("webservice.url") . "api/adminpro/Reporte/7/Contabilidad/IE/Cuenta/" . $data->cuenta . "/rangofechas/De/" . explode("-", $data->fecha_inicial)[2] . "/" . explode("-", $data->fecha_inicial)[1] . "/" . explode("-", $data->fecha_inicial)[0] . "/Al/" . explode("-", $data->fecha_final)[2] . "/" . explode("-", $data->fecha_final)[1] . "/" . explode("-", $data->fecha_final)[0] . ""));
+        $estado_cuenta = @json_decode(file_get_contents(config("webservice.url") . "api/adminpro/Reporte/7/Contabilidad/IE/Cuenta/" . $data->cuenta . "/rangofechas/De/" . explode("-", $data->fecha_inicial)[2] . "/" . explode("-", $data->fecha_inicial)[1] . "/" . explode("-", $data->fecha_inicial)[0] . "/Al/" . explode("-", $data->fecha_final)[2] . "/" . explode("-", $data->fecha_final)[1] . "/" . explode("-", $data->fecha_final)[0]));
 
         if (empty($estado_cuenta)) {
             return response()->json([
@@ -2503,7 +2504,10 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_cuenta_crear(Request $request)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function contabilidad_ingreso_cuenta_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $empresa = $request->input('empresa');
@@ -2523,7 +2527,7 @@ class ContabilidadController extends Controller
         );
 
         $response = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/Empresas/Cuentas/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
-            ->body($array_pro, \Httpful\Mime::FORM)
+            ->body($array_pro, Mime::FORM)
             ->send();
 
         $response = json_decode($response);
@@ -2541,7 +2545,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_configuracion_data()
+    public function contabilidad_ingreso_configuracion_data(): JsonResponse
     {
         $categorias = DB::select("SELECT * FROM documento_pago_categoria");
         $verticales = DB::select("SELECT * FROM documento_pago_vertical");
@@ -2553,7 +2557,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_ingreso_configuracion_vertical(Request $request)
+    public function contabilidad_ingreso_configuracion_vertical(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -2577,7 +2581,7 @@ class ContabilidadController extends Controller
                 'message' => "Ya éxiste una vertical con el nombre proporcionado."
             ]);
         } else {
-            $existe_vertical = DB::select("SELECT id FROM documento_pago_vertical WHERE vertical = '" . TRIM($data->vertical) . "' AND id != " . $data->id . "");
+            $existe_vertical = DB::select("SELECT id FROM documento_pago_vertical WHERE vertical = '" . TRIM($data->vertical) . "' AND id != " . $data->id);
 
             if (empty($existe_vertical)) {
                 DB::table('documento_pago_vertical')->where(['id' => $data->id])->update([
@@ -2597,7 +2601,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_ingreso_configuracion_categoria(Request $request)
+    public function contabilidad_ingreso_configuracion_categoria(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -2623,7 +2627,7 @@ class ContabilidadController extends Controller
                 'message' => "Ya éxiste una categoria con el nombre proporcionado."
             ]);
         } else {
-            $existe_categoria = DB::select("SELECT id FROM documento_pago_categoria WHERE categoria = '" . TRIM($data->categoria) . "' AND id != " . $data->id . "");
+            $existe_categoria = DB::select("SELECT id FROM documento_pago_categoria WHERE categoria = '" . TRIM($data->categoria) . "' AND id != " . $data->id);
 
             if (empty($existe_categoria)) {
                 DB::table('documento_pago_categoria')->where(['id' => $data->id])->update([
@@ -2646,7 +2650,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_ingreso_eliminar_data(Request $request)
+    public function contabilidad_ingreso_eliminar_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
 
@@ -2662,7 +2666,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_proveedor_archivos($rfc)
+    public function contabilidad_proveedor_archivos($rfc): JsonResponse
     {
         $archivos = DB::select("SELECT
                                     documento_entidad_archivo.*,
@@ -2678,7 +2682,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_proveedor_guardar(Request $request)
+    public function contabilidad_proveedor_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -2736,7 +2740,7 @@ class ContabilidadController extends Controller
                                     usuario.nombre AS creador 
                                 FROM documento_entidad_archivo 
                                 INNER JOIN usuario ON documento_entidad_archivo.id_usuario = usuario.id
-                                WHERE id_entidad = " . $entidad . "");
+                                WHERE id_entidad = " . $entidad);
 
         return response()->json([
             'code' => 200,
@@ -2745,7 +2749,10 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_compra_gasto_crear_gasto(Request $request)
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function contabilidad_compra_gasto_crear_gasto(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
@@ -2763,7 +2770,7 @@ class ContabilidadController extends Controller
             "uso_cfdi" => $data->uso_cfdi,
             "subtotal" => $data->subtotal,
             "descuento" => $data->descuento,
-            "impuesto" => $data->impuesto ? $data->impuesto : 0,
+            "impuesto" => $data->impuesto ?: 0,
             "retencion" => $data->retencion,
             "total" => $data->total,
             "uuid" => $data->uuid,
@@ -2773,7 +2780,7 @@ class ContabilidadController extends Controller
         );
 
         $crear_gasto = \Httpful\Request::post(config('webservice.url') . "Gastos/Insertar")
-            ->body($gasto, \Httpful\Mime::FORM)
+            ->body($gasto, Mime::FORM)
             ->send();
 
         $crear_gasto_raw = $crear_gasto->raw_body;
@@ -2791,7 +2798,7 @@ class ContabilidadController extends Controller
         if ($crear_gasto->error == 1) {
             return response()->json([
                 "code" => 500,
-                "message" => "No fue posible crear el gasto en el ERP con la BD: " . $data->empresa . ", error: " . $crear_gasto->mensaje . "",
+                "message" => "No fue posible crear el gasto en el ERP con la BD: " . $data->empresa . ", error: " . $crear_gasto->mensaje,
                 "raw" => 0,
                 "data" => $gasto
             ]);
@@ -2803,7 +2810,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    private function ventas_raw_data($extra_data)
+    private function ventas_raw_data($extra_data): array
     {
         $ventas = DB::select("SELECT 
                                 documento.id,
@@ -2839,7 +2846,7 @@ class ContabilidadController extends Controller
                             WHERE documento.status = 1
                             AND documento.id_tipo = 2
                             AND documento.problema = 0
-                            " . $extra_data . "");
+                            " . $extra_data);
 
         foreach ($ventas as $venta) {
             $total_productos = 0;
@@ -2851,7 +2858,7 @@ class ContabilidadController extends Controller
                                     ROUND((movimiento.precio * 1.16), 2) AS precio
                                 FROM movimiento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                WHERE id_documento = " . $venta->id . "");
+                                WHERE id_documento = " . $venta->id);
 
             foreach ($productos as $producto) {
                 $total_productos += $producto->cantidad * $producto->precio;
@@ -2861,7 +2868,7 @@ class ContabilidadController extends Controller
                                     documento_pago.*
                                 FROM documento_pago
                                 INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                WHERE documento_pago_re.id_documento = " . $venta->id . "");
+                                WHERE documento_pago_re.id_documento = " . $venta->id);
 
             $archivos = DB::select("SELECT
                                         usuario.id,
@@ -2872,13 +2879,13 @@ class ContabilidadController extends Controller
                                     INNER JOIN usuario ON documento_archivo.id_usuario = usuario.id
                                     WHERE documento_archivo.id_documento = " . $venta->id . " AND documento_archivo.status = 1");
 
-            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id . "");
+            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id);
 
             $venta->empresa = DB::select("SELECT
                                             empresa.bd
                                         FROM marketplace_area_empresa
                                         INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                        WHERE marketplace_area_empresa.id_marketplace_area = " . $venta->id_marketplace_area . "");
+                                        WHERE marketplace_area_empresa.id_marketplace_area = " . $venta->id_marketplace_area);
 
             $venta->seguimiento = $seguimiento;
             $venta->productos = $productos;
@@ -2890,7 +2897,7 @@ class ContabilidadController extends Controller
         return $ventas;
     }
 
-    public function contabilidad_globalizar_data(Request $request)
+    public function contabilidad_globalizar_data(Request $request): JsonResponse
     {
         $rse = DB::select("SELECT no_venta FROM documento WHERE id = $request->data");
 
@@ -2906,7 +2913,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_documentos_importar_data($anio)
+    public function contabilidad_documentos_importar_data($anio): JsonResponse
     {
         set_time_limit(0);
 
@@ -2928,6 +2935,7 @@ class ContabilidadController extends Controller
 
         $ventasValidas = [];
 
+        /** @noinspection PhpUnusedLocalVariableInspection */
         foreach ($ventas as $key => $venta) {
             // Obtener los movimientos de cada venta
             $movimientos = DB::table('movimiento')->where('id_documento', $venta->id)->get();
@@ -2952,17 +2960,9 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_documentos_importar_importar($venta)
+    public function contabilidad_documentos_importar_importar($venta): JsonResponse
     {
         set_time_limit(0);
-
-        $bd = DB::table('documento')
-            ->select('empresa.bd')
-            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
-            ->join('empresa', 'empresa.id', '=', 'empresa_almacen.id_empresa')
-            ->where('documento.id', $venta)
-            ->get();
-        $bd = $bd[0];
 
         $response = DocumentoService::crearFactura($venta, 0, 0);
 
@@ -2996,7 +2996,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_documentos_actualizar_data($documento)
+    public function contabilidad_documentos_actualizar_data($documento): JsonResponse
     {
         set_time_limit(0);
 
@@ -3029,7 +3029,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_documentos_actualizar_terminar($documento)
+    public function contabilidad_documentos_actualizar_terminar($documento): JsonResponse
     {
         set_time_limit(0);
 
@@ -3058,142 +3058,146 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_globalizar_linio(Request $request)
-    {
-        set_time_limit(0);
-        file_put_contents("logs/linio.log", "");
+//    public function contabilidad_globalizar_linio(Request $request): JsonResponse
+//    {
+//        set_time_limit(0);
+//        file_put_contents("logs/linio.log", "");
+//
+//        $documentos_comercial = [];
+//        $data = json_decode($request->input('data'));
+//
+//        if (empty($data->xmls)) {
+//            return response()->json([
+//                'message' => "No se encontró ningun XML para importar."
+//            ], 500);
+//        }
+//
+//        $informacion_empresa = DB::table("empresa")->find($data->empresa);
+//
+//        if (!$informacion_empresa) {
+//            return response()->json([
+//                "message" => "No se encontró información de la empresa seleccionada"
+//            ], 404);
+//        }
+//
+//        foreach ($data->xmls as $xml) {
+//
+//            $xml_data = simplexml_load_string($xml->path, 'SimpleXMLElement', LIBXML_NOWARNING);
+//
+//            if (empty($xml_data)) {
+//                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: XML Invalido." . PHP_EOL, FILE_APPEND);
+//
+//                continue;
+//            }
+//
+//            $documento = new DOMDocument;
+//            $documento->loadXML($xml_data->asXML());
+//            $comprobante = $documento->getElementsByTagName('Comprobante')->item('0');
+//            $emisor = $documento->getElementsByTagName('Emisor')->item('0');
+//            $uuid = $documento->getElementsByTagName('TimbreFiscalDigital')->item('0');
+//            $addenda = $documento->getElementsByTagName('Addenda')->item('0');
+//
+//            if ($addenda) {
+//                $encabezado = $addenda->getElementsByTagName('Encabezado')->item('0');
+//                //SINGLE SALE
+//                if ($encabezado->getAttribute('FolioOrdenCompra')) {
+//                    $xml->ventas[] = $encabezado->getAttribute('FolioOrdenCompra');
+//                }
+//                //MULTI SALE
+//                if (!$encabezado->getAttribute('FolioOrdenCompra')) {
+//                    $menu_nodes = $encabezado->getElementsByTagName('Cuerpo');
+//                    foreach ($menu_nodes as $key) {
+//                        $last_word_start = strrpos($key->getAttribute('Concepto'), ' ') + 1; // +1 so we don't include the space in our result
+//                        $last_word = substr($key->getAttribute('Concepto'), $last_word_start);
+//                        $xml->ventas[] = $last_word;
+//                    }
+//                }
+//
+//                if ($emisor->getAttribute('Rfc') === $informacion_empresa->rfc) {
+//
+//                    $conceptos = $documento->getElementsByTagName('Concepto');
+//
+//                    if (empty($conceptos)) {
+//                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El XML con el UUID " . $uuid->getAttribute('UUID') . " no contiene conceptos." . PHP_EOL, FILE_APPEND);
+//
+//                        continue;
+//                    }
+//
+//                    foreach ($xml->ventas as $venta) {
+//                        $existe_venta_crm = DB::select("SELECT
+//                                                    documento.id,
+//                                                    documento.documento_extra,
+//                									documento.no_venta
+//                                                FROM documento
+//                                                WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F') AND status = 1");
+//                        if (empty($existe_venta_crm)) {
+//                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: La venta " . $venta . " relacionada al UUID " . $uuid->getAttribute('UUID') . " no existe registrada en el sistema como activa." . PHP_EOL, FILE_APPEND);
+//
+//                            continue 2;
+//                        }
+//                        $documentos_comercial[] = $existe_venta_crm[0]->documento_extra;
+//                    }
+//
+//                    try {
+//                        $linio = [
+//                            'uuid' => $uuid->getAttribute('UUID'),
+//                            'fecha' => explode("T", $comprobante->getAttribute('Fecha'))[0],
+//                            'serie' => mb_strtoupper($comprobante->getAttribute('Serie'), 'UTF-8'),
+//                            'folio' => mb_strtoupper($comprobante->getAttribute('Folio'), 'UTF-8'),
+//                        ];
+//
+//                        $array_pro = array(
+//                            "bd" => $informacion_empresa->bd,
+//                            "documentos" => $documentos_comercial,
+//                            "linio" => $linio,
+//                        );
+//
+//                        $crear_documento = \Httpful\Request::post(config('webservice.url') . "ventas/globalizar")
+//                            ->body($array_pro, Mime::FORM)
+//                            ->send();
+//
+//                        $crear_documento_raw = $crear_documento->raw_body;
+//                        $crear_documento = @json_decode($crear_documento);
+//
+//                        if (empty($crear_documento)) {
+//                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la globalización en el ERP, mensaje de error: " . $crear_documento_raw . "." . PHP_EOL, FILE_APPEND);
+//
+//                            continue;
+//                        }
+//
+//                        if ($crear_documento->error == 1) {
+//                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la globalización en el ERP, mensaje de error: " . $crear_documento->mensaje . "." . PHP_EOL, FILE_APPEND);
+//
+//
+//                            continue;
+//                        }
+//                    } catch (Exception $e) {
+//                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
+//
+//                        continue;
+//                    }
+//                } else {
+//                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El emisor de la factura no corresponde a la empresa seleccionada, RFC emisor " . $emisor->getAttribute('Rfc') . "." . PHP_EOL, FILE_APPEND);
+//                }
+//            } else {
+//                return response()->json([
+//                    "code" => 500,
+//                    "message" => 'El archivo ' . $uuid->getAttribute('UUID') . ' no contiene Addenda<br/>Se reiniciará el proceso',
+//                ]);
+//            }
+//        }
+//
+//        return response()->json([
+//            'code' => 200,
+//            'message' => "Facturas globalizadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
+//        ]);
+//    }
 
-        $documentos_comercial = [];
-        $data = json_decode($request->input('data'));
-
-        if (empty($data->xmls)) {
-            return response()->json([
-                'message' => "No se encontró ningun XML para importar."
-            ], 500);
-        }
-
-        $informacion_empresa = DB::table("empresa")->find($data->empresa);
-
-        if (!$informacion_empresa) {
-            return response()->json([
-                "message" => "No se encontró información de la empresa seleccionada"
-            ], 404);
-        }
-
-        foreach ($data->xmls as $xml) {
-
-            $xml_data = simplexml_load_string($xml->path, 'SimpleXMLElement', LIBXML_NOWARNING);
-
-            if (empty($xml_data)) {
-                file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: XML Invalido." . PHP_EOL, FILE_APPEND);
-
-                continue;
-            }
-
-            $documento = new DOMDocument;
-            $documento->loadXML($xml_data->asXML());
-            $comprobante = $documento->getElementsByTagName('Comprobante')->item('0');
-            $emisor = $documento->getElementsByTagName('Emisor')->item('0');
-            $uuid = $documento->getElementsByTagName('TimbreFiscalDigital')->item('0');
-            $addenda = $documento->getElementsByTagName('Addenda')->item('0');
-
-            if ($addenda) {
-                $encabezado = $addenda->getElementsByTagName('Encabezado')->item('0');
-                //SINGLE SALE
-                if ($encabezado->getAttribute('FolioOrdenCompra')) {
-                    array_push($xml->ventas, $encabezado->getAttribute('FolioOrdenCompra'));
-                }
-                //MULTI SALE
-                if (!$encabezado->getAttribute('FolioOrdenCompra')) {
-                    $menu_nodes = $encabezado->getElementsByTagName('Cuerpo');
-                    foreach ($menu_nodes as $key) {
-                        $last_word_start = strrpos($key->getAttribute('Concepto'), ' ') + 1; // +1 so we don't include the space in our result
-                        $last_word = substr($key->getAttribute('Concepto'), $last_word_start);
-                        array_push($xml->ventas, $last_word);
-                    }
-                }
-
-                if ($emisor->getAttribute('Rfc') === $informacion_empresa->rfc) {
-
-                    $conceptos = $documento->getElementsByTagName('Concepto');
-
-                    if (empty($conceptos)) {
-                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El XML con el UUID " . $uuid->getAttribute('UUID') . " no contiene conceptos." . PHP_EOL, FILE_APPEND);
-
-                        continue;
-                    }
-
-                    foreach ($xml->ventas as $venta) {
-                        $existe_venta_crm = DB::select("SELECT
-                                                    documento.id,
-                                                    documento.documento_extra,
-                									documento.no_venta
-                                                FROM documento
-                                                WHERE (no_venta = '" . TRIM($venta) . "' OR no_venta = '" . TRIM($venta) . "F') AND status = 1");
-                        if (empty($existe_venta_crm)) {
-                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: La venta " . $venta . " relacionada al UUID " . $uuid->getAttribute('UUID') . " no existe registrada en el sistema como activa." . PHP_EOL, FILE_APPEND);
-
-                            continue 2;
-                        }
-                        array_push($documentos_comercial, $existe_venta_crm[0]->documento_extra);
-                    }
-
-                    try {
-                        $linio = [
-                            'uuid' => $uuid->getAttribute('UUID'),
-                            'fecha' => explode("T", $comprobante->getAttribute('Fecha'))[0],
-                            'serie' => mb_strtoupper($comprobante->getAttribute('Serie'), 'UTF-8'),
-                            'folio' => mb_strtoupper($comprobante->getAttribute('Folio'), 'UTF-8'),
-                        ];
-
-                        $array_pro = array(
-                            "bd" => $informacion_empresa->bd,
-                            "documentos" => $documentos_comercial,
-                            "linio" => $linio,
-                        );
-
-                        $crear_documento = \Httpful\Request::post(config('webservice.url') . "ventas/globalizar")
-                            ->body($array_pro, \Httpful\Mime::FORM)
-                            ->send();
-
-                        $crear_documento_raw = $crear_documento->raw_body;
-                        $crear_documento = @json_decode($crear_documento);
-
-                        if (empty($crear_documento)) {
-                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la globalización en el ERP, mensaje de error: " . $crear_documento_raw . "." . PHP_EOL, FILE_APPEND);
-
-                            continue;
-                        }
-
-                        if ($crear_documento->error == 1) {
-                            file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear la globalización en el ERP, mensaje de error: " . $crear_documento->mensaje . "." . PHP_EOL, FILE_APPEND);
-
-
-                            continue;
-                        }
-                    } catch (Exception $e) {
-                        file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: No fue posible crear el ingreso la factura " . $factura->serie . $factura->folio . " con el UUID " . $factura->uuid . ", mensaje de error: " . $e->getMessage() . "." . PHP_EOL, FILE_APPEND);
-
-                        continue;
-                    }
-                } else {
-                    file_put_contents("logs/linio.log", date("d/m/Y H:i:s") . " Error: El emisor de la factura no corresponde a la empresa seleccionada, RFC emisor " . $emisor->getAttribute('Rfc') . "." . PHP_EOL, FILE_APPEND);
-                }
-            } else {
-                return response()->json([
-                    "code" => 500,
-                    "message" => 'El archivo ' . $uuid->getAttribute('UUID') . ' no contiene Addenda<br/>Se reiniciará el proceso',
-                ]);
-            }
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => "Facturas globalizadas correctamente<br><br>Favor de revisar el .log de linio https://rest.crmomg.mx/logs/linio.log"
-        ]);
-    }
-
-    public static function contabilidad_globalizar_excel(Request $request)
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public static function contabilidad_globalizar_excel(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input('data'));
@@ -3204,7 +3208,7 @@ class ContabilidadController extends Controller
         $sheet = $spreadsheet->getActiveSheet()->setTitle('Reporte a globalizar');
 
         $spreadsheet->getActiveSheet()->getStyle('A1:G1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:G1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $spreadsheet->getActiveSheet()->getStyle('A1:G1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
 
         $sheet->setCellValue('A1', 'Documento'); //1
         $sheet->setCellValue('B1', 'ID Comercial'); //2
@@ -3218,7 +3222,7 @@ class ContabilidadController extends Controller
             $sheet->setCellValue('A' . $fila, $venta->folio);
             $sheet->setCellValue('B' . $fila, $venta->id);
             // $sheet->setCellValue('C' . $fila, $venta->no_venta);
-            $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($venta->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($venta->no_venta, DataType::TYPE_STRING);
             $sheet->setCellValue('D' . $fila, $venta->fecha);
             $sheet->setCellValue('E' . $fila, $venta->factura);
             $sheet->setCellValue('F' . $fila, '$' . $venta->total);
@@ -3242,7 +3246,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_refacturacion_data()
+    public function contabilidad_refacturacion_data(): JsonResponse
     {
         $query = DB::table('refacturacion')
             ->select('refacturacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
@@ -3263,7 +3267,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_refacturacion_cancelar($documento, Request $request)
+    public function contabilidad_refacturacion_cancelar($documento, Request $request): JsonResponse
     {
         set_time_limit(0);
         $auth = json_decode($request->auth);
@@ -3283,7 +3287,7 @@ class ContabilidadController extends Controller
                 'message' => "Refacturación cancelada",
                 'code' => 200
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             return response()->json([
@@ -3293,7 +3297,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_refacturacion_crear(Request $request)
+    public function contabilidad_refacturacion_crear(Request $request): JsonResponse
     {
         set_time_limit(0);
         $data = json_decode($request->input('data'));
@@ -3308,14 +3312,13 @@ class ContabilidadController extends Controller
             ]);
         }
 
-        if ($data->necesita_token) {
-            $validate_authy = DocumentoService::authy($auth->id, $data->token);
+        if ($data->whats->necesita_auth) {
+            $validate_wa = WhatsAppService::validateCode($auth->id, $data->whats->code);
 
-            if ($validate_authy->error) {
+            if ($validate_wa->error) {
                 return response()->json([
-                    "code" => 500,
-                    "message" => $validate_authy->mensaje
-                ]);
+                    "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
+                ], 500);
             }
         }
 
@@ -3334,7 +3337,7 @@ class ContabilidadController extends Controller
                 'message' => "Solicitud de Refacturación creada",
                 'code' => 200
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             return response()->json([
@@ -3344,6 +3347,11 @@ class ContabilidadController extends Controller
         }
     }
 
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws Throwable
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
     public function contabilidad_estado_factura_reporte_semanal($reRun)
     {
         set_time_limit(0);
@@ -3397,7 +3405,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    private function construirUrl($endpoint, $empresa, $anio, $isIngresos = false)
+    private function construirUrl($endpoint, $empresa, $anio, $isIngresos = false): string
     {
         $url = config('webservice.url') . "$endpoint/$empresa";
 
@@ -3415,7 +3423,8 @@ class ContabilidadController extends Controller
     /**
      * @throws \PhpOffice\PhpSpreadsheet\Exception
      * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
-     * @throws \Throwable
+     * @throws Throwable
+     * @noinspection PhpMethodParametersCountMismatchInspection
      */
     public static function procesar_contabilidad_estado_factura_reporte_semanal($response, $empresa, $data, $url_pagos_pendientes, $anio)
     {
@@ -3553,8 +3562,8 @@ class ContabilidadController extends Controller
             ->getStyle('B2:N3')
             ->getBorders()
             ->getOutline()
-            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THICK)
-            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color("101010"));
+            ->setBorderStyle(Border::BORDER_THICK)
+            ->setColor(new Color("101010"));
 
         $spreadsheet->getActiveSheet()->getStyle("B2:N2")->getFont()->setSize(14)->setBold(1);
         $spreadsheet->getActiveSheet()->getStyle("B3:N3")->getFont()->setSize(12)->setBold(1);
@@ -3583,8 +3592,8 @@ class ContabilidadController extends Controller
             ->getStyle('B8:N8')
             ->getBorders()
             ->getOutline()
-            ->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)
-            ->setColor(new \PhpOffice\PhpSpreadsheet\Style\Color("101010"));
+            ->setBorderStyle(Border::BORDER_THIN)
+            ->setColor(new Color("101010"));
 
         $sheet->getStyle('B8:N8')->getAlignment()->setHorizontal('center');
 
@@ -3595,7 +3604,7 @@ class ContabilidadController extends Controller
 
         $spreadsheet->getActiveSheet()->getStyle('L5:N6')->getFont()->setBold(1)->setSize(12)->getColor()->setARGB('FFFFFF');
 
-        $spreadsheet->getActiveSheet()->getStyle("L5:N6")->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('FF1717');
+        $spreadsheet->getActiveSheet()->getStyle("L5:N6")->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FF1717');
 
         $spreadsheet->getActiveSheet()->getStyle("N5")->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
         $spreadsheet->getActiveSheet()->getStyle("N6")->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3629,7 +3638,7 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila)->getFont()->setBold(1);
 
             # Color de fondo de la venta verde
-            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             # Formato accounting
             $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3736,7 +3745,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila)->getFont()->setBold(1);
 
                 # Color de fondo de la venta verde
-                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
+                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila . ":Q" . $contador_fila)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
 
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila . ":G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3762,12 +3771,12 @@ class ContabilidadController extends Controller
             }
 
             if (!$existe_entidad) {
-                $entidad_data = new \stdClass();
+                $entidad_data = new stdClass();
                 $entidad_data->nombre = $factura->documento->nombre;
                 $entidad_data->rfc = $factura->documento->rfc;
                 $entidad_data->total = $total_resta_factura;
 
-                array_push($entidades, $entidad_data);
+                $entidades[] = $entidad_data;
             }
 
             if ($total_resta_factura > 0) {
@@ -3786,39 +3795,29 @@ class ContabilidadController extends Controller
                 # Se agrega saldo de la factura dependiendo los días transcurridos
                 if ($dias_transcurridos > 0) {
                     switch (true) {
-                        case ($dias_transcurridos > 0 && $dias_transcurridos < 16):
+                        case ($dias_transcurridos < 16):
                             $sheet->setCellValue('M' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_15_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 15 && $dias_transcurridos < 31):
+                        case ($dias_transcurridos < 31):
                             $sheet->setCellValue('N' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_30_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 30 && $dias_transcurridos < 46):
+                        case ($dias_transcurridos < 46):
                             $sheet->setCellValue('O' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_45_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 45 && $dias_transcurridos < 61):
+                        case ($dias_transcurridos < 61):
                             $sheet->setCellValue('P' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_60_dias += $total_resta_factura;
-
                             break;
 
-                        case ($dias_transcurridos > 60):
+                        default: // $dias_transcurridos >= 61
                             $sheet->setCellValue('Q' . $contador_fila_total_documento, $total_resta_factura);
-
                             $total_resta_75_dias += $total_resta_factura;
-
                             break;
                     }
                 }
@@ -3827,7 +3826,7 @@ class ContabilidadController extends Controller
             $total_resta_factura = round($total_resta_factura, 2);
 
             $sheet->setCellValue('L' . $contador_fila_total_documento, $total_resta_factura);
-            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_total_documento)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_total_documento)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             $contador_fila += 2;
 
@@ -3855,7 +3854,7 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila_actual)->getFont()->setBold(1);
 
             # Color de fondo de la venta verde
-            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             # Formato accounting
             $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3898,7 +3897,7 @@ class ContabilidadController extends Controller
                 $spreadsheet->getActiveSheet()->getStyle('R' . $contador_fila_actual)->getFont()->setBold(1);
 
                 # Color de fondo de la venta verde
-                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
+                $spreadsheet->getActiveSheet()->getStyle("A" . $contador_fila_actual . ":Q" . $contador_fila_actual)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('45E0E9');
 
                 # Formato accounting
                 $spreadsheet->getActiveSheet()->getStyle("F" . $contador_fila_actual . ":G" . $contador_fila_actual)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3912,11 +3911,10 @@ class ContabilidadController extends Controller
 
             $dias_pago = 0;
 
-            if ($factura->documento->pago_terminos == "CONTADO" || is_null($factura->documento->pago_terminos)) {
-                $dias_pago = 0;
-            } else {
+            if ($factura->documento->pago_terminos != "CONTADO" && !is_null($factura->documento->pago_terminos)) {
                 $dias_pago = explode(" ", $factura->documento->pago_terminos)[0];
             }
+
 
             $fecha_actual = time();
             $fecha_pago = strtotime(date("Y-m-d", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
@@ -3924,79 +3922,67 @@ class ContabilidadController extends Controller
 
             $dias_transcurridos = (int)floor($diferencia / (60 * 60 * 24));
 
-            if ($total_resta_factura > 0) {
-                if ($dias_transcurridos > 0) {
-                    switch (true) {
-                        case ($dias_transcurridos > 0 && $dias_transcurridos < 16):
-                            $sheet->setCellValue('M' . $contador_fila_actual_total_documento, $total_resta_factura);
+            if ($total_resta_factura > 0 && $dias_transcurridos > 0) {
+                switch (true) {
+                    case ($dias_transcurridos < 16):
+                        $sheet->setCellValue('M' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_15_dias_saldo += $total_resta_factura;
+                        if ($total_resta_factura > 15) {
+                            $total_resta_15_dias_saldo += $total_resta_factura;
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('J' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                                $sheet->setCellValue('J' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                    case ($dias_transcurridos < 31):
+                        $sheet->setCellValue('N' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                            break;
+                        if ($total_resta_factura > 15) {
+                            $total_resta_30_dias_saldo += $total_resta_factura;
 
-                        case ($dias_transcurridos > 15 && $dias_transcurridos < 31):
-                            $sheet->setCellValue('N' . $contador_fila_actual_total_documento, $total_resta_factura);
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('K' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_30_dias_saldo += $total_resta_factura;
+                    case ($dias_transcurridos < 46):
+                        $sheet->setCellValue('O' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                        if ($total_resta_factura > 15) {
+                            $total_resta_45_dias_saldo += $total_resta_factura;
 
-                                $sheet->setCellValue('K' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('L' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                            break;
+                    case ($dias_transcurridos < 61):
+                        $sheet->setCellValue('P' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                        case ($dias_transcurridos > 30 && $dias_transcurridos < 46):
-                            $sheet->setCellValue('O' . $contador_fila_actual_total_documento, $total_resta_factura);
+                        if ($total_resta_factura > 15) {
+                            $total_resta_60_dias_saldo += $total_resta_factura;
 
-                            if ($total_resta_factura > 15) {
-                                $total_resta_45_dias_saldo += $total_resta_factura;
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('M' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
 
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
+                    default: // $dias_transcurridos >= 61
+                        $sheet->setCellValue('Q' . $contador_fila_actual_total_documento, $total_resta_factura);
 
-                                $sheet->setCellValue('L' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
+                        if ($total_resta_factura > 15) {
+                            $total_resta_75_dias_saldo += $total_resta_factura;
 
-                            break;
-
-                        case ($dias_transcurridos > 45 && $dias_transcurridos < 61):
-                            $sheet->setCellValue('P' . $contador_fila_actual_total_documento, $total_resta_factura);
-
-                            if ($total_resta_factura > 15) {
-                                $total_resta_60_dias_saldo += $total_resta_factura;
-
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
-
-                                $sheet->setCellValue('M' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
-
-                            break;
-
-                        case ($dias_transcurridos > 60):
-                            $sheet->setCellValue('Q' . $contador_fila_actual_total_documento, $total_resta_factura);
-
-                            if ($total_resta_factura > 15) {
-                                $total_resta_75_dias_saldo += $total_resta_factura;
-
-                                $spreadsheet->setActiveSheetIndex(5);
-                                $sheet = $spreadsheet->getActiveSheet();
-
-                                $sheet->setCellValue('N' . $contador_fila_nuevo_edc, $total_resta_factura);
-                            }
-
-                            break;
-                    }
+                            $spreadsheet->setActiveSheetIndex(5);
+                            $sheet = $spreadsheet->getActiveSheet();
+                            $sheet->setCellValue('N' . $contador_fila_nuevo_edc, $total_resta_factura);
+                        }
+                        break;
                 }
             }
 
@@ -4004,7 +3990,7 @@ class ContabilidadController extends Controller
             $sheet = $spreadsheet->getActiveSheet();
 
             $sheet->setCellValue('L' . $contador_fila_actual_total_documento, $total_resta_factura);
-            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_actual_total_documento)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
+            $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila_actual_total_documento)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('6DDC7F');
 
             $contador_fila_actual += 2;
 
@@ -4030,7 +4016,7 @@ class ContabilidadController extends Controller
             $sheet->setCellValue('E' . $contador_fila_nuevo_edc, $factura->documento->moneda);
             $sheet->setCellValue('F' . $contador_fila_nuevo_edc, $factura->documento->total);
             $sheet->setCellValue('G' . $contador_fila_nuevo_edc, date("d/m/Y", strtotime($factura->documento->fecha . " +" . $dias_pago . " days")));
-            $sheet->setCellValue('H' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? ($dias_transcurridos > 0 ? $dias_transcurridos : 0) : 0);
+            $sheet->setCellValue('H' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? (max($dias_transcurridos, 0)) : 0);
             $sheet->setCellValue('I' . $contador_fila_nuevo_edc, $total_resta_factura > 15 ? $total_resta_factura : 0);
 
             if ($total_resta_factura > 15 && $dias_transcurridos > 0) {
@@ -4043,8 +4029,8 @@ class ContabilidadController extends Controller
             $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc . ":N" . $contador_fila_nuevo_edc)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
             $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc . ":N" . $contador_fila_nuevo_edc)->getFont()->setBold(1);
 
-            $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
-            $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
+            $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
+            $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila_nuevo_edc)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('E7F023');
             $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila_nuevo_edc)->getFont()->setBold(1);
 
             $sheet->setCellValue('N5', $total_resta_entidad_saldo_nuevo_edc);
