@@ -849,6 +849,37 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('crear', 'ContabilidadController@contabilidad_refacturacion_crear');
             $router->get('cancelar/{documento}', 'ContabilidadController@contabilidad_refacturacion_cancelar');
         });
+
+        $router->group(['prefix' => 'tesoreria'], function () use ($router) {
+            $router->get('data', 'ContabilidadController@contabilidad_tesoreria_data');
+            $router->post('bancos/buscar', 'ContabilidadController@contabilidad_tesoreria_buscar_banco');
+
+            $router->post('cuenta/crear', 'ContabilidadController@contabilidad_tesoreria_cuenta_crear');
+            $router->post('cuenta/editar', 'ContabilidadController@contabilidad_tesoreria_cuenta_editar');
+            $router->get('cuentas-bancarias', 'ContabilidadController@contabilidad_tesoreria_cuentas_bancarias');
+            $router->delete('cuenta/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_cuenta_eliminar');
+
+            $router->get('cajas-chicas', 'ContabilidadController@contabilidad_tesoreria_cajas_chicas');
+            $router->post('caja-chica/crear', 'ContabilidadController@contabilidad_tesoreria_caja_chica_crear');
+            $router->post('caja-chica/editar', 'ContabilidadController@contabilidad_tesoreria_caja_chica_editar');
+            $router->delete('caja-chica/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_caja_chica_eliminar');
+
+            $router->get('acreedores', 'ContabilidadController@contabilidad_tesoreria_acreedores');
+            $router->post('acreedor/crear', 'ContabilidadController@contabilidad_tesoreria_acreedor_crear');
+            $router->post('acreedor/editar', 'ContabilidadController@contabilidad_tesoreria_acreedor_editar');
+            $router->delete('acreedor/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_acreedor_eliminar');
+
+            $router->get('deudores', 'ContabilidadController@contabilidad_tesoreria_deudores');
+            $router->post('deudor/crear', 'ContabilidadController@contabilidad_tesoreria_deudor_crear');
+            $router->post('deudor/editar', 'ContabilidadController@contabilidad_tesoreria_deudor_editar');
+            $router->delete('deudor/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_deudor_eliminar');
+
+            $router->get('bancos', 'ContabilidadController@contabilidad_tesoreria_bancos');
+            $router->post('banco/crear', 'ContabilidadController@contabilidad_tesoreria_banco_crear');
+            $router->post('banco/editar', 'ContabilidadController@contabilidad_tesoreria_banco_editar');
+            $router->delete('banco/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_banco_eliminar');
+
+        });
     });
 
     # Menú configuracion

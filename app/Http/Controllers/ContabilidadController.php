@@ -3347,6 +3347,608 @@ class ContabilidadController extends Controller
         }
     }
 
+    public function contabilidad_tesoreria_data() {
+        $monedas = DB::table('moneda')->get();
+
+        return response()->json([
+            'code' => 200,
+            'monedas' => $monedas,
+        ]);
+    }
+
+    public function contabilidad_tesoreria_buscar_banco(Request $request)
+    {
+        try {
+            $search = trim($request->input('banco', ''));
+
+            if (strlen($search) < 2) {
+                return response()->json([
+                    'code' => 200,
+                    'data' => [],
+                    'message' => 'Proporcione al menos 2 caracteres para buscar.'
+                ]);
+            }
+
+            $bancos = \DB::table('cat_bancos')
+                ->select('id', 'razon_social as nombre', 'rfc', 'codigo_sat', 'valor')
+                ->where('razon_social', 'like', "%{$search}%")
+                ->orderBy('razon_social')
+                ->limit(20)
+                ->get();
+
+            return response()->json([
+                'code' => 200,
+                'data' => $bancos,
+                'message' => ''
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'data' => [],
+                'message' => 'Error al buscar bancos: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function contabilidad_tesoreria_cuenta_crear(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            // Validación básica
+            if (!$data || !$data['nombre'] || !$data['id_banco'] || !$data['id_moneda']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'Faltan datos obligatorios',
+                ]);
+            }
+
+            $insert = [
+                'nombre'     => $data['nombre'],
+                'id_tipo'    => 1, // Cuenta bancaria
+                'id_banco'   => $data['id_banco'],
+                'id_moneda'  => $data['id_moneda'],
+                'no_cuenta'  => $data['no_cuenta'] ?? null,
+                'sucursal'   => $data['sucursal'] ?? null,
+                'convenio'   => $data['convenio'] ?? null,
+                'clabe'      => $data['clabe'] ?? null,
+                'swift'      => $data['swift'] ?? null,
+                'comentarios'=> $data['comentarios'] ?? null,
+                // 'plazo'     => null, // <-- No incluirlo
+            ];
+
+            $id = DB::table('cat_entidad_financiera')->insertGetId($insert);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Cuenta bancaria creada correctamente',
+                'id' => $id
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al crear cuenta bancaria: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function contabilidad_tesoreria_cuenta_editar(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['id']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'ID de la cuenta es requerido',
+                ]);
+            }
+
+            $update = [
+                'nombre'     => $data['nombre'],
+                'id_banco'   => $data['id_banco'],
+                'id_moneda'  => $data['id_moneda'],
+                'no_cuenta'  => $data['no_cuenta'] ?? null,
+                'sucursal'   => $data['sucursal'] ?? null,
+                'convenio'   => $data['convenio'] ?? null,
+                'clabe'      => $data['clabe'] ?? null,
+                'swift'      => $data['swift'] ?? null,
+                'comentarios'=> $data['comentarios'] ?? null,
+                // 'plazo'     => null, // <-- No incluirlo
+            ];
+
+            DB::table('cat_entidad_financiera')
+                ->where('id', $data['id'])
+                ->update($update);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Cuenta bancaria actualizada correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al editar cuenta bancaria: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function contabilidad_tesoreria_cuentas_bancarias()
+    {
+        try {
+            $cuentas = \DB::table('cat_entidad_financiera as ef')
+                ->join('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
+                ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
+                ->select(
+                    'ef.id',
+                    'ef.nombre',
+                    'b.razon_social as banco',
+                    'b.id as id_banco',
+                    'ef.no_cuenta as numero',
+                    'ef.clabe',
+                    'ef.sucursal',
+                    'ef.convenio',
+                    'ef.swift',
+                    'ef.comentarios',
+                    'm.moneda',
+                    'm.id as id_moneda'
+                )
+                ->where('ef.id_tipo', 1) // Solo cuentas bancarias
+                ->orderBy('ef.nombre')
+                ->get();
+
+            return response()->json([
+                'code' => 200,
+                'data' => $cuentas
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al listar cuentas bancarias: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function contabilidad_tesoreria_cuenta_eliminar($id)
+    {
+        try {
+            DB::table('cat_entidad_financiera')->where('id', $id)->delete();
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Cuenta bancaria eliminada correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al eliminar cuenta bancaria: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    // Listar cajas chicas
+    public function contabilidad_tesoreria_cajas_chicas()
+    {
+        try {
+            $cajas = \DB::table('cat_entidad_financiera as ef')
+                ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
+                ->select(
+                    'ef.id',
+                    'ef.nombre',
+                    'm.moneda',
+                    'm.id as id_moneda',
+                    'ef.comentarios'
+                )
+                ->where('ef.id_tipo', 2) // 2 = Caja chica
+                ->orderBy('ef.nombre')
+                ->get();
+
+            return response()->json([
+                'code' => 200,
+                'data' => $cajas
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al listar cajas chicas: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Crear
+    public function contabilidad_tesoreria_caja_chica_crear(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['nombre'] || !$data['id_moneda']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'Faltan datos obligatorios',
+                ]);
+            }
+
+            $id = DB::table('cat_entidad_financiera')->insertGetId([
+                'nombre'     => $data['nombre'],
+                'id_tipo'    => 2, // Caja chica
+                'id_banco'   => null,
+                'id_moneda'  => $data['id_moneda'],
+                'comentarios'=> $data['comentarios'] ?? null,
+            ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Caja chica creada correctamente',
+                'id' => $id
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al crear caja chica: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Editar
+    public function contabilidad_tesoreria_caja_chica_editar(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['id']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'ID de la caja chica es requerido',
+                ]);
+            }
+
+            DB::table('cat_entidad_financiera')
+                ->where('id', $data['id'])
+                ->update([
+                    'nombre'     => $data['nombre'],
+                    'id_moneda'  => $data['id_moneda'],
+                    'comentarios'=> $data['comentarios'] ?? null,
+                ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Caja chica actualizada correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al editar caja chica: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Eliminar
+    public function contabilidad_tesoreria_caja_chica_eliminar($id)
+    {
+        try {
+            DB::table('cat_entidad_financiera')->where('id', $id)->delete();
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Caja chica eliminada correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al eliminar caja chica: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    // Listar acreedores
+    public function contabilidad_tesoreria_acreedores()
+    {
+        try {
+            $acreedores = \DB::table('cat_entidad_financiera as ef')
+                ->leftJoin('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
+                ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
+                ->select(
+                    'ef.id',
+                    'ef.nombre',
+                    'b.razon_social as banco',
+                    'b.id as id_banco',
+                    'm.moneda',
+                    'm.id as id_moneda',
+                    'ef.plazo',
+                    'ef.comentarios'
+                )
+                ->where('ef.id_tipo', 3) // 3 = Acreedor
+                ->orderBy('ef.nombre')
+                ->get();
+
+            return response()->json([
+                'code' => 200,
+                'data' => $acreedores
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al listar acreedores: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Crear
+    public function contabilidad_tesoreria_acreedor_crear(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['nombre'] || !$data['id_moneda'] || !$data['plazo'] || !$data['id_banco']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'Faltan datos obligatorios',
+                ]);
+            }
+
+            $id = DB::table('cat_entidad_financiera')->insertGetId([
+                'nombre'     => $data['nombre'],
+                'id_tipo'    => 3, // Acreedor
+                'id_banco'   => $data['id_banco'],
+                'id_moneda'  => $data['id_moneda'],
+                'plazo'      => $data['plazo'],
+                'comentarios'=> $data['comentarios'] ?? null,
+            ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Acreedor creado correctamente',
+                'id' => $id
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al crear acreedor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Editar
+    public function contabilidad_tesoreria_acreedor_editar(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['id']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'ID del acreedor es requerido',
+                ]);
+            }
+
+            DB::table('cat_entidad_financiera')
+                ->where('id', $data['id'])
+                ->update([
+                    'nombre'     => $data['nombre'],
+                    'id_banco'   => $data['id_banco'],
+                    'id_moneda'  => $data['id_moneda'],
+                    'plazo'      => $data['plazo'],
+                    'comentarios'=> $data['comentarios'] ?? null,
+                ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Acreedor actualizado correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al editar acreedor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Eliminar
+    public function contabilidad_tesoreria_acreedor_eliminar($id)
+    {
+        try {
+            DB::table('cat_entidad_financiera')->where('id', $id)->delete();
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Acreedor eliminado correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al eliminar acreedor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    // Listar deudores
+    public function contabilidad_tesoreria_deudores()
+    {
+        try {
+            $deudores = \DB::table('cat_entidad_financiera as ef')
+                ->leftJoin('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
+                ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
+                ->select(
+                    'ef.id',
+                    'ef.nombre',
+                    'b.razon_social as banco',
+                    'b.id as id_banco',
+                    'm.moneda',
+                    'm.id as id_moneda',
+                    'ef.comentarios'
+                )
+                ->where('ef.id_tipo', 4) // 4 = Deudor
+                ->orderBy('ef.nombre')
+                ->get();
+
+            return response()->json([
+                'code' => 200,
+                'data' => $deudores
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al listar deudores: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Crear
+    public function contabilidad_tesoreria_deudor_crear(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['nombre'] || !$data['id_moneda'] || !$data['id_banco']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'Faltan datos obligatorios',
+                ]);
+            }
+
+            $id = \DB::table('cat_entidad_financiera')->insertGetId([
+                'nombre'     => $data['nombre'],
+                'id_tipo'    => 4, // Deudor
+                'id_banco'   => $data['id_banco'],
+                'id_moneda'  => $data['id_moneda'],
+                'comentarios'=> $data['comentarios'] ?? null,
+            ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Deudor creado correctamente',
+                'id' => $id
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al crear deudor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Editar
+    public function contabilidad_tesoreria_deudor_editar(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['id']) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'ID del deudor es requerido',
+                ]);
+            }
+
+            DB::table('cat_entidad_financiera')
+                ->where('id', $data['id'])
+                ->update([
+                    'nombre'     => $data['nombre'],
+                    'id_banco'   => $data['id_banco'],
+                    'id_moneda'  => $data['id_moneda'],
+                    'comentarios'=> $data['comentarios'] ?? null,
+                ]);
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Deudor actualizado correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al editar deudor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+// Eliminar
+    public function contabilidad_tesoreria_deudor_eliminar($id)
+    {
+        try {
+            DB::table('cat_entidad_financiera')->where('id', $id)->delete();
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Deudor eliminado correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al eliminar deudor: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    // Listar bancos
+    public function contabilidad_tesoreria_bancos()
+    {
+        try {
+            $bancos = DB::table('cat_bancos')->select('id', 'valor', 'razon_social', 'rfc', 'codigo_sat')->orderBy('razon_social')->get();
+            return response()->json(['code' => 200, 'data' => $bancos]);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'message' => 'Error al listar bancos: ' . $e->getMessage()]);
+        }
+    }
+
+// Crear
+    public function contabilidad_tesoreria_banco_crear(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['valor'] || !$data['razon_social']) {
+                return response()->json(['code' => 400, 'message' => 'Faltan datos obligatorios']);
+            }
+
+            $id = DB::table('cat_bancos')->insertGetId([
+                'valor' => $data['valor'],
+                'razon_social' => $data['razon_social'],
+                'rfc' => $data['rfc'] ?? null,
+                'codigo_sat' => $data['codigo_sat'] ?? null,
+            ]);
+            return response()->json(['code' => 200, 'message' => 'Banco creado correctamente', 'id' => $id]);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'message' => 'Error al crear banco: ' . $e->getMessage()]);
+        }
+    }
+
+// Editar
+    public function contabilidad_tesoreria_banco_editar(Request $request)
+    {
+        try {
+            $data = json_decode($request->input('data'), true);
+
+            if (!$data || !$data['id']) {
+                return response()->json(['code' => 400, 'message' => 'ID del banco es requerido']);
+            }
+
+            DB::table('cat_bancos')
+                ->where('id', $data['id'])
+                ->update([
+                    'valor' => $data['valor'],
+                    'razon_social' => $data['razon_social'],
+                    'rfc' => $data['rfc'] ?? null,
+                    'codigo_sat' => $data['codigo_sat'] ?? null,
+                ]);
+
+            return response()->json(['code' => 200, 'message' => 'Banco actualizado correctamente']);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'message' => 'Error al editar banco: ' . $e->getMessage()]);
+        }
+    }
+
+// Eliminar
+    public function contabilidad_tesoreria_banco_eliminar($id)
+    {
+        try {
+            DB::table('cat_bancos')->where('id', $id)->delete();
+
+            return response()->json(['code' => 200, 'message' => 'Banco eliminado correctamente']);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'message' => 'Error al eliminar banco: ' . $e->getMessage()]);
+        }
+    }
+
     /**
      * @throws \PhpOffice\PhpSpreadsheet\Exception
      * @throws Throwable
