@@ -3369,19 +3369,18 @@ class ContabilidadController extends Controller
                 ]);
             }
 
-            $bancos = \DB::table('cat_bancos')
+            $bancos = DB::table('cat_bancos')
                 ->select('id', 'razon_social as nombre', 'rfc', 'codigo_sat', 'valor')
                 ->where('razon_social', 'like', "%{$search}%")
                 ->orderBy('razon_social')
-                ->limit(20)
                 ->get();
 
             return response()->json([
                 'code' => 200,
-                'data' => $bancos,
+                'bancos' => $bancos,
                 'message' => ''
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'code' => 500,
                 'data' => [],
