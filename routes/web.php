@@ -69,15 +69,17 @@ $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use 
 
 $router->group(['prefix' => 'auth'], function () use ($router) {
     $router->post('login', 'AuthController@auth_login');
-    $router->post('login2', 'AuthController@auth_login2');
     $router->post('reset', 'AuthController@auth_reset');
-    $router->post('auth-code', 'AuthController@auth_code');
-    $router->post('encuesta', 'AuthController@auth_encuesta');
 });
 
 $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($router) {
     $router->get('php', function () use ($router) {
         echo phpinfo();
+    });
+
+    $router->group(['prefix' => 'auth'], function () use ($router) {
+        $router->get('check', 'AuthController@auth_check');
+        $router->post('logout', 'AuthController@auth_logout');
     });
 
     # Información del dashboard

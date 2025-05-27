@@ -9,8 +9,8 @@ use Closure;
 class JwtMiddleware{
 
     public function handle($request, Closure $next, $guard = null){
-        $token = $request->get('token');
-        
+        $token = $request->cookie('token');
+
         if(!$token) {
             // Unauthorized response if token not there
             return response()->json([
