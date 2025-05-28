@@ -1,4 +1,6 @@
-<?php
+<?php /** @noinspection PhpParamsInspection */
+
+/** @noinspection PhpUndefinedMethodInspection */
 
 namespace App\Http\Controllers;
 
@@ -29,46 +31,35 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Mailgun\Mailgun;
-use stdClass;
 use Throwable;
 
 class ConfiguracionController extends Controller
 {
     /* Configuracion > Usuarios */
-    public function configuracion_usuario_gestion_data()
+    // OPT
+    public function configuracion_usuario_gestion_data(): JsonResponse
     {
         set_time_limit(0);
 
-        $response = array();
-        $resultado = DB::table('empresa_almacen')
-            ->select('empresa_almacen.id', 'empresa_almacen.id_empresa', 'empresa_almacen.id_almacen', 'almacen.almacen', 'empresa.empresa')
-            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+        $empresaAlmacenes = DB::table('empresa_almacen')
+            ->select('empresa_almacen.id', 'empresa.empresa', 'almacen.almacen')
             ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
             ->where('empresa_almacen.id_empresa', '!=', 0)
-            ->orderBy('id_empresa', 'asc')
-            ->get()->toArray();
-        $gruposPorEmpresa = [];
+            ->orderBy('empresa.id')
+            ->get();
 
-        foreach ($resultado as $item) {
-            $empresa = $item->empresa;
-
-            if (!isset($gruposPorEmpresa[$empresa])) {
-                $gruposPorEmpresa[$empresa] = [];
-            }
-            unset($item->id_empresa);
-            unset($item->id_almacen);
-
-            $gruposPorEmpresa[$empresa][] = $item;
-        }
-
-        foreach ($gruposPorEmpresa as $nombreEmpresa => $grupo) {
-            $empresasSeparadas = new stdClass();
-
-            $empresasSeparadas->nombre = $nombreEmpresa;
-            $empresasSeparadas->data = $grupo;
-
-            array_push($response, $empresasSeparadas);
-        }
+        $grupoEmpresaAlmacen = $empresaAlmacenes->groupBy('empresa')->map(function ($items, $empresa) {
+            return (object)[
+                'nombre' => $empresa,
+                'data' => $items->map(function ($item) {
+                    return (object)[
+                        'id' => $item->id,
+                        'almacen' => $item->almacen
+                    ];
+                })->values()
+            ];
+        })->values();
 
         $usuarios = Usuario::with([
             "marketplaces",
@@ -76,38 +67,43 @@ class ConfiguracionController extends Controller
             "empresas",
         ])
             ->where("id", "<>", 0)
+            ->select('area', 'celular', 'email', 'id', 'imagen', 'nombre')
             ->get();
+
+        $usuarioEmpresaAlmacen = DB::table('usuario_empresa_almacen')
+            ->select('id_usuario', 'id_empresa_almacen')
+            ->get()
+            ->groupBy('id_usuario');
+
+        foreach ($usuarios as $usuario) {
+            $usuario->empresa_almacen = $usuarioEmpresaAlmacen->get($usuario->id, collect())->pluck('id_empresa_almacen');
+
+            if (strpos($usuario->imagen, '/scl/fi/') !== false) {
+                $usuario->imagen = 'assets/images/user-profile/user-problem.jpg';
+            }
+        }
 
         $niveles = Nivel::with("subniveles")->get();
         $areas = Area::with("marketplaces")
             ->where('area', '!=', 'N/A')
             ->get();
-        $empresas = Empresa::where("id", "<>", 0)->get();
 
-        $area =
-            DB::table('usuario')
-                ->select('area')
-                ->where('status', 1)
-                ->groupBy('area')
-                ->orderBy('area')
-                ->get()
-                ->toarray();
+        $empresas = Empresa::select('id', 'empresa')->where('id', '!=', 0)->get();
 
-        foreach ($usuarios as $key) {
-            $empresaAlmacenIds = DB::table('usuario_empresa_almacen')
-                ->where('id_usuario', $key->id)
-                ->pluck('id_empresa_almacen')
-                ->toArray();
+        $area = DB::table('usuario')
+            ->select('area')
+            ->where('status', 1)
+            ->groupBy('area')
+            ->orderBy('area')
+            ->get();
 
-            $key->empresa_almacen = $empresaAlmacenIds;
-        }
         return response()->json([
             'usuarios' => $usuarios,
             'areas' => $areas,
             'niveles' => $niveles,
             'empresas' => $empresas,
             'area' => $area,
-            'empresa_almacen' => $response
+            'empresa_almacen' => $grupoEmpresaAlmacen
         ]);
     }
 

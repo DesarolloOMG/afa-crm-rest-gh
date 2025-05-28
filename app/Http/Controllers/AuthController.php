@@ -26,15 +26,16 @@ use Mailgun\Mailgun;
 use Symfony\Component\HttpFoundation\Cookie;
 use Throwable;
 
+// OPT
 class AuthController extends Controller
 {
     public function auth_check(Request $request): JsonResponse
     {
+        /** @noinspection PhpUnusedLocalVariableInspection */
         $user = $request->auth;
 
         return response()->json([
-            'message' => 'Token válido',
-            'user' => $user
+            'message' => 'Token válido'
         ]);
     }
 
@@ -72,37 +73,37 @@ class AuthController extends Controller
             ], 404);
         }
 
-        if (empty($data->wa_code)) {
-            if (!Hash::check($data->password, $existe->contrasena)) {
-                UsuarioLoginError::create([
-                    "email" => $data->email,
-                    "password" => $data->password,
-                    "mensaje" => "Contraseña incorrecta"
-                ]);
-
-                return response()->json([
-                    "message" => "Contraseña incorrecta " . self::logVariableLocation()
-                ], 404);
-            }
-
-            return $this->checkAndSendCode($existe);
-        }
-
-        try {
-            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
-
-        } catch (Exception $e) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'message' => $e->getMessage() . ' ' . self::logVariableLocation(),
-                "expired" => $e->getMessage() === 'Código expirado'
-            ], 500);
-        }
+//        if (empty($data->wa_code)) {
+//            if (!Hash::check($data->password, $existe->contrasena)) {
+//                UsuarioLoginError::create([
+//                    "email" => $data->email,
+//                    "password" => $data->password,
+//                    "mensaje" => "Contraseña incorrecta"
+//                ]);
+//
+//                return response()->json([
+//                    "message" => "Contraseña incorrecta " . self::logVariableLocation()
+//                ], 404);
+//            }
+//
+//            return $this->checkAndSendCode($existe);
+//        }
+//
+//        try {
+//            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
+//
+//        } catch (Exception $e) {
+//            UsuarioLoginError::create([
+//                "email" => $data->email,
+//                "password" => $data->password,
+//                "mensaje" => $e->getMessage(),
+//            ]);
+//
+//            return response()->json([
+//                'message' => $e->getMessage() . ' ' . self::logVariableLocation(),
+//                "expired" => $e->getMessage() === 'Código expirado'
+//            ], 500);
+//        }
 
         # No es necesario verificar la contraseña de nuevo ya que se verificó al mandar el codigo, solo si necesita rehash
         if (Hash::needsRehash($existe->contrasena)) {
