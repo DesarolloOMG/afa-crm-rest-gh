@@ -66,8 +66,8 @@ class ConfiguracionController extends Controller
             "subniveles",
             "empresas",
         ])
-            ->where("id", "<>", 0)
-            ->select('area', 'celular', 'email', 'id', 'imagen', 'nombre')
+            ->whereNotIn("id", [0,1])
+            ->select('celular', 'email', 'id', 'imagen', 'nombre')
             ->get();
 
         $usuarioEmpresaAlmacen = DB::table('usuario_empresa_almacen')
@@ -75,8 +75,15 @@ class ConfiguracionController extends Controller
             ->get()
             ->groupBy('id_usuario');
 
+        $usuarioDivision = DB::table('usuario_division')
+            ->join('division', 'usuario_division.id_division', '=', 'division.id')
+            ->select('id_usuario', 'id_division', 'division.division')
+            ->get()
+            ->groupBy('id_usuario');
+
         foreach ($usuarios as $usuario) {
             $usuario->empresa_almacen = $usuarioEmpresaAlmacen->get($usuario->id, collect())->pluck('id_empresa_almacen');
+            $usuario->division = $usuarioDivision->get($usuario->id, collect())->first()->division ?? null;
 
             if (strpos($usuario->imagen, '/scl/fi/') !== false) {
                 $usuario->imagen = 'assets/images/user-profile/user-problem.jpg';
@@ -90,11 +97,7 @@ class ConfiguracionController extends Controller
 
         $empresas = Empresa::select('id', 'empresa')->where('id', '!=', 0)->get();
 
-        $area = DB::table('usuario')
-            ->select('area')
-            ->where('status', 1)
-            ->groupBy('area')
-            ->orderBy('area')
+        $division = DB::table('division')
             ->get();
 
         return response()->json([
@@ -102,7 +105,7 @@ class ConfiguracionController extends Controller
             'areas' => $areas,
             'niveles' => $niveles,
             'empresas' => $empresas,
-            'area' => $area,
+            'division' => $division,
             'empresa_almacen' => $grupoEmpresaAlmacen
         ]);
     }
