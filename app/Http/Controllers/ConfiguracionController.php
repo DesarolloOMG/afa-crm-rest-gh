@@ -1,4 +1,5 @@
-<?php /** @noinspection PhpParamsInspection */
+<?php /** @noinspection PhpUndefinedFieldInspection */
+/** @noinspection PhpParamsInspection */
 
 /** @noinspection PhpUndefinedMethodInspection */
 
@@ -6,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
 use App\Http\Services\GeneralService;
+use App\Http\Services\UsuarioService;
 use App\Http\Services\WhatsAppService;
 use App\Models\Almacen;
 use App\Models\Area;
@@ -16,21 +18,14 @@ use App\Models\MarketplaceApi;
 use App\Models\MarketplaceArea;
 use App\Models\MarketplaceAreaEmpresa;
 use App\Models\Nivel;
-use App\Models\NotificacionUsuario;
 use App\Models\Paqueteria;
 use App\Models\Usuario;
-use App\Models\Usuario_Login_Error;
-use App\Models\UsuarioEmpresa;
-use App\Models\UsuarioMarketplaceArea;
-use App\Models\UsuarioSubnivelNivel;
 use Exception;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
-use Mailgun\Mailgun;
 use Throwable;
 
 class ConfiguracionController extends Controller
@@ -67,6 +62,7 @@ class ConfiguracionController extends Controller
             "empresas",
         ])
             ->whereNotIn("id", [0,1])
+            ->where("status", '!=', '0')
             ->select('celular', 'email', 'id', 'imagen', 'nombre')
             ->get();
 
@@ -110,45 +106,75 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-    public function configuracion_usuario_gestion_desactivar($usuario)
+    // OPT
+
+    /**
+     * @throws Throwable
+     */
+    public function configuracion_usuario_gestion_registrar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+
+        $existe_usuario = Usuario::where(function ($q) use ($data) {
+            $q->where('email', $data->email)
+                ->orWhere('celular', $data->celular);
+        })->where('id', '<>', $data->id)->first();
+
+        if ($existe_usuario) {
+            $campoDuplicado = $existe_usuario->email === $data->email ? 'correo' : 'celular';
+            return response()->json([
+                "message" => "Ya existe un usuario con el $campoDuplicado proporcionado: " . $existe_usuario->nombre
+            ], 500);
+        }
+
+        if ($data->id == 0) {
+            $contrasena = UsuarioService::crearUsuario($data, $auth);
+            $message = "Usuario creado correctamente. Usuario: $data->email - Contraseña: $contrasena";
+        } else {
+            $actualizado = UsuarioService::actualizarUsuario($data);
+            if (!$actualizado) {
+                return response()->json([
+                    "message" => "No se encontró el usuario para su edición, favor de contactar a un administrador"
+                ], 404);
+            }
+            $message = "Usuario editado correctamente";
+        }
+
+        return response()->json(["message" => $message]);
+    }
+
+    // OPT
+    public function configuracion_usuario_gestion_desactivar($usuario): JsonResponse
     {
         try {
-            //Se inicia la transaccion por si hay algun error no se afecte la bd
             DB::beginTransaction();
 
-            //se valida que el usuario exista
             $user = Usuario::find($usuario);
 
             if ($user) {
-                //Se hizo asi porque no estaba actualizando usando los modelos
                 $actualizacionExitosa = DB::table('usuario')->where('id', $usuario)->update([
                     'status' => 0
                 ]);
 
                 if ($actualizacionExitosa) {
-                    // La actualización se realizó correctamente
-                    //Se procede a hacer un soft delete para no borrar todo
                     Usuario::findOrFail($usuario)->delete();
-                    //Se hace la afectacion en la bd
                     DB::commit();
 
                     return response()->json([
                         'message' => "Usuario desactivado correctamente"
                     ]);
                 } else {
-                    // La actualización falló
                     return response()->json([
                         'message' => "Error al desactivar el usuario"
                     ], 500);
                 }
             } else {
-                // El usuario no fue encontrado
                 return response()->json([
                     'message' => "Usuario no encontrado"
                 ], 404);
             }
         } catch (Exception $e) {
-            // Si ocurre un error, revertir la transacción
             DB::rollBack();
 
             return response()->json([
@@ -157,212 +183,57 @@ class ConfiguracionController extends Controller
         }
     }
 
-    public function configuracion_usuario_gestion_registrar(Request $request)
+    //OPT
+    public function configuracion_usuario_configuarcion_data(): JsonResponse
     {
-        $data = json_decode($request->input('data'));
-        $area = json_decode($request->input('area'));
-        $empresa_almacen = json_decode($request->input('uea'));
-        $auth = json_decode($request->auth);
-
-        $existe_correo = Usuario::where("email", $data->email)
-            ->where("id", "<>", $data->id)
-            ->first();
-
-        if ($existe_correo) {
-            return response()->json([
-                "message" => "Ya existe un usuario con el correo proporcionado: " . $existe_correo->nombre . ""
-            ], 500);
-        }
-
-        $existe_celular = Usuario::where("celular", $data->celular)
-            ->where("id", "<>", $data->id)
-            ->first();
-
-        if ($existe_celular) {
-            return response()->json([
-                "message" => "Ya existe un usuario con el correo proporcionado: " . $existe_celular->nombre . ""
-            ], 500);
-        }
-
-        if ($data->id == 0) {
-
-            $contrasena = GeneralService::randomString(10);
-
-            $usuario = Usuario::create([
-                'nombre' => mb_strtoupper($data->nombre, 'UTF-8'),
-                'email' => $data->email,
-                'contrasena' => Hash::make($contrasena),
-                'tag' => $contrasena,
-                'celular' => $data->celular
-            ]);
-
-            foreach ($data->marketplaces as $marketplace) {
-                UsuarioMarketplaceArea::create([
-                    'id_usuario' => $usuario->id,
-                    'id_marketplace_area' => $marketplace
-                ]);
-            }
-
-            foreach ($data->subniveles as $subnivel) {
-                UsuarioSubnivelNivel::create([
-                    'id_usuario' => $usuario->id,
-                    'id_subnivel_nivel' => $subnivel
-                ]);
-            }
-
-            foreach ($data->empresas as $empresa) {
-                UsuarioEmpresa::create([
-                    'id_usuario' => $usuario->id,
-                    'id_empresa' => $empresa
-                ]);
-            }
-
-            $creador = Usuario::find($auth->id);
-
-            $view = view('email.notificacion_usuario_creado')->with([
-                "usuario" => $data->nombre,
-                "creador" => $creador->nombre,
-                "correo" => $data->email,
-                "contrasena" => $contrasena,
-                "anio" => date("Y")
-            ]);
-
-            $mg = Mailgun::create(config("mailgun.token"));
-
-            $mg->messages()->send(
-                config("mailgun.domain"),
-                array(
-                    'from' => config("mailgun.email_from"),
-                    'to' => $data->email,
-                    'subject' => "Tu nuevo usuario para CRM OMG International",
-                    'html' => $view->render()
-                )
-            );
-
-            DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->whereNull('area')->update([
-                'area' => $area
-            ]);
-            $userr = DB::table('usuario')->where('nombre', mb_strtoupper($data->nombre, 'UTF-8'))->first();
-
-            foreach ($empresa_almacen as $key) {
-
-                $userId = $userr->id;
-
-                if ($userId > 0 && $userId != '0') {
-                    DB::table('usuario_empresa_almacen')->insert([
-                        'id_usuario' => $userId,
-                        'id_empresa_almacen' => $key,
-                    ]);
-                }
-            }
-        } else {
-            $usuario_data = Usuario::find($data->id);
-
-            if (!$usuario_data) {
-                return response()->json([
-                    "message" => "No se encontró el usuario para su edición, favor de contactar a un administrador"
-                ], 404);
-            }
-
-            $usuario_data->nombre = mb_strtoupper($data->nombre, 'UTF-8');
-            $usuario_data->email = $data->email;
-            $usuario_data->celular = $data->celular;
-
-            $usuario_data->save();
-
-            UsuarioEmpresa::where("id_usuario", $data->id)->delete();
-
-            foreach ($data->empresas as $empresa) {
-                UsuarioEmpresa::create([
-                    'id_usuario' => $data->id,
-                    'id_empresa' => $empresa
-                ]);
-            }
-
-            UsuarioSubnivelNivel::where("id_usuario", $data->id)->delete();
-
-            foreach ($data->subniveles as $subnivel) {
-                UsuarioSubnivelNivel::create([
-                    'id_usuario' => $data->id,
-                    'id_subnivel_nivel' => $subnivel
-                ]);
-            }
-
-            UsuarioMarketplaceArea::where("id_usuario", $data->id)->delete();
-
-            foreach ($data->marketplaces as $marketplace) {
-                UsuarioMarketplaceArea::create([
-                    'id_usuario' => $data->id,
-                    'id_marketplace_area' => $marketplace
-                ]);
-            }
-            DB::table('usuario')->where('id', $data->id)->update([
-                'area' => $area
-            ]);
-
-            $allEmpresaAlmacen = DB::table('usuario_empresa_almacen')->where('id_usuario', $data->id)->pluck('id_empresa_almacen')->toArray();
-
-            $addItems = array_diff($empresa_almacen, $allEmpresaAlmacen);
-            foreach ($addItems as $item) {
-                DB::table('usuario_empresa_almacen')->insert([
-                    'id_usuario' => $data->id,
-                    'id_empresa_almacen' => $item,
-                ]);
-            }
-
-            $deleteItems = array_diff($allEmpresaAlmacen, $empresa_almacen);
-            DB::table('usuario_empresa_almacen')->where('id_usuario', $data->id)->whereIn('id_empresa_almacen', $deleteItems)->delete();
-        }
-
-        $message = $data->id != 0
-            ? "Usuario editado correctamente"
-            : "Usuario creado correctamente. Usuario: " . $data->email . " - Contraseña: " . $contrasena;
-
-        return response()->json(["message" => $message]);
-    }
-
-    public function configuracion_usuario_configuarcion_data()
-    {
-        $niveles = Nivel::with("subniveles")->get();
+        $niveles = Nivel::get();
         $areas = Area::where('area', '!=', 'N/A')->get();
+        $subnivelNivel = DB::table('subnivel_nivel')
+            ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
+            ->join('nivel', 'subnivel_nivel.id_nivel', '=', 'nivel.id')
+            ->select('subnivel.subnivel', 'nivel.nivel', 'subnivel_nivel.*')
+            ->get();
+        $divisiones = DB::table('division')->get();
+
         return response()->json([
             'areas' => $areas,
-            'niveles' => $niveles
+            'niveles' => $niveles,
+            'divisiones' => $divisiones,
+            'subnivel_nivel' => $subnivelNivel,
         ]);
     }
 
-    public function configuracion_usuario_configuracion_area(Request $request)
+    //OPT
+    public function configuracion_usuario_configuracion_area(Request $request): JsonResponse
     {
-        $area = json_decode($request->input('area'));
-        $json = array();
+        $areaData = json_decode($request->input('area'));
+        $isNew = $areaData->id == 0;
 
-        if ($area->id == 0) {
-            $id_area = DB::table('area')
-                ->insertGetId([
-                    'area' => $area->area,
-                    'status' => 1
-                ]);
+        if ($isNew) {
+            $id_area = DB::table('area')->insertGetId([
+                'area' => $areaData->area,
+                'status' => 1
+            ]);
 
-            $json['message'] = "Área creada correctamente";
+            $message = "Área creada correctamente";
         } else {
             DB::table('area')
-                ->where(['id' => $area->id])
-                ->update([
-                    'area' => $area->area
-                ]);
+                ->where('id', $areaData->id)
+                ->update(['area' => $areaData->area]);
 
-            $json['message'] = "Área actualizada correctamente";
-
-            $id_area = $area->id;
+            $id_area = $areaData->id;
+            $message = "Área actualizada correctamente";
         }
 
-        $json['code'] = 200;
-        $json['area'] = $id_area;
-
-        return response()->json($json);
+        return response()->json([
+            'code' => 200,
+            'message' => $message,
+            'area' => $id_area,
+        ]);
     }
 
-    public function configuracion_usuario_configuracion_nivel(Request $request)
+
+    public function configuracion_usuario_configuracion_nivel(Request $request): JsonResponse
     {
         $nivel = json_decode($request->input('nivel'));
         $json = array();
@@ -393,7 +264,7 @@ class ConfiguracionController extends Controller
         return response()->json($json);
     }
 
-    public function configuracion_usuario_configuracion_subnivel(Request $request)
+    public function configuracion_usuario_configuracion_subnivel(Request $request): JsonResponse
     {
         $subnivel = json_decode($request->input('subnivel'));
         $json = array();
@@ -440,7 +311,6 @@ class ConfiguracionController extends Controller
 
             $json['message'] = "Subnivel actualizado correctamente";
 
-            $id_nivel = $subnivel->id;
         }
 
         $json['code'] = 200;
@@ -449,7 +319,7 @@ class ConfiguracionController extends Controller
     }
 
     /* Configuracion > Sistema */
-    public function configuracion_sistema_marketplace_data()
+    public function configuracion_sistema_marketplace_data(): JsonResponse
     {
         $marketplaces = MarketplaceArea::with("marketplace", "area", "api", "empresa")->get();
         $empresas = Empresa::where("id", "<>", 0)->get();
@@ -496,17 +366,16 @@ class ConfiguracionController extends Controller
 
         $user = DB::table("usuario")->find($auth->id);
 
-        GeneralService::sendEmailToAdmins("Configuración de marketplaces", "El usuario " . $user->nombre . " solicitó ver las credenciales para la api del marketplace " . $marketplace_api->marketplace_area->area->area . " / " . $marketplace_api->marketplace_area->marketplace->marketplace . "", "", 1);
+        GeneralService::sendEmailToAdmins("Configuración de marketplaces", "El usuario " . $user->nombre . " solicitó ver las credenciales para la api del marketplace " . $marketplace_api->marketplace_area->area->area . " / " . $marketplace_api->marketplace_area->marketplace->marketplace, "", 1);
 
         return response()->json([
             "data" => $decoded_secret
         ]);
     }
 
-    public function configuracion_sistema_marketplace_guardar(Request $request)
+    public function configuracion_sistema_marketplace_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
-        $json = array();
 
         $existe_marketplace = Marketplace::where("marketplace", $data->marketplace->marketplace)->first();
 
@@ -601,7 +470,7 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-    public function getAlmacenes()
+    public function getAlmacenes(): JsonResponse
     {
         $almacenes = EmpresaAlmacen::with('almacen')->with('empresa')->get();
 
@@ -687,7 +556,7 @@ class ConfiguracionController extends Controller
         return $this->make_json($json);
     }
 
-    public function configuracion_logout(Request $request)
+    public function configuracion_logout()
     {
         $notificacion['reload_users'] = 1;
 
@@ -703,7 +572,7 @@ class ConfiguracionController extends Controller
 
     #Configuración > Dev
 
-    public function configuracion_dev_data()
+    public function configuracion_dev_data(): JsonResponse
     {
         set_time_limit(0);
         $inicio = date('m/d/Y h:i:s a', time());
@@ -773,7 +642,7 @@ class ConfiguracionController extends Controller
     }
 
 
-    public function configuracion_sistema_impresora_create(Request $request)
+    public function configuracion_sistema_impresora_create(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         try {
@@ -795,7 +664,7 @@ class ConfiguracionController extends Controller
         }
     }
 
-    public function configuracion_sistema_impresora_retrive()
+    public function configuracion_sistema_impresora_retrive(): JsonResponse
     {
         $impresoras = DB::table('impresora')->get();
         $empresas = Empresa::where("id", "<>", 0)->get();
@@ -810,7 +679,7 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-    public function configuracion_sistema_impresora_update(Request $request)
+    public function configuracion_sistema_impresora_update(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -834,7 +703,7 @@ class ConfiguracionController extends Controller
 
             DB::commit();
 
-            return response()->json(['message' => 'Recurso actualizado con éxito'], 200);
+            return response()->json(['message' => 'Recurso actualizado con éxito']);
         } catch (Exception $e) {
             DB::rollBack();
 
@@ -842,7 +711,7 @@ class ConfiguracionController extends Controller
         }
     }
 
-    public function configuracion_sistema_impresora_delete($impresora_id)
+    public function configuracion_sistema_impresora_delete($impresora_id): JsonResponse
     {
         DB::beginTransaction();
 
@@ -857,7 +726,7 @@ class ConfiguracionController extends Controller
 
             DB::commit();
 
-            return response()->json(['message' => 'Recurso eliminado con éxito'], 200);
+            return response()->json(['message' => 'Recurso eliminado con éxito']);
         } catch (Exception $e) {
             DB::rollBack();
 
