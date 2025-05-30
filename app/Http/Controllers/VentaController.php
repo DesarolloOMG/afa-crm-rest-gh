@@ -391,8 +391,6 @@ class VentaController extends Controller
             return response()->json([
                 'code' => 200,
                 'message' => $message,
-//                'file' => $pdf->data_odc,
-//                'name' => $pdf->name,
             ]);
         }
 
@@ -406,11 +404,9 @@ class VentaController extends Controller
     {
         $auth = json_decode($request->auth);
 
-        $usuarios_agro = DB::table('usuarios_agro')->get()->toArray();
-        $proveedores = DB::select("SELECT id, razon_social FROM modelo_proveedor WHERE status = 1 AND id != 0");
-        $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $empresas = DB::select("SELECT id, empresa FROM empresa WHERE status = 1 AND id != 0");
         $periodos = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
-        $paqueterias = DB::select("SELECT id, paqueteria, api FROM paqueteria WHERE status = 1");
+        $paqueterias = DB::select("SELECT id, paqueteria, api FROM paqueteria WHERE status = 1 ORDER BY paqueteria ASC");
         $impresoras = DB::select("SELECT id, nombre, tamanio FROM impresora WHERE status = 1 AND id != 0");
         $usos_venta = DB::select("SELECT * FROM documento_uso_cfdi");
         $metodos = DB::select("SELECT * FROM metodo_pago");
@@ -489,7 +485,7 @@ class VentaController extends Controller
 
             foreach ($marketplaces as $marketplace) {
                 $marketplace->empresa = DB::select("SELECT
-                                                    empresa.bd
+                                                    empresa.id
                                                 FROM marketplace_area_empresa
                                                 INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
                                                 WHERE marketplace_area_empresa.id_marketplace_area = " . $marketplace->id);
@@ -516,9 +512,7 @@ class VentaController extends Controller
             'usos_venta' => $usos_venta,
             'paqueterias' => $paqueterias,
             'marketplaces' => $marketplaces_publico,
-            'proveedores' => $proveedores,
             'estados' => $estados,
-            'usuarios_agro' => $usuarios_agro,
             'regimenes' => $regimenes
         ]);
     }
