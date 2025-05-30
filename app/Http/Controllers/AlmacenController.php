@@ -1465,8 +1465,11 @@ class AlmacenController extends Controller
     public function almacen_movimiento_data_producto($producto): JsonResponse
     {
         $productos = DB::table('modelo')
-            ->where('descripcion', 'like', '%' . $producto . '%')
-            ->orWhere('sku', $producto)
+            ->where('id_tipo', '1')
+            ->where(function ($query) use ($producto) {
+                $query->where('descripcion', 'like', '%' . $producto . '%')
+                    ->orWhere('sku', $producto);
+            })
             ->get();
 
 
