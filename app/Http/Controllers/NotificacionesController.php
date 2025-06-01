@@ -529,7 +529,7 @@ class NotificacionesController extends Controller{
                             'id_documento'  => $documento,
                             'id_modelo'     => $producto->id_modelo,
                             'cantidad'      => $producto->cantidad * $producto_publicacion->cantidad,
-                            'precio'        => ($producto->regalo == "1") ? 0.8620 : $producto->precio,
+                            'precio'        => $producto->precio,
                             'garantia'      => $producto->garantia,
                             'modificacion'  => '',
                             'regalo'        => $producto->regalo
@@ -551,7 +551,7 @@ class NotificacionesController extends Controller{
                         'id_documento'  => $documento,
                         'id_modelo'     => $producto->id_modelo,
                         'cantidad'      => $producto->cantidad,
-                        'precio'        => ($producto->regalo == "1") ? 0.8620 : $producto->precio,
+                        'precio'        => $producto->precio,
                         'garantia'      => $producto->garantia,
                         'modificacion'  => '',
                         'regalo'        => $producto->regalo

@@ -1745,7 +1745,7 @@ class SoporteController extends Controller
                 'id_documento'  => $documento,
                 'id_modelo'     => $modelo,
                 'cantidad'      => $producto->cantidad,
-                'precio'        => ($producto->regalo) ? 0.8620 : $producto->precio,
+                'precio'        => $producto->precio,
                 'garantia'      => $producto->garantia,
                 'modificacion'  => $producto->modificacion,
                 'regalo'        => $producto->regalo
