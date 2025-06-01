@@ -43,39 +43,39 @@ class AuthController extends Controller
                 "message" => "Usuario no encontrado"
             ], 404);
         }
-
-        if (empty($data->wa_code)) {
-            if (!Hash::check($data->password, $existe->contrasena)) {
-                UsuarioLoginError::create([
-                    "email" => $data->email,
-                    "password" => $data->password,
-                    "mensaje" => "Contraseña incorrecta"
-                ]);
-
-                return response()->json([
-                    "message" => "Contraseña incorrecta"
-                ], 404);
-            }
-
-            return $this->checkAndSendCode($existe);
-        }
-
-        try {
-
-            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
-
-        } catch (Exception $e) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'message' => $e->getMessage(),
-                "expired" => $e->getMessage() === 'Código expirado'
-            ], 500);
-        }
+//
+//        if (empty($data->wa_code)) {
+//            if (!Hash::check($data->password, $existe->contrasena)) {
+//                UsuarioLoginError::create([
+//                    "email" => $data->email,
+//                    "password" => $data->password,
+//                    "mensaje" => "Contraseña incorrecta"
+//                ]);
+//
+//                return response()->json([
+//                    "message" => "Contraseña incorrecta"
+//                ], 404);
+//            }
+//
+//            return $this->checkAndSendCode($existe);
+//        }
+//
+//        try {
+//
+//            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
+//
+//        } catch (Exception $e) {
+//            UsuarioLoginError::create([
+//                "email" => $data->email,
+//                "password" => $data->password,
+//                "mensaje" => $e->getMessage(),
+//            ]);
+//
+//            return response()->json([
+//                'message' => $e->getMessage(),
+//                "expired" => $e->getMessage() === 'Código expirado'
+//            ], 500);
+//        }
 
         # No es necesario verificar la contraseña de nuevo ya que se verificó al mandar el codigo, solo si necesita rehash
         if (Hash::needsRehash($existe->contrasena)) {

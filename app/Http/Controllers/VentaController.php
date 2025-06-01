@@ -4321,7 +4321,7 @@ class VentaController extends Controller
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
                 ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
                 ->where('documento.id', $key->id_documento)
-                ->where('documento_entidad.tipo', 1)
+                ->whereIn('documento_entidad.tipo', [1, 3])
                 ->get()
                 ->first();
         }
@@ -4331,7 +4331,7 @@ class VentaController extends Controller
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
                 ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
                 ->where('documento.id', $key->id_documento)
-                ->where('documento_entidad.tipo', 1)
+                ->whereIn('documento_entidad.tipo', [1, 3])
                 ->get()
                 ->first();
         }
@@ -4341,7 +4341,7 @@ class VentaController extends Controller
                 ->select('documento_entidad.id_erp', 'documento_entidad.rfc')
                 ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
                 ->where('documento.id', $key->id_documento)
-                ->where('documento_entidad.tipo', 1)
+                ->whereIn('documento_entidad.tipo', [1, 3])
                 ->get()
                 ->first();
         }

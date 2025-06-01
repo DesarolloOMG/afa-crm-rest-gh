@@ -7,8 +7,8 @@
 
 namespace App\Http\Services;
 
-use App\Models\Enums\DocumentoTipo;
 use App\Models\Enums\DocumentoFase;
+use App\Models\Enums\DocumentoTipo;
 use DOMDocument;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
@@ -203,14 +203,14 @@ class DocumentoService
 
         if ($info_documento->id_paqueteria >= 0) {
             # Se busca información del cliente del pedido
-            $info_entidad = DB::select("SELECT
-                                    documento_entidad.*
-                                FROM documento
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                WHERE documento.id = " . $documento . "
-                                AND documento_entidad.tipo = 1");
-            # Si no se encuentra información del cliente, se regresa un mensaje de error
-            if (empty($info_entidad)) {
+            $info_entidad = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->select('documento_entidad.*')
+                ->where('documento.id', $documento)
+                ->whereIn('documento_entidad.tipo', [1, 3])
+                ->first();
+
+            if (!$info_entidad) {
                 $response->error = 1;
                 $response->key = 0;
                 $response->mensaje = "No se encontró la información del cliente." . self::logVariableLocation();
@@ -220,7 +220,6 @@ class DocumentoService
                 return $response;
             }
 
-            $info_entidad = $info_entidad[0];
             # Se busca informaciónd el pago del pedido
             $forma_pago = DB::select("SELECT
                                     id_metodopago
@@ -680,9 +679,12 @@ class DocumentoService
                             # Se crea el documento de compra en CRM con los mismos datos del pedido
                             $id_compra_omg = DB::table('documento')->insertGetId((array)$documento_compra_data[0]);
                             # Se verifica que exista el proveedor OMG si no existe, se crea
-                            $existe_proveedor_crm = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $info_documento->empresa_rfc . "' AND tipo = 2");
+                            $id_proveedor_omg = DB::table('documento_entidad')
+                                ->where('rfc', $info_documento->empresa_rfc)
+                                ->whereIn('tipo', [2, 3])
+                                ->value('id');
 
-                            if (empty($existe_proveedor_crm)) {
+                            if (empty($id_proveedor_omg)) {
                                 $id_proveedor_omg = DB::table('documento_entidad')->insertGetId([
                                     'tipo' => 2,
                                     'razon_social' => $info_documento->empresa_razon_social,
@@ -690,9 +692,8 @@ class DocumentoService
                                     'telefono' => 0,
                                     'correo' => 0
                                 ]);
-                            } else {
-                                $id_proveedor_omg = $existe_proveedor_crm[0]->id;
                             }
+
                             # Se relaciona el proveedor OMG con la compra recien creada
                             DB::table('documento')->where('id', $id_compra_omg)->update([
                                 'id_entidad' => $id_proveedor_omg,
@@ -1077,14 +1078,14 @@ class DocumentoService
 
         if ($info_documento->id_paqueteria >= 0) {
             # Se busca información del cliente del pedido
-            $info_entidad = DB::select("SELECT
-                                    documento_entidad.*
-                                FROM documento
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                WHERE documento.id = " . $documento . "
-                                AND documento_entidad.tipo = 1");
-            # Si no se encuentra información del cliente, se regresa un mensaje de error
-            if (empty($info_entidad)) {
+            $info_entidad = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->select('documento_entidad.*')
+                ->where('documento.id', $documento)
+                ->whereIn('documento_entidad.tipo', [1, 3])
+                ->get();
+
+            if ($info_entidad->isEmpty()) {
                 $response->error = 1;
                 $response->key = 0;
                 $response->mensaje = "No se encontró la información del cliente." . self::logVariableLocation();
@@ -1092,7 +1093,8 @@ class DocumentoService
                 return $response;
             }
 
-            $info_entidad = $info_entidad[0];
+            $info_entidad = $info_entidad->first();
+
             # Se busca informaciónd el pago del pedido
             $forma_pago = DB::select("SELECT
                                     id_metodopago
@@ -1517,9 +1519,12 @@ class DocumentoService
                             # Se crea el documento de compra en CRM con los mismos datos del pedido
                             $id_compra_omg = DB::table('documento')->insertGetId((array)$documento_compra_data[0]);
                             # Se verifica que exista el proveedor OMG si no existe, se crea
-                            $existe_proveedor_crm = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $info_documento->empresa_rfc . "' AND tipo = 2");
+                            $id_proveedor_omg = DB::table('documento_entidad')
+                                ->where('rfc', $info_documento->empresa_rfc)
+                                ->whereIn('tipo', [2, 3])
+                                ->value('id');
 
-                            if (empty($existe_proveedor_crm)) {
+                            if (empty($id_proveedor_omg)) {
                                 $id_proveedor_omg = DB::table('documento_entidad')->insertGetId([
                                     'tipo' => 2,
                                     'razon_social' => $info_documento->empresa_razon_social,
@@ -1527,9 +1532,8 @@ class DocumentoService
                                     'telefono' => 0,
                                     'correo' => 0
                                 ]);
-                            } else {
-                                $id_proveedor_omg = $existe_proveedor_crm[0]->id;
                             }
+
                             # Se relaciona el proveedor OMG con la compra recien creada
                             DB::table('documento')->where('id', $id_compra_omg)->update([
                                 'id_entidad' => $id_proveedor_omg
@@ -1668,26 +1672,27 @@ class DocumentoService
             return $response;
         }
 
-        $info_entidad = DB::select("SELECT
-                            documento_entidad.*
-                        FROM documento
-                        INNER JOIN documento_entidad_re ON documento_entidad.id = documento.id_entidad
-                        WHERE documento.id = " . $documento . "
-                        AND documento_entidad.tipo = 1");
+        $info_entidad = DB::table('documento')
+            ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+            ->select('documento_entidad.*')
+            ->where('documento.id', $documento)
+            ->whereIn('documento_entidad.tipo', [1, 3])
+            ->first();
 
-        if (empty($info_entidad)) {
+        if (!$info_entidad) {
             $response->error = 1;
             $response->mensaje = "No se encontró la información del cliente, favor de contactar al administrador." . self::logVariableLocation();
 
             return $response;
         }
 
-        if ($info_documento[0]->refacturado) {
+        if (!empty($info_documento) && $info_documento[0]->refacturado) {
             $response->error = 1;
             $response->mensaje = "La venta ha fue refacturada con anterioridad, favor de revisar el seguimiento." . self::logVariableLocation();
 
             return $response;
         }
+
 
         $forma_pago = DB::select("SELECT
                                 id_metodopago
@@ -2172,21 +2177,19 @@ class DocumentoService
 
         $info_documento = $info_documento[0];
 
-        $info_entidad = DB::select("SELECT
-                                    documento_entidad.*
-                                FROM documento
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                WHERE documento.id = " . $documento . "
-                                AND documento_entidad.tipo = 1");
+        $info_entidad = DB::table('documento')
+            ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+            ->select('documento_entidad.*')
+            ->where('documento.id', $documento)
+            ->whereIn('documento_entidad.tipo', [1, 3])
+            ->first();
 
-        if (empty($info_entidad)) {
+        if (!$info_entidad) {
             $response->error = 1;
             $response->mensaje = "No se encontró la información del cliente." . self::logVariableLocation();
 
             return $response;
         }
-
-        $info_entidad   = $info_entidad[0];
 
         $forma_pago = DB::select("SELECT
                                         id_metodopago

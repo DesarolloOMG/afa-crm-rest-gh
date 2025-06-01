@@ -3,27 +3,26 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\PusherEvent;
+use App\Http\Services\DocumentoService;
 use App\Http\Services\InventarioService;
+use App\Http\Services\MercadolibreService;
 use App\Http\Services\WhatsAppService;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
+use Crabbly\FPDF\FPDF;
+use DateTime;
+use DB;
+use Exception;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Mailgun\Mailgun;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
-use App\Http\Services\MercadolibreService;
-use App\Http\Services\DocumentoService;
-use Illuminate\Http\Request;
-use App\Events\PusherEvent;
-use Crabbly\FPDF\FPDF;
-use Mailgun\Mailgun;
-use Exception;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Validator;
-use DB;
-use DateTime;
-use Illuminate\Support\Facades\Crypt;
-use stdClass;
-use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 
 class GeneralController extends Controller
 {
@@ -3508,13 +3507,18 @@ class GeneralController extends Controller
     {
         $criterio = str_replace("%20", " ", $criterio);
 
-        $clientes = DB::select("SELECT id, razon_social FROM documento_entidad WHERE razon_social LIKE '%" . $criterio . "%' AND tipo = 1");
+        $clientes = DB::table('documento_entidad')
+            ->select('id', 'razon_social')
+            ->whereIn('tipo', [1, 3])
+            ->where('razon_social', 'LIKE', '%' . $criterio . '%')
+            ->get();
 
         return response()->json([
-            'code'  => 200,
-            'clientes'  => $clientes
+            'code' => 200,
+            'clientes' => $clientes
         ]);
     }
+
 
     public function general_reporte_adminsitracion_cliente_productos($cliente_id)
     {

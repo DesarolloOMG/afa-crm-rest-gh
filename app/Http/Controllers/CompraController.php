@@ -42,20 +42,20 @@ class CompraController extends Controller
             ->where('documento.id_tipo', 1)
             ->where('factura_folio', trim($data->folio))
             ->where('factura_serie', trim($data->serie_documento))
-            ->where('documento.id_almacen_principal_empresa', (int) $data->almacen)
+            ->where('documento.id_almacen_principal_empresa', (int)$data->almacen)
             ->where('documento_entidad.rfc', $data->proveedor->rfc)
             ->select('factura_folio')
             ->get();
 
         if (count($existe_documento) > 0) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ya éxiste una compra con el folio proporcionado y serie proporcionado del proveedor " . $data->proveedor->razon . "."
+                'code' => 500,
+                'message' => "Ya éxiste una compra con el folio proporcionado y serie proporcionado del proveedor " . $data->proveedor->razon . "."
             ]);
         }
-        
+
         if (strpos(TRIM($data->proveedor->rfc), 'XEXX010101000') === false) {
-           $entidad = $data->proveedor->id;
+            $entidad = $data->proveedor->id;
         } else {
             //Preguntar
             $entidad = DB::table('documento_entidad')->insertGetId([
@@ -70,7 +70,7 @@ class CompraController extends Controller
         try {
             $documento = DB::table('documento')->insertGetId([
                 'id_tipo' => 1,
-                'id_almacen_principal_empresa' => (int) $data->almacen,
+                'id_almacen_principal_empresa' => (int)$data->almacen,
                 'id_periodo' => $data->periodo,
                 'id_cfdi' => $data->uso_cfdi,
                 'id_usuario' => $auth->id,
@@ -124,8 +124,8 @@ class CompraController extends Controller
             }
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible crear la compra, error: " . $e->getMessage()
+                'code' => 500,
+                'message' => "No fue posible crear la compra, error: " . $e->getMessage()
             ]);
         }
 
@@ -208,8 +208,8 @@ class CompraController extends Controller
         $usuarios = DB::select("SELECT id, nombre FROM usuario WHERE nombre LIKE '%" . $criterio . "%'");
 
         return response()->json([
-            'code'  => 200,
-            'usuarios'  => $usuarios
+            'code' => 200,
+            'usuarios' => $usuarios
         ]);
     }
 
@@ -280,8 +280,8 @@ class CompraController extends Controller
 
         if (empty($informacion)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontró ninguna compra con el folio y serie proporcionado."
+                'code' => 404,
+                'message' => "No se encontró ninguna compra con el folio y serie proporcionado."
             ]);
         }
 
@@ -295,8 +295,8 @@ class CompraController extends Controller
 
         if (empty($proveedor)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontró información sobre el proveedor de la compra."
+                'code' => 404,
+                'message' => "No se encontró información sobre el proveedor de la compra."
             ]);
         }
 
@@ -325,8 +325,8 @@ class CompraController extends Controller
 
         if (empty($productos)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontró información sobre los productos de la compra."
+                'code' => 404,
+                'message' => "No se encontró información sobre los productos de la compra."
             ]);
         }
 
@@ -344,8 +344,8 @@ class CompraController extends Controller
                                                 WHERE id_documento = " . $informacion->id);
 
         return response()->json([
-            'code'  => 200,
-            'informacion'   => $informacion
+            'code' => 200,
+            'informacion' => $informacion
         ]);
     }
 
@@ -369,8 +369,8 @@ class CompraController extends Controller
 
         if (!empty($existe_documento)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ya éxiste una compra con el folio proporcionado y serie proporcionado del proveedor " . $data->proveedor->razon . "."
+                'code' => 500,
+                'message' => "Ya éxiste una compra con el folio proporcionado y serie proporcionado del proveedor " . $data->proveedor->razon . "."
             ]);
         }
 
@@ -387,19 +387,19 @@ class CompraController extends Controller
         }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_almacen_principal_empresa'  => $data->almacen,
-            'id_periodo'                    => $data->periodo,
-            'id_cfdi'                       => $data->uso_cfdi,
-            'id_moneda'                     => $data->moneda,
-            'factura_serie'                 => $data->serie_documento,
-            'factura_folio'                 => $data->folio,
-            'tipo_cambio'                   => $data->tipo_cambio,
-            'id_entidad'                    => $entidad,
-            'referencia'                    => 'N/A',
-            'observacion'                   => 'N/A',
-            'info_extra'                    => 'N/A',
-            'comentario'                    => $data->metodo_pago,
-            'expired_at'                    => $data->fecha
+            'id_almacen_principal_empresa' => $data->almacen,
+            'id_periodo' => $data->periodo,
+            'id_cfdi' => $data->uso_cfdi,
+            'id_moneda' => $data->moneda,
+            'factura_serie' => $data->serie_documento,
+            'factura_folio' => $data->folio,
+            'tipo_cambio' => $data->tipo_cambio,
+            'id_entidad' => $entidad,
+            'referencia' => 'N/A',
+            'observacion' => 'N/A',
+            'info_extra' => 'N/A',
+            'comentario' => $data->metodo_pago,
+            'expired_at' => $data->fecha
         ]);
 
         $movimientos_documento = DB::select("SELECT id, id_modelo, cantidad, 0 AS editado FROM movimiento WHERE id_documento = " . $data->documento);
@@ -426,35 +426,35 @@ class CompraController extends Controller
         }
 
         DB::table('documento_updates_by')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id
         ]);
 
         if (!empty($data->usuarios)) {
             $usuarios = array();
 
-            $notificacion['titulo']     = "Nueva compra";
-            $notificacion['message']    = "Se ha editado correctamente la compra con el folio " . $data->folio . ", podrás visualizar los detalles en la sección de reportes.";
-            $notificacion['tipo']       = "success"; // success, warning, danger
-            $notificacion['link']       = "/compra/compra/historial/" . $data->documento;
+            $notificacion['titulo'] = "Nueva compra";
+            $notificacion['message'] = "Se ha editado correctamente la compra con el folio " . $data->folio . ", podrás visualizar los detalles en la sección de reportes.";
+            $notificacion['tipo'] = "success"; // success, warning, danger
+            $notificacion['link'] = "/compra/compra/historial/" . $data->documento;
 
             $notificacion_id = DB::table('notificacion')->insertGetId([
-                'data'  => json_encode($notificacion)
+                'data' => json_encode($notificacion)
             ]);
 
-            $notificacion['id']         = $notificacion_id;
+            $notificacion['id'] = $notificacion_id;
 
             foreach ($data->usuarios as $usuario) {
                 DB::table('notificacion_usuario')->insert([
-                    'id_usuario'        => $usuario->id,
-                    'id_notificacion'   => $notificacion_id
+                    'id_usuario' => $usuario->id,
+                    'id_notificacion' => $notificacion_id
                 ]);
 
                 $usuarios[] = $usuario->id;
             }
 
             if (!empty($usuarios)) {
-                $notificacion['usuario']    = $usuarios;
+                $notificacion['usuario'] = $usuarios;
 
                 event(new PusherEvent(json_encode($notificacion)));
             }
@@ -469,8 +469,8 @@ class CompraController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Compra editada correctamente, podrás visualizarla en el historial."
+            'code' => 200,
+            'message' => "Compra editada correctamente, podrás visualizarla en el historial."
         ]);
     }
 
@@ -485,7 +485,7 @@ class CompraController extends Controller
                                 WHERE modelo_descripcion.descripcion = '" . $descripcion . "'");
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'productos' => $productos
         ]);
     }
@@ -513,9 +513,137 @@ class CompraController extends Controller
         $compras = $this->compras_raw_data("AND documento.id_fase = 91");
 
         return response()->json([
-            'code'  => 200,
-            'ordenes'   => $compras
+            'code' => 200,
+            'ordenes' => $compras
         ]);
+    }
+
+    private function compras_raw_data($extra_data): array
+    {
+        $compras = DB::select("SELECT
+                                    documento.id,
+                                    documento.id_almacen_principal_empresa,
+                                    documento.factura_serie AS serie,
+                                    documento.factura_folio AS folio,
+                                    documento.id_fase,
+                                    documento.credito,
+                                    documento.documento_extra,
+                                    documento.created_at AS expired_at,
+                                    documento_fase.fase,
+                                    documento.comentario,
+                                    documento.tipo_cambio,
+                                    documento.uuid,
+                                    documento_periodo.periodo,
+                                    documento.finished_at,
+                                    documento.expired_at as expired_at_2,
+                                    moneda.moneda,
+                                    almacen.almacen,
+                                    empresa.empresa,
+                                    empresa.bd,
+                                    usuario.nombre
+                                FROM documento
+                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
+                                INNER JOIN moneda ON documento.id_moneda = moneda.id
+                                INNER JOIN usuario ON documento.id_usuario = usuario.id
+                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                                INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
+                                AND documento.id_tipo = 1
+                                AND documento.status = 1
+                                " . $extra_data . "
+                                GROUP BY documento.id");
+
+        foreach ($compras as $compra) {
+            $total_documento = 0;
+
+            $proveedor = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $compra->id)
+                ->whereIn('documento_entidad.tipo', [2, 3])
+                ->select('documento_entidad.razon_social', 'documento_entidad.rfc')
+                ->first();
+
+            $compra->proveedor = $proveedor ? $proveedor->razon_social : 'Sin proveedor';
+            $compra->rfc = $proveedor ? $proveedor->rfc : 'Sin proveedor';
+
+
+            $compra->ediciones = DB::select("SELECT
+                                                usuario.nombre,
+                                                documento_updates_by.created_at
+                                            FROM documento
+                                            INNER JOIN documento_updates_by ON documento_updates_by.id_documento = documento.id
+                                            INNER JOIN usuario ON documento_updates_by.id_usuario = usuario.id
+                                            WHERE documento_updates_by.id_documento = " . $compra->id);
+
+            $compra->seguimiento = DB::select("SELECT
+                                                    seguimiento.*, 
+                                                    usuario.nombre 
+                                                FROM seguimiento 
+                                                INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
+                                                WHERE id_documento = " . $compra->id);
+
+            $compra->productos = DB::select("SELECT
+                                                movimiento.id,
+                                                movimiento.cantidad,
+                                                movimiento.cantidad_aceptada,
+                                                movimiento.precio AS costo,
+                                                movimiento.comentario AS descripcion_2,
+                                                modelo.id AS id_modelo,
+                                                modelo.sku,
+                                                modelo.descripcion,
+                                                modelo.serie,
+                                                modelo.ancho,
+                                                modelo.largo,
+                                                modelo.alto,
+                                                modelo.costo_extra,
+                                                modelo.cat1,
+                                                modelo.cat2,
+                                                modelo.cat3,
+                                                modelo.cat4,
+                                                0 AS almacen,
+                                                1 AS existe
+                                            FROM movimiento
+                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                            WHERE movimiento.id_documento = " . $compra->id);
+
+            $compra->ordenes = DB::select("SELECT
+                                                documento.id
+                                            FROM documento
+                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                            INNER JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
+                                            WHERE documento.id_tipo = 0
+                                            AND documento_recepcion.documento_erp_compra = '" . $compra->documento_extra . "'
+                                            GROUP BY documento.id");
+
+            /** @noinspection PhpUnusedLocalVariableInspection */
+            foreach ($compra->productos as $k => $producto) {
+                $total_documento += (int)$producto->cantidad * (float)$producto->costo;
+
+                if ($producto->serie) {
+                    $series = DB::select("SELECT
+                                        1 AS status,
+                                        producto.id,
+                                        producto.serie
+                                    FROM movimiento_producto
+                                    INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
+
+                    $producto->series = $series;
+                }
+
+                $producto->sinonimos = DB::table("modelo_sinonimo")
+                    ->select("codigo")
+                    ->where("id_modelo", $producto->id)
+                    ->pluck("codigo");
+            }
+
+            $compra->total = round($total_documento * 1.16, 2);
+        }
+
+        return $compras;
     }
 
     public function compra_compra_corroborar_guardar(Request $request): JsonResponse
@@ -533,13 +661,13 @@ class CompraController extends Controller
 
             if (empty($existe_producto)) {
                 $modelo = DB::table('modelo')->insertGetId([
-                    'sku'           => trim($producto->sku),
-                    'descripcion'   => trim($producto->descripcion),
-                    'costo'         => 0,
-                    'alto'          => 0,
-                    'ancho'         => 0,
-                    'largo'         => 0,
-                    'peso'          => 0
+                    'sku' => trim($producto->sku),
+                    'descripcion' => trim($producto->descripcion),
+                    'costo' => 0,
+                    'alto' => 0,
+                    'ancho' => 0,
+                    'largo' => 0,
+                    'peso' => 0
                 ]);
             } else {
                 $modelo = $existe_producto[0]->id;
@@ -575,7 +703,7 @@ class CompraController extends Controller
         }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_fase'   => 92
+            'id_fase' => 92
         ]);
 
         if (!empty($data->seguimiento)) {
@@ -587,8 +715,8 @@ class CompraController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Compra corroborada correctamente"
+            'code' => 200,
+            'message' => "Compra corroborada correctamente"
         ]);
     }
 
@@ -598,9 +726,9 @@ class CompraController extends Controller
         $compras = $this->compras_raw_data("AND documento.id_fase = 92");
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'tipos' => $tipos,
-            'ordenes'   => $compras
+            'ordenes' => $compras
         ]);
     }
 
@@ -615,8 +743,8 @@ class CompraController extends Controller
             ]);
 
             return response()->json([
-                'code'  => 200,
-                'message'   => "La compra fue regresada a la fase de corroborar."
+                'code' => 200,
+                'message' => "La compra fue regresada a la fase de corroborar."
             ]);
         }
 
@@ -625,8 +753,8 @@ class CompraController extends Controller
 
             if (empty($existe_sku)) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "No se encontró el producto con el codigo " . $producto->sku
+                    'code' => 500,
+                    'message' => "No se encontró el producto con el codigo " . $producto->sku
                 ]);
             }
 
@@ -634,24 +762,24 @@ class CompraController extends Controller
 
             if (empty($existe_descripcion)) {
                 DB::table('modelo_descripcion')->insert([
-                    'id_modelo'     => $existe_sku[0]->id,
-                    'descripcion'   => trim(utf8_encode($producto->descripcion))
+                    'id_modelo' => $existe_sku[0]->id,
+                    'descripcion' => trim(utf8_encode($producto->descripcion))
                 ]);
             }
 
             DB::table('modelo')->where(['id' => $existe_sku[0]->id])->update([
-                'costo_extra'   => $producto->costo_extra
+                'costo_extra' => $producto->costo_extra
             ]);
 
             DB::table('movimiento')->where(['id' => $producto->id])->update([
                 'id_modelo' => $existe_sku[0]->id,
-                'precio'    => $producto->costo,
+                'precio' => $producto->costo,
                 'cantidad_aceptada' => 0
             ]);
         }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_fase'   => 93,
+            'id_fase' => 93,
             'autorizado_by' => $auth->id
         ]);
 
@@ -664,8 +792,8 @@ class CompraController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Compra autorizada correctamente."
+            'code' => 200,
+            'message' => "Compra autorizada correctamente."
         ]);
     }
 
@@ -676,32 +804,32 @@ class CompraController extends Controller
 
         if (empty($info_documento)) {
             return response()->json([
-                'code'  => 404,
-                'message'   => "No se encontró información del documento."
+                'code' => 404,
+                'message' => "No se encontró información del documento."
             ]);
         }
 
         if ($info_documento[0]->id_fase > 92) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No es posible cancelar compras que ya han sido importadas a Comercial."
+                'code' => 500,
+                'message' => "No es posible cancelar compras que ya han sido importadas a Comercial."
             ]);
         }
 
         DB::table('documento')->where(['id' => $documento])->update([
-            'canceled_by'   => $auth->id,
-            'status'        => 0
+            'canceled_by' => $auth->id,
+            'status' => 0
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento cancelado correctamente"
+            'code' => 200,
+            'message' => "Documento cancelado correctamente"
         ]);
     }
 
     public function compra_compra_pendiente_data(): JsonResponse
     {
-        $empresas   = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
         $compras = $this->compras_raw_data("AND documento.id_fase = 93");
 
         foreach ($empresas as $empresa) {
@@ -719,9 +847,9 @@ class CompraController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'ordenes'   => $compras,
-            'empresas'  => $empresas
+            'code' => 200,
+            'ordenes' => $compras,
+            'empresas' => $empresas
         ]);
     }
 
@@ -787,8 +915,8 @@ class CompraController extends Controller
 
         if (empty($almacen)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró el almacén del documento, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró el almacén del documento, favor de contactar a un administrador."
             ]);
         }
 
@@ -812,16 +940,17 @@ class CompraController extends Controller
                             ]);
                         } else {
                             $id_serie = DB::table('producto')->insertGetId([
-                                'id_almacen'    => $almacen[0]->id_almacen,
-                                "id_modelo"     => $movimiento->id_modelo,
-                                'serie'         => $serie->serie,
-                                'status'        => 1
+                                'id_almacen' => $almacen[0]->id_almacen,
+                                "id_modelo" => $movimiento->id_modelo,
+                                'serie' => $serie->serie,
+                                'status' => 1
                             ]);
                         }
 
+                        /** @noinspection PhpUndefinedVariableInspection */
                         DB::table('movimiento_producto')->insert([
                             'id_movimiento' => $producto->id,
-                            'id_producto'   => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
+                            'id_producto' => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
                         ]);
                     }
                 }
@@ -841,7 +970,7 @@ class CompraController extends Controller
                 $completa = $producto->cantidad_aceptada == $producto->cantidad ? 1 : 0;
 
                 DB::table('movimiento')->where(['id' => $producto->id])->update([
-                    'completa'  => $completa,
+                    'completa' => $completa,
                     'cantidad_aceptada' => $producto->cantidad_aceptada
                 ]);
 
@@ -933,18 +1062,18 @@ class CompraController extends Controller
             $pdf->Ln(10);
             $pdf->Cell(100, 0, utf8_decode(mb_strtoupper("FECHA: _______________________________________________________", 'UTF-8')), 0, 0);
 
-            $pdf_name   = uniqid() . ".pdf";
-            $pdf_data   = $pdf->Output($pdf_name, 'S');
-            $file_name  = uniqid() . ".pdf";
+            $pdf_name = uniqid() . ".pdf";
+            $pdf_data = $pdf->Output($pdf_name, 'S');
+            $file_name = uniqid() . ".pdf";
 
-            $json['file']   = base64_encode($pdf_data);
-            $json['name']   = $file_name;
+            $json['file'] = base64_encode($pdf_data);
+            $json['name'] = $file_name;
         }
 
-        $json['code']       = 200;
-        $json['productos']  = $data->productos;
-        $json['message']    = ($terminada) ? "Compra finalizada correctamente" : "Compra actualizada correctamente";
-        $json['terminada']  = $terminada;
+        $json['code'] = 200;
+        $json['productos'] = $data->productos;
+        $json['message'] = ($terminada) ? "Compra finalizada correctamente" : "Compra actualizada correctamente";
+        $json['terminada'] = $terminada;
 
         return response()->json($json);
     }
@@ -1105,15 +1234,15 @@ class CompraController extends Controller
 
                 if (empty($response)) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "No se encontró informaciónd de la compra en Comercial."
+                        'code' => 500,
+                        'message' => "No se encontró informaciónd de la compra en Comercial."
                     ]);
                 }
 
                 if (COUNT($response->body) > 1) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "Se encontró más de una compra con el mismo folio y serie, favor de verificar."
+                        'code' => 500,
+                        'message' => "Se encontró más de una compra con el mismo folio y serie, favor de verificar."
                     ]);
                 }
 
@@ -1129,10 +1258,10 @@ class CompraController extends Controller
 
             try {
                 $array_compra = [
-                    "bd"        => $bd,
-                    "password"  => config("webservice.token"),
+                    "bd" => $bd,
+                    "password" => config("webservice.token"),
                     "documento" => $id_documento->documento_extra,
-                    "uuid"      => $data->uuid
+                    "uuid" => $data->uuid
                 ];
 
                 $response = \Httpful\Request::post('http://201.7.208.53:11903/api/adminpro/Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')
@@ -1144,22 +1273,22 @@ class CompraController extends Controller
 
                 if (empty($response)) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "No fue posible actualizar el UUID de la compra, error desconocido",
-                        'raw'   => $response_raw
+                        'code' => 500,
+                        'message' => "No fue posible actualizar el UUID de la compra, error desconocido",
+                        'raw' => $response_raw
                     ]);
                 }
 
                 if ($response->error == 1) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "Ocurrió un error al actualizar el UUID de la compra en Comercial, mensaje de error: " . $response->mensaje
+                        'code' => 500,
+                        'message' => "Ocurrió un error al actualizar el UUID de la compra en Comercial, mensaje de error: " . $response->mensaje
                     ]);
                 }
             } catch (Exception $e) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "Ocurrió un error al actualizar el UUID de la compra en Comercial, mensaje de error: " . $e->getMessage()
+                    'code' => 500,
+                    'message' => "Ocurrió un error al actualizar el UUID de la compra en Comercial, mensaje de error: " . $e->getMessage()
                 ]);
             }
 
@@ -1169,8 +1298,8 @@ class CompraController extends Controller
             ]);
 
             return response()->json([
-                'code'  => 200,
-                'message'   => "UUID actualizado correctamente"
+                'code' => 200,
+                'message' => "UUID actualizado correctamente"
             ]);
         }
 
@@ -1183,10 +1312,12 @@ class CompraController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Costo extra actualizado correctamente."
+            'code' => 200,
+            'message' => "Costo extra actualizado correctamente."
         ]);
     }
+
+    /* Compra > Orden */
 
     /**
      * @throws ConnectionErrorException
@@ -1284,7 +1415,6 @@ class CompraController extends Controller
         ]);
     }
 
-    /* Compra > Orden */
     public function compra_orden_requisicion_data(): JsonResponse
     {
         $marketplaces = DB::table('marketplace_area')
@@ -1314,8 +1444,8 @@ class CompraController extends Controller
                                     AND documento.created_at BETWEEN '" . date("Y-m-d", strtotime("monday this week")) . " 00:00:00' AND '" . date("Y-m-d", strtotime("sunday this week")) . " 23:59:59'")[0]->total;
 
         return response()->json([
-            'code'  => 200,
-            'marketplaces'  => $marketplaces
+            'code' => 200,
+            'marketplaces' => $marketplaces
         ]);
     }
 
@@ -1370,7 +1500,7 @@ class CompraController extends Controller
         }
 
         $nombre = DB::select("SELECT nombre FROM usuario WHERE id = " . $auth->id)[0]->nombre;
-        
+
         $view = view('email.notificacion_requisicion_crear')->with([
             'anio' => date('Y'),
             'nombre' => $nombre,
@@ -1379,7 +1509,7 @@ class CompraController extends Controller
             'seguimiento' => $data->seguimiento,
         ]);
 
-        try{
+        try {
             $emails = "";
             $notificados = array();
 
@@ -1401,9 +1531,9 @@ class CompraController extends Controller
             $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
             $domain = "omg.com.mx";
             $mg->messages()->send($domain, array('from' => 'CRM OMG International <crm@omg.com.mx>',
-                                    'to' => 'desarrollo1@omg.com.mx',
-                                    'subject' => 'Nueva requisición para orden de compra.',
-                                    'html' => $view->render()));
+                'to' => 'desarrollo1@omg.com.mx',
+                'subject' => 'Nueva requisición para orden de compra.',
+                'html' => $view->render()));
 
             $notificacion['titulo'] = "Requisición generada";
             $notificacion['message'] = "Se ha generado una nueva requisición para una orden de compra por el usuario " . $nombre . " con el ID " . $documento . ".";
@@ -1425,8 +1555,7 @@ class CompraController extends Controller
             $notificacion['usuario'] = $notificados;
 
             event(new PusherEvent(json_encode($notificacion)));
-        }
-        catch(Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'code' => 200,
                 'message' => "La requisición fue creada correctamente con el ID " . $documento . " pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
@@ -1449,2500 +1578,11 @@ class CompraController extends Controller
         $documentos = $this->ordenes_raw_data("AND documento.id_fase = 601");
 
         return response()->json([
-            'code'  => 200,
-            'documentos'    => $documentos
-        ]);
-    }
-
-    public function compra_orden_autorizacion_requisicion_guardar(Request $request): JsonResponse
-    {
-        $auth = json_decode($request->auth);
-        $documento = $request->input('documento');
-        $seguimiento = $request->input('seguimiento');
-
-        DB::table('documento')->where(['id' => $documento])->update([
-            'id_fase' => 603
-        ]);
-
-        if (!empty($seguimiento)) {
-            DB::table('seguimiento')->insert([
-                'id_documento' => $documento,
-                'id_usuario' => $auth->id,
-                'seguimiento' => $seguimiento
-            ]);
-        }
-
-        $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id)[0];
-
-        $view = view('email.notificacion_requisicion_autorizacion')->with([
-            'anio' => date('Y'),
-            'nombre' => $usuario->nombre,
-            'documento' => $documento,
-            'seguimiento' => $seguimiento,
-        ]);
-
-        try {
-            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-            $domain = "omg.com.mx";
-            $mg->messages()->send($domain, array(
-                'from'  => 'CRM OMG International <crm@omg.com.mx>',
-                'to'            => $usuario->email,
-                'subject'       => 'Requisición con el ID ' . $documento . '.',
-                'html'          => $view->render()
-            ));
-
-            $notificacion['titulo']     = "Requisición autorizada";
-            $notificacion['message']    = "Tu requisición con el ID " . $documento . " ha sido autorizada";
-            $notificacion['tipo']       = "success"; // success, warning, danger
-            $notificacion['link']       = "/compra/orden/historial";
-
-            $notificacion_id = DB::table('notificacion')->insertGetId([
-                'data'  => json_encode($notificacion)
-            ]);
-
-            DB::table('notificacion_usuario')->insert([
-                'id_usuario'    => $usuario->id,
-                'id_notificacion'   => $notificacion_id
-            ]);
-
-            $notificacion['id']         = $notificacion_id;
-            $notificacion['usuario']    = $usuario->id;
-
-            event(new PusherEvent(json_encode($notificacion)));
-        } catch (Exception $e) {
-            return response()->json([
-                'code'  => 200,
-                'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
-            ]);
-        } catch (Throwable $e) {
-            return response()->json([
-                'code'  => 200,
-                'message'   => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
-            ]);
-        }
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "Documento autorizado correctamente."
-        ]);
-    }
-
-    public function compra_orden_autorizacion_requisicion_cancelar(Request $request): JsonResponse
-    {
-        $seguimiento = $request->input('seguimiento');
-        $documento = $request->input('documento');
-        $auth = json_decode($request->auth);
-
-        DB::table('documento')->where(['id' => $documento])->update([
-            'status' => 0,
-            'canceled_by'   => $auth->id
-        ]);
-
-        DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $seguimiento
-        ]);
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "Documento cancelada correctamente."
-        ]);
-    }
-
-    public function compra_orden_orden_data(): JsonResponse
-    {
-        $empresas = DB::select("SELECT id, bd, rfc, empresa FROM empresa WHERE status = 1 AND id != 0");
-        $periodos = DB::select("SELECT id, periodo_en FROM documento_periodo WHERE status = 1");
-        $monedas = DB::select("SELECT id, moneda FROM moneda");
-        $usos_cfdi = DB::table("documento_uso_cfdi")
-            ->select("id", "codigo", "descripcion")
-            ->get()
-            ->toArray();
-        $metodos_pago = DB::table("metodo_pago")
-            ->select("codigo", "metodo_pago")
-            ->get()
-            ->toArray();
-
-        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 603");
-
-        foreach ($empresas as $empresa) {
-            $almacenes = DB::select("SELECT
-                                        empresa_almacen.id,
-                                        almacen.almacen
-                                    FROM empresa_almacen
-                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    WHERE empresa_almacen.id_empresa = " . $empresa->id . "
-                                    AND almacen.status = 1
-                                    AND almacen.id != 0
-                                    ORDER BY almacen.almacen");
-
-            $empresa->almacenes = $almacenes;
-        }
-
-        return response()->json([
             'code' => 200,
-            'empresas' => $empresas,
-            'periodos' => $periodos,
-            'monedas' => $monedas,
-            'usos_cfdi' => $usos_cfdi,
-            "metodos_pago" => $metodos_pago,
-            'documentos' => $documentos,
+            'documentos' => $documentos
         ]);
     }
 
-    public function compra_orden_orden_crear(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-
-        $archivos = $data->archivos;
-
-        unset($data->archivos);
-
-        $documento = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa' => $data->almacen,
-            'id_moneda' => $data->moneda,
-            'id_periodo' => $data->periodo,
-            'id_tipo' => 0,
-            'id_marketplace_area' => 1,
-            'id_usuario' => $auth->id,
-            'id_fase' => 606,
-            'id_entidad' => $data->proveedor->id,
-            'tipo_cambio' => $data->tipo_cambio,
-            'observacion' => implode(',', $data->documentos),
-            'comentario' => (property_exists($data, "extranjero") && !is_null($data->extranjero)) ? $data->extranjero : "",
-            'referencia' => (property_exists($data, "invoice") && !is_null($data->invoice)) ? $data->invoice : "",
-            'info_extra' => json_encode($data),
-            'arrived_at' => date("Y-m-d", strtotime($data->fecha_entrega))
-        ]);
-
-        foreach ($data->productos as $producto) {
-            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
-
-            if (empty($existe_codigo)) {
-                $modelo_id = DB::table('modelo')->insertGetId([
-                    'id_tipo' => 1,
-                    'sku' => $producto->codigo,
-                    'descripcion' => $producto->descripcion
-                ]);
-
-            } else {
-                $modelo_id = $existe_codigo[0]->id;
-            }
-
-            DB::table('movimiento')->insertGetId([
-                'id_documento'  => $documento,
-                'id_modelo' => $modelo_id,
-                'cantidad'  => $producto->cantidad,
-                'precio'    => $producto->costo,
-                'descuento' => $producto->descuento,
-                'modificacion'  => '',
-                'comentario'    => $producto->descripcion . " \n " . $producto->comentario,
-                'addenda'   => ''
-            ]);
-        }
-
-        try {
-            foreach ($archivos as $archivo) {
-                if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-                    $archivo->nombre = "INVOICE_" . $archivo->nombre;
-
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
-
-                    DB::table('documento_archivo')->insert([
-                        'id_documento'  =>  $documento,
-                        'id_usuario'    =>  $auth->id,
-                        'nombre'        =>  $archivo->nombre,
-                        'dropbox'       =>  $response->body->id
-                    ]);
-                }
-            }
-        } catch (Exception $e) {
-            DB::table('documento')->where(['id' => $documento])->delete();
-
-            return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-            ]);
-        }
-
-        foreach ($data->documentos as $documento_relacionado) {
-            $seguimientos = DB::select("SELECT id_usuario, seguimiento FROM seguimiento WHERE id_documento = " . $documento_relacionado);
-
-            foreach ($seguimientos as $seguimiento) {
-                DB::table('seguimiento')->insert([
-                    'id_usuario'    => $seguimiento->id_usuario,
-                    'id_documento'  => $documento,
-                    'seguimiento'   => $seguimiento->seguimiento
-                ]);
-            }
-
-            DB::table('documento')->where(['id' => $documento_relacionado])->update([
-                'status' => 0
-            ]);
-        }
-
-        $json['code'] = 200;
-        $json['message'] = "Orden de compra creada correctamente con el ID " . $documento;
-
-        $pdf = self::ordenes_generar_pdf($documento, $auth);
-
-        if ($pdf->error) {
-            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
-
-            return response()->json($json);
-        }
-
-        $json['file'] = $pdf->data;
-        $json['name'] = $pdf->name;
-
-        return response()->json($json);
-    }
-
-    public function compra_orden_modificacion_data(): JsonResponse
-    {
-        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
-        $empresas   = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
-        $periodos   = DB::select("SELECT id, periodo_en AS periodo FROM documento_periodo WHERE status = 1");
-        $monedas    = DB::select("SELECT id, moneda FROM moneda");
-
-        return response()->json([
-            'code'  => 200,
-            'documentos'    => $documentos,
-            'empresas'  => $empresas,
-            'periodos'  => $periodos,
-            'monedas'   => $monedas
-        ]);
-    }
-
-    public function compra_orden_modificacion_eliminar($documento, $eliminar): JsonResponse
-    {
-        if (!$eliminar) {
-            $requisiciones = DB::select("SELECT observacion FROM documento WHERE id = " . $documento);
-
-            if (!empty($requisiciones)) {
-                $requisiciones = explode(',', $requisiciones[0]->observacion);
-
-                foreach ($requisiciones as $requisicion) {
-                    DB::table('documento')->where(['id' => $requisicion])->update([
-                        'status' => 1
-                    ]);
-                }
-            }
-        }
-
-        DB::table('documento')->where(['id' => $documento])->update([
-            'status' => 0
-        ]);
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "OC eliminada correctamente."
-        ]);
-    }
-
-    public function compra_orden_modificacion_guardar(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-
-        $existe_proveedor = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data->proveedor->rfc . "' AND tipo = 2");
-
-        if (empty($existe_proveedor)) {
-            $proveedor_id = DB::table('documento_entidad')->insertGetId([
-                'tipo'          => 2,
-                'razon_social'  => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
-                'rfc'           => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
-                'telefono'      => $data->proveedor->telefono,
-                'correo'        => $data->proveedor->email
-            ]);
-        } else {
-            $proveedor_id = $existe_proveedor[0]->id;
-        }
-
-        try {
-            foreach ($data->archivos as $archivo) {
-                if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-                    $archivo->nombre = "INVOICE_" . $archivo->nombre;
-
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
-
-                    DB::table('documento_archivo')->insert([
-                        'id_documento'  =>  $data->id,
-                        'id_usuario'    =>  $auth->id,
-                        'nombre'        =>  $archivo->nombre,
-                        'dropbox'       =>  $response->body->id
-                    ]);
-                }
-            }
-        } catch (Exception $e) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-            ]);
-        }
-
-        DB::table('documento')->where(['id' => $data->id])->update([
-            'id_entidad'    => $proveedor_id
-        ]);
-
-        $info_extra = json_decode(DB::select("SELECT info_extra FROM documento WHERE id = " . $data->id)[0]->info_extra);
-        $info_extra->productos = $data->productos;
-        $info_extra->invoice = $data->invoice;
-        $info_extra->fob = $data->fob;
-        $info_extra->billto = $data->billto;
-        $info_extra->shipto = $data->shipto;
-        $info_extra->comentarios = $data->comentarios;
-
-        DB::table('documento')->where(['id' => $data->id])->update([
-            'id_moneda'     => $data->moneda,
-            'id_periodo'    => $data->periodo,
-            'comentario'    => $data->extranjero,
-            'info_extra'    => json_encode($info_extra)
-        ]);
-
-        DB::table('movimiento')->where(['id_documento' => $data->id])->delete();
-
-        foreach ($data->productos as $producto) {
-            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
-
-            if (empty($existe_codigo)) {
-                $modelo_id = DB::table('modelo')->insertGetId([
-                    'id_tipo' => 1,
-                    'sku' => $producto->codigo,
-                    'descripcion' => $producto->descripcion
-                ]);
-
-            } else {
-                $modelo_id = $existe_codigo[0]->id;
-            }
-
-            DB::table('movimiento')->insertGetId([
-                'id_documento' => $data->id,
-                'id_modelo' => $modelo_id,
-                'cantidad' => $producto->cantidad,
-                'precio' => $producto->costo,
-                'modificacion' => '',
-                'comentario' => $producto->descripcion,
-                'addenda' => ''
-            ]);
-        }
-
-        $json['code'] = 200;
-        $json['message'] = "OC editada correctamente.";
-
-        $pdf = self::ordenes_generar_pdf($data->id, $auth);
-
-        if ($pdf->error) {
-            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
-
-            return response()->json($json);
-        }
-
-        $json['file'] = $pdf->data;
-        $json['name'] = $pdf->name;
-
-        return response()->json($json);
-    }
-
-    public function compra_orden_recepcion_data(): JsonResponse
-    {
-        set_time_limit(0);
-        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
-        $empresas = DB::table('empresa')
-            ->select('id', 'bd', 'empresa')
-            ->where('status', 1)
-            ->where('id', '!=', 0)
-            ->get();
-        $usuarios = DB::select("SELECT
-                                    usuario.id,
-                                    usuario.nombre,
-                                    usuario.celular,
-                                    nivel.nivel
-                                FROM usuario
-                                INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                                INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                                INNER JOIN nivel ON subnivel_nivel.id_nivel = nivel.id
-                                INNER JOIN subnivel ON subnivel_nivel.id_subnivel = subnivel.id
-                                WHERE (nivel.nivel = 'COMPRAS' AND subnivel.subnivel = 'ADMINISTRADOR')
-                                OR nivel.nivel = 'ADMINISTRADOR'
-                                AND usuario.id != 1
-                                GROUP BY usuario.id");
-
-        return response()->json([
-            'code' => 200,
-            'documentos' => $documentos,
-            'empresas' => $empresas,
-            'usuarios' => $usuarios,
-        ]);
-    }
-
-    /** @noinspection PhpUnusedLocalVariableInspection */
-    public function compra_orden_recepcion_guardar(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-        $terminada = 1;
-        $movimientos_recepcionados = array();
-
-        $documento_fase = DB::table("documento")
-            ->select("id_fase")
-            ->where("id", $data->id)
-            ->first();
-
-        if (empty($documento_fase)) {
-            return response()->json([
-                "code" => 404,
-                "message" => "No se encontró el documento solicitado para su recepción"
-            ]);
-        }
-
-        if ($documento_fase->id_fase == 607) {
-            return response()->json([
-                "code" => 404,
-                "message" => "La ODC ya fué recepcionada"
-            ]);
-        }
-
-        DB::table("seguimiento")->insert([
-            "id_documento" => $data->id,
-            "id_usuario" => $auth->id,
-            "seguimiento" => empty($data->seguimiento) ? "Sin seguimiento escrito" : $data->seguimiento
-        ]);
-
-        try {
-            foreach ($data->archivos as $archivo) {
-                if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
-
-                    DB::table('documento_archivo')->insert([
-                        'id_documento' => $data->id,
-                        'id_usuario' => $auth->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
-                    ]);
-                }
-            }
-        } catch (Exception $e) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible subir los archivos a dropbox, actualización cancelada, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-            ]);
-        }
-
-        if ($data->finalizar) {
-            DB::table('documento')->where(['id' => $data->id])->update([
-                'finished_at' => date("Y-m-d H:i:s"),
-                'id_fase' => 607
-            ]);
-
-            return response()->json([
-                "code" => 200,
-                "message" => "ODC finalizada correctamente",
-                "terminada" => 1
-            ]);
-        }
-
-        $almacen = DB::select("SELECT
-                                empresa_almacen.id_almacen,
-                                documento.id_almacen_principal_empresa
-                            FROM documento
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            WHERE documento.id = " . $data->id);
-
-        if (empty($almacen)) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró el almacén del documento, favor de contactar a un administrador."
-            ]);
-        }
-
-        foreach ($data->productos as $producto) {
-            if ($producto->serie) {
-                if (count($producto->series) > $producto->cantidad) {
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "La cantidad de series registrada excede la cantidad de la orden de compra"
-                    ]);
-                }
-            }
-        }
-
-        $simulacion_documento_erp = uniqid();
-
-        foreach ($data->productos as $producto) {
-            if ($producto->serie) {
-                $total_series = 0;
-
-                foreach ($producto->series as $serie) {
-                    $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
-                    $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
-                    if ($serie->id == 0) $total_series++;
-
-                    if ($serie->id == 0) {
-                        $existe_serie = DB::select("SELECT id, status FROM producto WHERE serie = '" . TRIM($serie->serie) . "'");
-
-                        if (!empty($existe_serie)) {
-                            DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
-                                "id_almacen" => $almacen[0]->id_almacen,
-                                "id_modelo" => $movimiento->id_modelo,
-                                "status" => 1,
-                                "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null
-                            ]);
-                        } else {
-                            $id_serie = DB::table('producto')->insertGetId([
-                                'id_almacen' => $almacen[0]->id_almacen,
-                                'id_modelo' => $movimiento->id_modelo,
-                                'serie' => $serie->serie,
-                                'status' => 1,
-                                "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null
-                            ]);
-                        }
-
-                        /** @noinspection PhpUnusedLocalVariableInspection */
-                        $movimiento_producto = DB::table('movimiento_producto')->insertGetId([
-                            'id_movimiento' => $producto->id,
-                            'id_producto' => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
-                        ]);
-                    }
-                }
-
-                $producto->series = DB::select("SELECT
-                                        1 AS status,
-                                        producto.id,
-                                        producto.serie
-                                    FROM movimiento_producto
-                                    INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
-
-                $producto->cantidad_recibida = $total_series;
-            } else {
-                DB::table('movimiento')->where(['id' => $producto->id])->update([
-                    'cantidad_aceptada' => (int) $producto->cantidad_recepcionada_anterior + (int) $producto->cantidad_recepcionada
-                ]);
-
-                $cantidad_recepcionada_total = DB::table("movimiento")
-                    ->select("cantidad", "cantidad_aceptada")
-                    ->where("id", $producto->id)
-                    ->first();
-
-                $producto->cantidad_recibida = (int) $producto->cantidad_recepcionada;
-            }
-
-            if ($producto->cantidad_recibida > 0) {
-                $aplicar_recepcion = InventarioService::procesarRecepcion($producto->id, $producto->cantidad_recibida);
-
-                $movimiento_recepcionado = DB::table("documento_recepcion")->insertGetId([
-                    "id_usuario" => $auth->id,
-                    "id_movimiento" => $producto->id,
-                    "cantidad" => $producto->cantidad_recibida,
-                    "documento_erp" => $simulacion_documento_erp,
-                    "afectado" => $aplicar_recepcion->error ? 0 : 1,
-                ]);
-
-                $movimientos_recepcionados[] = $movimiento_recepcionado;
-            }
-        }
-
-        if ($movimientos_recepcionados == 0) {
-            return response()->json([
-                "code" => 200,
-                "message" => "Seguimiento guardado correctamente",
-                "terminada" => 0
-            ]);
-        }
-
-        foreach ($data->productos as $producto) {
-            if ($producto->serie) {
-                $total_series_recepcionadas = DB::select("SELECT
-                                                            COUNT(*) AS cantidad
-                                                        FROM movimiento
-                                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                                        WHERE movimiento.id = " . $producto->id)[0]->cantidad;
-
-                if ($total_series_recepcionadas != $producto->cantidad) {
-                    $terminada = 0;
-                }
-            } else {
-                $cantidad_recepcionada_total = DB::table("movimiento")
-                    ->select("cantidad", "cantidad_aceptada")
-                    ->where("id", $producto->id)
-                    ->first();
-
-                if ($cantidad_recepcionada_total->cantidad_aceptada < $cantidad_recepcionada_total->cantidad) {
-                    $terminada = 0;
-                }
-            }
-        }
-
-        if ($terminada) {
-            DB::table('documento')->where(['id' => $data->id])->update([
-                'finished_at' => date("Y-m-d H:i:s"),
-                'id_fase' => 607
-            ]);
-        }
-
-        $json = array();
-
-        if (count($movimientos_recepcionados) > 0) {
-            $pdf = self::ordenes_recepcion_pdf($data->id, $simulacion_documento_erp, $auth->id);
-
-            $json["file"] = base64_encode($pdf->data);
-            $json["name"] = $pdf->name;
-        }
-
-        $json["code"] = 200;
-        $json["productos"] = $data->productos;
-        $json["message"] = $terminada ? "Compra finalizada correctamente" : "Compra actualizada correctamente";
-        $json["terminada"] = $terminada;
-
-        return response()->json($json);
-    }
-
-    /**
-     * @throws \PhpOffice\PhpSpreadsheet\Exception
-     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
-     */
-    public function compra_orden_historial_data(Request $request): JsonResponse
-    {
-        set_time_limit(0);
-
-        $data = json_decode($request->input("data"));
-
-        $impresoras = DB::table("impresora")
-            ->where("status", 1)
-            ->where("cups", "<>", "N/A")
-            ->where("tamanio", "4x8")
-            ->get()
-            ->toArray();
-
-        if (empty($data->documento)) {
-            $query = "AND documento.created_at BETWEEN '" . $data->fecha_inicial . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'";
-
-            $documentos = $this->ordenes_raw_data($query);
-        } else {
-            $query = "AND documento.id = " . $data->documento;
-
-            $documentos = $this->ordenes_raw_data($query);
-
-            if (empty($documentos)) {
-                $query = "AND documento_recepcion.documento_erp = " . $data->documento;
-
-                $documentos = $this->ordenes_raw_data($query);
-            }
-        }
-
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet()->setTitle("HISTORIAL DE COMPRAS");
-        $fila = 2;
-
-        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
-
-        # Cabecera
-        $sheet->setCellValue('A1', 'DOCUMENTO');
-        $sheet->setCellValue('B1', 'PROVEEDOR');
-        $sheet->setCellValue('C1', 'EMPRESA');
-        $sheet->setCellValue('D1', 'ALMACEN');
-        $sheet->setCellValue('E1', 'PERIODO');
-        $sheet->setCellValue('F1', 'MONEDA');
-        $sheet->setCellValue('G1', 'T.C');
-        $sheet->setCellValue('H1', 'IMPUESTO');
-        $sheet->setCellValue('I1', 'TOTAL');
-        $sheet->setCellValue('J1', 'UUID');
-        $sheet->setCellValue('K1', 'EXPIRACIÓN');
-        $sheet->setCellValue('L1', 'CODIGO');
-        $sheet->setCellValue('M1', 'DESCRIPCIÓN');
-        $sheet->setCellValue('N1', 'CANTIDAD');
-        $sheet->setCellValue('O1', 'RECEPCIONADA');
-        $sheet->setCellValue('P1', 'COSTO');
-        $sheet->setCellValue('Q1', 'MARCA');
-        $sheet->setCellValue('R1', 'CATEGORIA');
-        $sheet->setCellValue('S1', 'SUBCATEGORIA');
-        $sheet->setCellValue('T1', 'FASE');
-        $sheet->setCellValue('U1', 'FECHA DE RECEPCIÓN');
-        $sheet->setCellValue('V1', 'FECHA DE CREACION');
-
-        foreach ($documentos as $documento) {
-            $documento_extra_data = json_decode($documento->info_extra);
-
-            $sheet->setCellValue('A' . $fila, $documento->id);
-            $sheet->setCellValue('B' . $fila, $documento->razon_social);
-            $sheet->setCellValue('C' . $fila, $documento->empresa_nombre);
-            $sheet->setCellValue('D' . $fila, $documento->almacen);
-            $sheet->setCellValue('E' . $fila, $documento->periodo);
-            $sheet->setCellValue('F' . $fila, $documento->moneda);
-            $sheet->setCellValue('G' . $fila, $documento->tipo_cambio);
-            $sheet->setCellValue('H' . $fila, is_object($documento_extra_data) ? property_exists($documento_extra_data, "impuesto") ? $documento_extra_data->impuesto . " %" : "N/E" : "N/E");
-            $sheet->setCellValue('I' . $fila, $documento->total);
-            $sheet->setCellValue('J' . $fila, $documento->uuid);
-            $sheet->setCellValue('K' . $fila, $documento->fecha_pago);
-            $sheet->setCellValue('T' . $fila, $documento->fase);
-            $sheet->setCellValue('U' . $fila, $documento->finished_at);
-            $sheet->setCellValue('V' . $fila, $documento->created_at);
-
-            $spreadsheet->getActiveSheet()->getStyle("G" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-            $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-            foreach ($documento->productos as $producto) {
-                $sheet->setCellValue('A' . $fila, $documento->id);
-                $sheet->setCellValue('B' . $fila, $documento->razon_social);
-                $sheet->setCellValue('C' . $fila, $documento->empresa_nombre);
-                $sheet->setCellValue('D' . $fila, $documento->almacen);
-                $sheet->setCellValue('E' . $fila, $documento->periodo);
-                $sheet->setCellValue('F' . $fila, $documento->moneda);
-                $sheet->setCellValue('G' . $fila, $documento->tipo_cambio);
-                $sheet->setCellValue('H' . $fila, is_object($documento_extra_data) ? property_exists($documento_extra_data, "impuesto") ? $documento_extra_data->impuesto . " %" : "N/E" : "N/E");
-                $sheet->setCellValue('I' . $fila, $documento->total);
-                $sheet->setCellValue('J' . $fila, $documento->uuid);
-                $sheet->setCellValue('K' . $fila, $documento->fecha_pago);
-                $sheet->setCellValue('L' . $fila, $producto->codigo);
-                $sheet->setCellValue('M' . $fila, $producto->descripcion);
-                $sheet->setCellValue('N' . $fila, $producto->cantidad);
-                $sheet->setCellValue('O' . $fila, $producto->cantidad_recepcionada_anterior);
-                $sheet->setCellValue('P' . $fila, $producto->costo);
-                $sheet->setCellValue('Q' . $fila, $producto->cat2);
-                $sheet->setCellValue('R' . $fila, $producto->cat1);
-                $sheet->setCellValue('S' . $fila, $producto->cat3);
-                $sheet->setCellValue('T' . $fila, $documento->fase);
-                $sheet->setCellValue('U' . $fila, $documento->finished_at);
-                $sheet->setCellValue('V' . $fila, $documento->created_at);
-
-                $spreadsheet->getActiveSheet()->getStyle("G" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                $sheet->getCellByColumnAndRow(12, $fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
-                $spreadsheet->getActiveSheet()->getStyle("P" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                $fila++;
-            }
-
-            $fila++;
-
-            if (count($documento->productos) > 0) {
-                $fila--;
-            }
-        }
-
-        foreach (range('A', 'V') as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
-        }
-
-        $writer = new Xlsx($spreadsheet);
-        $writer->save('odc.xlsx');
-
-        $json['code'] = 200;
-        $json['documentos'] = $documentos;
-        $json['excel'] = base64_encode(file_get_contents('odc.xlsx'));
-        $json['impresoras'] = $impresoras;
-
-        unlink('odc.xlsx');
-
-        return response()->json($json);
-    }
-
-    public function compra_orden_historial_descargar($documento, Request $request): JsonResponse
-    {
-        $auth = json_decode($request->auth);
-
-        $pdf = self::ordenes_generar_pdf($documento, $auth);
-
-        if ($pdf->error) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => "No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje
-            ]);
-        }
-
-        return response()->json([
-            'code'  => 200,
-            'file'  => $pdf->data,
-            'name'  => $pdf->name
-        ]);
-    }
-
-    public function compra_orden_historial_descargar_recepcion_pdf($recepcion): JsonResponse
-    {
-        $documento = DB::table("documento_recepcion")
-            ->select("movimiento.id_documento", "documento_recepcion.id_usuario")
-            ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
-            ->where("documento_recepcion.documento_erp", $recepcion)
-            ->first();
-
-        $pdf = self::ordenes_recepcion_pdf($documento->id_documento, $recepcion, $documento->id_usuario);
-
-        return response()->json([
-            "code" => 200,
-            "message" => "¡PDF generado correctamente!",
-            "file" => base64_encode($pdf->data),
-            "name" => $pdf->name
-        ]);
-    }
-
-    public function compra_orden_historial_guardar(Request $request): JsonResponse
-    {
-        $seguimiento = $request->input('seguimiento');
-        $documento = $request->input('documento');
-        $auth = json_decode($request->auth);
-
-        DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $seguimiento
-        ]);
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "Seguimiento guardado correctamente."
-        ]);
-    }
-
-    public function compra_orden_historial_crear_orden_copia(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input("data"));
-        $auth = json_decode($request->auth);
-
-        $informacion_documento = DB::table("documento")
-            ->where("id", $data->id)
-            ->first();
-
-        if (!$informacion_documento) {
-            return response()->json([
-                "code" => 404,
-                "message" => "No se necontró el documento original para crear su copia"
-            ]);
-        }
-
-        $entidad_documento = DB::table("documento")
-            ->select("id_entidad")
-            ->where("id", $data->id)
-            ->first();
-
-        if (!$entidad_documento) {
-            return response()->json([
-                "code" => 404,
-                "message" => "No se necontró la entidad del documento original para crear su copia"
-            ]);
-        }
-
-        $documento = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa' => $informacion_documento->id_almacen_principal_empresa,
-            'id_almacen_secundario_empresa' => $informacion_documento->id_almacen_secundario_empresa,
-            'id_moneda' => $informacion_documento->id_moneda,
-            'id_periodo' => $informacion_documento->id_periodo,
-            'id_tipo' => $informacion_documento->id_tipo,
-            'id_marketplace_area' => $informacion_documento->id_marketplace_area,
-            'id_usuario' => $auth->id,
-            'id_fase' => 606,
-            'id_entidad' => $entidad_documento->id_entidad,
-            'tipo_cambio' => $informacion_documento->tipo_cambio,
-            'observacion' => $data->id,
-            'comentario' => $informacion_documento->comentario,
-            'referencia' => $informacion_documento->referencia,
-            'info_extra' => $informacion_documento->info_extra
-        ]);
-
-        foreach ($data->productos as $producto) {
-            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
-
-            if (empty($existe_codigo)) {
-                $modelo_id = DB::table('modelo')->insertGetId([
-                    'id_tipo' => 1,
-                    'sku' => $producto->codigo,
-                    'descripcion' => $producto->descripcion
-                ]);
-
-            } else {
-                $modelo_id = $existe_codigo[0]->id;
-            }
-
-            DB::table('movimiento')->insert([
-                'id_documento' => $documento,
-                'id_modelo' => $modelo_id,
-                'cantidad' => $producto->cantidad,
-                'precio' => $producto->costo,
-                'modificacion' => '',
-                'comentario' => $producto->descripcion,
-                'addenda' => ''
-            ]);
-        }
-
-        DB::table('seguimiento')->insert([
-            'id_usuario' => $auth->id,
-            'id_documento' => $documento,
-            'seguimiento' => "ODC creada a partir de la ODC con el ID " . $data->id
-        ]);
-
-        $archivos = DB::table("documento_archivo")
-            ->where("id_documento", $data->id)
-            ->get()
-            ->toArray();
-
-        foreach ($archivos as $archivo) {
-            DB::table("documento_archivo")->insert([
-                "id_documento" => $documento,
-                "id_usuario" => $auth->id,
-                "id_impresora" => $archivo->id_impresora,
-                "nombre" => $archivo->nombre,
-                "dropbox" => $archivo->dropbox,
-                "tipo" => $archivo->tipo,
-                "status" => $archivo->status
-            ]);
-        }
-
-        $crear_orden_compra = DocumentoService::crearOrdenCompra($documento);
-
-        if ($crear_orden_compra->error) {
-            DB::table('documento')->where(['id' => $documento])->delete();
-
-            return response()->json([
-                'code' => 500,
-                'message' => $crear_orden_compra->mensaje,
-                'raw' => property_exists($crear_orden_compra, "raw") ? $crear_orden_compra->raw : 0
-            ]);
-        }
-
-        $json['code'] = 200;
-        $json['message'] = "Orden de compra creada correctamente con el ID " . $documento;
-
-        $pdf = self::ordenes_generar_pdf($documento, $auth);
-
-        if ($pdf->error) {
-            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
-
-            return response()->json($json);
-        }
-
-        $json['file'] = $pdf->data;
-        $json['name'] = $pdf->name;
-
-        return response()->json($json);
-    }
-
-    /* Compra > producto */
-    public function compra_producto_gestion_data(Request $request): JsonResponse
-    {
-        $auth = json_decode($request->auth);
-
-        $empresas = DB::select("SELECT empresa.id, empresa.bd, empresa.empresa FROM empresa INNER JOIN usuario_empresa ON empresa.id = usuario_empresa.id_empresa WHERE empresa.status = 1 AND empresa.id != 0 AND usuario_empresa.id_usuario = " . $auth->id);
-        $proveedores = DB::select("SELECT id, razon_social FROM modelo_proveedor WHERE status = 1 AND id != 0 AND id != 4");
-
-        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
-        $categorias_uno = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 1 ORDER BY categoria DESC");
-        $categorias_dos = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 2 ORDER BY categoria DESC");
-        $categorias_tres = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 3 ORDER BY categoria DESC");
-        $categorias_cuatro = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 4 ORDER BY categoria DESC");
-
-        return response()->json([
-            'code'  => 200,
-            'tipos' => $tipos,
-            'empresas'  => $empresas,
-            'proveedores' => $proveedores,
-            'categorias_uno' => $categorias_uno,
-            'categorias_dos' => $categorias_dos,
-            'categorias_tres' => $categorias_tres,
-            'categorias_cuatro' => $categorias_cuatro
-        ]);
-    }
-
-    public function compra_producto_gestion_producto(Request $request): JsonResponse
-    {
-        set_time_limit(0);
-        $data = json_decode($request->input('data'));
-        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
-
-        $productos = DB::table("modelo")
-            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-            ->where("status", 1)
-            ->where("sku", $data->criterio)
-            ->get()
-            ->toArray();
-
-        if (empty($productos)) {
-            $productos = DB::table("modelo")
-                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                ->where("status", 1)
-                ->where("descripcion", "LIKE", "%" . $data->criterio . "%")
-                ->get()
-                ->toArray();
-
-            if (empty($productos)) {
-                $sinonimo = DB::table("modelo_sinonimo")
-                    ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-                    ->select("modelo.sku")
-                    ->where("modelo_sinonimo.codigo", trim($data->criterio))
-                    ->first();
-
-                if (!empty($sinonimo)) {
-                    $productos = DB::table("modelo")
-                        ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                        ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                        ->where("status", 1)
-                        ->where("sku", $sinonimo->sku)
-                        ->get()
-                        ->toArray();
-                }
-            }
-        }
-
-        foreach ($productos as $producto) {
-            $producto->precios_empresa = DB::table("modelo_precio")
-                ->select("id_empresa", "precio")
-                ->where("id_modelo", $producto->id)
-                ->get()
-                ->toArray();
-
-            $producto->proveedores = DB::table("modelo_proveedor")
-                ->select("id", "razon_social")
-                ->where("status", 1)
-                ->where("id", "<>", 0)
-                ->get()
-                ->toArray();
-
-            foreach ($producto->proveedores as $proveedor) {
-                $proveedor->productos = array();
-                $proveedor->producto_text = "";
-
-                $existe_codigo_proveedor = DB::table("modelo_proveedor_producto")
-                    ->select("id")
-                    ->where("id_modelo_proveedor", $proveedor->id)
-                    ->where("id_modelo", $producto->id)
-                    ->first();
-
-                $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
-            }
-
-            $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
-
-            $amazon_data = new stdClass();
-
-            $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
-            $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
-
-            $producto->amazon = $amazon_data;
-
-            $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
-
-            $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
-        }
-
-        return response()->json([
-            'code'  => 200,
-            'tipos' => $tipos,
-            'productos' => $productos
-        ]);
-    }
-
-    public function compra_producto_gestion_productos(Request $request): JsonResponse
-    {
-        set_time_limit(0);
-        $data = json_decode($request->input('data'));
-        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
-        $productosArray = array(); // Initialize the array to store results
-
-        foreach ($data as $criterio) {
-
-            $productos = DB::table("modelo")
-                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                ->where("status", 1)
-                ->where("sku", $criterio)
-                ->get()
-                ->toArray();
-
-            if (empty($productos)) {
-                $productos = DB::table("modelo")
-                    ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                    ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                    ->where("status", 1)
-                    ->where("descripcion", "LIKE", "%" . $criterio . "%")
-                    ->get()
-                    ->toArray();
-
-                if (empty($productos)) {
-                    $sinonimo = DB::table("modelo_sinonimo")
-                        ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-                        ->select("modelo.sku")
-                        ->where("modelo_sinonimo.codigo", trim($criterio))
-                        ->first();
-
-                    if (!empty($sinonimo)) {
-                        $productos = DB::table("modelo")
-                            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                            ->where("status", 1)
-                            ->where("sku", $sinonimo->sku)
-                            ->get()
-                            ->toArray();
-                    }
-                }
-            }
-
-            foreach ($productos as $producto) {
-                $producto->precios_empresa = DB::table("modelo_precio")
-                    ->select("id_empresa", "precio")
-                    ->where("id_modelo", $producto->id)
-                    ->get()
-                    ->toArray();
-
-                $producto->proveedores = DB::table("modelo_proveedor")
-                    ->select("id", "razon_social")
-                    ->where("status", 1)
-                    ->where("id", "<>", 0)
-                    ->get()
-                    ->toArray();
-
-                foreach ($producto->proveedores as $proveedor) {
-                    $proveedor->productos = array();
-                    $proveedor->producto_text = "";
-
-                    $existe_codigo_proveedor = DB::table("modelo_proveedor_producto")
-                        ->select("id")
-                        ->where("id_modelo_proveedor", $proveedor->id)
-                        ->where("id_modelo", $producto->id)
-                        ->first();
-
-                    $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
-                }
-
-                $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
-
-                $amazon_data = new stdClass();
-
-                $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
-                $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
-
-                $producto->amazon = $amazon_data;
-
-                $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
-
-                $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
-            }
-            array_push($productosArray, ...$productos);
-        }
-        return response()->json([
-            'code'  => 200,
-            'tipos' => $tipos,
-            'productos' => $productosArray
-        ]);
-    }
-
-    public function compra_producto_buscar_codigo_sat(Request $request): JsonResponse
-    {
-        $criterio = $request->input('criterio');
-        $existe_codigo = DB::table('modelo_sat')->where('clave_sat', trim($criterio))->first();
-
-        if (empty($existe_codigo)) {
-            $existe_descripcion = DB::table('modelo_sat')->where('descripcion', 'like', '%'.trim($criterio).'%')->get();
-
-            if(empty($existe_descripcion)) {
-                $existe_sinonimo = DB::table('modelo_sinonimo')->where('sinonimos', 'like', '%'.trim($criterio).'%')->get();
-
-                if(empty($existe_sinonimo)) {
-                    return response()->json([
-                        'code'  => 500,
-                        'message' => "No se encontro el codigo sat con el criterio proporcionado."
-                    ]);
-                } else {
-                    return response()->json([
-                        'code'  => 200,
-                        'message' => "Codigo encontrado.",
-                        'data' => $existe_sinonimo
-                    ]);
-                }
-            } else {
-                return response()->json([
-                    'code'  => 200,
-                    'message' => "Codigo encontrado.",
-                    'data' => $existe_descripcion
-                ]);
-            }
-        } else {
-            return response()->json([
-                'code'  => 200,
-                'message' => "Codigo encontrado.",
-                'data' => $existe_codigo
-            ]);
-        }
-    }
-
-    public function compra_producto_gestion_crear(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-        $empresa = $request->input('empresa');
-
-        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
-
-        $informacion_empresa = DB::table("empresa")->find($empresa);
-
-        if (!$informacion_empresa) {
-            return response()->json([
-                "message" => "No se encontró información de la empresa proporcionada"
-            ]);
-        }
-
-        if ($data->id != 0) { # Ya existe el producto en el crm
-            $modelo_id = $data->id;
-
-            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id);
-
-            if (!empty($existe_producto)) {
-                return response()->json([
-                    'code' => 200,
-                    'message' => "Producto actualizado correctamente."
-                ]);
-            }
-
-            DB::table('modelo')->where(['id' => $data->id])->update([
-                'id_tipo' => $data->tipo,
-                'sku' => $data->sku,
-                'descripcion' => $data->descripcion,
-                'costo' => $data->costo,
-                'alto' => $data->alto,
-                'ancho' => $data->ancho,
-                'largo' => $data->largo,
-                'peso' => $data->peso,
-                'serie' => $data->serie,
-                'clave_sat' => $data->clave_sat, // clave del sat
-                'unidad' => 'PIEZA',
-                'clave_unidad' => $data->clave_unidad,
-                'refurbished' => $data->refurbished,
-                'np' => $data->np,
-                'cat1' => $data->cat1,
-                'cat2' => $data->cat2,
-                'cat3' => $data->cat3,
-                'cat4' => $data->cat4,
-                'caducidad' => $data->caducidad,
-            ]);
-
-            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
-
-            DB::table('modelo_edits')->insert([
-                'id_modelo' => $data->id,
-                'id_usuario' => $auth->id,
-                'informacion_antes' => json_encode($producto_data_anterior[0]),
-                'informacion_despues' => json_encode($producto_data_actual[0])
-            ]);
-
-            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id);
-
-            if (empty($existe_amazon)) {
-                DB::table("modelo_amazon")->insert([
-                    "id_modelo" => $data->id,
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-            } else {
-                DB::table("modelo_amazon")->where(["id_modelo" => $data->id])->update([
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-            }
-
-            try {
-                foreach ($data->imagenes as $archivo) {
-                    if ($archivo->nombre != "" && $archivo->data != "") {
-                        $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                        $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                            ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                            ->addHeader('Content-Type', 'application/octet-stream')
-                            ->body($archivo_data)
-                            ->send();
-
-                        DB::table('modelo_imagen')->insert([
-                            'id_modelo' => $data->id,
-                            'nombre' => $archivo->nombre,
-                            'dropbox' => $response->body->id
-                        ]);
-                    }
-                }
-            } catch (Exception $e) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-                ]);
-            }
-        } else {
-            $existe_producto = DB::select("SELECT id FROM modelo WHERE sku = '" . TRIM($data->sku) . "'");
-
-            if (empty($existe_producto)) {
-                $modelo_id = DB::table('modelo')->insertGetId([
-                    'id_tipo' => $data->tipo,
-                    'sku' => $data->sku,
-                    'descripcion' => $data->descripcion,
-                    'costo' => $data->costo,
-                    'alto' => $data->alto,
-                    'ancho' => $data->ancho,
-                    'largo' => $data->largo,
-                    'peso' => $data->peso,
-                    'serie' => $data->serie,
-                    'clave_sat' => $data->clave_sat, // clave del sat
-                    'unidad' => 'PIEZA',
-                    'clave_unidad' => $data->clave_unidad,
-                    'refurbished' => $data->refurbished,
-                    'np' => $data->np,
-                    'cat1' => $data->cat1,
-                    'cat2' => $data->cat2,
-                    'cat3' => $data->cat3,
-                    'cat4' => $data->cat4,
-                    'caducidad' => $data->caducidad,
-
-                ]);
-
-                DB::table("modelo_amazon")->insert([
-                    "id_modelo" => $modelo_id,
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-
-                try {
-                    foreach ($data->imagenes as $archivo) {
-                        if ($archivo->nombre != "" && $archivo->data != "") {
-                            $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                                ->addHeader('Content-Type', 'application/octet-stream')
-                                ->body($archivo_data)
-                                ->send();
-
-                            DB::table('modelo_imagen')->insert([
-                                'id_modelo' => $modelo_id,
-                                'nombre' => $archivo->nombre,
-                                'dropbox' => $response->body->id
-                            ]);
-                        }
-                    }
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-                    ]);
-                }
-            } else {
-                $modelo_id = $existe_producto[0]->id;
-
-                DB::table('modelo')->where("id", $existe_producto[0]->id)->update([
-                    'id_tipo' => $data->tipo,
-                    'sku' => $data->sku,
-                    'descripcion' => $data->descripcion,
-                    'costo' => $data->costo,
-                    'alto' => $data->alto,
-                    'ancho' => $data->ancho,
-                    'largo' => $data->largo,
-                    'peso' => $data->peso,
-                    'serie' => $data->serie,
-                    'clave_sat' => $data->clave_sat, // clave del sat
-                    'unidad' => 'PIEZA',
-                    'clave_unidad' => $data->clave_unidad,
-                    'refurbished' => $data->refurbished,
-                    'np' => $data->np,
-                    'cat1' => $data->cat1,
-                    'cat2' => $data->cat2,
-                    'cat3' => $data->cat3,
-                    'cat4' => $data->cat4,
-                    'caducidad' => $data->caducidad,
-
-                ]);
-            }
-        }
-
-        foreach ($data->proveedores as $proveedor) {
-            if (!empty($proveedor->producto)) {
-                DB::table("modelo_proveedor_producto")
-                    ->where("id", $proveedor->producto)
-                    ->update([
-                        "id_modelo" => $modelo_id
-                    ]);
-            } else {
-                DB::table("modelo_proveedor_producto")
-                    ->where("id_modelo_proveedor", $proveedor->id)
-                    ->where("id_modelo", $modelo_id)
-                    ->update([
-                        "id_modelo" => ""
-                    ]);
-            }
-        }
-
-        if (!empty($data->precio->empresa)) {
-            if (!empty($data->precio->productos)) {
-                foreach ($data->precio->productos as $producto) {
-                    $existe = DB::table("modelo")
-                        ->where("sku", $producto->codigo)
-                        ->select("id")
-                        ->first();
-
-                    if (!empty($existe)) {
-                        $existe_modelo_precio = DB::table("modelo_precio")
-                            ->where("id_modelo", $existe->id)
-                            ->where("id_empresa", $data->precio->empresa)
-                            ->select("id", "precio")
-                            ->first();
-
-                        if (empty($existe_modelo_precio)) {
-                            DB::table("modelo_precio")->insert([
-                                "id_usuario" => $auth->id,
-                                "id_modelo" => $existe->id,
-                                "id_empresa" => $data->precio->empresa,
-                                "precio" => $producto->precio
-                            ]);
-                        } else {
-                            DB::table("modelo_precio")->where("id", $existe->id)->update([
-                                "precio" => $producto->precio,
-                            ]);
-
-                            DB::table("modelo_precio_updates")->insert([
-                                "id_modelo_precio" => $existe_modelo_precio->id,
-                                "id_usuario" => $auth->id,
-                                "precio_anterior" => $existe_modelo_precio->precio,
-                                "precio_actualizado" => $producto->precio
-                            ]);
-                        }
-                    }
-                }
-            } else {
-                $modelo_id = 0;
-
-                if ($data->id == 0) {
-                    $existe = DB::table("modelo")
-                        ->where("sku", $data->sku)
-                        ->select("id", "costo")
-                        ->first();
-
-                    if (!empty($existe)) {
-                        $modelo_id = $existe->id;
-                    }
-                } else {
-                    $modelo_id = $data->id;
-                }
-
-                if ($modelo_id !== 0) {
-                    $existe_modelo_precio = DB::table("modelo_precio")
-                        ->where("id_modelo", $modelo_id)
-                        ->where("id_empresa", $data->precio->empresa)
-                        ->select("id", "precio")
-                        ->first();
-
-                    if (empty($existe_modelo_precio)) {
-                        DB::table("modelo_precio")->insert([
-                            "id_usuario" => $auth->id,
-                            "id_modelo" => $modelo_id,
-                            "id_empresa" => $data->precio->empresa,
-                            "precio" => $data->precio->precio
-                        ]);
-                    } else {
-                        DB::table("modelo_precio")->where("id_modelo", $modelo_id)->where("id_empresa", $data->precio->empresa)->update([
-                            "precio" => $data->precio->precio
-                        ]);
-
-                        DB::table("modelo_precio_updates")->insert([
-                            "id_modelo_precio" => $existe_modelo_precio->id,
-                            "id_usuario" => $auth->id,
-                            "precio_anterior" => $existe_modelo_precio->precio,
-                            "precio_actualizado" => $data->precio->precio
-                        ]);
-                    }
-                }
-            }
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => "Producto actualizado / agregado correctamente"
-        ]);
-    }
-
-    public function compra_producto_gestion_imagen($dropbox): JsonResponse
-    {
-        DB::table('modelo_imagen')->where(['dropbox' => $dropbox])->delete();
-
-        return response()->json([
-            'code'  => 200
-        ]);
-    }
-
-    public function compra_producto_gestion_producto_proveedor(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input("data"));
-
-        $productos = DB::table("modelo_proveedor_producto")
-            ->where("id", $data->producto)
-            ->where("id_modelo_proveedor", $data->proveedor)
-            ->where("activo", 1)
-            ->get()
-            ->toArray();
-
-        if (empty($productos)) {
-            $productos = DB::table("modelo_proveedor_producto")
-                ->where("id_producto", $data->producto)
-                ->where("id_modelo_proveedor", $data->proveedor)
-                ->where("activo", 1)
-                ->get()
-                ->toArray();
-
-            if (empty($productos)) {
-                $productos = DB::table("modelo_proveedor_producto")
-                    ->where("descripcion", "like", "%" . $data->producto . "%")
-                    ->where("id_modelo_proveedor", $data->proveedor)
-                    ->where("activo", 1)
-                    ->get()
-                    ->toArray();
-            }
-        }
-
-        return response()->json([
-            "code" => 200,
-            "data" => $productos
-        ]);
-    }
-
-    /**
-     * @throws \PhpOffice\PhpSpreadsheet\Exception
-     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
-     */
-    public function compra_producto_importacion_crear(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-
-        $spreadsheet    = new Spreadsheet();
-        $sheet          = $spreadsheet->getActiveSheet();
-        $contador_fila  = 2;
-
-        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor();
-
-        # Cabecera
-        $sheet->setCellValue('A1', 'CÓDIGO');
-        $sheet->setCellValue('B1', 'MPN');
-        $sheet->setCellValue('C1', 'DESCRIPCIÓN');
-        $sheet->setCellValue('D1', 'TIPO');
-        $sheet->setCellValue('E1', 'SERIE');
-        $sheet->setCellValue('F1', 'CADUCIDAD');
-        $sheet->setCellValue('G1', 'SAT');
-        $sheet->setCellValue('H1', 'RESULTADO');
-
-        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('5FE4DB'); # Fondo de la cabecera de color azul
-
-        foreach ($data->productos as $producto) {
-            $medidas = explode("X", $producto->medidas);
-            $alto = (array_key_exists('0', $medidas)) ? (!empty($medidas[0])) ? $medidas[0] : '10' : '10';
-            $ancho = (array_key_exists('1', $medidas)) ? (!empty($medidas[1])) ? $medidas[1] : '10' : '10';
-            $largo = (array_key_exists('2', $medidas)) ? (!empty($medidas[2])) ? $medidas[2] : '10' : '10';
-            $resultado = "";
-
-            $existe_producto_crm = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
-
-            if (empty($existe_producto_crm)) {
-                try {
-                    /** @noinspection PhpUnusedLocalVariableInspection */
-                    $modelo_id = DB::table('modelo')->insertGetId([
-                        'id_tipo'       => $producto->tipo,
-                        'sku'           => $producto->codigo,
-                        'descripcion'   => $producto->descripcion,
-                        'costo'         => 0,
-                        'alto'          => $alto,
-                        'ancho'         => $ancho,
-                        'largo'         => $largo,
-                        'peso'          => 1,
-                        'serie'         => $producto->serie,
-                        'clave_sat'     => $producto->sat,
-                        'unidad'        => 'PIEZA',
-                        'clave_unidad'  => $producto->claveunidad,
-                        'refurbished'   => 0,
-                        'np'            => $producto->mpn,
-                        'cat1'          => $producto->cat1,
-                        'cat2'          => $producto->cat2,
-                        'cat3'          => $producto->cat3,
-                        'cat4'          => $producto->cat4,
-                        'caducidad'     => $producto->caducidad
-                    ]);
-
-                    $resultado .= "Producto creado correctamente en CRM.";
-                } catch (Exception $e) {
-                    $resultado .= "Error al crear el producto en CRM, Error: " . $e->getMessage();
-                }
-            } else {
-                DB::table('modelo')->where(['id' => $existe_producto_crm[0]->id])->update([
-                    'descripcion'   => $producto->descripcion,
-                    'costo'         => 0,
-                    'alto'          => $alto,
-                    'ancho'         => $ancho,
-                    'largo'         => $largo,
-                    'peso'          => 1,
-                    'serie'         => $producto->serie,
-                    'clave_sat'     => $producto->sat,
-                    'unidad'        => 'PIEZA',
-                    'clave_unidad'  => $producto->claveunidad,
-                    'refurbished'   => 0,
-                    'np'            => $producto->mpn,
-                    'cat1'          => $producto->cat1,
-                    'cat2'          => $producto->cat2,
-                    'cat3'          => $producto->cat3,
-                    'cat4'          => $producto->cat4,
-                    'caducidad'     => $producto->caducidad
-
-                ]);
-
-                $resultado .= "Producto actualizado correctamente.";
-            }
-
-            $sheet->setCellValue('A' . $contador_fila, $producto->codigo);
-            $sheet->setCellValue('B' . $contador_fila, $producto->mpn);
-            $sheet->setCellValue('C' . $contador_fila, $producto->descripcion);
-            $sheet->setCellValue('D' . $contador_fila, $producto->tipo == 1 ? 'Producto' : 'Servicio');
-            $sheet->setCellValue('E' . $contador_fila, $producto->serie == 1 ? 'Si' : 'No');
-            $sheet->setCellValue('F' . $contador_fila, $producto->caducidad == 1 ? 'Si' : 'No');
-            $sheet->setCellValue('G' . $contador_fila, $producto->sat);
-            $sheet->setCellValue('H' . $contador_fila, $resultado);
-
-            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
-
-            $contador_fila++;
-        }
-
-        # Poner en automatico el ancho de la columna dependiendo el texto que esté dentro
-        $spreadsheet->getActiveSheet()->getColumnDimension('A')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('B')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('C')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('D')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('E')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('F')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('G')->setAutoSize(true);
-        $spreadsheet->getActiveSheet()->getColumnDimension('H')->setAutoSize(true);
-
-        $writer = new Xlsx($spreadsheet);
-        $writer->save('reporte_importacion_producto.xlsx');
-
-        $json['code']  = 200;
-        $json['message']    = "Importación terminada correctamente, se descargara un excel con el detalle de cada producto.";
-        $json['excel'] = base64_encode(file_get_contents('reporte_importacion_producto.xlsx'));
-
-        unlink('reporte_importacion_producto.xlsx');
-
-        return response()->json($json);
-    }
-
-    /* Compra > Categoria */
-    public function compra_producto_categoria_get_data(): JsonResponse
-    {
-        return response()->json([
-            'code' => 200,
-            'data' => $this->rawinfo_categorias()
-        ]);
-    }
-
-    public function compra_producto_categoria_post_crear(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $raw_data = $request->input('data');
-
-        $validator = Validator::make(json_decode($raw_data, true), [
-            'tipo' => "required",
-            'categoria'  => "required"
-        ]);
-
-        if (!$validator->passes()) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => implode("; ", $validator->errors()->all())
-            ]);
-        }
-
-        $existe = DB::select("SELECT id FROM modelo_categoria WHERE tipo = '" . $data->tipo . "' AND categoria = '" . $data->categoria . "'");
-
-        if (!empty($existe)) {
-            return response()->json([
-                'code' => 500,
-                'message' => "Ya existe una categoria registrada con el mismo nombre"
-            ]);
-        }
-
-        if ($data->id != 0) {
-            DB::table('modelo_categoria')->where(['id' => $data->id])->update([
-                'tipo' => $data->tipo,
-                'categoria' => mb_strtoupper($data->categoria, 'UTF-8')
-            ]);
-        } else {
-            DB::table('modelo_categoria')->insert([
-                'tipo' => $data->tipo,
-                'categoria' => mb_strtoupper($data->categoria, 'UTF-8')
-            ]);
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => $data->id == 0 ? "Categoria creada correctamente" : "Categoria editada correctamente",
-            'data' => $this->rawinfo_categorias()
-        ]);
-    }
-
-    public function compra_producto_sinonimo_post_producto(Request $request): JsonResponse
-    {
-        $criterio = $request->input("data");
-
-        $productos = DB::table("modelo")
-            ->select("id", "sku", "descripcion")
-            ->where("sku", $criterio)
-            ->get()
-            ->toArray();
-
-        if (empty($productos)) {
-            $productos = DB::table("modelo")
-                ->select("id", "sku", "descripcion")
-                ->where("descripcion", "like", "%" . $criterio . "%")
-                ->get();
-        }
-
-        foreach ($productos as $producto) {
-            $producto->sinonimos = DB::table("modelo_sinonimo")
-                ->select("codigo")
-                ->where("id_modelo", $producto->id)
-                ->pluck("codigo");
-        }
-
-        return response()->json([
-            "code" => 200,
-            "productos" => $productos
-        ]);
-    }
-
-    public function compra_producto_sinonimo_post_guardar(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input("data"));
-        $auth = json_decode($request->auth);
-
-        DB::table("modelo_sinonimo")
-            ->where("id_modelo", $data->id)
-            ->delete();
-
-        foreach ($data->sinonimos as $sinonimo) {
-            DB::table("modelo_sinonimo")->insert([
-                "id_usuario" => $auth->id,
-                "id_modelo" => $data->id,
-                "codigo" => $sinonimo
-            ]);
-        }
-
-        return response()->json([
-            "code" => 200,
-            "message" => "Sinonimos agregados correctamente"
-        ]);
-    }
-
-    public function compra_producto_sinonimo_post_sinonimo(Request $request): JsonResponse
-    {
-        $data = $request->input("data");
-
-        $sinonimo = DB::table("modelo_sinonimo")
-            ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-            ->select("modelo.sku")
-            ->where("modelo_sinonimo.codigo", trim($data))
-            ->first();
-
-        return response()->json([
-            "code" => 200,
-            "sinonimo" => empty($sinonimo) ? trim($data) : $sinonimo->sku
-        ]);
-    }
-
-    /* Compra > producto > buscar */
-    public function compra_producto_buscar($criterio): JsonResponse
-    {
-        $criterio = urldecode(trim($criterio));
-
-        $productos = DB::table("modelo")
-            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-            ->where("modelo.status", 1)
-            ->where("modelo.sku", $criterio)
-            ->get()
-            ->toArray();
-
-        if (empty($productos)) {
-            $palabras = preg_split('/\s+/', $criterio);
-
-            $query = DB::table("modelo")
-                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                ->where("modelo.status", 1);
-
-            foreach ($palabras as $palabra) {
-                $query->where("modelo.descripcion", "LIKE", "%" . $palabra . "%");
-            }
-
-            $productos = $query->get()->toArray();
-
-            if (empty($productos)) {
-                $sinonimo = DB::table("modelo_sinonimo")
-                    ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-                    ->select("modelo.sku")
-                    ->where("modelo_sinonimo.codigo", $criterio)
-                    ->first();
-
-                if (!empty($sinonimo)) {
-                    $productos = DB::table("modelo")
-                        ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
-                        ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
-                        ->where("modelo.status", 1)
-                        ->where("modelo.sku", $sinonimo->sku)
-                        ->get()
-                        ->toArray();
-                }
-            }
-        }
-
-        return response()->json([
-            "code" => 200,
-            "data" => $productos
-        ]);
-    }
-
-
-    /* Compra > presupuesto */
-    public function compra_presupuesto_data(): JsonResponse
-    {
-        $presupuesto = DB::select("SELECT presupuesto FROM documento_presupuesto WHERE created_at BETWEEN '" . date("Y-m-d", strtotime("monday this week")) . " 00:00:00' AND '" . date("Y-m-d", strtotime("sunday this week")) . " 23:59:59' ORDER BY created_at DESC");
-
-        return response()->json([
-            'code'  => 200,
-            'presupuesto'   => empty($presupuesto) ? 0 : $presupuesto[0]->presupuesto
-        ]);
-    }
-
-    public function compra_presupuesto_guardar($presupuesto): JsonResponse
-    {
-        DB::table('documento_presupuesto')->insert([
-            'presupuesto'   => $presupuesto
-        ]);
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "Presupuesto definido correctamente."
-        ]);
-    }
-
-    /* Compra > Tipo de cambio */
-    public function compra_tipo_cambio_data(): JsonResponse
-    {
-//        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
-
-        return response()->json([
-            'code' => 200,
-            'tc' => DocumentoService::tipo_cambio()
-        ]);
-    }
-
-    public function compra_tipo_cambio_guardar($tc): JsonResponse
-    {
-        DB::table('documento_tipo_cambio')->insert([
-            'tipo_cambio'   => (float) $tc
-        ]);
-
-        return response()->json([
-            'code'  => 200,
-            'message'   => "Tipo de cambio definido correctamente."
-        ]);
-    }
-
-    /* Compra backorder */
-    public function compra_compra_backorder(): JsonResponse
-    {
-        $publicaciones = DB::select("SELECT
-                                        marketplace_publicacion.id,
-                                        marketplace_publicacion.publicacion_id,
-                                        marketplace_publicacion.publicacion,
-                                        marketplace_publicacion.tee
-                                    FROM documento
-                                    INNER JOIN marketplace_publicacion ON documento.mkt_publicacion = marketplace_publicacion.publicacion_id
-                                    WHERE documento.id_fase = 1
-                                    AND documento.id_tipo = 2
-                                    AND documento.status = 1
-                                    GROUP BY marketplace_publicacion.publicacion_id");
-
-        foreach ($publicaciones as $publicacion) {
-            $publicacion->productos = DB::select("SELECT
-                                                    modelo.id,
-                                                    modelo.sku,
-                                                    modelo.descripcion
-                                                FROM marketplace_publicacion_producto
-                                                INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
-
-            foreach ($publicacion->productos as $producto) {
-                $producto->ventas = new stdClass();
-
-                $ventas = DB::select("SELECT
-                                        movimiento.cantidad,
-                                        SUBSTRING_INDEX(documento.mkt_created_at, 'T', 1) AS fecha
-                                    FROM documento
-                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                    WHERE documento.id_fase = 1
-                                    AND documento.id_tipo = 2
-                                    AND documento.status = 1
-                                    AND movimiento.id_modelo = " . $producto->id);
-
-                foreach ($ventas as $venta) {
-                    $fecha = $venta->fecha;
-
-                    if (property_exists($producto->ventas, $venta->fecha)) {
-                        $producto->ventas->$fecha->cantidad += $venta->cantidad;
-                    } else {
-                        $fecha_entrega = date('Y-m-d', strtotime($fecha . ' + ' . $publicacion->tee . ' days'));
-
-                        $fecha_actual = time();
-                        $fecha_entrega = strtotime($fecha_entrega);
-                        $diferencia = $fecha_entrega - $fecha_actual;
-
-                        $producto->ventas->$fecha = new stdClass();
-                        $producto->ventas->$fecha->fecha = $fecha;
-                        $producto->ventas->$fecha->cantidad = $venta->cantidad;
-                        $producto->ventas->$fecha->resta = floor($diferencia / (60 * 60 * 24));
-                    }
-                }
-
-                $existencia = InventarioService::existenciaProducto($producto->sku, 1); # Solo almacén de vidriera y emperesa OMG
-
-                $producto->existencia = $existencia->error ? 0 : $existencia->existencia;
-            }
-        }
-
-        return response()->json([
-            'code'  => 200,
-            'publicaciones' => $publicaciones
-        ]);
-    }
-
-    /* Compra proveedor */
-    public function compra_proveedor_data(): JsonResponse
-    {
-        $regimenes = DB::table("cat_regimen")->get();
-        $paises = DB::table("cat_pais")->get();
-        $periodos = DB::table("documento_periodo")->where('status', 1)->get();
-
-        return response()->json([
-            "code" => 200,
-            "regimenes" => $regimenes,
-            "paises" => $paises,
-            "condiciones" => $periodos
-        ]);
-    }
-
-    public function compra_proveedor_get_data($criterio): JsonResponse
-    {
-        $criterio = str_replace("%20", " ", $criterio);
-
-        $proveedores = DB::select("SELECT * FROM documento_entidad WHERE RFC = '" . $criterio . "' AND tipo = 2 AND status = 1 AND id != 0");
-
-        if (empty($proveedores)) {
-            $proveedores = DB::select("SELECT * FROM documento_entidad WHERE razon_social LIKE '%" . $criterio . "%' AND tipo = 2 AND status = 1 AND id != 0");
-        }
-
-        foreach ($proveedores as $proveedor) {
-            if (!empty($proveedor->info_extra)) {
-                $info_extra = json_decode($proveedor->info_extra);
-
-                $proveedor->pais = $info_extra->pais;
-                $proveedor->regimen = $info_extra->regimen;
-            } else {
-                $proveedor->pais = "";
-                $proveedor->regimen = "";
-            }
-        }
-
-        return response()->json([
-            'code' => 200,
-            'data' => $proveedores
-        ]);
-    }
-
-    public function compra_proveedor_post_guardar(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-        $raw_data = $request->input('data');
-
-        $validator = Validator::make(json_decode($raw_data, true), [
-            'empresa' => "required",
-            'pais' => "required",
-            'regimen' => "required",
-            'razon_social' => "required|max:150",
-            'rfc' => "required|max:13",
-            'email' => "email",
-            'telefono' => "max:20",
-            'celular' => "max:20"
-        ]);
-
-        if (!$validator->passes()) {
-            return response()->json([
-                'code'  => 500,
-                'message'   => implode("; ", $validator->errors()->all())
-            ]);
-        }
-
-        $existe_proveedor = DB::table("documento_entidad")
-                                ->where("rfc", trim($data->rfc))
-                                ->where("tipo", "2")
-                                ->where("status", 1)
-                                ->first();
-
-        $info_extra = new stdClass();
-        $info_extra->pais = $data->pais;
-        $info_extra->regimen = $data->regimen;
-
-        if (empty($existe_proveedor)) {
-            /** @noinspection PhpUnusedLocalVariableInspection */
-            $entidad_id = DB::table('documento_entidad')->insertGetId([
-                'tipo' => 2,
-                'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
-                'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
-                'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
-                'telefono_alt' => mb_strtoupper(trim($data->celular), 'UTF-8'),
-                'correo' => trim($data->email),
-                'info_extra' => json_encode($info_extra),
-                'regimen' => $data->regimen,
-                'regimen_id' => substr($data->regimen, 0, 3),
-                'pais' => $data->pais,
-                'regimen_letra' => substr($data->regimen, 0, 3),
-                'created_by_user' => $auth->id,
-                'codigo_postal_fiscal' => $data->cp
-            ]);
-        } else {
-            DB::table('documento_entidad')->where(['id' => $existe_proveedor->id])->update([
-                'tipo' => 2,
-                'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
-                'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
-                'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
-                'telefono_alt' => mb_strtoupper(trim($data->celular), 'UTF-8'),
-                'correo' => trim($data->email),
-                'info_extra' => json_encode($info_extra),
-                'regimen' => $data->regimen,
-                'regimen_id' => substr($data->regimen, 0, 3),
-                'pais' => $data->pais,
-                'regimen_letra' => substr($data->regimen, 0, 3),
-                'updated_by_user' => $auth->id,
-                'codigo_postal_fiscal' => $data->cp
-            ]);
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => empty($existe_proveedor) ? "Entidad creada correctamente" : "Entidad actualizada correctamente",
-            'raw' => 0,
-            'data' => 0,
-        ]);
-    }
-
-    /* Compra cliente */
-    public function compra_cliente_get_data($criterio): JsonResponse
-    {
-        $criterio = str_replace("%20", " ", $criterio);
-
-        $proveedores = DB::select("SELECT * FROM documento_entidad WHERE RFC = '" . $criterio . "' AND tipo = 1 AND status = 1 AND id != 0");
-
-        if (empty($proveedores)) {
-            $proveedores = DB::select("SELECT * FROM documento_entidad WHERE razon_social LIKE '%" . $criterio . "%' AND tipo = 1 AND status = 1 AND id != 0");
-        }
-
-        /** @noinspection PhpUnusedLocalVariableInspection */
-        foreach ($proveedores as $key => $proveedor) {
-            if (!empty($proveedor->info_extra)) {
-                $info_extra = json_decode($proveedor->info_extra);
-
-                $proveedor->pais = $info_extra->pais ?? '';
-                $proveedor->regimen = $info_extra->regimen ?? '';
-            } else {
-                $proveedor->pais = "";
-                $proveedor->regimen = "";
-            }
-        }
-
-        $proveedores = array_values($proveedores);
-
-        return response()->json([
-            'code' => 200,
-            'data' => $proveedores
-        ]);
-    }
-
-    public function compra_cliente_post_guardar(Request $request): JsonResponse
-    {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
-        $raw_data = $request->input('data');
-
-        $validator = Validator::make(json_decode($raw_data, true), [
-            'empresa' => "required",
-            'pais' => "required",
-            'regimen' => "required",
-            'razon_social' => "required|max:150",
-            'rfc' => "required|max:13",
-            'email' => "email",
-            'telefono' => "max:20",
-            'celular' => "max:20",
-            'condicion' => "required|numeric",
-            'limite' => "required|numeric",
-            'cp' => "required|numeric"
-        ]);
-
-        if (!$validator->passes()) {
-            return response()->json([
-                'code' => 500,
-                'message' => implode("; ", $validator->errors()->all())
-            ]);
-        }
-
-        $info_extra = new stdClass();
-        $info_extra->pais = $data->pais;
-        $info_extra->regimen = $data->regimen;
-        $info_extra->fiscal = $data->fiscal;
-
-
-
-        if ($data->id == 0) {
-            $existe_cliente = DocumentoEntidad::where("rfc", trim($data->rfc))
-                ->where("status", 1)
-                ->where("tipo", 1)
-                ->first();
-
-            if (!$existe_cliente) {
-                $entidad_id = DocumentoEntidad::insertGetId([
-                    'tipo' => 1,
-                    'id_erp' => 0,
-                    'regimen_id' => $data->regimen,
-                    'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
-                    'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
-                    'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
-                    'telefono_alt' => mb_strtoupper(trim($data->celular), 'UTF-8'),
-                    'correo' => trim($data->email),
-                    'info_extra' => json_encode($info_extra),
-                    'limite' => $data->limite,
-                    'condicion' => $data->condicion,
-                    'codigo_postal_fiscal' => $data->cp,
-                    'pais' => $data->pais,
-                    'regimen_letra' => $data->fiscal ?? '',
-                    'created_by_user' => $auth->id
-                ]);
-
-                $old_data = DocumentoEntidad::find($entidad_id);
-            } else {
-                $old_data = $existe_cliente;
-
-                DocumentoEntidad::where(['id' => $existe_cliente->id])->update([
-                    'tipo' => 1,
-                    'regimen_id' => $data->regimen,
-                    'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
-                    'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
-                    'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
-                    'telefono_alt' => mb_strtoupper(trim($data->celular), 'UTF-8'),
-                    'correo' => trim($data->email),
-                    'info_extra' => json_encode($info_extra),
-                    'limite' => $data->limite,
-                    'condicion' => $data->condicion,
-                    'codigo_postal_fiscal' => $data->cp,
-                    'pais' => $data->pais,
-                    'regimen_letra' => $data->fiscal ?? '',
-                    'updated_by_user' => $auth->id
-                ]);
-
-                $entidad_id = $existe_cliente->id;
-            }
-        } else {
-            $old_data = DocumentoEntidad::find($data->id);
-
-            DocumentoEntidad::where(['id' => $data->id])->update([
-                'regimen_id' => $data->regimen,
-                'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
-                'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
-                'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
-                'telefono_alt' => mb_strtoupper(trim($data->celular), 'UTF-8'),
-                'correo' => trim($data->email),
-                'info_extra' => json_encode($info_extra),
-                'limite' => $data->limite,
-                'condicion' => $data->condicion,
-                'codigo_postal_fiscal' => $data->cp,
-                'pais' => $data->pais,
-                'regimen_letra' => $data->fiscal ?? '',
-                'updated_by_user' => $auth->id
-            ]);
-
-            $entidad_id = $data->id;
-        }
-
-        $entidad_data = DocumentoEntidad::find($entidad_id);
-
-        DocumentoEntidadUpdates::insert([
-            "id_usuario" => $auth->id,
-            "id_entidad" => $entidad_data->id,
-            "old_data" => $old_data,
-            "new_data" => $entidad_data
-        ]);
-
-        return response()->json([
-            'code' => 200,
-            'message' => $data->id == 0 ? "Entidad creada correctamente" : "Entidad actualizada correctamente"
-        ]);
-    }
-
-    /**
-     * @throws ConnectionErrorException
-     */
-    public function rawinfo_compra_uuid(): string
-    {
-        set_time_limit(0);
-
-        $compras = DB::select("SELECT
-                                documento.documento_extra, 
-                                documento.uuid,
-                                empresa.bd
-                            FROM documento 
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                            WHERE documento.created_at LIKE '%2019%' 
-                            AND documento.documento_extra != 'N/A' 
-                            AND documento.documento_extra != '' 
-                            AND documento.UUID != 'N/A' 
-                            AND documento.UUID != ''");
-
-        foreach ($compras as $compra) {
-            $array_compra = [
-                "bd"        => $compra->bd,
-                "password"  => config("webservice.token"),
-                "documento" => $compra->documento_extra,
-                "uuid"      => $compra->uuid
-            ];
-
-            \Httpful\Request::post(config('webservice.url') . 'Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')->body($array_compra, Mime::FORM)->send();
-        }
-
-        return "Terminado";
-    }
-
-    public function rawinfo_compra_huawei(): array
-    {
-        $compras = DB::select("SELECT id FROM documento WHERE factura_serie = 'E' AND status = 1 AND id_fase = 93");
-
-        foreach ($compras as $compra) {
-            $productos = DB::select("SELECT
-                                        modelo.serie,
-                                        movimiento.id,
-                                        movimiento.id_modelo,
-                                        movimiento.cantidad
-                                    FROM movimiento
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $compra->id);
-
-            foreach ($productos as $producto) {
-                if ($producto->serie) {
-                    /** @noinspection PhpUnusedLocalVariableInspection */
-                    $series = DB::select("SELECT
-                                            COUNT(producto.*) AS cantidad
-                                        FROM documento
-                                        INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                        WHERE documento.id_tipo = 2
-                                        AND documento.id_almacen_principal_empresa = 34
-                                        AND documento.id_fase > 4
-                                        AND movimiento.id_modelo = " . $producto->id_modelo . "
-                                        AND producto.status = 1");
-                }
-            }
-        }
-
-        return $compras;
-    }
-
-    /* Pedimento */
-    public function compra_pedimento_crear_get_data(): JsonResponse
-    {
-        $empresas = DB::table("empresa")
-            ->select("id", "bd", "empresa")
-            ->where("id", "<>", 0)
-            ->get()
-            ->toArray();
-
-        $monedas = DB::table("moneda")
-            ->get()
-            ->toArray();
-
-        return response()->json([
-            "code" => 200,
-            "empresas" => $empresas,
-            "monedas" => $monedas
-        ]);
-    }
-
-    public function rawinfo_categorias(): array
-    {
-        $categorias = DB::select("SELECT * FROM modelo_categoria");
-        $categorias_uno = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 1 ORDER BY categoria DESC");
-        $categorias_dos = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 2 ORDER BY categoria DESC");
-        $categorias_tres = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 3 ORDER BY categoria DESC");
-        $categorias_cuatro = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 4 ORDER BY categoria DESC");
-
-        return [
-            "categorias" => $categorias,
-            "categorias_uno" => $categorias_uno,
-            "categorias_dos" => $categorias_dos,
-            "categorias_tres" => $categorias_tres,
-            "categorias_cuatro" => $categorias_cuatro
-        ];
-    }
-
-    private function compras_raw_data($extra_data): array
-    {
-        $compras = DB::select("SELECT
-                                    documento.id,
-                                    documento.id_almacen_principal_empresa,
-                                    documento.factura_serie AS serie,
-                                    documento.factura_folio AS folio,
-                                    documento.id_fase,
-                                    documento.credito,
-                                    documento.documento_extra,
-                                    documento.created_at AS expired_at,
-                                    documento_fase.fase,
-                                    documento.comentario,
-                                    documento.tipo_cambio,
-                                    documento.uuid,
-                                    documento_periodo.periodo,
-                                    documento.finished_at,
-                                    documento.expired_at as expired_at_2,
-                                    moneda.moneda,
-                                    almacen.almacen,
-                                    empresa.empresa,
-                                    empresa.bd,
-                                    usuario.nombre
-                                FROM documento
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
-                                INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                AND documento.id_tipo = 1
-                                AND documento.status = 1
-                                " . $extra_data . "
-                                GROUP BY documento.id");
-
-        foreach ($compras as $compra) {
-            $total_documento = 0;
-
-            $proveedor = DB::select("SELECT
-                                        documento_entidad.razon_social,
-                                        documento_entidad.rfc
-                                    FROM documento
-                                    INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                    WHERE documento.id = " . $compra->id . "
-                                    AND documento_entidad.tipo = 2");
-
-            $compra->proveedor = (empty($proveedor)) ? 'Sin proveedor' : $proveedor[0]->razon_social;
-            $compra->rfc = (empty($proveedor)) ? 'Sin proveedor' : $proveedor[0]->rfc;
-
-            $compra->ediciones = DB::select("SELECT
-                                                usuario.nombre,
-                                                documento_updates_by.created_at
-                                            FROM documento
-                                            INNER JOIN documento_updates_by ON documento_updates_by.id_documento = documento.id
-                                            INNER JOIN usuario ON documento_updates_by.id_usuario = usuario.id
-                                            WHERE documento_updates_by.id_documento = " . $compra->id);
-
-            $compra->seguimiento = DB::select("SELECT
-                                                    seguimiento.*, 
-                                                    usuario.nombre 
-                                                FROM seguimiento 
-                                                INNER JOIN usuario ON seguimiento.id_usuario = usuario.id 
-                                                WHERE id_documento = " . $compra->id);
-
-            $compra->productos = DB::select("SELECT
-                                                movimiento.id,
-                                                movimiento.cantidad,
-                                                movimiento.cantidad_aceptada,
-                                                movimiento.precio AS costo,
-                                                movimiento.comentario AS descripcion_2,
-                                                modelo.id AS id_modelo,
-                                                modelo.sku,
-                                                modelo.descripcion,
-                                                modelo.serie,
-                                                modelo.ancho,
-                                                modelo.largo,
-                                                modelo.alto,
-                                                modelo.costo_extra,
-                                                modelo.cat1,
-                                                modelo.cat2,
-                                                modelo.cat3,
-                                                modelo.cat4,
-                                                0 AS almacen,
-                                                1 AS existe
-                                            FROM movimiento
-                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                            WHERE movimiento.id_documento = " . $compra->id);
-
-            $compra->ordenes = DB::select("SELECT
-                                                documento.id
-                                            FROM documento
-                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                            INNER JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
-                                            WHERE documento.id_tipo = 0
-                                            AND documento_recepcion.documento_erp_compra = '" . $compra->documento_extra . "'
-                                            GROUP BY documento.id");
-
-            /** @noinspection PhpUnusedLocalVariableInspection */
-            foreach ($compra->productos as $k => $producto) {
-                $total_documento += (int) $producto->cantidad * (float) $producto->costo;
-
-                if ($producto->serie) {
-                    $series = DB::select("SELECT
-                                        1 AS status,
-                                        producto.id,
-                                        producto.serie
-                                    FROM movimiento_producto
-                                    INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
-
-                    $producto->series           = $series;
-                }
-
-                $producto->sinonimos = DB::table("modelo_sinonimo")
-                    ->select("codigo")
-                    ->where("id_modelo", $producto->id)
-                    ->pluck("codigo");
-            }
-
-            $compra->total = round($total_documento * 1.16, 2);
-        }
-
-        return $compras;
-    }
-
-    /** @noinspection PhpParamsInspection */
     private function ordenes_raw_data($extra_data): array
     {
         set_time_limit(0);
@@ -4134,7 +1774,7 @@ class CompraController extends Controller
             $documento->odc = $documento->odc ? $documento->odc->id : 0;
 
             foreach ($documento->productos as $producto) {
-                $documento->total += (int) $producto->cantidad * (float) $producto->costo;
+                $documento->total += (int)$producto->cantidad * (float)$producto->costo;
 
                 if (strlen($producto->codigo) < 5) {
                     $ultimos2 = substr($producto->codigo, -2);
@@ -4161,6 +1801,258 @@ class CompraController extends Controller
         }
 
         return $documentos;
+    }
+
+    public function compra_orden_autorizacion_requisicion_guardar(Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+        $documento = $request->input('documento');
+        $seguimiento = $request->input('seguimiento');
+
+        DB::table('documento')->where(['id' => $documento])->update([
+            'id_fase' => 603
+        ]);
+
+        if (!empty($seguimiento)) {
+            DB::table('seguimiento')->insert([
+                'id_documento' => $documento,
+                'id_usuario' => $auth->id,
+                'seguimiento' => $seguimiento
+            ]);
+        }
+
+        $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id)[0];
+
+        $view = view('email.notificacion_requisicion_autorizacion')->with([
+            'anio' => date('Y'),
+            'nombre' => $usuario->nombre,
+            'documento' => $documento,
+            'seguimiento' => $seguimiento,
+        ]);
+
+        try {
+            $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+            $domain = "omg.com.mx";
+            $mg->messages()->send($domain, array(
+                'from' => 'CRM OMG International <crm@omg.com.mx>',
+                'to' => $usuario->email,
+                'subject' => 'Requisición con el ID ' . $documento . '.',
+                'html' => $view->render()
+            ));
+
+            $notificacion['titulo'] = "Requisición autorizada";
+            $notificacion['message'] = "Tu requisición con el ID " . $documento . " ha sido autorizada";
+            $notificacion['tipo'] = "success"; // success, warning, danger
+            $notificacion['link'] = "/compra/orden/historial";
+
+            $notificacion_id = DB::table('notificacion')->insertGetId([
+                'data' => json_encode($notificacion)
+            ]);
+
+            DB::table('notificacion_usuario')->insert([
+                'id_usuario' => $usuario->id,
+                'id_notificacion' => $notificacion_id
+            ]);
+
+            $notificacion['id'] = $notificacion_id;
+            $notificacion['usuario'] = $usuario->id;
+
+            event(new PusherEvent(json_encode($notificacion)));
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 200,
+                'message' => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'code' => 200,
+                'message' => "La requisición fue autorizada correctamente pero no fue posible enviar las notifiaciones, mensaje de error: " . $e->getMessage()
+            ]);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Documento autorizado correctamente."
+        ]);
+    }
+
+    public function compra_orden_autorizacion_requisicion_cancelar(Request $request): JsonResponse
+    {
+        $seguimiento = $request->input('seguimiento');
+        $documento = $request->input('documento');
+        $auth = json_decode($request->auth);
+
+        DB::table('documento')->where(['id' => $documento])->update([
+            'status' => 0,
+            'canceled_by' => $auth->id
+        ]);
+
+        DB::table('seguimiento')->insert([
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $seguimiento
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Documento cancelada correctamente."
+        ]);
+    }
+
+    public function compra_orden_orden_data(): JsonResponse
+    {
+        $empresas = DB::select("SELECT id, bd, rfc, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $periodos = DB::select("SELECT id, periodo_en FROM documento_periodo WHERE status = 1");
+        $monedas = DB::select("SELECT id, moneda FROM moneda");
+        $usos_cfdi = DB::table("documento_uso_cfdi")
+            ->select("id", "codigo", "descripcion")
+            ->get()
+            ->toArray();
+        $metodos_pago = DB::table("metodo_pago")
+            ->select("codigo", "metodo_pago")
+            ->get()
+            ->toArray();
+
+        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 603");
+
+        foreach ($empresas as $empresa) {
+            $almacenes = DB::select("SELECT
+                                        empresa_almacen.id,
+                                        almacen.almacen
+                                    FROM empresa_almacen
+                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+                                    WHERE empresa_almacen.id_empresa = " . $empresa->id . "
+                                    AND almacen.status = 1
+                                    AND almacen.id != 0
+                                    ORDER BY almacen.almacen");
+
+            $empresa->almacenes = $almacenes;
+        }
+
+        return response()->json([
+            'code' => 200,
+            'empresas' => $empresas,
+            'periodos' => $periodos,
+            'monedas' => $monedas,
+            'usos_cfdi' => $usos_cfdi,
+            "metodos_pago" => $metodos_pago,
+            'documentos' => $documentos,
+        ]);
+    }
+
+    public function compra_orden_orden_crear(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+
+        $archivos = $data->archivos;
+
+        unset($data->archivos);
+
+        $documento = DB::table('documento')->insertGetId([
+            'id_almacen_principal_empresa' => $data->almacen,
+            'id_moneda' => $data->moneda,
+            'id_periodo' => $data->periodo,
+            'id_tipo' => 0,
+            'id_marketplace_area' => 1,
+            'id_usuario' => $auth->id,
+            'id_fase' => 606,
+            'id_entidad' => $data->proveedor->id,
+            'tipo_cambio' => $data->tipo_cambio,
+            'observacion' => implode(',', $data->documentos),
+            'comentario' => (property_exists($data, "extranjero") && !is_null($data->extranjero)) ? $data->extranjero : "",
+            'referencia' => (property_exists($data, "invoice") && !is_null($data->invoice)) ? $data->invoice : "",
+            'info_extra' => json_encode($data),
+            'arrived_at' => date("Y-m-d", strtotime($data->fecha_entrega))
+        ]);
+
+        foreach ($data->productos as $producto) {
+            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
+
+            if (empty($existe_codigo)) {
+                $modelo_id = DB::table('modelo')->insertGetId([
+                    'id_tipo' => 1,
+                    'sku' => $producto->codigo,
+                    'descripcion' => $producto->descripcion
+                ]);
+
+            } else {
+                $modelo_id = $existe_codigo[0]->id;
+            }
+
+            DB::table('movimiento')->insertGetId([
+                'id_documento' => $documento,
+                'id_modelo' => $modelo_id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->costo,
+                'descuento' => $producto->descuento,
+                'modificacion' => '',
+                'comentario' => $producto->descripcion . " \n " . $producto->comentario,
+                'addenda' => ''
+            ]);
+        }
+
+        try {
+            foreach ($archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+                    $archivo->nombre = "INVOICE_" . $archivo->nombre;
+
+                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                        ->addHeader('Content-Type', 'application/octet-stream')
+                        ->body($archivo_data)
+                        ->send();
+
+                    DB::table('documento_archivo')->insert([
+                        'id_documento' => $documento,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
+                    ]);
+                }
+            }
+        } catch (Exception $e) {
+            DB::table('documento')->where(['id' => $documento])->delete();
+
+            return response()->json([
+                'code' => 500,
+                'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+            ]);
+        }
+
+        foreach ($data->documentos as $documento_relacionado) {
+            $seguimientos = DB::select("SELECT id_usuario, seguimiento FROM seguimiento WHERE id_documento = " . $documento_relacionado);
+
+            foreach ($seguimientos as $seguimiento) {
+                DB::table('seguimiento')->insert([
+                    'id_usuario' => $seguimiento->id_usuario,
+                    'id_documento' => $documento,
+                    'seguimiento' => $seguimiento->seguimiento
+                ]);
+            }
+
+            DB::table('documento')->where(['id' => $documento_relacionado])->update([
+                'status' => 0
+            ]);
+        }
+
+        $json['code'] = 200;
+        $json['message'] = "Orden de compra creada correctamente con el ID " . $documento;
+
+        $pdf = self::ordenes_generar_pdf($documento, $auth);
+
+        if ($pdf->error) {
+            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
+
+            return response()->json($json);
+        }
+
+        $json['file'] = $pdf->data;
+        $json['name'] = $pdf->name;
+
+        return response()->json($json);
     }
 
     private function ordenes_generar_pdf($documento, $auth): stdClass
@@ -4321,7 +2213,7 @@ class CompraController extends Controller
             $pdf->Cell($product_description_height, 5, substr($producto->descripcion, 0, 60), 'LR', false, 'C');
             $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2, '.', ','), 'LR', false, 'C');
             $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2, '.', ','), 'LR', false, 'C');
-            $pdf->Cell($product_total_height, 5, "$ " . number_format((float) $producto->cantidad * (float) $producto->costo, 2, '.', ','), 'LR', false, 'C');
+            $pdf->Cell($product_total_height, 5, "$ " . number_format((float)$producto->cantidad * (float)$producto->costo, 2, '.', ','), 'LR', false, 'C');
             $pdf->Ln();
 
             $current_height_product += 5;
@@ -4624,11 +2516,11 @@ class CompraController extends Controller
             //                # $current_height_product = 5;
             //            }
 
-            $total += (float) $producto->cantidad * (float) $producto->costo;
-            $total_discount += $producto->descuento > 0 ? (($producto->cantidad * (float) $producto->costo) * $producto->descuento / 100) : 0;
+            $total += (float)$producto->cantidad * (float)$producto->costo;
+            $total_discount += $producto->descuento > 0 ? (($producto->cantidad * (float)$producto->costo) * $producto->descuento / 100) : 0;
         }
 
-        $total = $total * (float) $impuesto;
+        $total = $total * (float)$impuesto;
 
         $pdf->Cell($product_qty_height, 10, "", 'LBR', false, 'C');
         $pdf->Cell($product_code_height, 10, "", 'LBR', false, 'C');
@@ -4645,7 +2537,7 @@ class CompraController extends Controller
         $pdf->Cell(130, 7, "Thanks you for your business", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Subtotal", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total / (float) $impuesto, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total / (float)$impuesto, 2, '.', ','), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -4653,7 +2545,7 @@ class CompraController extends Controller
         $pdf->Cell(130, 7, "Special Comments ", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Tax", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float) $impuesto), 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float)$impuesto), 2, '.', ','), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -4769,15 +2661,436 @@ class CompraController extends Controller
             $pdf->Image($informacion_documento->firma, 50, 250, 100, 40, 'png');
         }
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
+        $file_name = "INVOICE_" . $informacion_documento->info_extra->invoice . "_" . $informacion_documento->id . ".pdf";
 
         $response->error = 0;
         $response->data = base64_encode($pdf_data);
         $response->name = $file_name;
 
         return $response;
+    }
+
+    public function compra_orden_modificacion_data(): JsonResponse
+    {
+        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
+        $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $periodos = DB::select("SELECT id, periodo_en AS periodo FROM documento_periodo WHERE status = 1");
+        $monedas = DB::select("SELECT id, moneda FROM moneda");
+
+        return response()->json([
+            'code' => 200,
+            'documentos' => $documentos,
+            'empresas' => $empresas,
+            'periodos' => $periodos,
+            'monedas' => $monedas
+        ]);
+    }
+
+    /** @noinspection PhpUnusedLocalVariableInspection */
+
+    public function compra_orden_modificacion_eliminar($documento, $eliminar): JsonResponse
+    {
+        if (!$eliminar) {
+            $requisiciones = DB::select("SELECT observacion FROM documento WHERE id = " . $documento);
+
+            if (!empty($requisiciones)) {
+                $requisiciones = explode(',', $requisiciones[0]->observacion);
+
+                foreach ($requisiciones as $requisicion) {
+                    DB::table('documento')->where(['id' => $requisicion])->update([
+                        'status' => 1
+                    ]);
+                }
+            }
+        }
+
+        DB::table('documento')->where(['id' => $documento])->update([
+            'status' => 0
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => "OC eliminada correctamente."
+        ]);
+    }
+
+    public function compra_orden_modificacion_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $proveedor = DB::table('documento_entidad')
+            ->select('id')
+            ->where('rfc', $data->proveedor->rfc)
+            ->whereIn('tipo', [2, 3])
+            ->first();
+
+        if (!$proveedor) {
+            $proveedor_id = DB::table('documento_entidad')->insertGetId([
+                'tipo' => 2,
+                'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
+                'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
+                'telefono' => $data->proveedor->telefono,
+                'correo' => $data->proveedor->email,
+            ]);
+        } else {
+            $proveedor_id = $proveedor->id;
+        }
+
+
+        try {
+            foreach ($data->archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+                    $archivo->nombre = "INVOICE_" . $archivo->nombre;
+
+                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                        ->addHeader('Content-Type', 'application/octet-stream')
+                        ->body($archivo_data)
+                        ->send();
+
+                    DB::table('documento_archivo')->insert([
+                        'id_documento' => $data->id,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
+                    ]);
+                }
+            }
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+            ]);
+        }
+
+        DB::table('documento')->where(['id' => $data->id])->update([
+            'id_entidad' => $proveedor_id
+        ]);
+
+        $info_extra = json_decode(DB::select("SELECT info_extra FROM documento WHERE id = " . $data->id)[0]->info_extra);
+        $info_extra->productos = $data->productos;
+        $info_extra->invoice = $data->invoice;
+        $info_extra->fob = $data->fob;
+        $info_extra->billto = $data->billto;
+        $info_extra->shipto = $data->shipto;
+        $info_extra->comentarios = $data->comentarios;
+
+        DB::table('documento')->where(['id' => $data->id])->update([
+            'id_moneda' => $data->moneda,
+            'id_periodo' => $data->periodo,
+            'comentario' => $data->extranjero,
+            'info_extra' => json_encode($info_extra)
+        ]);
+
+        DB::table('movimiento')->where(['id_documento' => $data->id])->delete();
+
+        foreach ($data->productos as $producto) {
+            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
+
+            if (empty($existe_codigo)) {
+                $modelo_id = DB::table('modelo')->insertGetId([
+                    'id_tipo' => 1,
+                    'sku' => $producto->codigo,
+                    'descripcion' => $producto->descripcion
+                ]);
+
+            } else {
+                $modelo_id = $existe_codigo[0]->id;
+            }
+
+            DB::table('movimiento')->insertGetId([
+                'id_documento' => $data->id,
+                'id_modelo' => $modelo_id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->costo,
+                'modificacion' => '',
+                'comentario' => $producto->descripcion,
+                'addenda' => ''
+            ]);
+        }
+
+        $json['code'] = 200;
+        $json['message'] = "OC editada correctamente.";
+
+        $pdf = self::ordenes_generar_pdf($data->id, $auth);
+
+        if ($pdf->error) {
+            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
+
+            return response()->json($json);
+        }
+
+        $json['file'] = $pdf->data;
+        $json['name'] = $pdf->name;
+
+        return response()->json($json);
+    }
+
+    public function compra_orden_recepcion_data(): JsonResponse
+    {
+        set_time_limit(0);
+        $documentos = $this->ordenes_raw_data("AND documento.id_fase = 606");
+        $empresas = DB::table('empresa')
+            ->select('id', 'bd', 'empresa')
+            ->where('status', 1)
+            ->where('id', '!=', 0)
+            ->get();
+        $usuarios = DB::select("SELECT
+                                    usuario.id,
+                                    usuario.nombre,
+                                    usuario.celular,
+                                    nivel.nivel
+                                FROM usuario
+                                INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
+                                INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
+                                INNER JOIN nivel ON subnivel_nivel.id_nivel = nivel.id
+                                INNER JOIN subnivel ON subnivel_nivel.id_subnivel = subnivel.id
+                                WHERE (nivel.nivel = 'COMPRAS' AND subnivel.subnivel = 'ADMINISTRADOR')
+                                OR nivel.nivel = 'ADMINISTRADOR'
+                                AND usuario.id != 1
+                                GROUP BY usuario.id");
+
+        return response()->json([
+            'code' => 200,
+            'documentos' => $documentos,
+            'empresas' => $empresas,
+            'usuarios' => $usuarios,
+        ]);
+    }
+
+    public function compra_orden_recepcion_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $terminada = 1;
+        $movimientos_recepcionados = array();
+
+        $documento_fase = DB::table("documento")
+            ->select("id_fase")
+            ->where("id", $data->id)
+            ->first();
+
+        if (empty($documento_fase)) {
+            return response()->json([
+                "code" => 404,
+                "message" => "No se encontró el documento solicitado para su recepción"
+            ]);
+        }
+
+        if ($documento_fase->id_fase == 607) {
+            return response()->json([
+                "code" => 404,
+                "message" => "La ODC ya fué recepcionada"
+            ]);
+        }
+
+        DB::table("seguimiento")->insert([
+            "id_documento" => $data->id,
+            "id_usuario" => $auth->id,
+            "seguimiento" => empty($data->seguimiento) ? "Sin seguimiento escrito" : $data->seguimiento
+        ]);
+
+        try {
+            foreach ($data->archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+
+                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
+                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
+                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                        ->addHeader('Content-Type', 'application/octet-stream')
+                        ->body($archivo_data)
+                        ->send();
+
+                    DB::table('documento_archivo')->insert([
+                        'id_documento' => $data->id,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response->body->id
+                    ]);
+                }
+            }
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No fue posible subir los archivos a dropbox, actualización cancelada, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+            ]);
+        }
+
+        if ($data->finalizar) {
+            DB::table('documento')->where(['id' => $data->id])->update([
+                'finished_at' => date("Y-m-d H:i:s"),
+                'id_fase' => 607
+            ]);
+
+            return response()->json([
+                "code" => 200,
+                "message" => "ODC finalizada correctamente",
+                "terminada" => 1
+            ]);
+        }
+
+        $almacen = DB::select("SELECT
+                                empresa_almacen.id_almacen,
+                                documento.id_almacen_principal_empresa
+                            FROM documento
+                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                            WHERE documento.id = " . $data->id);
+
+        if (empty($almacen)) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No se encontró el almacén del documento, favor de contactar a un administrador."
+            ]);
+        }
+
+        foreach ($data->productos as $producto) {
+            if ($producto->serie) {
+                if (count($producto->series) > $producto->cantidad) {
+                    return response()->json([
+                        "code" => 500,
+                        "message" => "La cantidad de series registrada excede la cantidad de la orden de compra"
+                    ]);
+                }
+            }
+        }
+
+        $simulacion_documento_erp = uniqid();
+
+        foreach ($data->productos as $producto) {
+            if ($producto->serie) {
+                $total_series = 0;
+
+                foreach ($producto->series as $serie) {
+                    $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
+                    $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
+                    if ($serie->id == 0) $total_series++;
+
+                    if ($serie->id == 0) {
+                        $existe_serie = DB::select("SELECT id, status FROM producto WHERE serie = '" . TRIM($serie->serie) . "'");
+
+                        if (!empty($existe_serie)) {
+                            DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
+                                "id_almacen" => $almacen[0]->id_almacen,
+                                "id_modelo" => $movimiento->id_modelo,
+                                "status" => 1,
+                                "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null
+                            ]);
+                        } else {
+                            $id_serie = DB::table('producto')->insertGetId([
+                                'id_almacen' => $almacen[0]->id_almacen,
+                                'id_modelo' => $movimiento->id_modelo,
+                                'serie' => $serie->serie,
+                                'status' => 1,
+                                "fecha_caducidad" => (property_exists($serie, "fecha_caducidad")) ? $serie->fecha_caducidad : null
+                            ]);
+                        }
+
+                        /** @noinspection PhpUnusedLocalVariableInspection */
+                        /** @noinspection PhpUndefinedVariableInspection */
+                        $movimiento_producto = DB::table('movimiento_producto')->insertGetId([
+                            'id_movimiento' => $producto->id,
+                            'id_producto' => empty($existe_serie) ? $id_serie : $existe_serie[0]->id
+                        ]);
+                    }
+                }
+
+                $producto->series = DB::select("SELECT
+                                        1 AS status,
+                                        producto.id,
+                                        producto.serie
+                                    FROM movimiento_producto
+                                    INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+                                    WHERE movimiento_producto.id_movimiento = " . $producto->id);
+
+                $producto->cantidad_recibida = $total_series;
+            } else {
+                DB::table('movimiento')->where(['id' => $producto->id])->update([
+                    'cantidad_aceptada' => (int)$producto->cantidad_recepcionada_anterior + (int)$producto->cantidad_recepcionada
+                ]);
+
+                /** @noinspection PhpUnusedLocalVariableInspection */
+                $cantidad_recepcionada_total = DB::table("movimiento")
+                    ->select("cantidad", "cantidad_aceptada")
+                    ->where("id", $producto->id)
+                    ->first();
+
+                $producto->cantidad_recibida = (int)$producto->cantidad_recepcionada;
+            }
+
+            if ($producto->cantidad_recibida > 0) {
+                $aplicar_recepcion = InventarioService::procesarRecepcion($producto->id, $producto->cantidad_recibida);
+
+                $movimiento_recepcionado = DB::table("documento_recepcion")->insertGetId([
+                    "id_usuario" => $auth->id,
+                    "id_movimiento" => $producto->id,
+                    "cantidad" => $producto->cantidad_recibida,
+                    "documento_erp" => $simulacion_documento_erp,
+                    "afectado" => $aplicar_recepcion->error ? 0 : 1,
+                ]);
+
+                $movimientos_recepcionados[] = $movimiento_recepcionado;
+            }
+        }
+
+        if ($movimientos_recepcionados == 0) {
+            return response()->json([
+                "code" => 200,
+                "message" => "Seguimiento guardado correctamente",
+                "terminada" => 0
+            ]);
+        }
+
+        foreach ($data->productos as $producto) {
+            if ($producto->serie) {
+                $total_series_recepcionadas = DB::select("SELECT
+                                                            COUNT(*) AS cantidad
+                                                        FROM movimiento
+                                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
+                                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+                                                        WHERE movimiento.id = " . $producto->id)[0]->cantidad;
+
+                if ($total_series_recepcionadas != $producto->cantidad) {
+                    $terminada = 0;
+                }
+            } else {
+                $cantidad_recepcionada_total = DB::table("movimiento")
+                    ->select("cantidad", "cantidad_aceptada")
+                    ->where("id", $producto->id)
+                    ->first();
+
+                if ($cantidad_recepcionada_total->cantidad_aceptada < $cantidad_recepcionada_total->cantidad) {
+                    $terminada = 0;
+                }
+            }
+        }
+
+        if ($terminada) {
+            DB::table('documento')->where(['id' => $data->id])->update([
+                'finished_at' => date("Y-m-d H:i:s"),
+                'id_fase' => 607
+            ]);
+        }
+
+        $json = array();
+
+        if (count($movimientos_recepcionados) > 0) {
+            $pdf = self::ordenes_recepcion_pdf($data->id, $simulacion_documento_erp, $auth->id);
+
+            $json["file"] = base64_encode($pdf->data);
+            $json["name"] = $pdf->name;
+        }
+
+        $json["code"] = 200;
+        $json["productos"] = $data->productos;
+        $json["message"] = $terminada ? "Compra finalizada correctamente" : "Compra actualizada correctamente";
+        $json["terminada"] = $terminada;
+
+        return response()->json($json);
     }
 
     private function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id): stdClass
@@ -4900,5 +3213,1715 @@ class CompraController extends Controller
         $pdf_data_o->data = $pdf_data;
 
         return $pdf_data_o;
+    }
+
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function compra_orden_historial_data(Request $request): JsonResponse
+    {
+        set_time_limit(0);
+
+        $data = json_decode($request->input("data"));
+
+        $impresoras = DB::table("impresora")
+            ->where("status", 1)
+            ->where("cups", "<>", "N/A")
+            ->where("tamanio", "4x8")
+            ->get()
+            ->toArray();
+
+        if (empty($data->documento)) {
+            $query = "AND documento.created_at BETWEEN '" . $data->fecha_inicial . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'";
+
+            $documentos = $this->ordenes_raw_data($query);
+        } else {
+            $query = "AND documento.id = " . $data->documento;
+
+            $documentos = $this->ordenes_raw_data($query);
+
+            if (empty($documentos)) {
+                $query = "AND documento_recepcion.documento_erp = " . $data->documento;
+
+                $documentos = $this->ordenes_raw_data($query);
+            }
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet()->setTitle("HISTORIAL DE COMPRAS");
+        $fila = 2;
+
+        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
+        $spreadsheet->getActiveSheet()->getStyle('A1:V1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+
+        # Cabecera
+        $sheet->setCellValue('A1', 'DOCUMENTO');
+        $sheet->setCellValue('B1', 'PROVEEDOR');
+        $sheet->setCellValue('C1', 'EMPRESA');
+        $sheet->setCellValue('D1', 'ALMACEN');
+        $sheet->setCellValue('E1', 'PERIODO');
+        $sheet->setCellValue('F1', 'MONEDA');
+        $sheet->setCellValue('G1', 'T.C');
+        $sheet->setCellValue('H1', 'IMPUESTO');
+        $sheet->setCellValue('I1', 'TOTAL');
+        $sheet->setCellValue('J1', 'UUID');
+        $sheet->setCellValue('K1', 'EXPIRACIÓN');
+        $sheet->setCellValue('L1', 'CODIGO');
+        $sheet->setCellValue('M1', 'DESCRIPCIÓN');
+        $sheet->setCellValue('N1', 'CANTIDAD');
+        $sheet->setCellValue('O1', 'RECEPCIONADA');
+        $sheet->setCellValue('P1', 'COSTO');
+        $sheet->setCellValue('Q1', 'MARCA');
+        $sheet->setCellValue('R1', 'CATEGORIA');
+        $sheet->setCellValue('S1', 'SUBCATEGORIA');
+        $sheet->setCellValue('T1', 'FASE');
+        $sheet->setCellValue('U1', 'FECHA DE RECEPCIÓN');
+        $sheet->setCellValue('V1', 'FECHA DE CREACION');
+
+        foreach ($documentos as $documento) {
+            $documento_extra_data = json_decode($documento->info_extra);
+
+            $sheet->setCellValue('A' . $fila, $documento->id);
+            $sheet->setCellValue('B' . $fila, $documento->razon_social);
+            $sheet->setCellValue('C' . $fila, $documento->empresa_nombre);
+            $sheet->setCellValue('D' . $fila, $documento->almacen);
+            $sheet->setCellValue('E' . $fila, $documento->periodo);
+            $sheet->setCellValue('F' . $fila, $documento->moneda);
+            $sheet->setCellValue('G' . $fila, $documento->tipo_cambio);
+            $sheet->setCellValue('H' . $fila, is_object($documento_extra_data) ? property_exists($documento_extra_data, "impuesto") ? $documento_extra_data->impuesto . " %" : "N/E" : "N/E");
+            $sheet->setCellValue('I' . $fila, $documento->total);
+            $sheet->setCellValue('J' . $fila, $documento->uuid);
+            $sheet->setCellValue('K' . $fila, $documento->fecha_pago);
+            $sheet->setCellValue('T' . $fila, $documento->fase);
+            $sheet->setCellValue('U' . $fila, $documento->finished_at);
+            $sheet->setCellValue('V' . $fila, $documento->created_at);
+
+            $spreadsheet->getActiveSheet()->getStyle("G" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+            $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+
+            foreach ($documento->productos as $producto) {
+                $sheet->setCellValue('A' . $fila, $documento->id);
+                $sheet->setCellValue('B' . $fila, $documento->razon_social);
+                $sheet->setCellValue('C' . $fila, $documento->empresa_nombre);
+                $sheet->setCellValue('D' . $fila, $documento->almacen);
+                $sheet->setCellValue('E' . $fila, $documento->periodo);
+                $sheet->setCellValue('F' . $fila, $documento->moneda);
+                $sheet->setCellValue('G' . $fila, $documento->tipo_cambio);
+                $sheet->setCellValue('H' . $fila, is_object($documento_extra_data) ? property_exists($documento_extra_data, "impuesto") ? $documento_extra_data->impuesto . " %" : "N/E" : "N/E");
+                $sheet->setCellValue('I' . $fila, $documento->total);
+                $sheet->setCellValue('J' . $fila, $documento->uuid);
+                $sheet->setCellValue('K' . $fila, $documento->fecha_pago);
+                $sheet->setCellValue('L' . $fila, $producto->codigo);
+                $sheet->setCellValue('M' . $fila, $producto->descripcion);
+                $sheet->setCellValue('N' . $fila, $producto->cantidad);
+                $sheet->setCellValue('O' . $fila, $producto->cantidad_recepcionada_anterior);
+                $sheet->setCellValue('P' . $fila, $producto->costo);
+                $sheet->setCellValue('Q' . $fila, $producto->cat2);
+                $sheet->setCellValue('R' . $fila, $producto->cat1);
+                $sheet->setCellValue('S' . $fila, $producto->cat3);
+                $sheet->setCellValue('T' . $fila, $documento->fase);
+                $sheet->setCellValue('U' . $fila, $documento->finished_at);
+                $sheet->setCellValue('V' . $fila, $documento->created_at);
+
+                $spreadsheet->getActiveSheet()->getStyle("G" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+                $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+                $sheet->getCellByColumnAndRow(12, $fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
+                $spreadsheet->getActiveSheet()->getStyle("P" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+
+                $fila++;
+            }
+
+            $fila++;
+
+            if (count($documento->productos) > 0) {
+                $fila--;
+            }
+        }
+
+        foreach (range('A', 'V') as $columna) {
+            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+        }
+
+        $writer = new Xlsx($spreadsheet);
+        $writer->save('odc.xlsx');
+
+        $json['code'] = 200;
+        $json['documentos'] = $documentos;
+        $json['excel'] = base64_encode(file_get_contents('odc.xlsx'));
+        $json['impresoras'] = $impresoras;
+
+        unlink('odc.xlsx');
+
+        return response()->json($json);
+    }
+
+    /* Compra > producto */
+
+    public function compra_orden_historial_descargar($documento, Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+
+        $pdf = self::ordenes_generar_pdf($documento, $auth);
+
+        if ($pdf->error) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje
+            ]);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'file' => $pdf->data,
+            'name' => $pdf->name
+        ]);
+    }
+
+    public function compra_orden_historial_descargar_recepcion_pdf($recepcion): JsonResponse
+    {
+        $documento = DB::table("documento_recepcion")
+            ->select("movimiento.id_documento", "documento_recepcion.id_usuario")
+            ->join("movimiento", "documento_recepcion.id_movimiento", "=", "movimiento.id")
+            ->where("documento_recepcion.documento_erp", $recepcion)
+            ->first();
+
+        $pdf = self::ordenes_recepcion_pdf($documento->id_documento, $recepcion, $documento->id_usuario);
+
+        return response()->json([
+            "code" => 200,
+            "message" => "¡PDF generado correctamente!",
+            "file" => base64_encode($pdf->data),
+            "name" => $pdf->name
+        ]);
+    }
+
+    public function compra_orden_historial_guardar(Request $request): JsonResponse
+    {
+        $seguimiento = $request->input('seguimiento');
+        $documento = $request->input('documento');
+        $auth = json_decode($request->auth);
+
+        DB::table('seguimiento')->insert([
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $seguimiento
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Seguimiento guardado correctamente."
+        ]);
+    }
+
+    public function compra_orden_historial_crear_orden_copia(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input("data"));
+        $auth = json_decode($request->auth);
+
+        $informacion_documento = DB::table("documento")
+            ->where("id", $data->id)
+            ->first();
+
+        if (!$informacion_documento) {
+            return response()->json([
+                "code" => 404,
+                "message" => "No se necontró el documento original para crear su copia"
+            ]);
+        }
+
+        $entidad_documento = DB::table("documento")
+            ->select("id_entidad")
+            ->where("id", $data->id)
+            ->first();
+
+        if (!$entidad_documento) {
+            return response()->json([
+                "code" => 404,
+                "message" => "No se necontró la entidad del documento original para crear su copia"
+            ]);
+        }
+
+        $documento = DB::table('documento')->insertGetId([
+            'id_almacen_principal_empresa' => $informacion_documento->id_almacen_principal_empresa,
+            'id_almacen_secundario_empresa' => $informacion_documento->id_almacen_secundario_empresa,
+            'id_moneda' => $informacion_documento->id_moneda,
+            'id_periodo' => $informacion_documento->id_periodo,
+            'id_tipo' => $informacion_documento->id_tipo,
+            'id_marketplace_area' => $informacion_documento->id_marketplace_area,
+            'id_usuario' => $auth->id,
+            'id_fase' => 606,
+            'id_entidad' => $entidad_documento->id_entidad,
+            'tipo_cambio' => $informacion_documento->tipo_cambio,
+            'observacion' => $data->id,
+            'comentario' => $informacion_documento->comentario,
+            'referencia' => $informacion_documento->referencia,
+            'info_extra' => $informacion_documento->info_extra
+        ]);
+
+        foreach ($data->productos as $producto) {
+            $existe_codigo = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
+
+            if (empty($existe_codigo)) {
+                $modelo_id = DB::table('modelo')->insertGetId([
+                    'id_tipo' => 1,
+                    'sku' => $producto->codigo,
+                    'descripcion' => $producto->descripcion
+                ]);
+
+            } else {
+                $modelo_id = $existe_codigo[0]->id;
+            }
+
+            DB::table('movimiento')->insert([
+                'id_documento' => $documento,
+                'id_modelo' => $modelo_id,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->costo,
+                'modificacion' => '',
+                'comentario' => $producto->descripcion,
+                'addenda' => ''
+            ]);
+        }
+
+        DB::table('seguimiento')->insert([
+            'id_usuario' => $auth->id,
+            'id_documento' => $documento,
+            'seguimiento' => "ODC creada a partir de la ODC con el ID " . $data->id
+        ]);
+
+        $archivos = DB::table("documento_archivo")
+            ->where("id_documento", $data->id)
+            ->get()
+            ->toArray();
+
+        foreach ($archivos as $archivo) {
+            DB::table("documento_archivo")->insert([
+                "id_documento" => $documento,
+                "id_usuario" => $auth->id,
+                "id_impresora" => $archivo->id_impresora,
+                "nombre" => $archivo->nombre,
+                "dropbox" => $archivo->dropbox,
+                "tipo" => $archivo->tipo,
+                "status" => $archivo->status
+            ]);
+        }
+
+        $crear_orden_compra = DocumentoService::crearOrdenCompra($documento);
+
+        if ($crear_orden_compra->error) {
+            DB::table('documento')->where(['id' => $documento])->delete();
+
+            return response()->json([
+                'code' => 500,
+                'message' => $crear_orden_compra->mensaje,
+                'raw' => property_exists($crear_orden_compra, "raw") ? $crear_orden_compra->raw : 0
+            ]);
+        }
+
+        $json['code'] = 200;
+        $json['message'] = "Orden de compra creada correctamente con el ID " . $documento;
+
+        $pdf = self::ordenes_generar_pdf($documento, $auth);
+
+        if ($pdf->error) {
+            $json['message'] .= " . No fue posible generar el PDF, mensaje de error: " . $pdf->mensaje;
+
+            return response()->json($json);
+        }
+
+        $json['file'] = $pdf->data;
+        $json['name'] = $pdf->name;
+
+        return response()->json($json);
+    }
+
+    public function compra_producto_gestion_data(Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+
+        $empresas = DB::select("SELECT empresa.id, empresa.bd, empresa.empresa FROM empresa INNER JOIN usuario_empresa ON empresa.id = usuario_empresa.id_empresa WHERE empresa.status = 1 AND empresa.id != 0 AND usuario_empresa.id_usuario = " . $auth->id);
+        $proveedores = DB::select("SELECT id, razon_social FROM modelo_proveedor WHERE status = 1 AND id != 0 AND id != 4");
+
+        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
+        $categorias_uno = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 1 ORDER BY categoria DESC");
+        $categorias_dos = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 2 ORDER BY categoria DESC");
+        $categorias_tres = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 3 ORDER BY categoria DESC");
+        $categorias_cuatro = DB::select("SELECT categoria FROM modelo_categoria WHERE tipo = 4 ORDER BY categoria DESC");
+
+        return response()->json([
+            'code' => 200,
+            'tipos' => $tipos,
+            'empresas' => $empresas,
+            'proveedores' => $proveedores,
+            'categorias_uno' => $categorias_uno,
+            'categorias_dos' => $categorias_dos,
+            'categorias_tres' => $categorias_tres,
+            'categorias_cuatro' => $categorias_cuatro
+        ]);
+    }
+
+    public function compra_producto_gestion_producto(Request $request): JsonResponse
+    {
+        set_time_limit(0);
+        $data = json_decode($request->input('data'));
+        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
+
+        $productos = DB::table("modelo")
+            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+            ->where("status", 1)
+            ->where("sku", $data->criterio)
+            ->get()
+            ->toArray();
+
+        if (empty($productos)) {
+            $productos = DB::table("modelo")
+                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                ->where("status", 1)
+                ->where("descripcion", "LIKE", "%" . $data->criterio . "%")
+                ->get()
+                ->toArray();
+
+            if (empty($productos)) {
+                $sinonimo = DB::table("modelo_sinonimo")
+                    ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+                    ->select("modelo.sku")
+                    ->where("modelo_sinonimo.codigo", trim($data->criterio))
+                    ->first();
+
+                if (!empty($sinonimo)) {
+                    $productos = DB::table("modelo")
+                        ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                        ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                        ->where("status", 1)
+                        ->where("sku", $sinonimo->sku)
+                        ->get()
+                        ->toArray();
+                }
+            }
+        }
+
+        foreach ($productos as $producto) {
+            $producto->precios_empresa = DB::table("modelo_precio")
+                ->select("id_empresa", "precio")
+                ->where("id_modelo", $producto->id)
+                ->get()
+                ->toArray();
+
+            $producto->proveedores = DB::table("modelo_proveedor")
+                ->select("id", "razon_social")
+                ->where("status", 1)
+                ->where("id", "<>", 0)
+                ->get()
+                ->toArray();
+
+            foreach ($producto->proveedores as $proveedor) {
+                $proveedor->productos = array();
+                $proveedor->producto_text = "";
+
+                $existe_codigo_proveedor = DB::table("modelo_proveedor_producto")
+                    ->select("id")
+                    ->where("id_modelo_proveedor", $proveedor->id)
+                    ->where("id_modelo", $producto->id)
+                    ->first();
+
+                $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
+            }
+
+            $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
+
+            $amazon_data = new stdClass();
+
+            $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
+            $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
+
+            $producto->amazon = $amazon_data;
+
+            $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
+
+            $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
+        }
+
+        return response()->json([
+            'code' => 200,
+            'tipos' => $tipos,
+            'productos' => $productos
+        ]);
+    }
+
+    public function compra_producto_gestion_productos(Request $request): JsonResponse
+    {
+        set_time_limit(0);
+        $data = json_decode($request->input('data'));
+        $tipos = DB::select("SELECT id, tipo FROM modelo_tipo");
+        $productosArray = array(); // Initialize the array to store results
+
+        foreach ($data as $criterio) {
+
+            $productos = DB::table("modelo")
+                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                ->where("status", 1)
+                ->where("sku", $criterio)
+                ->get()
+                ->toArray();
+
+            if (empty($productos)) {
+                $productos = DB::table("modelo")
+                    ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                    ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                    ->where("status", 1)
+                    ->where("descripcion", "LIKE", "%" . $criterio . "%")
+                    ->get()
+                    ->toArray();
+
+                if (empty($productos)) {
+                    $sinonimo = DB::table("modelo_sinonimo")
+                        ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+                        ->select("modelo.sku")
+                        ->where("modelo_sinonimo.codigo", trim($criterio))
+                        ->first();
+
+                    if (!empty($sinonimo)) {
+                        $productos = DB::table("modelo")
+                            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                            ->where("status", 1)
+                            ->where("sku", $sinonimo->sku)
+                            ->get()
+                            ->toArray();
+                    }
+                }
+            }
+
+            foreach ($productos as $producto) {
+                $producto->precios_empresa = DB::table("modelo_precio")
+                    ->select("id_empresa", "precio")
+                    ->where("id_modelo", $producto->id)
+                    ->get()
+                    ->toArray();
+
+                $producto->proveedores = DB::table("modelo_proveedor")
+                    ->select("id", "razon_social")
+                    ->where("status", 1)
+                    ->where("id", "<>", 0)
+                    ->get()
+                    ->toArray();
+
+                foreach ($producto->proveedores as $proveedor) {
+                    $proveedor->productos = array();
+                    $proveedor->producto_text = "";
+
+                    $existe_codigo_proveedor = DB::table("modelo_proveedor_producto")
+                        ->select("id")
+                        ->where("id_modelo_proveedor", $proveedor->id)
+                        ->where("id_modelo", $producto->id)
+                        ->first();
+
+                    $proveedor->producto = empty($existe_codigo_proveedor) ? "" : $existe_codigo_proveedor->id;
+                }
+
+                $amazon = DB::select("SELECT codigo, descripcion FROM modelo_amazon WHERE id_modelo = " . $producto->id);
+
+                $amazon_data = new stdClass();
+
+                $amazon_data->codigo = empty($amazon) ? "" : $amazon[0]->codigo;
+                $amazon_data->descripcion = empty($amazon) ? "" : $amazon[0]->descripcion;
+
+                $producto->amazon = $amazon_data;
+
+                $producto->imagenes_anteriores = DB::select("SELECT nombre, dropbox FROM modelo_imagen WHERE id_modelo = " . $producto->id);
+
+                $producto->producto_exel = empty($producto_exel) ? "" : $producto_exel->id;
+            }
+            array_push($productosArray, ...$productos);
+        }
+        return response()->json([
+            'code' => 200,
+            'tipos' => $tipos,
+            'productos' => $productosArray
+        ]);
+    }
+
+    public function compra_producto_buscar_codigo_sat(Request $request): JsonResponse
+    {
+        $criterio = $request->input('criterio');
+        $existe_codigo = DB::table('modelo_sat')->where('clave_sat', trim($criterio))->first();
+
+        if (empty($existe_codigo)) {
+            $existe_descripcion = DB::table('modelo_sat')->where('descripcion', 'like', '%' . trim($criterio) . '%')->get();
+
+            if (empty($existe_descripcion)) {
+                $existe_sinonimo = DB::table('modelo_sinonimo')->where('sinonimos', 'like', '%' . trim($criterio) . '%')->get();
+
+                if (empty($existe_sinonimo)) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "No se encontro el codigo sat con el criterio proporcionado."
+                    ]);
+                } else {
+                    return response()->json([
+                        'code' => 200,
+                        'message' => "Codigo encontrado.",
+                        'data' => $existe_sinonimo
+                    ]);
+                }
+            } else {
+                return response()->json([
+                    'code' => 200,
+                    'message' => "Codigo encontrado.",
+                    'data' => $existe_descripcion
+                ]);
+            }
+        } else {
+            return response()->json([
+                'code' => 200,
+                'message' => "Codigo encontrado.",
+                'data' => $existe_codigo
+            ]);
+        }
+    }
+
+    /* Compra > Categoria */
+
+    public function compra_producto_gestion_crear(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $empresa = $request->input('empresa');
+
+        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
+
+        $informacion_empresa = DB::table("empresa")->find($empresa);
+
+        if (!$informacion_empresa) {
+            return response()->json([
+                "message" => "No se encontró información de la empresa proporcionada"
+            ]);
+        }
+
+        if ($data->id != 0) { # Ya existe el producto en el crm
+            $modelo_id = $data->id;
+
+            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id);
+
+            if (!empty($existe_producto)) {
+                return response()->json([
+                    'code' => 200,
+                    'message' => "Producto actualizado correctamente."
+                ]);
+            }
+
+            DB::table('modelo')->where(['id' => $data->id])->update([
+                'id_tipo' => $data->tipo,
+                'sku' => $data->sku,
+                'descripcion' => $data->descripcion,
+                'costo' => $data->costo,
+                'alto' => $data->alto,
+                'ancho' => $data->ancho,
+                'largo' => $data->largo,
+                'peso' => $data->peso,
+                'serie' => $data->serie,
+                'clave_sat' => $data->clave_sat, // clave del sat
+                'unidad' => 'PIEZA',
+                'clave_unidad' => $data->clave_unidad,
+                'refurbished' => $data->refurbished,
+                'np' => $data->np,
+                'cat1' => $data->cat1,
+                'cat2' => $data->cat2,
+                'cat3' => $data->cat3,
+                'cat4' => $data->cat4,
+                'caducidad' => $data->caducidad,
+            ]);
+
+            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
+
+            DB::table('modelo_edits')->insert([
+                'id_modelo' => $data->id,
+                'id_usuario' => $auth->id,
+                'informacion_antes' => json_encode($producto_data_anterior[0]),
+                'informacion_despues' => json_encode($producto_data_actual[0])
+            ]);
+
+            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id);
+
+            if (empty($existe_amazon)) {
+                DB::table("modelo_amazon")->insert([
+                    "id_modelo" => $data->id,
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+            } else {
+                DB::table("modelo_amazon")->where(["id_modelo" => $data->id])->update([
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+            }
+
+            try {
+                foreach ($data->imagenes as $archivo) {
+                    if ($archivo->nombre != "" && $archivo->data != "") {
+                        $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+
+                        $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                            ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                            ->addHeader('Content-Type', 'application/octet-stream')
+                            ->body($archivo_data)
+                            ->send();
+
+                        DB::table('modelo_imagen')->insert([
+                            'id_modelo' => $data->id,
+                            'nombre' => $archivo->nombre,
+                            'dropbox' => $response->body->id
+                        ]);
+                    }
+                }
+            } catch (Exception $e) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+                ]);
+            }
+        } else {
+            $existe_producto = DB::select("SELECT id FROM modelo WHERE sku = '" . TRIM($data->sku) . "'");
+
+            if (empty($existe_producto)) {
+                $modelo_id = DB::table('modelo')->insertGetId([
+                    'id_tipo' => $data->tipo,
+                    'sku' => $data->sku,
+                    'descripcion' => $data->descripcion,
+                    'costo' => $data->costo,
+                    'alto' => $data->alto,
+                    'ancho' => $data->ancho,
+                    'largo' => $data->largo,
+                    'peso' => $data->peso,
+                    'serie' => $data->serie,
+                    'clave_sat' => $data->clave_sat, // clave del sat
+                    'unidad' => 'PIEZA',
+                    'clave_unidad' => $data->clave_unidad,
+                    'refurbished' => $data->refurbished,
+                    'np' => $data->np,
+                    'cat1' => $data->cat1,
+                    'cat2' => $data->cat2,
+                    'cat3' => $data->cat3,
+                    'cat4' => $data->cat4,
+                    'caducidad' => $data->caducidad,
+
+                ]);
+
+                DB::table("modelo_amazon")->insert([
+                    "id_modelo" => $modelo_id,
+                    "codigo" => $data->amazon->codigo,
+                    "descripcion" => $data->amazon->descripcion
+                ]);
+
+                try {
+                    foreach ($data->imagenes as $archivo) {
+                        if ($archivo->nombre != "" && $archivo->data != "") {
+                            $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+
+                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
+                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
+                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                                ->addHeader('Content-Type', 'application/octet-stream')
+                                ->body($archivo_data)
+                                ->send();
+
+                            DB::table('modelo_imagen')->insert([
+                                'id_modelo' => $modelo_id,
+                                'nombre' => $archivo->nombre,
+                                'dropbox' => $response->body->id
+                            ]);
+                        }
+                    }
+                } catch (Exception $e) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
+                    ]);
+                }
+            } else {
+                $modelo_id = $existe_producto[0]->id;
+
+                DB::table('modelo')->where("id", $existe_producto[0]->id)->update([
+                    'id_tipo' => $data->tipo,
+                    'sku' => $data->sku,
+                    'descripcion' => $data->descripcion,
+                    'costo' => $data->costo,
+                    'alto' => $data->alto,
+                    'ancho' => $data->ancho,
+                    'largo' => $data->largo,
+                    'peso' => $data->peso,
+                    'serie' => $data->serie,
+                    'clave_sat' => $data->clave_sat, // clave del sat
+                    'unidad' => 'PIEZA',
+                    'clave_unidad' => $data->clave_unidad,
+                    'refurbished' => $data->refurbished,
+                    'np' => $data->np,
+                    'cat1' => $data->cat1,
+                    'cat2' => $data->cat2,
+                    'cat3' => $data->cat3,
+                    'cat4' => $data->cat4,
+                    'caducidad' => $data->caducidad,
+
+                ]);
+            }
+        }
+
+        foreach ($data->proveedores as $proveedor) {
+            if (!empty($proveedor->producto)) {
+                DB::table("modelo_proveedor_producto")
+                    ->where("id", $proveedor->producto)
+                    ->update([
+                        "id_modelo" => $modelo_id
+                    ]);
+            } else {
+                DB::table("modelo_proveedor_producto")
+                    ->where("id_modelo_proveedor", $proveedor->id)
+                    ->where("id_modelo", $modelo_id)
+                    ->update([
+                        "id_modelo" => ""
+                    ]);
+            }
+        }
+
+        if (!empty($data->precio->empresa)) {
+            if (!empty($data->precio->productos)) {
+                foreach ($data->precio->productos as $producto) {
+                    $existe = DB::table("modelo")
+                        ->where("sku", $producto->codigo)
+                        ->select("id")
+                        ->first();
+
+                    if (!empty($existe)) {
+                        $existe_modelo_precio = DB::table("modelo_precio")
+                            ->where("id_modelo", $existe->id)
+                            ->where("id_empresa", $data->precio->empresa)
+                            ->select("id", "precio")
+                            ->first();
+
+                        if (empty($existe_modelo_precio)) {
+                            DB::table("modelo_precio")->insert([
+                                "id_usuario" => $auth->id,
+                                "id_modelo" => $existe->id,
+                                "id_empresa" => $data->precio->empresa,
+                                "precio" => $producto->precio
+                            ]);
+                        } else {
+                            DB::table("modelo_precio")->where("id", $existe->id)->update([
+                                "precio" => $producto->precio,
+                            ]);
+
+                            DB::table("modelo_precio_updates")->insert([
+                                "id_modelo_precio" => $existe_modelo_precio->id,
+                                "id_usuario" => $auth->id,
+                                "precio_anterior" => $existe_modelo_precio->precio,
+                                "precio_actualizado" => $producto->precio
+                            ]);
+                        }
+                    }
+                }
+            } else {
+                $modelo_id = 0;
+
+                if ($data->id == 0) {
+                    $existe = DB::table("modelo")
+                        ->where("sku", $data->sku)
+                        ->select("id", "costo")
+                        ->first();
+
+                    if (!empty($existe)) {
+                        $modelo_id = $existe->id;
+                    }
+                } else {
+                    $modelo_id = $data->id;
+                }
+
+                if ($modelo_id !== 0) {
+                    $existe_modelo_precio = DB::table("modelo_precio")
+                        ->where("id_modelo", $modelo_id)
+                        ->where("id_empresa", $data->precio->empresa)
+                        ->select("id", "precio")
+                        ->first();
+
+                    if (empty($existe_modelo_precio)) {
+                        DB::table("modelo_precio")->insert([
+                            "id_usuario" => $auth->id,
+                            "id_modelo" => $modelo_id,
+                            "id_empresa" => $data->precio->empresa,
+                            "precio" => $data->precio->precio
+                        ]);
+                    } else {
+                        DB::table("modelo_precio")->where("id_modelo", $modelo_id)->where("id_empresa", $data->precio->empresa)->update([
+                            "precio" => $data->precio->precio
+                        ]);
+
+                        DB::table("modelo_precio_updates")->insert([
+                            "id_modelo_precio" => $existe_modelo_precio->id,
+                            "id_usuario" => $auth->id,
+                            "precio_anterior" => $existe_modelo_precio->precio,
+                            "precio_actualizado" => $data->precio->precio
+                        ]);
+                    }
+                }
+            }
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Producto actualizado / agregado correctamente"
+        ]);
+    }
+
+    public function compra_producto_gestion_imagen($dropbox): JsonResponse
+    {
+        DB::table('modelo_imagen')->where(['dropbox' => $dropbox])->delete();
+
+        return response()->json([
+            'code' => 200
+        ]);
+    }
+
+    public function compra_producto_gestion_producto_proveedor(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input("data"));
+
+        $productos = DB::table("modelo_proveedor_producto")
+            ->where("id", $data->producto)
+            ->where("id_modelo_proveedor", $data->proveedor)
+            ->where("activo", 1)
+            ->get()
+            ->toArray();
+
+        if (empty($productos)) {
+            $productos = DB::table("modelo_proveedor_producto")
+                ->where("id_producto", $data->producto)
+                ->where("id_modelo_proveedor", $data->proveedor)
+                ->where("activo", 1)
+                ->get()
+                ->toArray();
+
+            if (empty($productos)) {
+                $productos = DB::table("modelo_proveedor_producto")
+                    ->where("descripcion", "like", "%" . $data->producto . "%")
+                    ->where("id_modelo_proveedor", $data->proveedor)
+                    ->where("activo", 1)
+                    ->get()
+                    ->toArray();
+            }
+        }
+
+        return response()->json([
+            "code" => 200,
+            "data" => $productos
+        ]);
+    }
+
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Exception
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
+    public function compra_producto_importacion_crear(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $contador_fila = 2;
+
+        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor();
+
+        # Cabecera
+        $sheet->setCellValue('A1', 'CÓDIGO');
+        $sheet->setCellValue('B1', 'MPN');
+        $sheet->setCellValue('C1', 'DESCRIPCIÓN');
+        $sheet->setCellValue('D1', 'TIPO');
+        $sheet->setCellValue('E1', 'SERIE');
+        $sheet->setCellValue('F1', 'CADUCIDAD');
+        $sheet->setCellValue('G1', 'SAT');
+        $sheet->setCellValue('H1', 'RESULTADO');
+
+        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('5FE4DB'); # Fondo de la cabecera de color azul
+
+        foreach ($data->productos as $producto) {
+            $medidas = explode("X", $producto->medidas);
+            $alto = (array_key_exists('0', $medidas)) ? (!empty($medidas[0])) ? $medidas[0] : '10' : '10';
+            $ancho = (array_key_exists('1', $medidas)) ? (!empty($medidas[1])) ? $medidas[1] : '10' : '10';
+            $largo = (array_key_exists('2', $medidas)) ? (!empty($medidas[2])) ? $medidas[2] : '10' : '10';
+            $resultado = "";
+
+            $existe_producto_crm = DB::select("SELECT id FROM modelo WHERE sku = '" . $producto->codigo . "'");
+
+            if (empty($existe_producto_crm)) {
+                try {
+                    /** @noinspection PhpUnusedLocalVariableInspection */
+                    $modelo_id = DB::table('modelo')->insertGetId([
+                        'id_tipo' => $producto->tipo,
+                        'sku' => $producto->codigo,
+                        'descripcion' => $producto->descripcion,
+                        'costo' => 0,
+                        'alto' => $alto,
+                        'ancho' => $ancho,
+                        'largo' => $largo,
+                        'peso' => 1,
+                        'serie' => $producto->serie,
+                        'clave_sat' => $producto->sat,
+                        'unidad' => 'PIEZA',
+                        'clave_unidad' => $producto->claveunidad,
+                        'refurbished' => 0,
+                        'np' => $producto->mpn,
+                        'cat1' => $producto->cat1,
+                        'cat2' => $producto->cat2,
+                        'cat3' => $producto->cat3,
+                        'cat4' => $producto->cat4,
+                        'caducidad' => $producto->caducidad
+                    ]);
+
+                    $resultado .= "Producto creado correctamente en CRM.";
+                } catch (Exception $e) {
+                    $resultado .= "Error al crear el producto en CRM, Error: " . $e->getMessage();
+                }
+            } else {
+                DB::table('modelo')->where(['id' => $existe_producto_crm[0]->id])->update([
+                    'descripcion' => $producto->descripcion,
+                    'costo' => 0,
+                    'alto' => $alto,
+                    'ancho' => $ancho,
+                    'largo' => $largo,
+                    'peso' => 1,
+                    'serie' => $producto->serie,
+                    'clave_sat' => $producto->sat,
+                    'unidad' => 'PIEZA',
+                    'clave_unidad' => $producto->claveunidad,
+                    'refurbished' => 0,
+                    'np' => $producto->mpn,
+                    'cat1' => $producto->cat1,
+                    'cat2' => $producto->cat2,
+                    'cat3' => $producto->cat3,
+                    'cat4' => $producto->cat4,
+                    'caducidad' => $producto->caducidad
+
+                ]);
+
+                $resultado .= "Producto actualizado correctamente.";
+            }
+
+            $sheet->setCellValue('A' . $contador_fila, $producto->codigo);
+            $sheet->setCellValue('B' . $contador_fila, $producto->mpn);
+            $sheet->setCellValue('C' . $contador_fila, $producto->descripcion);
+            $sheet->setCellValue('D' . $contador_fila, $producto->tipo == 1 ? 'Producto' : 'Servicio');
+            $sheet->setCellValue('E' . $contador_fila, $producto->serie == 1 ? 'Si' : 'No');
+            $sheet->setCellValue('F' . $contador_fila, $producto->caducidad == 1 ? 'Si' : 'No');
+            $sheet->setCellValue('G' . $contador_fila, $producto->sat);
+            $sheet->setCellValue('H' . $contador_fila, $resultado);
+
+            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->codigo, DataType::TYPE_STRING);
+
+            $contador_fila++;
+        }
+
+        # Poner en automatico el ancho de la columna dependiendo el texto que esté dentro
+        $spreadsheet->getActiveSheet()->getColumnDimension('A')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('B')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('C')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('D')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('E')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('F')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('G')->setAutoSize(true);
+        $spreadsheet->getActiveSheet()->getColumnDimension('H')->setAutoSize(true);
+
+        $writer = new Xlsx($spreadsheet);
+        $writer->save('reporte_importacion_producto.xlsx');
+
+        $json['code'] = 200;
+        $json['message'] = "Importación terminada correctamente, se descargara un excel con el detalle de cada producto.";
+        $json['excel'] = base64_encode(file_get_contents('reporte_importacion_producto.xlsx'));
+
+        unlink('reporte_importacion_producto.xlsx');
+
+        return response()->json($json);
+    }
+
+    public function compra_producto_categoria_get_data(): JsonResponse
+    {
+        return response()->json([
+            'code' => 200,
+            'data' => $this->rawinfo_categorias()
+        ]);
+    }
+
+    /* Compra > producto > buscar */
+
+    public function rawinfo_categorias(): array
+    {
+        $categorias = DB::select("SELECT * FROM modelo_categoria");
+        $categorias_uno = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 1 ORDER BY categoria DESC");
+        $categorias_dos = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 2 ORDER BY categoria DESC");
+        $categorias_tres = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 3 ORDER BY categoria DESC");
+        $categorias_cuatro = DB::select("SELECT id, categoria FROM modelo_categoria WHERE tipo = 4 ORDER BY categoria DESC");
+
+        return [
+            "categorias" => $categorias,
+            "categorias_uno" => $categorias_uno,
+            "categorias_dos" => $categorias_dos,
+            "categorias_tres" => $categorias_tres,
+            "categorias_cuatro" => $categorias_cuatro
+        ];
+    }
+
+
+    /* Compra > presupuesto */
+
+    public function compra_producto_categoria_post_crear(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $raw_data = $request->input('data');
+
+        $validator = Validator::make(json_decode($raw_data, true), [
+            'tipo' => "required",
+            'categoria' => "required"
+        ]);
+
+        if (!$validator->passes()) {
+            return response()->json([
+                'code' => 500,
+                'message' => implode("; ", $validator->errors()->all())
+            ]);
+        }
+
+        $existe = DB::select("SELECT id FROM modelo_categoria WHERE tipo = '" . $data->tipo . "' AND categoria = '" . $data->categoria . "'");
+
+        if (!empty($existe)) {
+            return response()->json([
+                'code' => 500,
+                'message' => "Ya existe una categoria registrada con el mismo nombre"
+            ]);
+        }
+
+        if ($data->id != 0) {
+            DB::table('modelo_categoria')->where(['id' => $data->id])->update([
+                'tipo' => $data->tipo,
+                'categoria' => mb_strtoupper($data->categoria, 'UTF-8')
+            ]);
+        } else {
+            DB::table('modelo_categoria')->insert([
+                'tipo' => $data->tipo,
+                'categoria' => mb_strtoupper($data->categoria, 'UTF-8')
+            ]);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => $data->id == 0 ? "Categoria creada correctamente" : "Categoria editada correctamente",
+            'data' => $this->rawinfo_categorias()
+        ]);
+    }
+
+    public function compra_producto_sinonimo_post_producto(Request $request): JsonResponse
+    {
+        $criterio = $request->input("data");
+
+        $productos = DB::table("modelo")
+            ->select("id", "sku", "descripcion")
+            ->where("sku", $criterio)
+            ->get()
+            ->toArray();
+
+        if (empty($productos)) {
+            $productos = DB::table("modelo")
+                ->select("id", "sku", "descripcion")
+                ->where("descripcion", "like", "%" . $criterio . "%")
+                ->get();
+        }
+
+        foreach ($productos as $producto) {
+            $producto->sinonimos = DB::table("modelo_sinonimo")
+                ->select("codigo")
+                ->where("id_modelo", $producto->id)
+                ->pluck("codigo");
+        }
+
+        return response()->json([
+            "code" => 200,
+            "productos" => $productos
+        ]);
+    }
+
+    /* Compra > Tipo de cambio */
+
+    public function compra_producto_sinonimo_post_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input("data"));
+        $auth = json_decode($request->auth);
+
+        DB::table("modelo_sinonimo")
+            ->where("id_modelo", $data->id)
+            ->delete();
+
+        foreach ($data->sinonimos as $sinonimo) {
+            DB::table("modelo_sinonimo")->insert([
+                "id_usuario" => $auth->id,
+                "id_modelo" => $data->id,
+                "codigo" => $sinonimo
+            ]);
+        }
+
+        return response()->json([
+            "code" => 200,
+            "message" => "Sinonimos agregados correctamente"
+        ]);
+    }
+
+    public function compra_producto_sinonimo_post_sinonimo(Request $request): JsonResponse
+    {
+        $data = $request->input("data");
+
+        $sinonimo = DB::table("modelo_sinonimo")
+            ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+            ->select("modelo.sku")
+            ->where("modelo_sinonimo.codigo", trim($data))
+            ->first();
+
+        return response()->json([
+            "code" => 200,
+            "sinonimo" => empty($sinonimo) ? trim($data) : $sinonimo->sku
+        ]);
+    }
+
+    /* Compra backorder */
+
+    public function compra_producto_buscar($criterio): JsonResponse
+    {
+        $criterio = urldecode(trim($criterio));
+
+        $productos = DB::table("modelo")
+            ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+            ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+            ->where("modelo.status", 1)
+            ->where("modelo.sku", $criterio)
+            ->get()
+            ->toArray();
+
+        if (empty($productos)) {
+            $palabras = preg_split('/\s+/', $criterio);
+
+            $query = DB::table("modelo")
+                ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                ->where("modelo.status", 1);
+
+            foreach ($palabras as $palabra) {
+                $query->where("modelo.descripcion", "LIKE", "%" . $palabra . "%");
+            }
+
+            $productos = $query->get()->toArray();
+
+            if (empty($productos)) {
+                $sinonimo = DB::table("modelo_sinonimo")
+                    ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
+                    ->select("modelo.sku")
+                    ->where("modelo_sinonimo.codigo", $criterio)
+                    ->first();
+
+                if (!empty($sinonimo)) {
+                    $productos = DB::table("modelo")
+                        ->join("modelo_tipo", "modelo.id_tipo", "=", "modelo_tipo.id")
+                        ->select("modelo.*", "modelo_tipo.tipo AS tipo_text", "modelo.id_tipo AS tipo")
+                        ->where("modelo.status", 1)
+                        ->where("modelo.sku", $sinonimo->sku)
+                        ->get()
+                        ->toArray();
+                }
+            }
+        }
+
+        return response()->json([
+            "code" => 200,
+            "data" => $productos
+        ]);
+    }
+
+    /* Compra proveedor */
+
+    public function compra_presupuesto_data(): JsonResponse
+    {
+        $presupuesto = DB::select("SELECT presupuesto FROM documento_presupuesto WHERE created_at BETWEEN '" . date("Y-m-d", strtotime("monday this week")) . " 00:00:00' AND '" . date("Y-m-d", strtotime("sunday this week")) . " 23:59:59' ORDER BY created_at DESC");
+
+        return response()->json([
+            'code' => 200,
+            'presupuesto' => empty($presupuesto) ? 0 : $presupuesto[0]->presupuesto
+        ]);
+    }
+
+    public function compra_presupuesto_guardar($presupuesto): JsonResponse
+    {
+        DB::table('documento_presupuesto')->insert([
+            'presupuesto' => $presupuesto
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Presupuesto definido correctamente."
+        ]);
+    }
+
+    public function compra_tipo_cambio_data(): JsonResponse
+    {
+//        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
+
+        return response()->json([
+            'code' => 200,
+            'tc' => DocumentoService::tipo_cambio()
+        ]);
+    }
+
+    public function compra_tipo_cambio_guardar($tc): JsonResponse
+    {
+        DB::table('documento_tipo_cambio')->insert([
+            'tipo_cambio' => (float)$tc
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Tipo de cambio definido correctamente."
+        ]);
+    }
+
+    public function compra_compra_backorder(): JsonResponse
+    {
+        $publicaciones = DB::select("SELECT
+                                        marketplace_publicacion.id,
+                                        marketplace_publicacion.publicacion_id,
+                                        marketplace_publicacion.publicacion,
+                                        marketplace_publicacion.tee
+                                    FROM documento
+                                    INNER JOIN marketplace_publicacion ON documento.mkt_publicacion = marketplace_publicacion.publicacion_id
+                                    WHERE documento.id_fase = 1
+                                    AND documento.id_tipo = 2
+                                    AND documento.status = 1
+                                    GROUP BY marketplace_publicacion.publicacion_id");
+
+        foreach ($publicaciones as $publicacion) {
+            $publicacion->productos = DB::select("SELECT
+                                                    modelo.id,
+                                                    modelo.sku,
+                                                    modelo.descripcion
+                                                FROM marketplace_publicacion_producto
+                                                INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
+                                                WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
+
+            foreach ($publicacion->productos as $producto) {
+                $producto->ventas = new stdClass();
+
+                $ventas = DB::select("SELECT
+                                        movimiento.cantidad,
+                                        SUBSTRING_INDEX(documento.mkt_created_at, 'T', 1) AS fecha
+                                    FROM documento
+                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                    WHERE documento.id_fase = 1
+                                    AND documento.id_tipo = 2
+                                    AND documento.status = 1
+                                    AND movimiento.id_modelo = " . $producto->id);
+
+                foreach ($ventas as $venta) {
+                    $fecha = $venta->fecha;
+
+                    if (property_exists($producto->ventas, $venta->fecha)) {
+                        $producto->ventas->$fecha->cantidad += $venta->cantidad;
+                    } else {
+                        $fecha_entrega = date('Y-m-d', strtotime($fecha . ' + ' . $publicacion->tee . ' days'));
+
+                        $fecha_actual = time();
+                        $fecha_entrega = strtotime($fecha_entrega);
+                        $diferencia = $fecha_entrega - $fecha_actual;
+
+                        $producto->ventas->$fecha = new stdClass();
+                        $producto->ventas->$fecha->fecha = $fecha;
+                        $producto->ventas->$fecha->cantidad = $venta->cantidad;
+                        $producto->ventas->$fecha->resta = floor($diferencia / (60 * 60 * 24));
+                    }
+                }
+
+                $existencia = InventarioService::existenciaProducto($producto->sku, 1); # Solo almacén de vidriera y emperesa OMG
+
+                $producto->existencia = $existencia->error ? 0 : $existencia->existencia;
+            }
+        }
+
+        return response()->json([
+            'code' => 200,
+            'publicaciones' => $publicaciones
+        ]);
+    }
+
+    public function compra_proveedor_data(): JsonResponse
+    {
+        $regimenes = DB::table("cat_regimen")->get();
+        $paises = DB::table("cat_pais")->get();
+        $periodos = DB::table("documento_periodo")->where('status', 1)->get();
+
+        return response()->json([
+            "code" => 200,
+            "regimenes" => $regimenes,
+            "paises" => $paises,
+            "condiciones" => $periodos
+        ]);
+    }
+
+    public function compra_proveedor_get_data($criterio): JsonResponse
+    {
+        $criterio = urldecode($criterio);
+
+        $proveedores = DB::table('documento_entidad')
+            ->where('rfc', $criterio)
+            ->whereIn('tipo', [2, 3])
+            ->where('status', 1)
+            ->get();
+
+        if ($proveedores->isEmpty()) {
+            $proveedores = DB::table('documento_entidad')
+                ->where('razon_social', 'like', '%' . $criterio . '%')
+                ->whereIn('tipo', [2, 3])
+                ->where('status', 1)
+                ->get();
+        }
+
+        foreach ($proveedores as $proveedor) {
+            if (!empty($proveedor->info_extra)) {
+                $info_extra = json_decode($proveedor->info_extra);
+                $proveedor->pais = $info_extra->pais ?? '';
+                $proveedor->regimen = $info_extra->regimen ?? '';
+            } else {
+                $proveedor->pais = '';
+                $proveedor->regimen = '';
+            }
+        }
+
+        return response()->json([
+            'code' => 200,
+            'data' => $proveedores
+        ]);
+    }
+
+
+    /* Pedimento */
+
+    public function compra_proveedor_post_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $raw_data = $request->input('data');
+
+        $validator = Validator::make(json_decode($raw_data, true), [
+            'empresa' => 'required',
+            'pais' => 'required',
+            'regimen' => 'required',
+            'razon_social' => 'required|max:150',
+            'rfc' => 'required|max:13',
+            'correo' => 'nullable|email',
+            'telefono' => 'nullable|max:20',
+            'telefono_alt' => 'nullable|max:20',
+        ]);
+
+        if (!$validator->passes()) {
+            return response()->json([
+                'code' => 500,
+                'message' => implode("; ", $validator->errors()->all())
+            ]);
+        }
+
+        $existe_proveedor = DB::table('documento_entidad')
+            ->where('rfc', trim($data->rfc))
+            ->whereIn('tipo', [2, 3])
+            ->where('status', 1)
+            ->first();
+
+        $info_extra = (object)[
+            'pais' => $data->pais,
+            'regimen' => $data->regimen,
+        ];
+
+        $payload = [
+            'tipo' => $data->alt ? 3 : 2,
+            'id_erp' => 0,
+            'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
+            'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
+            'telefono' => mb_strtoupper(trim($data->telefono ?? ''), 'UTF-8'),
+            'telefono_alt' => mb_strtoupper(trim($data->telefono_alt ?? ''), 'UTF-8'),
+            'correo' => trim($data->correo ?? ''),
+            'info_extra' => json_encode($info_extra),
+            'regimen' => $data->regimen,
+            'regimen_id' => $data->regimen,
+            'pais' => $data->pais,
+            'regimen_letra' => $data->fiscal ?? '',
+            'codigo_postal_fiscal' => $data->codigo_postal_fiscal ?? null,
+        ];
+
+        if (empty($existe_proveedor)) {
+            $payload['created_by_user'] = $auth->id;
+            $entidad_id = DB::table('documento_entidad')->insertGetId($payload);
+
+            $mensaje = "Entidad creada correctamente";
+        } else {
+            $payload['updated_by_user'] = $auth->id;
+            DB::table('documento_entidad')->where('id', $existe_proveedor->id)->update($payload);
+
+            $mensaje = "Entidad actualizada correctamente";
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => $mensaje,
+            'raw' => $raw_data,
+            'data' => $entidad_id ?? '',
+        ]);
+    }
+
+    public function compra_cliente_get_data(string $criterio): JsonResponse
+    {
+        $criterio = urldecode($criterio);
+
+        $proveedores = DB::table('documento_entidad')
+            ->where('rfc', $criterio)
+            ->whereIn('tipo', [1, 3])
+            ->where('status', 1)
+            ->where('id', '!=', 0)
+            ->get();
+
+        if ($proveedores->isEmpty()) {
+            $proveedores = DB::table('documento_entidad')
+                ->where('razon_social', 'like', "%$criterio%")
+                ->whereIn('tipo', [1, 3])
+                ->where('status', 1)
+                ->where('id', '!=', 0)
+                ->get();
+        }
+
+        $proveedores->transform(function ($proveedor) {
+            $info_extra = json_decode($proveedor->info_extra ?? '', true);
+
+            $proveedor->pais = $info_extra['pais'] ?? '';
+            $proveedor->regimen = $info_extra['regimen'] ?? '';
+
+            return $proveedor;
+        });
+
+        return response()->json([
+            'code' => 200,
+            'data' => $proveedores->values(),
+        ]);
+    }
+
+    public function compra_cliente_post_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $raw_data = $request->input('data');
+
+        $validator = Validator::make(json_decode($raw_data, true), [
+            'empresa' => "required",
+            'pais' => "required",
+            'regimen' => "required",
+            'razon_social' => "required|max:150",
+            'rfc' => "required|max:13",
+            'correo' => "email",
+            'telefono' => "max:20",
+            'telefono_alt' => "max:20",
+            'condicion' => "required|numeric",
+            'limite' => "required|numeric",
+            'codigo_postal_fiscal' => "required|numeric"
+        ]);
+
+        if (!$validator->passes()) {
+            return response()->json([
+                'code' => 500,
+                'message' => implode("; ", $validator->errors()->all())
+            ]);
+        }
+
+        $info_extra = new stdClass();
+        $info_extra->pais = $data->pais;
+        $info_extra->regimen = $data->regimen;
+        $info_extra->fiscal = $data->fiscal;
+
+        if ($data->id == 0) {
+            $existe_cliente = DocumentoEntidad::where("rfc", trim($data->rfc))
+                ->where("status", 1)
+                ->whereIn("tipo", [1, 3])
+                ->first();
+
+            if (!$existe_cliente) {
+                $entidad_id = DocumentoEntidad::insertGetId([
+                    'tipo' => $data->alt ? 3 : 1,
+                    'id_erp' => 0,
+                    'regimen_id' => $data->regimen,
+                    'regimen' => $data->regimen,
+                    'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
+                    'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
+                    'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
+                    'telefono_alt' => mb_strtoupper(trim($data->telefono_alt), 'UTF-8'),
+                    'correo' => trim($data->correo),
+                    'info_extra' => json_encode($info_extra),
+                    'limite' => $data->limite,
+                    'condicion' => $data->condicion,
+                    'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
+                    'pais' => $data->pais,
+                    'regimen_letra' => $data->fiscal ?? '',
+                    'created_by_user' => $auth->id
+                ]);
+
+                $old_data = DocumentoEntidad::find($entidad_id);
+            } else {
+                $old_data = $existe_cliente;
+
+                DocumentoEntidad::where(['id' => $existe_cliente->id])->update([
+                    'tipo' => $data->alt ? 3 : 1,
+                    'regimen_id' => $data->regimen,
+                    'regimen' => $data->regimen,
+                    'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
+                    'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
+                    'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
+                    'telefono_alt' => mb_strtoupper(trim($data->telefono_alt), 'UTF-8'),
+                    'correo' => trim($data->correo),
+                    'info_extra' => json_encode($info_extra),
+                    'limite' => $data->limite,
+                    'condicion' => $data->condicion,
+                    'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
+                    'pais' => $data->pais,
+                    'regimen_letra' => $data->fiscal ?? '',
+                    'updated_by_user' => $auth->id
+                ]);
+
+                $entidad_id = $existe_cliente->id;
+            }
+        } else {
+            $old_data = DocumentoEntidad::find($data->id);
+
+            DocumentoEntidad::where(['id' => $data->id])->update([
+                'regimen_id' => $data->regimen,
+                'regimen' => $data->regimen,
+                'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
+                'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
+                'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
+                'telefono_alt' => mb_strtoupper(trim($data->telefono_alt), 'UTF-8'),
+                'correo' => trim($data->correo),
+                'info_extra' => json_encode($info_extra),
+                'limite' => $data->limite,
+                'condicion' => $data->condicion,
+                'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
+                'pais' => $data->pais,
+                'regimen_letra' => $data->fiscal ?? '',
+                'updated_by_user' => $auth->id
+            ]);
+
+            $entidad_id = $data->id;
+        }
+
+        $entidad_data = DocumentoEntidad::find($entidad_id);
+
+        DocumentoEntidadUpdates::insert([
+            "id_usuario" => $auth->id,
+            "id_entidad" => $entidad_data->id,
+            "old_data" => $old_data,
+            "new_data" => $entidad_data
+        ]);
+
+        return response()->json([
+            'code' => 200,
+            'message' => $data->id == 0 ? "Entidad creada correctamente" : "Entidad actualizada correctamente"
+        ]);
+    }
+
+    /** @noinspection PhpParamsInspection */
+
+    /**
+     * @throws ConnectionErrorException
+     */
+    public function rawinfo_compra_uuid(): string
+    {
+        set_time_limit(0);
+
+        $compras = DB::select("SELECT
+                                documento.documento_extra, 
+                                documento.uuid,
+                                empresa.bd
+                            FROM documento 
+                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                            WHERE documento.created_at LIKE '%2019%' 
+                            AND documento.documento_extra != 'N/A' 
+                            AND documento.documento_extra != '' 
+                            AND documento.UUID != 'N/A' 
+                            AND documento.UUID != ''");
+
+        foreach ($compras as $compra) {
+            $array_compra = [
+                "bd" => $compra->bd,
+                "password" => config("webservice.token"),
+                "documento" => $compra->documento_extra,
+                "uuid" => $compra->uuid
+            ];
+
+            \Httpful\Request::post(config('webservice.url') . 'Compra/Add/UUID/UTKFJKkk3mPc8LbJYmy6KO1ZPgp7Xyiyc1DTGrw')->body($array_compra, Mime::FORM)->send();
+        }
+
+        return "Terminado";
+    }
+
+    public function rawinfo_compra_huawei(): array
+    {
+        $compras = DB::select("SELECT id FROM documento WHERE factura_serie = 'E' AND status = 1 AND id_fase = 93");
+
+        foreach ($compras as $compra) {
+            $productos = DB::select("SELECT
+                                        modelo.serie,
+                                        movimiento.id,
+                                        movimiento.id_modelo,
+                                        movimiento.cantidad
+                                    FROM movimiento
+                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                    WHERE movimiento.id_documento = " . $compra->id);
+
+            foreach ($productos as $producto) {
+                if ($producto->serie) {
+                    /** @noinspection PhpUnusedLocalVariableInspection */
+                    $series = DB::select("SELECT
+                                            COUNT(producto.*) AS cantidad
+                                        FROM documento
+                                        INNER JOIN movimiento ON documento.id = movimiento.id_documento
+                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
+                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
+                                        WHERE documento.id_tipo = 2
+                                        AND documento.id_almacen_principal_empresa = 34
+                                        AND documento.id_fase > 4
+                                        AND movimiento.id_modelo = " . $producto->id_modelo . "
+                                        AND producto.status = 1");
+                }
+            }
+        }
+
+        return $compras;
+    }
+
+    public function compra_pedimento_crear_get_data(): JsonResponse
+    {
+        $empresas = DB::table("empresa")
+            ->select("id", "bd", "empresa")
+            ->where("id", "<>", 0)
+            ->get()
+            ->toArray();
+
+        $monedas = DB::table("moneda")
+            ->get()
+            ->toArray();
+
+        return response()->json([
+            "code" => 200,
+            "empresas" => $empresas,
+            "monedas" => $monedas
+        ]);
     }
 }

@@ -1231,7 +1231,7 @@ class MercadolibreService
 
                         $existe_entidad = DB::table("documento_entidad")
                             ->where("rfc", $proveedor_btob->rfc)
-                            ->where("tipo", 2)
+                            ->where("tipo", [2, 3])
                             ->first();
 
                         if (empty($existe_entidad)) {

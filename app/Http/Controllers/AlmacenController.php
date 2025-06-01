@@ -2560,7 +2560,7 @@ class AlmacenController extends Controller
             if (strpos(TRIM($data->cliente->rfc), 'XAXX0101010') === false) {
                 $existe_cliente = DB::table('documento_entidad')
                     ->where('rfc', trim($data->cliente->rfc))
-                    ->where('tipo', 1)
+                    ->whereIn('tipo', [1, 3])
                     ->value('id');
 
                 if (empty($existe_cliente)) {

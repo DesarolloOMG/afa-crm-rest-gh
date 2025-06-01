@@ -2,26 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\PusherEvent;
 use App\Http\Services\InventarioService;
 use App\Http\Services\WhatsAppService;
-use App\Models\Enums\DocumentoTipo;
+use App\Models\Documento;
+use App\Models\DocumentoGarantiaCausa;
 use App\Models\Enums\DocumentoFase;
-use App\Models\Enums\DocumentoStatus;
-use App\Models\Enums\DocumentoGarantiaTipo;
 use App\Models\Enums\DocumentoGarantiaFase;
+use App\Models\Enums\DocumentoGarantiaTipo;
+use App\Models\Enums\DocumentoStatus;
+use App\Models\Enums\DocumentoTipo;
 use App\Models\Enums\HttpStatusCode;
 use App\Models\Enums\UsuarioNivel;
-
-use App\Models\Documento;
-use App\Models\Usuario;
 use App\Models\Paqueteria;
-use App\Models\DocumentoGarantiaCausa;
-
-use App\Http\Services\DocumentoService;
+use App\Models\Usuario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use App\Events\PusherEvent;
-use Exception;
 use Illuminate\Support\Facades\DB;
 
 class SoporteController extends Controller
@@ -361,17 +357,17 @@ class SoporteController extends Controller
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             WHERE documento.id = " . $data->documento . "");
 
-            $info_entidad = DB::select("SELECT
-                                documento_entidad.*
-                            FROM documento
-                            INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                            WHERE documento.id = " . $data->documento . "
-                            AND documento_entidad.tipo = 1");
+            $info_entidad = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $data->documento)
+                ->whereIn('documento_entidad.tipo', [1, 3])
+                ->select('documento_entidad.*')
+                ->first();
 
-            if (empty($info_documento)) {
+            if (empty($info_entidad)) {
                 return response()->json([
-                    'code'  => 501,
-                    'message'   => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
+                    'code' => 501,
+                    'message' => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
                 ]);
             }
 
@@ -903,19 +899,19 @@ class SoporteController extends Controller
                                     INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
                                     WHERE id_documento = " . $data->documento . "");
 
-                $info_entidad = DB::select("SELECT
-                                    documento_entidad.*
-                                FROM documento
-                                INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                                WHERE documento.id = " . $data->documento . "
-                                AND documento_entidad.tipo = 1");
+                $info_entidad = DB::table('documento')
+                    ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                    ->where('documento.id', $data->documento)
+                    ->whereIn('documento_entidad.tipo', [1, 3])
+                    ->select('documento_entidad.*')
+                    ->first();
 
-                if (empty($info_documento)) {
+                if (empty($info_entidad)) {
                     $json['code'] = 501;
                     $json['message'] = "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador.";
-
                     return $this->make_json($json);
                 }
+
 
                 if (empty($info_entidad)) {
                     $json['code']   = 500;

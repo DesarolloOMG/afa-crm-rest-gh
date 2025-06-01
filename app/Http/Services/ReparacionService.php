@@ -88,20 +88,20 @@ class ReparacionService
                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             WHERE documento.id = " . $data->documento . "");
+            $info_entidad = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $data->documento)
+                ->whereIn('documento_entidad.tipo', [1, 3])
+                ->select('documento_entidad.*')
+                ->first();
 
-            $info_entidad = DB::select("SELECT
-                                documento_entidad.*
-                            FROM documento
-                            INNER JOIN documento_entidad ON documento_entidad.id = documento.id_entidad
-                            WHERE documento.id = " . $data->documento . "
-                            AND documento_entidad.tipo = 1");
-
-            if (empty($info_documento)) {
+            if (!$info_entidad) {
                 return response()->json([
-                    'code'  => 501,
-                    'message'   => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
+                    'code' => 501,
+                    'message' => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
                 ]);
             }
+
 
             if (empty($info_entidad)) {
                 return response()->json([

@@ -2,34 +2,35 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use DB;
+use Illuminate\Http\Request;
 
 class ExternoController extends Controller{
     public function venta_externo_crear(Request $request){
         $data = json_decode($request->input('data'));
 
-        $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
+        $clienteExistente = DB::table('documento_entidad')
+            ->select('id')
+            ->where('rfc', trim($data->cliente->rfc))
+            ->where('tipo', 1)
+            ->first();
 
-        if (empty($existe_cliente)) {
-            $cliente = DB::table('documento_entidad')->insertGetId([
-                'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
-            ]);
-        }
-        else {
-            $cliente = $existe_cliente[0]->id;
+        $valores = [
+            'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+            'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+            'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+            'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+            'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
+        ];
 
-            DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
-            ]);
+        if (!$clienteExistente) {
+            $cliente = DB::table('documento_entidad')->insertGetId($valores + ['tipo' => 1]);
+        } else {
+            $cliente = $clienteExistente->id;
+
+            DB::table('documento_entidad')
+                ->where('id', $cliente)
+                ->update($valores);
         }
 
         $paqueteria_id = 9;

@@ -9,7 +9,6 @@ use App\Http\Services\DocumentoService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MovimientoService;
 use App\Http\Services\WhatsAppService;
-use DOMDocument;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
@@ -2694,19 +2693,24 @@ class ContabilidadController extends Controller
             ]);
         }
 
-        $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->entidad->rfc) . "' AND tipo = 2");
+        $existeEntidad = DB::table('documento_entidad')
+            ->select('id')
+            ->where('rfc', trim($data->entidad->rfc))
+            ->whereIn('tipo', [2, 3])
+            ->first();
 
-        if (empty($existe_entidad)) {
+        if (!$existeEntidad) {
             $entidad = DB::table('documento_entidad')->insertGetId([
                 'tipo' => 2,
                 'razon_social' => mb_strtoupper($data->entidad->razon, 'UTF-8'),
                 'rfc' => mb_strtoupper($data->entidad->rfc, 'UTF-8'),
                 'telefono' => $data->entidad->telefono,
-                'correo' => $data->entidad->email
+                'correo' => $data->entidad->email,
             ]);
         } else {
-            $entidad = $existe_entidad[0]->id;
+            $entidad = $existeEntidad->id;
         }
+
 
         try {
             foreach ($data->archivos as $archivo) {
