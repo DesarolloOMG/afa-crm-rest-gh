@@ -1,4 +1,5 @@
-<?php /** @noinspection PhpRedundantOptionalArgumentInspection */
+<?php /** @noinspection PhpParamsInspection */
+/** @noinspection PhpRedundantOptionalArgumentInspection */
 /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedFieldInspection */
 /** @noinspection PhpUnused */
@@ -400,114 +401,118 @@ class VentaController extends Controller
         ]);
     }
 
+    // OPT
+    /** @noinspection PhpUndefinedVariableInspection */
     public function venta_venta_crear_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
+        $userId = $auth->id;
 
-        $empresas = DB::select("SELECT id, empresa FROM empresa WHERE status = 1 AND id != 0");
-        $periodos = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
-        $paqueterias = DB::select("SELECT id, paqueteria, api FROM paqueteria WHERE status = 1 ORDER BY paqueteria ASC");
-        $impresoras = DB::select("SELECT id, nombre, tamanio FROM impresora WHERE status = 1 AND id != 0");
-        $usos_venta = DB::select("SELECT * FROM documento_uso_cfdi");
-        $metodos = DB::select("SELECT * FROM metodo_pago");
-        $estados = DB::select("SELECT * FROM estados");
-        $regimenes = DB::table("cat_regimen")->get();
-        $marketplaces_publico = DB::select("SELECT
-                                                marketplace.marketplace 
-                                            FROM marketplace_area 
-                                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id 
-                                            WHERE marketplace_area.publico = 1 GROUP BY marketplace.marketplace");
-        $monedas = DB::select("SELECT * FROM moneda");
-        $niveles = DB::select("SELECT id_subnivel_nivel FROM usuario_subnivel_nivel WHERE id_usuario = " . $auth->id);
-        $usuarios = DB::select("SELECT
-                                                usuario.id,
-                                                usuario.nombre
-                                            FROM usuario
-                                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                                            INNER JOIN nivel ON subnivel_nivel.id_nivel = nivel.id
-                                            WHERE nivel.nivel = 'ADMINISTRADOR'
-                                            AND usuario.id != 1
-                                            GROUP BY usuario.id");
+        $areas = DB::table('usuario_marketplace_area')
+            ->join('marketplace_area', 'marketplace_area.id', '=', 'usuario_marketplace_area.id_marketplace_area')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->where('usuario_marketplace_area.id_usuario', $userId)
+            ->where('area.area', '!=', 'N/A')
+            ->groupBy('area.id')
+            ->select('area.id', 'area.area')
+            ->get();
 
-        foreach ($empresas as $empresa) {
-            $almacenes = DB::select("SELECT
-                                        almacen.id AS id_almacen,
-                                        empresa_almacen.id,
-                                        almacen.almacen
-                                    FROM empresa_almacen
-                                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                    WHERE empresa_almacen.id_empresa = " . $empresa->id . "
-                                    AND almacen.status = 1
-                                    AND almacen.id != 0
-                                    ORDER BY almacen.almacen");
+        $areaIds = $areas->pluck('id');
+        $marketplaces = DB::table('marketplace_area')
+            ->join('usuario_marketplace_area', 'marketplace_area.id', '=', 'usuario_marketplace_area.id_marketplace_area')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->leftJoin('marketplace_api', 'marketplace_area.id', '=', 'marketplace_api.id_marketplace_area')
+            ->whereIn('marketplace_area.id_area', $areaIds)
+            ->where('marketplace_area.status', 1)
+            ->where('usuario_marketplace_area.id_usuario', $userId)
+            ->select(
+                'marketplace_area.id',
+                'marketplace_area.id_area',
+                'marketplace.marketplace',
+                'marketplace_api.extra_1',
+                'marketplace_api.extra_2',
+                'marketplace_api.app_id',
+                'marketplace_api.secret',
+                'marketplace_api.guia'
+            )
+            ->get()
+            ->groupBy('id_area');
 
-            $empresa->almacenes = $almacenes;
-        }
-
-        if (empty($niveles)) {
-            return response()->json([
-                'code' => 404,
-                'message' => "No se encontraron los niveles del usuario, favor de contactar al administrador."
-            ]);
-        }
-
-        $areas = DB::select("SELECT
-                                area.id,
-                                area.area
-                            FROM usuario_marketplace_area
-                            INNER JOIN marketplace_area ON marketplace_area.id = usuario_marketplace_area.id_marketplace_area
-                            INNER JOIN area ON marketplace_area.id_area = area.id
-                            WHERE usuario_marketplace_area.id_usuario = " . $auth->id . "
-                            AND area.area != 'N/A'
-                            GROUP BY area.id");
+        $marketplaceIds = $marketplaces->flatten()->pluck('id')->unique();
+        $empresasPorMarketplace = DB::table('marketplace_area_empresa')
+            ->join('empresa', 'marketplace_area_empresa.id_empresa', '=', 'empresa.id')
+            ->whereIn('marketplace_area_empresa.id_marketplace_area', $marketplaceIds)
+            ->select('marketplace_area_empresa.id_marketplace_area', 'empresa.id')
+            ->get()
+            ->groupBy('id_marketplace_area');
 
         foreach ($areas as $area) {
-            $marketplaces = DB::select("SELECT
-                                            marketplace_area.id, 
-                                            marketplace.marketplace, 
-                                            marketplace_api.extra_1, 
-                                            marketplace_api.extra_2, 
-                                            marketplace_api.app_id, 
-                                            marketplace_api.secret,
-                                            marketplace_api.guia
-                                        FROM marketplace_area 
-                                        INNER JOIN usuario_marketplace_area ON marketplace_area.id = usuario_marketplace_area.id_marketplace_area
-                                        INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id 
-                                        LEFT JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area 
-                                        WHERE marketplace_area.id_area = " . $area->id . " AND marketplace_area.status = 1
-                                        AND usuario_marketplace_area.id_usuario = " . $auth->id . "
-                                        GROUP BY marketplace_area.id");
-
-            if (empty($marketplaces)) {
-                continue;
+            $area->marketplaces = $marketplaces[$area->id] ?? collect();
+            foreach ($area->marketplaces as $m) {
+                $m->empresa = $empresasPorMarketplace[$m->id] ?? collect();
             }
-
-            foreach ($marketplaces as $marketplace) {
-                $marketplace->empresa = DB::select("SELECT
-                                                    empresa.id
-                                                FROM marketplace_area_empresa
-                                                INNER JOIN empresa ON marketplace_area_empresa.id_empresa = empresa.id
-                                                WHERE marketplace_area_empresa.id_marketplace_area = " . $marketplace->id);
-            }
-
-            $area->marketplaces = $marketplaces;
-
         }
+
+        $empresas = DB::table('empresa')
+            ->where('status', 1)
+            ->where('id', '!=', 0)
+            ->select('id', 'empresa')
+            ->get();
+
+        $empresaIds = $empresas->pluck('id');
+        $almacenesPorEmpresa = DB::table('empresa_almacen')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->whereIn('empresa_almacen.id_empresa', $empresaIds)
+            ->where('almacen.status', 1)
+            ->where('almacen.id', '!=', 0)
+            ->orderBy('almacen.almacen')
+            ->select('empresa_almacen.id_empresa', 'almacen.id as id_almacen', 'empresa_almacen.id', 'almacen.almacen')
+            ->get()
+            ->groupBy('id_empresa');
+
+        foreach ($empresas as $empresa) {
+            $empresa->almacenes = $almacenesPorEmpresa[$empresa->id] ?? collect();
+        }
+
+        $paqueterias = DB::table('paqueteria')
+            ->where('status', 1)
+            ->orderBy('paqueteria')
+            ->select('id', 'paqueteria', 'api')
+            ->get();
+
+        $paqueteriaIds = $paqueterias->pluck('id');
+        $tiposPorPaqueteria = DB::table('paqueteria_tipo')
+            ->whereIn('id_paqueteria', $paqueteriaIds)
+            ->select('id_paqueteria', 'tipo', 'codigo')
+            ->get()
+            ->groupBy('id_paqueteria');
 
         foreach ($paqueterias as $paqueteria) {
-            $paqueteria->tipos = DB::select("SELECT tipo, codigo FROM paqueteria_tipo WHERE id_paqueteria = " . $paqueteria->id);
+            $paqueteria->tipos = $tiposPorPaqueteria[$paqueteria->id] ?? collect();
         }
+
+        $marketplaces_publico = DB::table('marketplace_area')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->where('marketplace_area.publico', 1)
+            ->groupBy('marketplace.marketplace')
+            ->select('marketplace.marketplace')
+            ->get();
+
+        $metodos = DB::table('metodo_pago')->get();
+        $monedas = DB::table('moneda')->get();
+        $periodos = DB::table('documento_periodo')->where('status', 1)->get();
+        $impresoras = DB::table('impresora')->where('status', 1)->where('id', '!=', 0)->select('id', 'nombre', 'tamanio')->get();
+        $usos_venta = DB::table('documento_uso_cfdi')->get();
+        $regimenes = DB::table('cat_regimen')->get();
+        $estados = DB::table('estados')->get();
 
         return response()->json([
             'code' => 200,
             'areas' => $areas,
             'metodos' => $metodos,
             'monedas' => $monedas,
-            'usuarios' => $usuarios,
             'periodos' => $periodos,
             'empresas' => $empresas,
-            'almacenes' => $almacenes,
             'impresoras' => $impresoras,
             'usos_venta' => $usos_venta,
             'paqueterias' => $paqueterias,
@@ -525,7 +530,6 @@ class VentaController extends Controller
             ->orWhere("razon_social", "like", "%" . $criterio . "%")
             ->get();
 
-
         return response()->json([
             "code" => 200,
             "data" => $clientes
@@ -534,41 +538,47 @@ class VentaController extends Controller
 
     public function venta_venta_crear_cliente_direccion($rfc): JsonResponse
     {
-        $direccion = DB::select("SELECT
-                                    documento_direccion.*
-                                FROM documento
-                                INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                INNER JOIN documento_direccion ON documento.id = documento_direccion.id_documento
-                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                WHERE documento_entidad.rfc = '" . $rfc . "'
-                                AND marketplace.id != 15
-                                ORDER BY documento.created_at 
-                                DESC LIMIT 1");
+        $direccion = DB::table('documento')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->join('documento_direccion', 'documento.id', '=', 'documento_direccion.id_documento')
+            ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+            ->where('documento_entidad.rfc', $rfc)
+            ->where('marketplace.id', '!=', 15)
+            ->orderByDesc('documento.created_at')
+            ->select('documento_direccion.*')
+            ->first();
 
-        $informacion = DB::select("SELECT
-                                    documento_entidad.*
-                                FROM documento
-                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                WHERE documento_entidad.rfc = '" . $rfc . "' ORDER BY documento.created_at DESC LIMIT 1");
+        $informacion = DB::table('documento')
+            ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+            ->where('documento_entidad.rfc', $rfc)
+            ->orderByDesc('documento.created_at')
+            ->select('documento_entidad.*')
+            ->first();
 
         return response()->json([
-            'direccion' => empty($direccion) ? new stdClass() : $direccion[0],
-            'informacion' => empty($informacion) ? new stdClass() : $informacion[0]
+            'direccion' => $direccion ?? new stdClass(),
+            'informacion' => $informacion ?? new stdClass()
         ]);
     }
 
-    public function venta_venta_crear_existe($venta, $marketplace): JsonResponse
+
+    public function venta_venta_crear_existe($venta, $marketplaceId): JsonResponse
     {
-        $marketplace = MarketplaceArea::with("marketplace")->find($marketplace);
+        $marketplace = MarketplaceArea::with('marketplace')->find($marketplaceId);
 
-        if ((!empty($venta) && $venta != '.') && $marketplace->marketplace->marketplace != "WALMART") {
-            $existe = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta . "' AND id_marketplace_area = " . $marketplace->id . " AND status = 1");
+        if (!empty($venta) && $venta !== '.' && $marketplace && $marketplace->marketplace->marketplace !== 'WALMART') {
+            $existe = DB::table('documento')
+                ->where('no_venta', $venta)
+                ->where('id_marketplace_area', $marketplace->id)
+                ->where('status', 1)
+                ->select('id')
+                ->first();
 
-            if (!empty($existe)) {
+            if ($existe) {
                 return response()->json([
                     'code' => 500,
-                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe[0]->id
+                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe->id
                 ]);
             }
         }
@@ -578,14 +588,13 @@ class VentaController extends Controller
         ]);
     }
 
+
     public function venta_venta_crear_informacion(Request $request): JsonResponse
     {
         set_time_limit(0);
 
         $venta = str_replace(' ', '%20', $request->input('venta'));
         $marketplace = json_decode($request->input('marketplace'));
-        //!! RELEASE T1 borrar los mp
-        // if (in_array(strtolower($marketplace->marketplace), ["linio", "amazon", "claroshop", "sears"])) {
         if (in_array(strtolower($marketplace->marketplace), ["linio", "amazon"])) {
             try {
                 $marketplace->secret = Crypt::decrypt($marketplace->secret);
@@ -677,21 +686,19 @@ class VentaController extends Controller
 
     public function venta_venta_crear_producto_existencia($producto, $almacen, $cantidad): JsonResponse
     {
-        $empresa = DB::select("SELECT
-                                    empresa.id,
-                                    empresa.bd
-                                FROM empresa_almacen
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                WHERE empresa_almacen.id = " . $almacen);
+        // Obtener empresa relacionada al almacen
+        $empresa = DB::table('empresa_almacen')
+            ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+            ->select('empresa.id', 'empresa.bd')
+            ->where('empresa_almacen.id', $almacen)
+            ->first();
 
-        if (empty($empresa)) {
+        if (!$empresa) {
             return response()->json([
                 'code' => 500,
                 'message' => "No se encontró el almacén del documento, favor de contactar a un administrador."
             ], 500);
         }
-
-        $empresa = $empresa[0];
 
         $total = InventarioService::existenciaProducto($producto, $almacen);
 
@@ -705,34 +712,36 @@ class VentaController extends Controller
         if ($total->disponible < $cantidad) {
             return response()->json([
                 'code' => 500,
-                'message' => "Producto sin suficiente existencias.<br><br>Requerida: " . $cantidad . "<br>Disponible: " . $total->disponible
+                'message' => "Producto sin suficiente existencias.<br><br>Requerida: $cantidad<br>Disponible: $total->disponible"
             ]);
         }
 
-        $promociones = DB::select("SELECT
-                                        promocion.id,
-                                        promocion.titulo,
-                                        promocion.inicio,
-                                        promocion.fin
-                                    FROM promocion
-                                    INNER JOIN promocion_modelo ON promocion.id = promocion_modelo.id_promocion
-                                    INNER JOIN modelo ON promocion_modelo.id_modelo = modelo.id
-                                    WHERE '" . date("Y-m-d") . "' >= promocion.inicio AND '" . date("Y-m-d") . "' <= promocion.fin
-                                    AND modelo.sku = '" . $producto . "'
-                                    AND promocion.id_empresa = " . $empresa->id . "
-                                    GROUP BY promocion.id");
+        $hoy = date('Y-m-d');
+
+        $promociones = DB::table('promocion')
+            ->join('promocion_modelo', 'promocion.id', '=', 'promocion_modelo.id_promocion')
+            ->join('modelo', 'promocion_modelo.id_modelo', '=', 'modelo.id')
+            ->select('promocion.id', 'promocion.titulo', 'promocion.inicio', 'promocion.fin')
+            ->whereDate('promocion.inicio', '<=', $hoy)
+            ->whereDate('promocion.fin', '>=', $hoy)
+            ->where('modelo.sku', $producto)
+            ->where('promocion.id_empresa', $empresa->id)
+            ->groupBy('promocion.id', 'promocion.titulo', 'promocion.inicio', 'promocion.fin')
+            ->get();
 
         foreach ($promociones as $promocion) {
-            $promocion->productos = DB::select("SELECT
-                                                    modelo.sku AS codigo,
-                                                    modelo.descripcion,
-                                                    promocion_modelo.cantidad,
-                                                    promocion_modelo.precio,
-                                                    promocion_modelo.garantia,
-                                                    promocion_modelo.regalo
-                                                FROM promocion_modelo
-                                                INNER JOIN modelo ON promocion_modelo.id_modelo = modelo.id
-                                                WHERE promocion_modelo.id_promocion = " . $promocion->id);
+            $promocion->productos = DB::table('promocion_modelo')
+                ->join('modelo', 'promocion_modelo.id_modelo', '=', 'modelo.id')
+                ->select(
+                    'modelo.sku as codigo',
+                    'modelo.descripcion',
+                    'promocion_modelo.cantidad',
+                    'promocion_modelo.precio',
+                    'promocion_modelo.garantia',
+                    'promocion_modelo.regalo'
+                )
+                ->where('promocion_modelo.id_promocion', $promocion->id)
+                ->get();
         }
 
         return response()->json([
@@ -3960,6 +3969,7 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUndefinedVariableInspection */
     public function venta_liverpool_getData(): JsonResponse
     {
         $empresas = DB::table("empresa")->where("status", 1)->whereIn("id", [1, 2])->get();
