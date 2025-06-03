@@ -898,6 +898,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('area', 'ConfiguracionController@configuracion_usuario_configuracion_area');
                 $router->post('nivel', 'ConfiguracionController@configuracion_usuario_configuracion_nivel');
                 $router->post('subnivel', 'ConfiguracionController@configuracion_usuario_configuracion_subnivel');
+                $router->post('division', 'ConfiguracionController@configuracion_usuario_configuracion_division');
             });
         });
 

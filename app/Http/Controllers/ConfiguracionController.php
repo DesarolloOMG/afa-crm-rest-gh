@@ -107,7 +107,6 @@ class ConfiguracionController extends Controller
     }
 
     // OPT
-
     /**
      * @throws Throwable
      */
@@ -186,14 +185,14 @@ class ConfiguracionController extends Controller
     //OPT
     public function configuracion_usuario_configuarcion_data(): JsonResponse
     {
-        $niveles = Nivel::get();
-        $areas = Area::where('area', '!=', 'N/A')->get();
+        $niveles = Nivel::where('status', 1)->get();
+        $areas = Area::where('area', '!=', 'N/A')->where('status', 1)->get();
         $subnivelNivel = DB::table('subnivel_nivel')
             ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
             ->join('nivel', 'subnivel_nivel.id_nivel', '=', 'nivel.id')
             ->select('subnivel.subnivel', 'nivel.nivel', 'subnivel_nivel.*')
             ->get();
-        $divisiones = DB::table('division')->get();
+        $divisiones = DB::table('division')->where('status', 1)->get();
 
         return response()->json([
             'areas' => $areas,
@@ -232,90 +231,131 @@ class ConfiguracionController extends Controller
         ]);
     }
 
-
+    //OP
     public function configuracion_usuario_configuracion_nivel(Request $request): JsonResponse
     {
         $nivel = json_decode($request->input('nivel'));
-        $json = array();
 
-        if ($nivel->id == 0) {
-            $id_nivel = DB::table('nivel')
-                ->insertGetId([
-                    'nivel' => $nivel->nivel,
-                    'status' => 1
-                ]);
-
-            $json['message'] = "Nivel creado correctamente";
-        } else {
-            DB::table('nivel')
-                ->where(['id' => $nivel->id])
-                ->update([
-                    'nivel' => $nivel
-                ]);
-
-            $json['message'] = "Nivel actualizada correctamente";
-
-            $id_nivel = $nivel->id;
+        if (!isset($nivel->id, $nivel->nivel)) {
+            return response()->json([
+                'message' => 'Datos incompletos',
+                'code' => 400
+            ], 400);
         }
 
-        $json['code'] = 200;
-        $json['nivel'] = $id_nivel;
+        $idNivel = (int)$nivel->id;
+        $nombreNivel = trim($nivel->nivel);
 
-        return response()->json($json);
+        if ($idNivel === 0) {
+            $idNivel = DB::table('nivel')->insertGetId([
+                'nivel' => $nombreNivel,
+                'status' => 1
+            ]);
+
+            $message = 'Nivel creado correctamente';
+        } else {
+            DB::table('nivel')
+                ->where('id', $idNivel)
+                ->update([
+                    'nivel' => $nombreNivel
+                ]);
+
+            $message = 'Nivel actualizado correctamente';
+        }
+
+        return response()->json([
+            'message' => $message,
+            'code' => 200,
+            'nivel' => $idNivel
+        ]);
     }
 
+    //OPT
     public function configuracion_usuario_configuracion_subnivel(Request $request): JsonResponse
     {
         $subnivel = json_decode($request->input('subnivel'));
-        $json = array();
 
-        if ($subnivel->id == 0) {
-            $existe_subnivel = DB::select("SELECT id FROM subnivel WHERE subnivel = '" . trim($subnivel->subnivel) . "'");
+        if (!isset($subnivel->id, $subnivel->subnivel, $subnivel->nivel)) {
+            return response()->json([
+                'message' => 'Datos incompletos',
+                'code' => 400
+            ], 400);
+        }
 
-            if (empty($existe_subnivel)) {
-                $id_subnivel = DB::table('subnivel')
-                    ->insertGetId([
-                        'subnivel' => $subnivel->subnivel,
-                        'status' => 1
-                    ]);
+        $idSubnivel = (int)$subnivel->id_subnivel;
+        $nombreSubnivel = trim($subnivel->subnivel);
+        $idNivel = (int)$subnivel->id_nivel;
 
-                DB::table('subnivel_nivel')
-                    ->insert([
-                        'id_subnivel' => $id_subnivel,
-                        'id_nivel' => $subnivel->nivel
-                    ]);
+        if ($idSubnivel === 0) {
+            $existe = DB::table('subnivel')
+                ->where('subnivel', $nombreSubnivel)
+                ->value('id');
+
+            if (empty($existe)) {
+                $idSubnivel = DB::table('subnivel')->insertGetId([
+                    'subnivel' => $nombreSubnivel,
+                    'status' => 1
+                ]);
             } else {
-                DB::table('subnivel_nivel')
-                    ->insert([
-                        'id_subnivel' => $existe_subnivel[0]->id,
-                        'id_nivel' => $subnivel->nivel
-                    ]);
-
-                $id_subnivel = $existe_subnivel[0]->id;
+                $idSubnivel = $existe[0]->id;
             }
 
-            $json['message'] = "Subnivel creado correctamente";
-            $json['subnivel'] = $id_subnivel;
+            DB::table('subnivel_nivel')->insert([
+                'id_subnivel' => $idSubnivel,
+                'id_nivel' => $idNivel
+            ]);
+
+            $message = "Subnivel creado correctamente";
         } else {
             DB::table('subnivel')
-                ->where(['id' => $subnivel->id])
+                ->where('id', $idSubnivel)
                 ->update([
-                    'subnivel' => $subnivel->subnivel
+                    'subnivel' => $nombreSubnivel
                 ]);
 
             DB::table('subnivel_nivel')
-                ->where(['id_subnivel' => $subnivel->id])
+                ->where('id_subnivel', $idSubnivel)
                 ->update([
-                    'id_nivel' => $subnivel->nivel
+                    'id_nivel' => $idNivel
                 ]);
 
-            $json['message'] = "Subnivel actualizado correctamente";
-
+            $message = "Subnivel actualizado correctamente";
         }
 
-        $json['code'] = 200;
+        return response()->json([
+            'message' => $message,
+            'code' => 200,
+            'subnivel' => $idSubnivel
+        ]);
+    }
 
-        return response()->json($json);
+    //OPT
+    public function configuracion_usuario_configuracion_division(Request $request): JsonResponse
+    {
+        $divisionData = json_decode($request->input('division'));
+        $isNew = $divisionData->id == 0;
+
+        if ($isNew) {
+            $id_division = DB::table('division')->insertGetId([
+                'division' => $divisionData->division,
+                'status' => 1
+            ]);
+
+            $message = "División creada correctamente";
+        } else {
+            DB::table('division')
+                ->where('id', $divisionData->id)
+                ->update(['division' => $divisionData->division]);
+
+            $id_division = $divisionData->id;
+            $message = "División actualizada correctamente";
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => $message,
+            'division' => $id_division,
+        ]);
     }
 
     /* Configuracion > Sistema */
