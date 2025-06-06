@@ -676,15 +676,8 @@ class ConfiguracionController extends Controller
     public function configuracion_sistema_impresora_retrive(): JsonResponse
     {
         $impresoras = DB::table('impresora')->get();
-        $empresas = Empresa::where("id", "<>", 0)->get();
-        $areas = Area::where("id", "<>", 0)
-            ->where("area", "!=", "N/A")
-            ->get();
-
         return response()->json([
-            "areas" => $areas,
             "impresoras" => $impresoras,
-            "empresas" => $empresas
         ]);
     }
 
