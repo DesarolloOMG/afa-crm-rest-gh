@@ -5,7 +5,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\PusherEvent;
 use App\Http\Services\GeneralService;
 use App\Http\Services\UsuarioService;
 use App\Http\Services\WhatsAppService;
@@ -641,14 +640,6 @@ class ConfiguracionController extends Controller
             'code' => 200,
             'paqueteria' => $paqueteria->id
         ]);
-    }
-
-    // OPT
-    public function configuracion_logout()
-    {
-        $notificacion['reload_users'] = 1;
-
-        event(new PusherEvent(json_encode($notificacion)));
     }
 
     // OPT
