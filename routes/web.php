@@ -917,16 +917,14 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
         });
 
-
         # Almacenes
-        $router->get('almacen', 'ConfiguracionController@getAlmacenes');
-        $router->post('almacen/guardar', 'ConfiguracionController@guardar_almacen');
+        $router->get('almacen', 'ConfiguracionController@configuracion_sistema_almacen_data');
+        $router->post('almacen/guardar', 'ConfiguracionController@configuracion_sistema_almacen_guardar');
 
         # Paqueterias
-        $router->get('paqueteria', 'ConfiguracionController@paqueteria');
-        $router->post('paqueteria/guardar', 'ConfiguracionController@guardar_paqueteria');
+        $router->get('paqueteria', 'ConfiguracionController@configuracion_sistema_paqueteria_data');
+        $router->post('paqueteria/guardar', 'ConfiguracionController@configuracion_sistema_paqueteria_guardar');
 
-        $router->post('logout', 'ConfiguracionController@configuracion_logout');
     });
 
     # Menú del usuario

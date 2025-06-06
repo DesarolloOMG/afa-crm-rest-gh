@@ -9,7 +9,6 @@ use App\Events\PusherEvent;
 use App\Http\Services\GeneralService;
 use App\Http\Services\UsuarioService;
 use App\Http\Services\WhatsAppService;
-use App\Models\Almacen;
 use App\Models\Area;
 use App\Models\Empresa;
 use App\Models\EmpresaAlmacen;
@@ -61,7 +60,7 @@ class ConfiguracionController extends Controller
             "subniveles",
             "empresas",
         ])
-            ->whereNotIn("id", [0,1])
+            ->whereNotIn("id", [0, 1])
             ->where("status", '!=', '0')
             ->select('celular', 'email', 'id', 'imagen', 'nombre')
             ->get();
@@ -107,6 +106,7 @@ class ConfiguracionController extends Controller
     }
 
     // OPT
+
     /**
      * @throws Throwable
      */
@@ -358,19 +358,20 @@ class ConfiguracionController extends Controller
         ]);
     }
 
+    //OPT
     /* Configuracion > Sistema */
     public function configuracion_sistema_marketplace_data(): JsonResponse
     {
         $marketplaces = MarketplaceArea::with("marketplace", "area", "api", "empresa")->get();
-        $empresas = Empresa::where("id", "<>", 0)->get();
         $areas = Area::where('area', '!=', 'N/A')->get();
 
         return response()->json([
             "areas" => $areas,
             "marketplaces" => $marketplaces,
-            "empresas" => $empresas
         ]);
     }
+
+    //OPT
 
     /**
      * @throws Throwable
@@ -413,274 +414,242 @@ class ConfiguracionController extends Controller
         ]);
     }
 
+    //OPT
+
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'ION'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
+    }
+
+    //OPT
+
     public function configuracion_sistema_marketplace_guardar(Request $request): JsonResponse
     {
-        $data = json_decode($request->input('data'));
+        $payload = json_decode($request->input('data'));
 
-        $existe_marketplace = Marketplace::where("marketplace", $data->marketplace->marketplace)->first();
+        $marketplace = Marketplace::firstOrCreate(
+            ['marketplace' => mb_strtoupper($payload->marketplace->marketplace, "UTF-8")]
+        );
 
-        if (!$existe_marketplace) {
-            $data->marketplace->id = Marketplace::create([
-                "marketplace" => mb_strtoupper($data->marketplace->marketplace, "UTF-8")
-            ])->id;
-        } else {
-            $data->marketplace->id = $existe_marketplace->id;
-        }
+        $payload->marketplace->id = $marketplace->id;
 
-        $existe_marketplace_area = MarketplaceArea::where("id_marketplace", $data->marketplace->id)
-            ->where("id_area", $data->area->id)
-            ->where("id", "<>", $data->id)
-            ->first();
+        $exists = MarketplaceArea::where('id_marketplace', $marketplace->id)
+            ->where('id_area', $payload->area->id)
+            ->where('id', '<>', $payload->id)
+            ->exists();
 
-        if ($existe_marketplace_area) {
+        if ($exists) {
             return response()->json([
                 "message" => "Ya éxiste un marketplace con los datos proporcionados"
             ], 500);
         }
 
-        if ($data->id != 0) {
-            $marketplace_area = MarketplaceArea::find($data->id);
-            $marketplace_area->id_marketplace = $data->marketplace->id;
-            $marketplace_area->id_area = $data->area->id;
-            $marketplace_area->serie = $data->serie;
-            $marketplace_area->serie_nota = $data->serie_nota;
-            $marketplace_area->publico = $data->publico;
+        $marketplaceArea = $payload->id != 0
+            ? MarketplaceArea::find($payload->id)
+            : new MarketplaceArea();
 
-            $marketplace_area->save();
-        } else {
-            $data->id = MarketplaceArea::create([
-                "id_marketplace" => $data->marketplace->id,
-                "id_area" => $data->area->id,
-                "serie" => $data->serie,
-                "serie_nota" => $data->serie_nota,
-                "publico" => $data->publico
-            ])->id;
+        $marketplaceArea->id_marketplace = $marketplace->id;
+        $marketplaceArea->id_area = $payload->area->id;
+        $marketplaceArea->serie = $payload->serie;
+        $marketplaceArea->serie_nota = $payload->serie_nota;
+        $marketplaceArea->publico = $payload->publico;
+        $marketplaceArea->save();
+
+        $payload->id = $marketplaceArea->id;
+
+        if (!empty($payload->api->extra_1) || !empty($payload->api->extra_2) || !empty($payload->api->app_id) || !empty($payload->api->secret)) {
+            $marketplaceApi = $payload->api->id != 0
+                ? MarketplaceApi::find($payload->api->id)
+                : new MarketplaceApi();
+
+            $marketplaceApi->id_marketplace_area = $marketplaceArea->id;
+            $marketplaceApi->extra_1 = $payload->api->extra_1;
+            $marketplaceApi->extra_2 = $payload->api->extra_2;
+            $marketplaceApi->app_id = $payload->api->app_id;
+            $marketplaceApi->secret = app('encrypter')->encrypt($payload->api->secret);
+            $marketplaceApi->guia = $payload->api->guia;
+            $marketplaceApi->save();
+
+            $payload->api->id = $marketplaceApi->id;
         }
 
-        if ($data->api->extra_1 || $data->api->extra_2 || $data->api->app_id || $data->api->secret) {
-            if ($data->api->id != 0) {
-                $marketplace_api = MarketplaceApi::find($data->api->id);
+        $empresa = $payload->empresa ?? null;
+        $empresaExistente = MarketplaceAreaEmpresa::where("id_marketplace_area", $marketplaceArea->id)->first();
 
-                $marketplace_api->extra_1 = $data->api->extra_1;
-                $marketplace_api->extra_2 = $data->api->extra_2;
-                $marketplace_api->app_id = $data->api->app_id;
-                $marketplace_api->secret = Crypt::encrypt($data->api->secret);
-                $marketplace_api->guia = $data->api->guia;
-
-                $marketplace_api->save();
+        if ($empresaExistente) {
+            if (empty($empresa->id_empresa)) {
+                $empresaExistente->delete();
             } else {
-                $data->api->id = MarketplaceApi::create([
-                    "id_marketplace_area" => $data->id,
-                    "extra_1" => $data->api->extra_1,
-                    "extra_2" => $data->api->extra_2,
-                    "app_id" => $data->api->app_id,
-                    "secret" => Crypt::encrypt($data->api->secret),
-                    "guia" => $data->api->guia
-                ])->id;
+                $empresaExistente->id_empresa = $empresa->id_empresa;
+                $empresaExistente->utilidad = $empresa->utilidad;
+                $empresaExistente->save();
             }
-        }
-
-        $existe_empresa = MarketplaceAreaEmpresa::where("id_marketplace_area", $data->id)->first();
-
-        if ($existe_empresa) {
-            $marketplace_area_empresa = MarketplaceAreaEmpresa::find($existe_empresa->id);
-
-            if (empty($data->empresa->id_empresa)) {
-                $marketplace_area_empresa->delete();
-            } else {
-                $marketplace_area_empresa->id_empresa = $data->empresa->id_empresa;
-                $marketplace_area_empresa->utilidad = $data->empresa->utilidad;
-
-                $marketplace_area_empresa->save();
-            }
-        } else {
-            if (!empty($data->empresa->id_empresa)) {
-                if ($data->empresa->id_empresa != 0) {
-                    MarketplaceAreaEmpresa::create([
-                        "id_marketplace_area" => $data->id,
-                        "id_empresa" => $data->empresa->id_empresa,
-                        "utilidad" => $data->empresa->utilidad
-                    ]);
-                }
-            }
+        } elseif (!empty($empresa->id_empresa) && $empresa->id_empresa != 0) {
+            MarketplaceAreaEmpresa::create([
+                "id_marketplace_area" => $marketplaceArea->id,
+                "id_empresa" => $empresa->id_empresa,
+                "utilidad" => $empresa->utilidad
+            ]);
         }
 
         return response()->json([
-            "message" => $data->id == 0 ? "Marketplace registrado correctamente" : "Marketplace editado correctamente"
+            "message" => $request->input('data.id') == 0
+                ? "Marketplace registrado correctamente"
+                : "Marketplace editado correctamente"
         ]);
     }
 
-    public function getAlmacenes(): JsonResponse
+    //OPT
+
+    public function configuracion_sistema_almacen_data(): JsonResponse
     {
-        $almacenes = EmpresaAlmacen::with('almacen')->with('empresa')->get();
+        $almacenes = EmpresaAlmacen::with('almacen')->where('id', '!=', 0)->get();
+        $impresoras = DB::table('impresora')->get()->keyBy('id');
+        $impresorasRet = DB::table('impresora')->get()->toArray();
+
+        $almacenes = $almacenes->map(function ($almacen) use ($impresoras) {
+            $almacen->nombre_impresora_picking = $impresoras[$almacen->id_impresora_picking]->nombre ?? '-';
+            $almacen->nombre_impresora_guia = $impresoras[$almacen->id_impresora_guia]->nombre ?? '-';
+            $almacen->nombre_impresora_etiqueta = $impresoras[$almacen->id_impresora_etiqueta]->nombre ?? '-';
+            $almacen->nombre_impresora_manifiesto = $impresoras[$almacen->id_impresora_manifiesto]->nombre ?? '-';
+            return $almacen;
+        });
 
         return response()->json([
-            "data" => $almacenes
+            "almacenes" => $almacenes,
+            "impresoras" => $impresorasRet
         ]);
+
     }
 
-    public function guardar_almacen(Request $request)
+    // OPT
+
+    public function configuracion_sistema_almacen_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
-        $json = array();
 
-        if ($data->id == 0) {
-            $existe_almacen = Almacen::consulta(trim($data->almacen));
-
-            if (empty($existe_almacen)) {
-                $id_almacen = Almacen::insertGetId(['almacen' => trim($data->almacen), 'codigo' => trim($data->codigo)]);
-            } else {
-                $id_almacen = $existe_almacen->id;
-
-                Almacen::editar_datos_almacen($id_almacen, trim($data->almacen), trim($data->codigo));
-            }
-
-            $json['message'] = "Almacén creado correctamente";
-        } else {
-            $id_almacen = $data->id;
-
-            Almacen::editar_datos_almacen($data->id, trim($data->almacen), trim($data->codigo));
-
-            $json['message'] = "Almacén actualizado correctamente";
+        if (!$data || !isset($data->almacen->almacen) || trim($data->almacen->almacen) === '') {
+            return response()->json([
+                'message' => 'El nombre del almacén es obligatorio y los datos deben ser válidos',
+                'code' => 422
+            ], 422);
         }
 
-        $json['code'] = 200;
-        $json['almacen'] = $id_almacen;
+        DB::beginTransaction();
 
-        return $this->make_json($json);
-    }
+        try {
+            if ($data->id == 0) {
+                $id_almacen = DB::table('almacen')->insertGetId([
+                    "almacen" => $data->almacen->almacen
+                ]);
 
-    public function paqueteria()
-    {
-        $json = array();
-
-        $paqueterias = Paqueteria::consulta();
-
-        $json['code'] = 200;
-        $json['paqueterias'] = $paqueterias;
-
-        return $this->make_json($json);
-    }
-
-    public function guardar_paqueteria(Request $request)
-    {
-        $data = json_decode($request->input('data'));
-        $json = array();
-
-        if ($data->id == 0) {
-            $existe_paqueteria = Paqueteria::consulta_paqueteria(trim($data->paqueteria));
-
-            if (empty($existe_paqueteria)) {
-                $id_paqueteria = Paqueteria::insertGetId([
-                    'paqueteria' => trim($data->paqueteria),
-                    'codigo' => trim($data->codigo)
+                DB::table('empresa_almacen')->insert([
+                    'id_empresa' => 1,
+                    'id_almacen' => $id_almacen,
+                    'id_impresora_picking' => $data->id_impresora_picking ?? null,
+                    'id_impresora_guia' => $data->id_impresora_guia ?? null,
+                    'id_impresora_etiqueta_envio' => $data->id_impresora_etiqueta_envio ?? null,
+                    'id_impresora_manifiesto' => $data->id_impresora_manifiesto ?? null,
                 ]);
             } else {
-                $id_paqueteria = $existe_paqueteria->id;
+                DB::table('almacen')->where('id', $data->almacen->id)->update([
+                    "almacen" => $data->almacen->almacen
+                ]);
 
-                Paqueteria::actualizar_paqueteria($id_paqueteria, trim($data->paqueteria), trim($data->codigo));
+                DB::table('empresa_almacen')->where('id', $data->id)->update([
+                    'id_empresa' => 1,
+                    'id_almacen' => $data->almacen->id,
+                    'id_impresora_picking' => $data->id_impresora_picking ?? null,
+                    'id_impresora_guia' => $data->id_impresora_guia ?? null,
+                    'id_impresora_etiqueta_envio' => $data->id_impresora_etiqueta_envio ?? null,
+                    'id_impresora_manifiesto' => $data->id_impresora_manifiesto ?? null,
+                ]);
             }
 
-            $json['message'] = "Paqueteria creada correctamente";
-        } else {
-            $id_paqueteria = $data->id;
+            DB::commit();
 
-            Paqueteria::actualizar_paqueteria($id_paqueteria, trim($data->paqueteria), trim($data->codigo));
+            return response()->json([
+                'message' => 'Almacen guardado correctamente',
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
 
-            $json['message'] = "Paqueteria actualizada correctamente";
+            return response()->json([
+                'message' => 'Error al guardar Almacen: ' . $e->getMessage(),
+            ], 500);
         }
-
-        $json['code'] = 200;
-        $json['paqueteria'] = $id_paqueteria;
-
-        return $this->make_json($json);
     }
 
+    // OPT
+    public function configuracion_sistema_paqueteria_data(): JsonResponse
+    {
+        $paqueterias = Paqueteria::get();
+
+        return response()->json([
+            "paqueterias" => $paqueterias
+        ]);
+    }
+
+    // OPT
+    public function configuracion_sistema_paqueteria_guardar(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+
+        if (!$data) {
+            return response()->json([
+                'message' => 'Datos inválidos',
+                'code' => 400
+            ]);
+        }
+
+        if (!isset($data->paqueteria) || trim($data->paqueteria) === '') {
+            return response()->json([
+                'message' => 'El nombre de la paquetería es obligatorio',
+                'code' => 422
+            ]);
+        }
+
+        $paqueteria = $data->id == 0
+            ? new Paqueteria()
+            : Paqueteria::find($data->id);
+
+        if (!$paqueteria) {
+            return response()->json([
+                'message' => 'Paquetería no encontrada',
+                'code' => 404
+            ]);
+        }
+
+        $paqueteria->paqueteria = $data->paqueteria;
+        $paqueteria->url = $data->url ?? '';
+        $paqueteria->guia = $data->guia ?? 0;
+        $paqueteria->api = $data->api ?? 0;
+        $paqueteria->manifiesto = $data->manifiesto ?? 0;
+        $paqueteria->status = $data->status ?? 0;
+
+        $paqueteria->save();
+
+        return response()->json([
+            'message' => $data->id == 0
+                ? 'Paquetería creada correctamente'
+                : 'Paquetería actualizada correctamente',
+            'code' => 200,
+            'paqueteria' => $paqueteria->id
+        ]);
+    }
+
+    // OPT
     public function configuracion_logout()
     {
         $notificacion['reload_users'] = 1;
 
         event(new PusherEvent(json_encode($notificacion)));
     }
-
-    private function make_json($json)
-    {
-        header('Content-Type: application/json');
-
-        return json_encode($json);
-    }
-
-    #Configuración > Dev
-
-    public function configuracion_dev_data(): JsonResponse
-    {
-        set_time_limit(0);
-        $inicio = date('m/d/Y h:i:s a', time());
-
-        // $documento_guia = DB::select("SELECT dg.guia, dg.id_documento, d.id_paqueteria
-        //                               FROM documento_guia dg
-        //                               INNER JOIN documento d ON d.id = dg.id_documento 
-        //                               INNER JOIN manifiesto m ON m.guia = dg.guia");
-
-        // foreach ($documento_guia as $dg) {
-        //     DB::table('manifiesto')->where(['guia' => $dg->guia])->update([
-        //         'id_paqueteria' => $dg->id_paqueteria,
-
-        //     ]);
-        // }
-
-        // // WHEN 7 THEN 'iVoy' 
-        // // WHEN 8 THEN 'RedPack' 
-        // // WHEN 9 THEN '99 minutos' 
-        // // WHEN 10 THEN 'DHL' 
-        // // WHEN 11 THEN 'MEL'
-        // // WHEN 12 THEN 'Coppel Express'
-        // // WHEN 15 THEN 'Walmart'
-        // // WHEN 18 THEN 'UPS' 
-        // // WHEN 20 THEN 'PAQUETEXPRESS'
-        // // WHEN 22 THEN 'Estafeta'
-        // // WHEN 30 THEN 'RedPack'
-        // // WHEN 34 THEN 'Fedex'
-        $mitad = date('m/d/Y h:i:s a', time());
-
-        $manifiesto = DB::select("SELECT id, guia,
-                                    CASE LENGTH(guia)
-                                    WHEN 7 THEN 12
-                                    WHEN 8 THEN 11
-                                    WHEN 9 THEN 5
-                                    WHEN 10 THEN 2
-                                    WHEN 11 THEN 14
-                                    WHEN 12 THEN 17
-                                    WHEN 15 THEN 16
-                                    WHEN 18 THEN 18
-                                    WHEN 20 THEN 4
-                                    WHEN 22 THEN 1
-                                    WHEN 30 THEN 11
-                                    WHEN 34 THEN 3
-                                    ELSE 1
-                                    END AS paqueteria
-                                  FROM manifiesto
-                                  WHERE id_paqueteria IS NULL");
-
-
-        foreach ($manifiesto as $m) {
-            DB::table('manifiesto')->where(['id' => $m->id])->update([
-                'id_paqueteria' => $m->paqueteria,
-
-            ]);
-        }
-        $final = date('m/d/Y h:i:s a', time());
-
-        return response()->json([
-            'code' => 200,
-            'message' => "ID PAQUETERIA guardado correctamente.",
-            'inicio' => $inicio,
-            'mitad' => $mitad,
-            'final' => $final,
-
-        ]);
-    }
-
 
     public function configuracion_sistema_impresora_create(Request $request): JsonResponse
     {
@@ -774,12 +743,4 @@ class ConfiguracionController extends Controller
         }
     }
 
-    public static function logVariableLocation(): string
-    {
-        $sis = 'BE'; //Front o Back
-        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'ION'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
-    }
 }
