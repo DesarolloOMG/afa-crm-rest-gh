@@ -1,6 +1,6 @@
-<?php /** @noinspection PhpUndefinedFieldInspection */
+<?php /** @noinspection PhpUnused */
+/** @noinspection PhpUndefinedFieldInspection */
 /** @noinspection PhpParamsInspection */
-
 /** @noinspection PhpUndefinedMethodInspection */
 
 namespace App\Http\Controllers;
@@ -576,7 +576,7 @@ class ConfiguracionController extends Controller
                 'message' => 'Almacen guardado correctamente',
                 'data' => $data
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
 
             return response()->json([
@@ -651,6 +651,7 @@ class ConfiguracionController extends Controller
         event(new PusherEvent(json_encode($notificacion)));
     }
 
+    // OPT
     public function configuracion_sistema_impresora_create(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -673,6 +674,7 @@ class ConfiguracionController extends Controller
         }
     }
 
+    // OPT
     public function configuracion_sistema_impresora_retrive(): JsonResponse
     {
         $impresoras = DB::table('impresora')->get();
@@ -681,6 +683,7 @@ class ConfiguracionController extends Controller
         ]);
     }
 
+    // OPT
     public function configuracion_sistema_impresora_update(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -713,6 +716,7 @@ class ConfiguracionController extends Controller
         }
     }
 
+    // OPT
     public function configuracion_sistema_impresora_delete($impresora_id): JsonResponse
     {
         DB::beginTransaction();
