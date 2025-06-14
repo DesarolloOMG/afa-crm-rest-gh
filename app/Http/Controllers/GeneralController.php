@@ -1556,13 +1556,9 @@ class GeneralController extends Controller
         }
     }
 
+    // OPT
     public function general_busqueda_serie($serie)
     {
-        //        $apos = `'`;
-        //        //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-        //        if (str_contains($serie, $apos)) {
-        //            $serie = addslashes($serie);
-        //        }
         $serie = urldecode($serie);
         $serie = str_replace(["'", '\\'], '', $serie);
         $empresas = DB::table('documento')
@@ -1571,7 +1567,7 @@ class GeneralController extends Controller
             ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
             ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
             ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
-            ->where('producto.serie', '=', trim(mb_strtoupper($serie, 'UTF-8'))) // Asegúrate de que $serie esté correctamente escapado y saneado
+            ->where('producto.serie', '=', trim(mb_strtoupper($serie, 'UTF-8')))
             ->groupBy('empresa.id')
             ->select('empresa.id', 'empresa.empresa')
             ->get();
@@ -1584,22 +1580,20 @@ class GeneralController extends Controller
         }
 
         foreach ($empresas as $empresa) {
-            // Definir las subconsultas para los almacenes
             $subQueryAlmacenPrincipal = DB::table('empresa_almacen')
                 ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
                 ->select('almacen')
                 ->whereColumn('empresa_almacen.id', 'documento.id_almacen_principal_empresa')
                 ->limit(1)
-                ->toSql(); // Convertir a SQL crudo
+                ->toSql();
 
             $subQueryAlmacenAlterno = DB::table('empresa_almacen')
                 ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
                 ->select('almacen')
                 ->whereColumn('empresa_almacen.id', 'documento.id_almacen_secundario_empresa')
                 ->limit(1)
-                ->toSql(); // Convertir a SQL crudo
+                ->toSql();
 
-            // Consulta principal con Query Builder
             $empresa->movimientos = DB::table('documento')
                 ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
                 ->join('documento_tipo', 'documento.id_tipo', '=', 'documento_tipo.id')
@@ -1631,7 +1625,7 @@ class GeneralController extends Controller
             $empresa->serie = DB::table('producto')
                 ->join('almacen', 'producto.id_almacen', '=', 'almacen.id')
                 ->select('almacen.almacen', 'producto.extra', 'producto.status', 'producto.fecha_caducidad')
-                ->where('producto.serie', '=', trim($serie)) // Asegúrate de que $serie esté correctamente escapado y saneado
+                ->where('producto.serie', '=', trim($serie))
                 ->get();
         }
 
@@ -1639,49 +1633,6 @@ class GeneralController extends Controller
             'code' => 200,
             'empresas' => $empresas
         ]);
-    }
-
-    public function general_busqueda_serie_imprimir(Request $request)
-    {
-        $data = json_decode($request->input("data"));
-        $etiquetas = array();
-
-        $impresora = DB::table("impresora")
-            ->select("servidor")
-            ->where("id", 40)
-            ->first();
-
-        if (empty($impresora)) {
-            return response()->json([
-                "code" => 500,
-                "message" => "No se encontró la impresora proporcionada"
-            ]);
-        }
-
-        $etiqueta_data = new \stdClass();
-        $etiqueta_data->serie = $data->serie;
-        $etiqueta_data->codigo = $data->codigo;
-        $etiqueta_data->descripcion = $data->descripcion;
-        $etiqueta_data->cantidad = 1;
-        $etiqueta_data->extra = property_exists($data, "extra") ? $data->extra : "";
-
-        array_push($etiquetas, $etiqueta_data);
-
-        $data = array(
-            "etiquetas" => $etiquetas,
-            "impresora" => 40
-        );
-
-        $token = $request->get("token");
-
-        $impresion = \Httpful\Request::post($impresora->servidor . "/raspberry-print-server/public/label/sku-and-description-and-serie?token=" . $token)
-            ->body($data, \Httpful\Mime::FORM)
-            ->send();
-
-        $impresion_raw = $impresion->raw_body;
-        $impresion = @json_decode($impresion_raw);
-
-        return (array) $impresion_raw;
     }
 
     # Tipo es compra o venta

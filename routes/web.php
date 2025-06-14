@@ -146,7 +146,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
             $router->group(['prefix' => 'serie'], function () use ($router) {
                 $router->get('{serie}', 'GeneralController@general_busqueda_serie');
-                $router->post('imprimir', 'GeneralController@general_busqueda_serie_imprimir');
             });
         });
 
