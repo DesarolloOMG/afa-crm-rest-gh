@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\DropboxService;
 use DB;
 use Illuminate\Http\Request;
 
@@ -118,20 +119,18 @@ class ExternoController extends Controller{
         ]);
         
         foreach ($data->documento->archivos as $archivo) {
-            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                ->addHeader('Dropbox-API-Arg' , '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                ->addHeader('Content-Type', 'application/octet-stream')
-                ->body(base64_decode($archivo->data))
-                ->send();
+            $dropboxService = new DropboxService();
+            $dropboxResponse = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo->data);
 
-            DB::table('documento_archivo')->insert([
-                'id_documento'  =>  $documento,
-                'id_usuario'    =>  $data->usuario,
-                'nombre'        =>  $archivo->nombre,
-                'dropbox'       =>  $response->body->id,
-                'tipo'          =>  strpos($archivo->nombre, 'etiqueta') !== false ? 2 : 1
-            ]);
+            if (isset($dropboxResponse['id'])) {
+                DB::table('documento_archivo')->insert([
+                    'id_documento'  =>  $documento,
+                    'id_usuario'    =>  $data->usuario,
+                    'nombre'        =>  $archivo->nombre,
+                    'dropbox'       =>  $dropboxResponse['id'],
+                    'tipo'          =>  strpos($archivo->nombre, 'etiqueta') !== false ? 2 : 1,
+                ]);
+            }
         }
 
         $pago = DB::table('documento_pago')->insertGetId([

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\DocumentoService;
+use App\Http\Services\DropboxService;
 use Illuminate\Http\Request;
 use Firebase\JWT\JWT;
 use DOMDocument;
@@ -462,21 +463,18 @@ class APIController extends Controller
 
                 $archivo_nombre = "B2B_FILE_" . $documento . "_" . uniqid() . "." . $is_pdf_or_zpl->extension;
 
-                $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                    ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                    ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo_nombre . '" , "mode": "add", "autorename": true}')
-                    ->addHeader('Content-Type', 'application/octet-stream')
-                    ->body(base64_decode($archivo))
-                    ->send();
+                $dropboxService = new DropboxService();
+                $response = $dropboxService->uploadFile('/' . $archivo_nombre, base64_decode($archivo), false);
 
                 DB::table('documento_archivo')->insert([
                     'id_documento' =>  $documento,
-                    'id_usuario' =>  1,
-                    'tipo' =>  2,
-                    'nombre' =>  $archivo_nombre,
-                    'dropbox' =>  $response->body->id
+                    'id_usuario'   =>  1,
+                    'tipo'         =>  2,
+                    'nombre'       =>  $archivo_nombre,
+                    'dropbox'      =>  $response['id']
                 ]);
             }
+
 
             return response()->json([
                 'code' => 200,
@@ -699,28 +697,25 @@ class APIController extends Controller
 
                 $archivo_nombre = "B2B_FILE_" . $documento . "_" . uniqid() . "." . $is_pdf_or_zpl->extension;
 
-                $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                    ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                    ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo_nombre . '" , "mode": "add", "autorename": true}')
-                    ->addHeader('Content-Type', 'application/octet-stream')
-                    ->body(base64_decode($archivo))
-                    ->send();
+                $dropboxService = new DropboxService();
+                $response = $dropboxService->uploadFile('/' . $archivo_nombre, base64_decode($archivo), false);
 
                 DB::table('documento_archivo')->insert([
                     'id_documento' =>  $documento,
                     'id_impresora' => 36,
-                    'id_usuario' =>  1,
-                    'tipo' =>  2,
-                    'nombre' =>  $archivo_nombre,
-                    'dropbox' =>  $response->body->id
+                    'id_usuario'   => 1,
+                    'tipo'         => 2,
+                    'nombre'       => $archivo_nombre,
+                    'dropbox'      => $response['id']
                 ]);
 
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
-                    'id_usuario' => 1,
-                    'seguimiento' => 'Ha sido agregado un archivo por parte del cliente.'
+                    'id_usuario'   => 1,
+                    'seguimiento'  => 'Ha sido agregado un archivo por parte del cliente.'
                 ]);
             }
+
 
             return response()->json([
                 'code' => 200,
@@ -765,25 +760,17 @@ class APIController extends Controller
             $archivos_data = array();
 
             foreach ($archivos as $archivo) {
-                $file_data = new \stdClass();
-                $file_data->path = $archivo->dropbox;
-
-                $response = \Httpful\Request::post('https://api.dropboxapi.com/2/files/get_temporary_link')
-                    ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                    ->addHeader('Content-Type', 'application/json')
-                    ->body(json_encode($file_data))
-                    ->send();
-
-                $response = @json_decode($response->raw_body);
+                $dropboxService = new DropboxService();
+                $response = $dropboxService->getTemporaryLink($archivo->dropbox);
 
                 if (empty($response)) {
                     return response()->json([
-                        'code' => 500,
+                        'code'  => 500,
                         'error' => "There was an error while looking for the file, please contact the server admin."
                     ], 500);
                 }
 
-                array_push($archivos_data, property_exists($response, 'error') ? $response->error_summary : base64_encode(file_get_contents($response->link)));
+                array_push($archivos_data, property_exists($response, 'error') ? $response->error_summary : base64_encode(file_get_contents($response['link'])));
             }
 
             return response()->json([

@@ -2717,18 +2717,14 @@ class ContabilidadController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_entidad_archivo')->insert([
                         'id_entidad' => $entidad,
                         'id_usuario' => $auth->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'nombre'     => $archivo->nombre,
+                        'dropbox'    => $response['id']
                     ]);
                 }
             }

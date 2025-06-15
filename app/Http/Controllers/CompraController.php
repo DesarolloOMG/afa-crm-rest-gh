@@ -9,6 +9,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
 use App\Http\Services\DocumentoService;
+use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
@@ -1998,21 +1999,18 @@ class CompraController extends Controller
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
                     $archivo->nombre = "INVOICE_" . $archivo->nombre;
 
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $documento,
-                        'id_usuario' => $auth->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'id_usuario'   => $auth->id,
+                        'nombre'       => $archivo->nombre,
+                        'dropbox'      => $response['id']
                     ]);
                 }
             }
+
         } catch (Exception $e) {
             DB::table('documento')->where(['id' => $documento])->delete();
 
@@ -2745,18 +2743,14 @@ class CompraController extends Controller
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
                     $archivo->nombre = "INVOICE_" . $archivo->nombre;
 
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->id,
-                        'id_usuario' => $auth->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'id_usuario'   => $auth->id,
+                        'nombre'       => $archivo->nombre,
+                        'dropbox'      => $response['id']
                     ]);
                 }
             }
@@ -3865,20 +3859,17 @@ class CompraController extends Controller
                     if ($archivo->nombre != "" && $archivo->data != "") {
                         $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                        $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                            ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                            ->addHeader('Content-Type', 'application/octet-stream')
-                            ->body($archivo_data)
-                            ->send();
+                        $dropboxService = new DropboxService();
+                        $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                         DB::table('modelo_imagen')->insert([
                             'id_modelo' => $data->id,
-                            'nombre' => $archivo->nombre,
-                            'dropbox' => $response->body->id
+                            'nombre'    => $archivo->nombre,
+                            'dropbox'   => $response['id']
                         ]);
                     }
                 }
+
             } catch (Exception $e) {
                 return response()->json([
                     'code' => 500,
@@ -3923,17 +3914,13 @@ class CompraController extends Controller
                         if ($archivo->nombre != "" && $archivo->data != "") {
                             $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                                ->addHeader('Content-Type', 'application/octet-stream')
-                                ->body($archivo_data)
-                                ->send();
+                            $dropboxService = new DropboxService();
+                            $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                             DB::table('modelo_imagen')->insert([
                                 'id_modelo' => $modelo_id,
-                                'nombre' => $archivo->nombre,
-                                'dropbox' => $response->body->id
+                                'nombre'    => $archivo->nombre,
+                                'dropbox'   => $response['id']
                             ]);
                         }
                     }

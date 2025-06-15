@@ -680,6 +680,13 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
     });
 
+    $router->group(['prefix' => 'dropbox'], function () use ($router) {
+        $router->post('get-link', 'DropboxController@getTemporaryLink');  // POST /dropbox/get-link
+        $router->post('download', 'DropboxController@downloadFile');      // POST /dropbox/download
+        $router->post('delete', 'DropboxController@deleteFile');        // POST /dropbox/delete
+        $router->post('upload', 'DropboxController@uploadFile');        // POST /dropbox/upload
+    });
+
     #Catalogos
     $router->group(['prefix' => 'catalogo'], function () use ($router) {
         $router->get('buscar/cp/{cp}', 'CatalogoController@buscar_CP');

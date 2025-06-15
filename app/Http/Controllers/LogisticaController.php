@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\CorreoService;
+use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\ShopifyService;
 use Carbon\Carbon;
@@ -681,21 +682,18 @@ class LogisticaController extends Controller
             $pdf_data = $pdf->Output($pdf_name, 'S');
             $file_name = "FIRMA_" . $cliente->cliente . "_" . uniqid() . ".pdf";
 
-            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $file_name . '" , "mode": "add", "autorename": true}')
-                ->addHeader('Content-Type', 'application/octet-stream')
-                ->body($pdf_data)
-                ->send();
+            $dropboxService = new DropboxService();
+            $response = $dropboxService->uploadFile('/' . $file_name, $pdf_data, false);
 
             DB::table('documento_archivo')->insert([
                 'id_documento' => $documento,
-                'id_usuario' => $auth->id,
-                'nombre' => $file_name,
-                'dropbox' => $response->body->id
+                'id_usuario'   => $auth->id,
+                'nombre'       => $file_name,
+                'dropbox'      => $response['id']
             ]);
 
             unlink($firma_name);
+
 
             return response()->json([
                 'code'  => 200,

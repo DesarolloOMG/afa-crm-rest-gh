@@ -15,6 +15,7 @@ use App\Http\Services\ClaroshopServiceV2;
 use App\Http\Services\CoppelService;
 use App\Http\Services\CorreoService;
 use App\Http\Services\CTService;
+use App\Http\Services\DropboxService;
 use App\Http\Services\ElektraService;
 use App\Http\Services\ExelDelNorteService;
 use App\Http\Services\GeneralService;
@@ -1115,23 +1116,20 @@ class VentaController extends Controller
             if ($archivo->nombre != "" && $archivo->data != "") {
                 $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                    ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                    ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                    ->addHeader('Content-Type', 'application/octet-stream')
-                    ->body($archivo_data)
-                    ->send();
+                $dropboxService = new DropboxService();
+                $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                 DB::table('documento_archivo')->insert([
                     'id_documento' => $data->documento->documento,
-                    'id_usuario' => $auth->id,
-                    'tipo' => $archivo->guia,
+                    'id_usuario'   => $auth->id,
+                    'tipo'         => $archivo->guia,
                     'id_impresora' => $archivo->impresora,
-                    'nombre' => $archivo->nombre,
-                    'dropbox' => $response->body->id
+                    'nombre'       => $archivo->nombre,
+                    'dropbox'      => $response['id']
                 ]);
             }
         }
+
 
         DB::table('seguimiento')->insert([
             'id_documento' => $data->documento->documento,
@@ -2069,18 +2067,14 @@ class VentaController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                        ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $documento,
-                        'id_usuario' => $auth->id,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'id_usuario'   => $auth->id,
+                        'nombre'       => $archivo->nombre,
+                        'dropbox'      => $response['id']
                     ]);
                 }
             }
@@ -3565,20 +3559,16 @@ class VentaController extends Controller
                         try {
                             $nombre = "etiqueta_" . $venta->id . ".pdf";
 
-                            $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                                ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $nombre . '" , "mode": "add", "autorename": true}')
-                                ->addHeader('Content-Type', 'application/octet-stream')
-                                ->body(base64_decode($guia->file))
-                                ->send();
+                            $dropboxService = new DropboxService();
+                            $response = $dropboxService->uploadFile('/' . $nombre, base64_decode($guia->file), false);
 
                             $guia_archivo = DB::table('documento_archivo')->insertGetId([
                                 'id_documento' => $venta->id,
-                                'id_usuario' => 1,
+                                'id_usuario'   => 1,
                                 'id_impresora' => 36,
-                                'nombre' => $nombre,
-                                'dropbox' => $response->body->id,
-                                'tipo' => 2
+                                'nombre'       => $nombre,
+                                'dropbox'      => $response['id'],
+                                'tipo'         => 2
                             ]);
 
                             BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se agrega el archivo de la guia con el id " . $guia_archivo);

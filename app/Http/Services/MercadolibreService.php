@@ -1146,20 +1146,17 @@ class MercadolibreService
                         $extension = $guia->pdf ? ".pdf" : ".zpl";
                         $nombre = "etiqueta_" . trim($venta->id) . $extension;
 
-                        $response = \Httpful\Request::post('https://content.dropboxapi.com/2/files/upload')
-                            ->addHeader('Authorization', "Bearer AYQm6f0FyfAAAAAAAAAB2PDhM8sEsd6B6wMrny3TVE_P794Z1cfHCv16Qfgt3xpO")
-                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $nombre . '" , "mode": "add", "autorename": true}')
-                            ->addHeader('Content-Type', 'application/octet-stream')
-                            ->body(base64_decode($guia->file))
-                            ->send();
+                        $dropboxService = new DropboxService();
+                        $response = $dropboxService->uploadFile('/' . $nombre, base64_decode($guia->file), false);
 
                         DB::table('documento_archivo')->insert([
                             'id_documento' => $documento,
-                            'id_usuario' => 1,
-                            'nombre' => $nombre,
-                            'dropbox' => $response->body->id,
-                            'tipo' => 2
+                            'id_usuario'   => 1,
+                            'nombre'       => $nombre,
+                            'dropbox'      => $response['id'],
+                            'tipo'         => 2
                         ]);
+
 
                         switch ($venta->proveedor) {
                             case '4':
