@@ -3740,7 +3740,23 @@ class MercadolibreService
         );
     }
 
+    public static function api_items($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'items/${item_id}',
+            ['{item_id}' => $data->item_id]
+        );
+    }
 
+    public static function api_itemsDescription($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'items/${item_id}/description',
+            ['{item_id}' => $data->item_id]
+        );
+    }
 
     public static function logVariableLocation(): string
     {
