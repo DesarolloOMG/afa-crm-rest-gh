@@ -26,7 +26,8 @@
 		"firebase/php-jwt": "^5.0",
 		"twilio/sdk": "*",
 		"nordsoftware/lumen-cors": "^3.5",
-		"http-interop/http-factory-guzzle": "^1.2"
+		"http-interop/http-factory-guzzle": "^1.2",
+		"ext-json": "*"
 	},
 	"require-dev": {
 		"fzaninotto/faker": "~1.4",

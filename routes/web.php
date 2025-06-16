@@ -410,6 +410,12 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
         $router->group(['prefix' => 'mercadolibre'], function () use ($router) {
 
+            $router->group(['prefix' => 'api'], function () use ($router) {
+                $router->post('listing_types', 'MercadolibreController@api_getListingTypes');
+                $router->post('sale_terms', 'MercadolibreController@api_getSaleTerms');
+                $router->post('category_variants', 'MercadolibreController@api_getCategoryVariants');
+            });
+
             $router->group(['prefix' => 'token'], function () use ($router) {
                 $router->get('data/{marketplace_id}', 'VentaController@venta_mercadolibre_token');
             });

@@ -3,12 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\MercadolibreService;
+use DB;
+use Illuminate\Http\Request;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use Illuminate\Http\Request;
 use Twilio\Rest\Client;
-use Mailgun\Mailgun;
-use DB;
 
 class MercadolibreController extends Controller{
     public function rawinfo($pseudonimo, $orden){
@@ -253,8 +253,8 @@ class MercadolibreController extends Controller{
                                 $sheet->setCellValue('Q' . $contador_fila, empty($venta_crm) ? "NO EXISTE" : $venta_crm[0]->fase);
             
                                 $spreadsheet->getActiveSheet()->getStyle("B" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-                                $sheet->getCellByColumnAndRow(10, $contador_fila)->setValueExplicit(empty($shipping) ? "NO EXISTE" : $shipping->tracking_number, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-                                $sheet->getCellByColumnAndRow(13, $contador_fila)->setValueExplicit($venta->pack_id, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                                $sheet->getCellByColumnAndRow(10, $contador_fila)->setValueExplicit(empty($shipping) ? "NO EXISTE" : $shipping->tracking_number, DataType::TYPE_STRING);
+                                $sheet->getCellByColumnAndRow(13, $contador_fila)->setValueExplicit($venta->pack_id, DataType::TYPE_STRING);
             
                                 foreach ($item->item->variation_attributes as $attribute) {
                                     $sheet->setCellValue('H' . $contador_fila, $attribute->value_name);
@@ -637,4 +637,27 @@ class MercadolibreController extends Controller{
 
         echo "Terminado";
     }
+
+    public function api_getListingTypes(Request $request)
+    {
+        $data = json_decode($request->input("data"));
+
+        return MercadolibreService::api_listingTypes($data);
+    }
+
+    public function api_getSaleTerms(Request $request)
+    {
+        $data = json_decode($request->input("data"));
+
+        return MercadolibreService::api_saleTerms($data);
+    }
+
+    public function api_getCategoryVariants(Request $request)
+    {
+        $data = json_decode($request->input("data"));
+
+        return MercadolibreService::api_categoryVariants($data);
+    }
+
+
 }

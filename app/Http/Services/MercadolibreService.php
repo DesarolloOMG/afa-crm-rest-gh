@@ -3,17 +3,20 @@
 namespace App\Http\Services;
 
 use Exception;
+use Httpful\Mime;
+use Httpful\Request;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use MP;
+use stdClass;
 use ZipArchive;
 
 class MercadolibreService
 {
     public static function venta($venta, $marketplace_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -65,8 +68,7 @@ class MercadolibreService
             }
 
             array_push($ventas, $informacion_venta);
-        }
-        else {
+        } else {
             foreach ($informacion_paquete->orders as $venta_paquete) {
                 $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta_paquete->id), false, $context));
 
@@ -147,7 +149,7 @@ class MercadolibreService
 
     public static function venta2($venta, $marketplace_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -203,7 +205,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
         $ventas = array();
         $packs = array();
 
@@ -249,7 +251,7 @@ class MercadolibreService
                 }
 
                 if (!$existe_pack) {
-                    $pack_object = new \stdClass();
+                    $pack_object = new stdClass();
                     $pack_object->id = $venta->pack_id;
                     $pack_object->es_paquete = !($venta->pack_id == $venta->id);
                     $pack_object->ventas = array();
@@ -266,7 +268,7 @@ class MercadolibreService
             $ventas = array();
 
             foreach ($pack->ventas as $venta) {
-                $venta_data = new \stdClass();
+                $venta_data = new stdClass();
 
                 if ($venta->status === "cancelled") {
                     $venta_data->cancelada = true;
@@ -298,7 +300,7 @@ class MercadolibreService
                         $atributos .= $atributo->name . ": " . $atributo->value_name . "\n";
                     }
 
-                    $producto_data = new \stdClass();
+                    $producto_data = new stdClass();
                     $producto_data->id = $item->item->id;
                     $producto_data->titulo = $item->item->title;
                     $producto_data->cantidad = $item->quantity;
@@ -335,7 +337,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
         $error = array();
         $datas = array();
 
@@ -426,7 +428,7 @@ class MercadolibreService
                 }
 
                 if (!$existe_pack) {
-                    $pack_object = new \stdClass();
+                    $pack_object = new stdClass();
                     $pack_object->id = $venta->pack_id;
                     $pack_object->ventas = array();
 
@@ -805,7 +807,7 @@ class MercadolibreService
 
     public static function importarVenta($venta, $marketplace, $usuario)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $existe_venta = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta->id . "' AND status = 1");
         if ($venta->id == 2000009252429830) {
@@ -1151,10 +1153,10 @@ class MercadolibreService
 
                         DB::table('documento_archivo')->insert([
                             'id_documento' => $documento,
-                            'id_usuario'   => 1,
-                            'nombre'       => $nombre,
-                            'dropbox'      => $response['id'],
-                            'tipo'         => 2
+                            'id_usuario' => 1,
+                            'nombre' => $nombre,
+                            'dropbox' => $response['id'],
+                            'tipo' => 2
                         ]);
 
 
@@ -1169,7 +1171,7 @@ class MercadolibreService
 
                             default:
                                 $log = self::logVariableLocation();
-                                $crear_pedido_btob = new \stdClass();
+                                $crear_pedido_btob = new stdClass();
 
                                 $crear_pedido_btob->error = 1;
                                 $crear_pedido_btob->mensaje = "El proveedor no ha sido configurado " . $log;
@@ -1306,7 +1308,7 @@ class MercadolibreService
 
     public static function validarPendingBuffered($documento)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -1427,7 +1429,7 @@ class MercadolibreService
 
     public static function validarVenta($documento)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -1537,7 +1539,7 @@ class MercadolibreService
             return $response;
         }
 
-        $pack = new \stdClass();
+        $pack = new stdClass();
         $pack->id = explode(".", empty($informacion_venta->pack_id) ? $informacion_venta->id : sprintf('%lf', $informacion_venta->pack_id))[0];
         $pack->error = 0;
         $pack->ventas = array();
@@ -1752,52 +1754,42 @@ class MercadolibreService
 
     public static function documento($venta, $credenciales, $tipo = 1 /* 0 ZPL; 1 PDF */)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
-        $token = self::token($credenciales->app_id, $credenciales->secret);
+        $ventaData = self::callMlApi($credenciales->id, "orders/{venta}", [
+            '{venta}' => rawurlencode($venta)
+        ]);
 
-        //$seller = self::seller(str_replace(" ", "%20", $credenciales->extra_2), $token);
-
-        //$seller_id = $seller->seller->id;
-
-        $opts = [
-            "http" => [
-                "method" => "GET",
-                "header" => "Authorization: Bearer " . $token
-            ]
-        ];
-
-        $context = stream_context_create($opts);
-
-        //$informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller_id . "&q=" . rawurlencode($venta) . "&access_token=" . $token));
-
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta), false, $context));
+        $informacion_venta = json_decode($ventaData->getContent());
 
         if (empty($informacion_venta)) {
-            $log = self::logVariableLocation();
-
             $response->error = 1;
-            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
-
+            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
             return $response;
         }
-
-        // $informacion_venta = $informacion_venta->results[0];
 
         $tmp = tempnam('', 'me2');
         rename($tmp, $tmp .= '.zip');
         $file = fopen($tmp, 'r+');
 
-        $url_data = config("webservice.mercadolibre_enpoint") . "shipment_labels?shipment_ids=" . $informacion_venta->shipping->id . "&response_type=zpl2&access_token=" . $token;
-        $zpl = @file_get_contents($url_data);
+        $shipment_id = $informacion_venta->shipping->id ?? null;
+
+        if (!$shipment_id) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró ID de envío en la orden." . self::logVariableLocation();
+            return $response;
+        }
+
+        $url = config("webservice.mercadolibre_enpoint") .
+            "shipment_labels?shipment_ids=" . $shipment_id .
+            "&response_type=zpl2";
+
+        $zpl = @file_get_contents($url);
 
         if (empty($zpl)) {
-            $log = self::logVariableLocation();
-
             $response->error = 1;
-            $response->mensaje = "No se encontró la etiqueta del envío, favor de revisar que el envío no sea enviado de sellcenter ó la venta no esté cancelada." . $log;
-            $response->raw = $url_data;
-
+            $response->mensaje = "No se encontró la etiqueta del envío, revisar si es SellCenter o cancelado." . self::logVariableLocation();
+            $response->raw = $url;
             return $response;
         }
 
@@ -1806,7 +1798,9 @@ class MercadolibreService
         $zip = new ZipArchive;
         $zip->open($tmp);
 
-        $file_data = base64_encode($tipo ? file_get_contents(self::postLabelary($zip->getFromIndex(0), true)) : $zip->getFromIndex(0));
+        $file_data = base64_encode($tipo
+            ? file_get_contents(self::postLabelary($zip->getFromIndex(0), true))
+            : $zip->getFromIndex(0));
 
         $response->error = 0;
         $response->file = $file_data;
@@ -1817,52 +1811,68 @@ class MercadolibreService
 
     public static function documentoZPL($venta, $credenciales)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
+        $response->error = 1;
 
-        $token = self::token($credenciales->app_id, $credenciales->secret);
-
-        $seller = self::seller(str_replace(" ", "%20", $credenciales->extra_2), $token);
-
-        $seller_id = $seller->id;
-
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller_id . "&q=" . $venta . "&access_token=" . $token));
-
-        if (empty($informacion_venta)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
-
+        $marketplace = self::getMarketplaceData($credenciales->id);
+        if (!$marketplace) {
+            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
             return $response;
         }
 
-        $informacion_venta = $informacion_venta->results[0];
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $seller = self::seller(str_replace(" ", "%20", $marketplaceData->extra_2), $token);
+        $seller_id = $seller->id;
+
+        $ventaEndpoint = "orders/search?seller={seller}&q={venta}";
+        $ventaData = self::callMlApi($credenciales->id, $ventaEndpoint, [
+            '{seller}' => $seller_id,
+            '{venta}' => $venta
+        ]);
+
+        $ventaDecoded = json_decode($ventaData->getContent());
+
+        if (empty($ventaDecoded) || empty($ventaDecoded->results)) {
+            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
+            return $response;
+        }
+
+        $ventaInfo = $ventaDecoded->results[0];
+
+        $shipment_id = $ventaInfo->shipping->id ?? null;
+        if (!$shipment_id) {
+            $response->mensaje = "No se encontró ID de envío en la venta.";
+            return $response;
+        }
+
+        $urlZpl = "https://api.mercadolibre.com/orders/shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
+        $context = stream_context_create([
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ]);
+        $zpl = @file_get_contents($urlZpl, false, $context);
+
+        if (empty($zpl)) {
+            $response->mensaje = "No se encontró la etiqueta del envío, verificar si el envío proviene de SellCenter o está cancelado." . self::logVariableLocation();
+            $response->raw = $urlZpl;
+            return $response;
+        }
 
         $tmp = tempnam('', 'me2');
         rename($tmp, $tmp .= '.zip');
-        $file = fopen($tmp, 'r+');
-
-        $url_data = config("webservice.mercadolibre_enpoint") . "shipment_labels?shipment_ids=" . $informacion_venta->shipping->id . "&response_type=zpl2&access_token=" . $token;
-        $zpl = @file_get_contents($url_data);
-
-        if (empty($zpl)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "No se encontró la etiqueta del envío, favor de revisar que el envío no sea enviado de sellcenter ó la venta no esté cancelada." . $log;
-            $response->raw = $url_data;
-
-            return $response;
-        }
-
-        fwrite($file, $zpl);
+        file_put_contents($tmp, $zpl);
 
         $zip = new ZipArchive;
-        $zip->open($tmp);
-
-        $response->error = 0;
-        $response->file = $zip->getFromIndex(0);
-
+        if ($zip->open($tmp) === true) {
+            $response->error = 0;
+            $response->file = $zip->getFromIndex(0);
+            $zip->close();
+        } else {
+            $response->mensaje = "No se pudo abrir el archivo ZIP generado.";
+        }
         return $response;
     }
 
@@ -1870,7 +1880,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
         $array = array();
 
         $marketplace = DB::select("SELECT
@@ -1927,7 +1937,7 @@ class MercadolibreService
                                                         INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
                                                         WHERE id_publicacion = " . $existe_publicacion[0]->id . "");
 
-                    $publicacion_data = new \stdClass();
+                    $publicacion_data = new stdClass();
                     $publicacion_data->id = $publicacion_info->id;
                     $publicacion_data->titulo = $publicacion_info->title;
                     $publicacion_data->precio = $publicacion_info->price;
@@ -1975,7 +1985,7 @@ class MercadolibreService
                                                             INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
                                                             WHERE id_publicacion = " . $existe_publicacion[0]->id . "");
 
-                        $publicacion_data = new \stdClass();
+                        $publicacion_data = new stdClass();
                         $publicacion_data->id = $publicacion_info->id;
                         $publicacion_data->titulo = $publicacion_info->title;
                         $publicacion_data->precio = $publicacion_info->price;
@@ -2009,7 +2019,7 @@ class MercadolibreService
 
     public static function crearPublicacion($marketplace, $data)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $imagenes_a_borrar = array();
 
         $publicacion_data = DB::select("SELECT
@@ -2106,9 +2116,9 @@ class MercadolibreService
             ));
         }
 
-        $request_response = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "items")
+        $request_response = Request::post(config("webservice.mercadolibre_enpoint") . "items")
             ->addHeader('Authorization', 'Bearer ' . $token)
-            ->body(json_encode($request_data), \Httpful\Mime::FORM)
+            ->body(json_encode($request_data), Mime::FORM)
             ->send();
 
         $request_response_raw = $request_response->raw_body;
@@ -2148,10 +2158,10 @@ class MercadolibreService
         );
 
         /* La publicación se creó correctamente y se procede a agrega la descripcion */
-        $request_description = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "items/" . $request_response->id . "/description")
+        $request_description = Request::post(config("webservice.mercadolibre_enpoint") . "items/" . $request_response->id . "/description")
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->addHeader('Content-Type', 'application/json')
-            ->body(json_encode($array_description), \Httpful\Mime::FORM)
+            ->body(json_encode($array_description), Mime::FORM)
             ->send();
 
         $request_description_raw = $request_description->raw_body;
@@ -2228,7 +2238,7 @@ class MercadolibreService
     {
         $imagenes_a_borrar = array();
 
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 0;
 
         $marketplace = DB::table("marketplace_api")
@@ -2263,7 +2273,7 @@ class MercadolibreService
         );
 
         # Se actualiza la descripción en Mercadolibre
-        \Httpful\Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id . "/description?api_version=2")
+        Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id . "/description?api_version=2")
             ->addHeader('Content-Type', 'application/json')
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->body(json_encode($actualizar_descripcion_data))
@@ -2291,7 +2301,7 @@ class MercadolibreService
                 # Se elimina la variación
                 if (property_exists($variation, "delete")) {
                     if ($variation->delete) {
-                        \Httpful\Request::delete(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id . "/variations/" . $variation->id)
+                        Request::delete(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id . "/variations/" . $variation->id)
                             ->addHeader('Authorization', 'Bearer ' . $token)
                             ->send();
 
@@ -2299,7 +2309,7 @@ class MercadolibreService
                     }
                 }
 
-                $variation_data = new \stdClass();
+                $variation_data = new stdClass();
 
                 # Se actualizan los atributos de la variacion
                 $variation_data->id = $variation->id;
@@ -2334,7 +2344,7 @@ class MercadolibreService
                                 "file" => $image_path . $image_name
                             );
 
-                            $image_upload = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
+                            $image_upload = Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
                                 ->addHeader('Content-Type', 'multipart/form-data')
                                 ->addHeader('Authorization', 'Bearer ' . $token)
                                 ->attach($image_data)
@@ -2400,7 +2410,7 @@ class MercadolibreService
                             "file" => $image_path . $image_name
                         );
 
-                        $image_upload = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
+                        $image_upload = Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
                             ->addHeader('Content-Type', 'multipart/form-data')
                             ->addHeader('Authorization', 'Bearer ' . $token)
                             ->attach($image_data)
@@ -2473,7 +2483,7 @@ class MercadolibreService
             }
         }
 
-        $response_data = \Httpful\Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id)
+        $response_data = Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $marketplace->publicacion_id)
             ->addHeader('Content-Type', 'application/json')
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->body(json_encode($publicacion_data))
@@ -2523,7 +2533,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -2659,7 +2669,7 @@ class MercadolibreService
 
     public static function buscarPublicacionCompetencia($publicacion)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $publicacion_data = DB::select("SELECT
                                             marketplace_api.app_id,
@@ -2702,7 +2712,7 @@ class MercadolibreService
 
     public static function buscarPublicacion($publicacion_id, $marketplace_area)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $publicacion_data = DB::select("SELECT
                                             marketplace_api.app_id,
@@ -2743,7 +2753,7 @@ class MercadolibreService
     public static function buscarPreguntas($marketplace_area)
     {
         $preguntas_data = array();
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -2796,7 +2806,7 @@ class MercadolibreService
 
     public static function responderPregunta($marketplace_area, $pregunta_id, $respuesta)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -2819,7 +2829,7 @@ class MercadolibreService
             "text" => $respuesta
         );
 
-        $request_data = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "answers")
+        $request_data = Request::post(config("webservice.mercadolibre_enpoint") . "answers")
             ->addHeader('Content-Type', 'application/json')
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->body(json_encode($data))
@@ -2873,7 +2883,7 @@ class MercadolibreService
 
     public static function borrarPregunta($marketplace_area, $pregunta_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -2891,7 +2901,7 @@ class MercadolibreService
 
         $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
 
-        $request_data = \Httpful\Request::delete(config("webservice.mercadolibre_enpoint") . "questions/" . $pregunta_id)
+        $request_data = Request::delete(config("webservice.mercadolibre_enpoint") . "questions/" . $pregunta_id)
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->send();
 
@@ -2921,7 +2931,7 @@ class MercadolibreService
 
     public static function bloquearUsuarioParaPreguntar($marketplace_area, $user_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -2944,7 +2954,7 @@ class MercadolibreService
             "user_id" => $user_id,
         );
 
-        $request_data = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/questions_blacklist")
+        $request_data = Request::post(config("webservice.mercadolibre_enpoint") . "users/" . $seller->id . "/questions_blacklist")
             ->addHeader('Authorization', 'Bearer ' . $token)
             ->body(json_encode($data))
             ->send();
@@ -2977,7 +2987,7 @@ class MercadolibreService
 
     public static function desactivarPublicacion($publicacion_id, $marketplace_area)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 0;
         $publicacion_body = array();
 
@@ -2999,7 +3009,7 @@ class MercadolibreService
 
         $publicacion_body["status"] = "paused";
 
-        $response_data = \Httpful\Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $publicacion_id . "?access_token=" . $token)
+        $response_data = Request::put(config("webservice.mercadolibre_enpoint") . "items/" . $publicacion_id . "?access_token=" . $token)
             ->addHeader('Content-Type', 'application/json')
             ->body(json_encode($publicacion_body))
             ->send();
@@ -3042,7 +3052,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
@@ -3078,7 +3088,7 @@ class MercadolibreService
         );
 
         try {
-            $response_message = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "messages/action_guide/packs/" . $venta . "/option?access_token=" . $token)
+            $response_message = Request::post(config("webservice.mercadolibre_enpoint") . "messages/action_guide/packs/" . $venta . "/option?access_token=" . $token)
                 ->addHeader('Authorization', $token)
                 ->addHeader('Content-Type', 'application/json')
                 ->addHeader('Cache-control', 'no-cache')
@@ -3107,7 +3117,7 @@ class MercadolibreService
     {
         set_time_limit(0);
 
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace = DB::select("SELECT
@@ -3237,9 +3247,9 @@ class MercadolibreService
                 "fiscal_document" => $pdf
             );
 
-            $request = \Httpful\Request::post(config("webservice.mercadolibre_enpoint") . "packs/" . $pack_id . "/fiscal_documents?access_token=" . $token);
+            $request = Request::post(config("webservice.mercadolibre_enpoint") . "packs/" . $pack_id . "/fiscal_documents?access_token=" . $token);
 
-            $request->sendsType(\Httpful\Mime::FORM);
+            $request->sendsType(Mime::FORM);
             $request->addHeader('Content-Type', 'multipart/form-data');
             $request->attach($data);
             $response_data = $request->send();
@@ -3306,7 +3316,7 @@ class MercadolibreService
 
     public static function seller($pseudonimo, $token)
     {
-        $url = config("webservice.mercadolibre_enpoint")."users/me";
+        $url = config("webservice.mercadolibre_enpoint") . "users/me";
 
         $options = [
             "http" => [
@@ -3358,7 +3368,7 @@ class MercadolibreService
         // $tipo=1 Documento
         // $tipo=2 no_venta
 
-        $response = new \stdClass();
+        $response = new stdClass();
 
         if ($tipo == 1) {
             $marketplace = DB::select("SELECT
@@ -3486,7 +3496,7 @@ class MercadolibreService
         // $tipo=1 Documento
         // $tipo=2 no_venta
 
-        $response = new \stdClass();
+        $response = new stdClass();
 
         if ($tipo == 1) {
             $marketplace = DB::select("SELECT
@@ -3593,7 +3603,7 @@ class MercadolibreService
 
     public static function getUserDataByNickname($nickname, $marketplace_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 1;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -3633,7 +3643,7 @@ class MercadolibreService
 
     public static function getMarketplaceData($marketplace_id)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
         $response->error = 0;
 
         $marketplace_data = DB::table("marketplace_api")
@@ -3653,6 +3663,65 @@ class MercadolibreService
         return $response;
     }
 
+    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [])
+    {
+        $response = new stdClass();
+        $response->error = 1;
+
+        $marketplace = self::getMarketplaceData($marketplaceId);
+        if (!$marketplace) {
+            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
+            return $response;
+        }
+
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $endpoint = strtr($endpointTemplate, $placeholders);
+        $url = "https://api.mercadolibre.com/" . $endpoint;
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+        $context = stream_context_create($options);
+
+        $raw = @file_get_contents($url, false, $context);
+
+        if ($raw === false) {
+            return response()->json(["error" => "No se pudo obtener información"], 500);
+        }
+
+        return response()->json(json_decode($raw, true));
+    }
+
+    public static function api_listingTypes($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'sites/{marketplace}/listing_types',
+            ['{marketplace}' => $data->marketplace_id]
+        );
+    }
+
+    public static function api_SaleTerms($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'categories/{category}/sale_terms',
+            ['{category}' => $data->category_id]
+        );
+    }
+
+    public static function api_categoryVariants($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'categories/{category}/attributes',
+            ['{category}' => $data->category_id]
+        );
+    }
     public static function logVariableLocation(): string
     {
         // $log = self::logVariableLocation();

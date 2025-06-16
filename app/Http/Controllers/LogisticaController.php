@@ -2,31 +2,28 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Services\CorreoService;
-use App\Http\Services\DropboxService;
-use App\Http\Services\InventarioService;
-use App\Http\Services\ShopifyService;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Crypt;
-
-use App\Models\Usuario;
-use App\Models\Paqueteria;
-
-use App\Http\Services\MercadolibreService;
-use App\Http\Services\DocumentoService;
-use App\Http\Services\ClaroshopService;
-use App\Http\Services\ElektraService;
-use App\Http\Services\WalmartService;
-use App\Http\Services\LinioService;
-use App\Http\Services\EnviaService;
-use App\Http\Services\CoppelService;
-use Illuminate\Http\Request;
 use App\Events\PusherEvent;
 use App\Http\Services\ClaroshopServiceV2;
-use Crabbly\FPDF\FPDF;
-use Mailgun\Mailgun;
-use Exception;
+use App\Http\Services\CoppelService;
+use App\Http\Services\CorreoService;
+use App\Http\Services\DropboxService;
+use App\Http\Services\ElektraService;
+use App\Http\Services\EnviaService;
+use App\Http\Services\InventarioService;
+use App\Http\Services\LinioService;
+use App\Http\Services\MercadolibreService;
+use App\Http\Services\ShopifyService;
+use App\Http\Services\WalmartService;
+use App\Models\Paqueteria;
+use App\Models\Usuario;
 use DB;
+use Exception;
+use Httpful\Mime;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Crypt;
+use Mailgun\Mailgun;
+use stdClass;
+use Throwable;
 
 class LogisticaController extends Controller
 {
@@ -202,7 +199,9 @@ class LogisticaController extends Controller
         switch (strtolower($marketplace_data->marketplace)) {
             case 'mercadolibre externo':
             case 'mercadolibre':
-                $response = $zpl ? MercadolibreService::documentoZPL($informacion->no_venta, $marketplace_data) : MercadolibreService::documento($informacion->no_venta, $marketplace_data);
+            $response = $zpl
+                ? MercadolibreService::documentoZPL($informacion->no_venta, $marketplace_data)
+                : MercadolibreService::documento($informacion->no_venta, $marketplace_data);
 
                 break;
 
@@ -245,7 +244,7 @@ class LogisticaController extends Controller
                 break;
 
             default:
-                $response = new \stdClass();
+                $response = new stdClass();
                 $response->error = 1;
                 $response->mensaje = "El marketplace no ha sido configurado, favor de contactar al administrador.<br/> Error: LC249";
 
@@ -977,7 +976,7 @@ class LogisticaController extends Controller
                         'code' => 500,
                         'message' => $e->getMessage()
                     ]);
-                } catch (\Throwable $e) {
+                } catch (Throwable $e) {
                     return response()->json([
                         'code' => 500,
                         'message' => $e->getMessage()
@@ -1241,7 +1240,7 @@ class LogisticaController extends Controller
 
             $crear_guia = \Httpful\Request::post('http://paqueterias.crmomg.mx/api/' . $paqueteria->paqueteria . '/CrearGuia')
                 ->addHeader('authorization', 'Bearer ' . config("keys.paqueterias"))
-                ->body($cotizar_paqueteria->data, \Httpful\Mime::FORM)
+                ->body($cotizar_paqueteria->data, Mime::FORM)
                 ->send();
         } else {
             $esShopy = true;
@@ -1441,7 +1440,7 @@ class LogisticaController extends Controller
     {
         $cotizar = \Httpful\Request::post('http://paqueterias.crmomg.mx/api/' . $paqueteria . '/Cotizar')
             ->addHeader('authorization', 'Bearer ' . config("keys.paqueterias"))
-            ->body($array, \Httpful\Mime::FORM)
+            ->body($array, Mime::FORM)
             ->send();
 
         $cotizar_raw = $cotizar->raw_body;
@@ -1470,7 +1469,7 @@ class LogisticaController extends Controller
 
     private function cotizar_paqueteria_raw_data($data, $creador, $email)
     {
-        $response = new \stdClass();
+        $response = new stdClass();
 
         $paqueteria = Paqueteria::find($data->paqueteria);
 
@@ -1843,7 +1842,7 @@ class LogisticaController extends Controller
         try {
             $cotizar_res = \Httpful\Request::post('http://paqueterias.crmomg.mx/api/' . $paqueteria->paqueteria . '/Cotizar')
                 ->addHeader('authorization', 'Bearer ' . config("keys.paqueterias"))
-                ->body($cotizar, \Httpful\Mime::FORM)
+                ->body($cotizar, Mime::FORM)
                 ->send();
 
             $cotizar_raw = $cotizar_res->body;
