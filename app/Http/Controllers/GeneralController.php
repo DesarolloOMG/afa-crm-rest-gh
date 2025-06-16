@@ -62,395 +62,11 @@ class GeneralController extends Controller
         ]);
     }
 
-//    public function general_busqueda_producto_existencia(Request $request)
-//    {
-//        set_time_limit(0);
-//
-//        $url = "";
-//        $data = json_decode($request->input('data'));
-//        $auth = json_decode($request->auth);
-//        $bridge = array();
-//        $productos = array();
-//        $productos_array = array();
-//        $skubusqueda = true;
-//        $extras = '';
-//
-//        if (empty($data->criterio)) {
-//            if ($data->almacen == 0) {
-//                return response()->json([
-//                    "code" => 500,
-//                    "message" => "Favor de seleccionar un almacén o escribir un criterio para realizar la búsqueda"
-//                ]);
-//            }
-//        }
-//
-//        if (sizeof($data->etiquetas) >= 2) {
-//            $skubusqueda = false;
-//            foreach ($data->etiquetas as $criterio) {
-//                if ($data->almacen != 0) {
-//                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($criterio);
-//                    $bridge = json_decode(file_get_contents($url));
-//                    $productos = array_merge($productos, $bridge);
-//                } else {
-//                    $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($criterio);
-//                    $bridge = json_decode(file_get_contents($url));
-//                    $productos = array_merge($productos, $bridge);
-//                }
-//            }
-//        }
-//
-//        if ($data->etiquetas == [] || sizeof($data->etiquetas) == 1) {
-//            $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($data->criterio);
-//            if (empty($data->criterio)) {
-//                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen;
-//                $productos = @json_decode(file_get_contents($url));
-//            } else {
-//                if ($data->almacen != 0) {
-//                    $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($data->criterio);
-//                    $productos = json_decode(file_get_contents($url));
-//                    if (empty($productos)) {
-//                        $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/Descripcion/' . rawurlencode($data->criterio);
-//                        $productos = @json_decode(file_get_contents($url));
-//                        if (empty($productos)) {
-//                            $es_sinonimo = DB::table("modelo_sinonimo")
-//                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-//                                ->select("modelo.sku")
-//                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
-//                                ->first();
-//                            if (!empty($es_sinonimo)) {
-//                                $url = config('webservice.url') . $data->empresa . '/Reporte/Productos/Existencia/Almacen/' . $data->almacen . '/SKU/' . rawurlencode($es_sinonimo->sku);
-//                                $productos = @json_decode(file_get_contents($url));
-//                            }
-//                        }
-//                    }
-//                } else {
-//                    $productos = @json_decode(file_get_contents($url));
-//                    if (empty($productos)) {
-//                        $url = config('webservice.url') . 'producto/Consulta/Productos/Descripcion/' . $data->empresa . '/' . rawurlencode($data->criterio);
-//                        $productos = @json_decode(file_get_contents($url));
-//                        if (empty($productos)) {
-//                            $es_sinonimo = DB::table("modelo_sinonimo")
-//                                ->join("modelo", "modelo_sinonimo.id_modelo", "=", "modelo.id")
-//                                ->select("modelo.sku")
-//                                ->where("modelo_sinonimo.codigo", trim($data->criterio))
-//                                ->first();
-//                            if (!empty($es_sinonimo)) {
-//                                $url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode($es_sinonimo->sku);
-//                                $productos = @json_decode(file_get_contents($url));
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        }
-//
-//        $es_admin = DB::table("usuario_subnivel_nivel")
-//            ->select("usuario_subnivel_nivel.id")
-//            ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
-//            ->where("usuario_subnivel_nivel.id_usuario", $auth->id)
-//            ->where("subnivel_nivel.id_nivel", 6)
-//            ->where("subnivel_nivel.id_subnivel", 1)
-//            ->first();
-//
-//        $spreadsheet = new Spreadsheet();
-//        $sheet = $spreadsheet->getActiveSheet();
-//        $contador_fila  = 2;
-//
-//        # Cabecera
-//        $sheet->setCellValue('A1', 'CÓDIGO');
-//        $sheet->setCellValue('B1', 'DESCRIPCIÓN');
-//        $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
-//        $sheet->setCellValue('D1', 'ALMACÉN');
-//        $sheet->setCellValue('E1', 'INVENTARIO');
-//        $sheet->setCellValue('F1', 'PENDIENTES');
-//        $sheet->setCellValue('G1', 'EN TRANSITO');
-//        $sheet->setCellValue('H1', 'PRETRANSFERENCIA');
-//        $sheet->setCellValue('I1', 'DISPONIBLE');
-//        $sheet->setCellValue('J1', 'TIPO DE PRODUCTO');
-//        $sheet->setCellValue('K1', 'MARCA');
-//        $sheet->setCellValue('L1', 'SUBTIPO');
-//        $sheet->setCellValue('M1', 'VERTICAL');
-//        $sheet->setCellValue('N1', 'CODIGO SAT');
-//        $sheet->setCellValue('O1', 'SERIE');
-//        $sheet->setCellValue('P1', 'NP');
-//
-//        $proveedores_b2b = DB::table("modelo_proveedor")
-//            ->select("id", "razon_social")
-//            ->where("status", 1)
-//            ->where("id", "<>", 0)
-//            ->get()
-//            ->toArray();
-//
-//        $last_column = "P";
-//
-//        foreach ($proveedores_b2b as $index => $proveedor) {
-//            $last_column = self::excelColumnRange('A', 'ZZ')[15 + $index];
-//
-//            $sheet->setCellValue($last_column . '1', $proveedor->razon_social);
-//        }
-//
-//        $sheet->getStyle('A:' . $last_column)->getAlignment()->setHorizontal('center'); # Texto centrado
-//        $spreadsheet->getActiveSheet()->getStyle('A1:' . $last_column . '1')->getFont()->setBold(1)->getColor()->setARGB('2B28F6'); # Cabecera en negritas y de color azul de fondo
-//
-//        $productos = is_array($productos) ? $productos : (array) $productos;
-//        $data->etiquetas = is_array($data->etiquetas) ? $data->etiquetas : (array) $data->etiquetas;
-//        foreach ($productos as $index => $producto) {
-//            if (!$skubusqueda) {
-//                foreach ($data->etiquetas as $key) {
-//
-//                    $haystack = strtolower($producto->producto);
-//                    $needle = strtolower($key);
-//
-//                    if (!str_contains($haystack, $needle)) {
-//                        continue 2;
-//                    }
-//                };
-//            }
-//
-//            $almacenes = array();
-//            $inventario = "";
-//            $pendientes = "";
-//            $transito = "";
-//            $disponible = "";
-//
-//            if ($data->con_existencia) {
-//                if (COUNT($producto->existencias->almacenes) == 0) {
-//                    unset($productos[$index]);
-//
-//                    continue;
-//                }
-//
-//                $existencia_positiva = false;
-//
-//                foreach ($producto->existencias->almacenes as $almacen) {
-//                    if ($almacen->fisico > 0) {
-//                        $existencia_positiva = true;
-//
-//                        break;
-//                    }
-//                }
-//
-//                if (!$existencia_positiva) {
-//                    unset($productos[$index]);
-//
-//                    continue;
-//                }
-//            }
-//
-//            $costo_extra = DB::select("SELECT id, costo_extra, serie  FROM modelo WHERE sku = '" . $producto->sku . "'");
-//
-//            $producto->costo_extra = (empty($costo_extra)) ? 0 : (float) $costo_extra[0]->costo_extra;
-//            $producto->imagenes = DB::table("modelo_imagen")
-//                ->join("modelo", "modelo_imagen.id_modelo", "=", "modelo.id")
-//                ->select("dropbox")
-//                ->where("modelo.sku", $producto->sku)
-//                ->get()
-//                ->toArray();
-//            $producto->precio = DB::table("modelo_precio")
-//                ->selectRaw("ROUND(modelo_precio.precio, 2) AS precio")
-//                ->join("modelo", "modelo_precio.id_modelo", "=", "modelo.id")
-//                ->join("empresa", "modelo_precio.id_empresa", "=", "empresa.id")
-//                ->where("modelo.sku", $producto->sku)
-//                ->where("empresa.bd", $data->empresa)
-//                ->first();
-//
-//            foreach ($producto->existencias->almacenes as $index_producto => $almacen) {
-//                # OMG
-//                if (($data->empresa == "7" && in_array($almacen->almacenid, [17, 0]) && empty($es_admin)) || ($data->empresa == "6" && $almacen->almacenid == 1010 && empty($es_admin)) || ($data->empresa == "8" && $almacen->almacenid == 8 && empty($es_admin))) {
-//                    unset($producto->existencias->almacenes[$index_producto]);
-//
-//                    continue;
-//                }
-//
-//                $pendientes_bo = DB::select("SELECT
-//                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-//                                                    FROM documento
-//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-//                                                    WHERE modelo.sku = '" . $producto->sku . "'
-//                                                    AND empresa.bd = " . $data->empresa . "
-//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-//                                                    AND documento.id_tipo = 2
-//                                                    AND documento.status = 1
-//                                                    AND documento.id_fase IN (1, 7)")[0]->cantidad;
-//
-//                $pendientes_surtir = DB::select("SELECT
-//                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-//                                                    FROM documento
-//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-//                                                    WHERE modelo.sku = '" . $producto->sku . "'
-//                                                    AND empresa.bd = " . $data->empresa . "
-//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-//                                                    AND documento.id_tipo = 2
-//                                                    AND documento.status = 1
-//                                                    AND documento.anticipada = 0
-//                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
-//
-//                $pendientes_importar = DB::select("SELECT
-//                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-//                                                FROM documento
-//                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-//                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-//                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-//                                                WHERE modelo.sku = '" . $producto->sku . "'
-//                                                AND empresa.bd = " . $data->empresa . "
-//                                                AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-//                                                AND documento.id_tipo = 2
-//                                                AND documento.status = 1
-//                                                AND documento.anticipada = 0
-//                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
-//
-//                $pendientes_pretransferencia = DB::select("SELECT
-//                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
-//                                                            FROM documento
-//                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
-//                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-//                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-//                                                            WHERE modelo.sku = '" . $producto->sku . "'
-//                                                            AND empresa.bd = " . $data->empresa . "
-//                                                            AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-//                                                            AND documento.id_tipo = 9
-//                                                            AND documento.status = 1
-//                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
-//
-//                $pendientes_recibir = DB::select("SELECT
-//                                                        movimiento.id AS movimiento_id,
-//                                                        modelo.sku,
-//                                                        modelo.serie,
-//                                                        movimiento.completa,
-//                                                        movimiento.cantidad,
-//                                                        movimiento.cantidad_aceptada,
-//                                                        (SELECT
-//                                                            COUNT(*) AS cantidad
-//                                                        FROM movimiento
-//                                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-//                                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-//                                                        WHERE movimiento.id = movimiento_id) AS recepcionadas
-//                                                    FROM documento
-//                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-//                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-//                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-//                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-//                                                    WHERE documento.id_tipo = 1
-//                                                    AND documento.status = 1
-//                                                    AND modelo.sku = '" . $producto->sku . "'
-//                                                    AND empresa.bd = " . $data->empresa . "
-//                                                    AND empresa_almacen.id_erp = " . $almacen->almacenid . "
-//                                                    AND documento.id_fase = 93");
-//
-//                $total_pendientes = 0;
-//
-//                foreach ($pendientes_recibir as $pendiente) {
-//                    if ($pendiente->serie) {
-//                        $total_pendientes += $pendiente->cantidad - $pendiente->recepcionadas;
-//                    } else {
-//                        #$total_pendientes += ($pendiente->completa) ? 0 : $pendiente->cantidad;
-//                        $total_pendientes += $pendiente->cantidad - $pendiente->cantidad_aceptada;
-//                    }
-//                }
-//
-//                $almacen->nombre = $almacen->almacen;
-//                $almacen->fisico -= $pendientes_importar;
-//
-//                $almacen->pendientes_surtir = (int) $pendientes_surtir;
-//                $almacen->pendientes_recibir = (int) $total_pendientes;
-//                $almacen->pendientes_pretransferencia = (int) $pendientes_pretransferencia;
-//                $almacen->pendientes_bo = (int) $pendientes_bo;
-//
-//                array_push($almacenes, $almacen);
-//            }
-//
-//            foreach ($almacenes as $almacen) {
-//                $pendientes_surtir = property_exists($almacen, "pendientes_surtir") ? $almacen->pendientes_surtir : 0;
-//                $pendientes_recibir = property_exists($almacen, "pendientes_recibir") ? $almacen->pendientes_recibir : 0;
-//                $pendientes_pretransferencia = property_exists($almacen, "pendientes_pretransferencia") ? $almacen->pendientes_pretransferencia : 0;
-//                $disponible = ((int) $almacen->fisico - (int) $pendientes_surtir - (int) $pendientes_pretransferencia);
-//
-//                # Excel
-//                $sheet->setCellValue('A' . $contador_fila, $producto->sku);
-//                $sheet->setCellValue('B' . $contador_fila, $producto->producto);
-//                $sheet->setCellValue('C' . $contador_fila, $producto->ultimo_costo);
-//                $sheet->setCellValue('D' . $contador_fila, $almacen->nombre);
-//                $sheet->setCellValue('E' . $contador_fila, $almacen->fisico);
-//                $sheet->setCellValue('F' . $contador_fila, $pendientes_surtir);
-//                $sheet->setCellValue('G' . $contador_fila, $pendientes_recibir);
-//                $sheet->setCellValue('H' . $contador_fila, $pendientes_pretransferencia);
-//                $sheet->setCellValue('I' . $contador_fila, $disponible);
-//                $sheet->setCellValue('J' . $contador_fila, $producto->cat1);
-//                $sheet->setCellValue('K' . $contador_fila, $producto->cat2);
-//                $sheet->setCellValue('L' . $contador_fila, $producto->cat3);
-//                $sheet->setCellValue('M' . $contador_fila, $producto->cat4);
-//                $sheet->setCellValue('N' . $contador_fila, $producto->claveprodserv);
-//                $sheet->setCellValue('O' . $contador_fila, empty($costo_extra) ? 0 : ($costo_extra[0]->serie ? "SÍ" : "NO"));
-//                $sheet->setCellValue('P' . $contador_fila, property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A");
-//
-//                foreach ($proveedores_b2b as $index => $proveedor) {
-//                    if (!empty($costo_extra)) {
-//                        $codigo_data = DB::table("modelo_proveedor_producto")
-//                            ->select("id_producto")
-//                            ->where("id_modelo_proveedor", $proveedor->id)
-//                            ->where("id_modelo", $costo_extra[0]->id)
-//                            ->first();
-//
-//                        $last_producto_column = self::excelColumnRange('A', 'ZZ')[16 + $index];
-//
-//                        $sheet->setCellValue($last_producto_column . $contador_fila, empty($codigo_data) ? "" : $codigo_data->id_producto);
-//                    }
-//                }
-//
-//                $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-//                $sheet->getCellByColumnAndRow(16, $contador_fila)->setValueExplicit(property_exists($producto, "numero_parte") ? $producto->numero_parte : "N/A", \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-//                $spreadsheet->getActiveSheet()->getStyle("C" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
-//
-//                $contador_fila++;
-//            }
-//
-//            if ($data->con_existencia) {
-//                if (COUNT($producto->existencias->almacenes) == 0) {
-//                    unset($productos[$index]);
-//
-//                    continue;
-//                }
-//            }
-//
-//            $producto->ultimo_costo = ROUND($producto->ultimo_costo, 2);
-//            $producto->existencias->almacenes   = $almacenes;
-//
-//            array_push($productos_array, $producto);
-//        }
-//
-//        foreach (range('A', $last_column) as $columna) {
-//            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
-//        }
-//
-//
-//        $writer = new Xlsx($spreadsheet);
-//        $writer->save('reporte_productos.xlsx');
-//
-//        $json['code'] = 200;
-//        $json['productos'] = $productos_array;
-//        $json['excel'] = base64_encode(file_get_contents('reporte_productos.xlsx'));
-//        $json['prod'] = $productos;
-//        $json['extra'] = $skubusqueda;
-//        $json['extras'] = $extras;
-//
-//        unlink('reporte_productos.xlsx');
-//
-//        return response()->json($json);
-//    }
-
     /**
      * Realiza una búsqueda general de productos por criterio o almacén específico,
      * generando un reporte en Excel y agrupando resultados por SKU.
      *
-     * @param Request $request   Objeto con parámetros: criterio, almacen y con_existencia.
+     * @param Request $request Objeto con parámetros: criterio, almacen y con_existencia.
      * @return \Illuminate\Http\JsonResponse
      */
     public function general_busqueda_producto_existencia(Request $request)
@@ -469,8 +85,8 @@ class GeneralController extends Controller
         }
 
         // Preparar variables de entrada para el SP
-        $criterio       = $data->criterio ?? '';
-        $id_almacen     = $data->almacen  ?? 0;
+        $criterio = $data->criterio ?? '';
+        $id_almacen = $data->almacen ?? 0;
         $con_existencia = $data->con_existencia == false ? 0 : 1;
 
         // Ejecutar el SP actualizado: sp_calcularExistenciaGeneral
@@ -554,33 +170,33 @@ class GeneralController extends Controller
             $codigo = $p->codigo;
             if (!isset($agrupados[$codigo])) {
                 $agrupados[$codigo] = [
-                    'codigo'        => $p->codigo,
-                    'descripcion'   => $p->descripcion,
-                    'ultimo_costo'  => $p->ultimo_costo,
-                    'precio'        => $p->precio,
+                    'codigo' => $p->codigo,
+                    'descripcion' => $p->descripcion,
+                    'ultimo_costo' => $p->ultimo_costo,
+                    'precio' => $p->precio,
                     'tipo_producto' => $p->tipo_producto,
-                    'marca'         => $p->marca,
-                    'subtipo'       => $p->subtipo,
-                    'vertical'      => $p->vertical,
-                    'codigo_sat'    => $p->codigo_sat,
-                    'serie'         => $p->serie,
-                    'np'            => $p->np,
-                    'almacenes'     => [],
+                    'marca' => $p->marca,
+                    'subtipo' => $p->subtipo,
+                    'vertical' => $p->vertical,
+                    'codigo_sat' => $p->codigo_sat,
+                    'serie' => $p->serie,
+                    'np' => $p->np,
+                    'almacenes' => [],
                 ];
             }
 
             $agrupados[$codigo]['almacenes'][] = [
-                'almacen'          => $p->almacen,
-                'inventario'       => $p->stock,
-                'pendientes'       => $p->pendientes,
-                'en_transito'      => $p->en_transito,
+                'almacen' => $p->almacen,
+                'inventario' => $p->stock,
+                'pendientes' => $p->pendientes,
+                'en_transito' => $p->en_transito,
                 'pretransferencia' => $p->pretransferencia,
-                'disponible'       => $p->disponible,
+                'disponible' => $p->disponible,
             ];
         }
 
         // Respuesta JSON final
-        $json['code']      = 200;
+        $json['code'] = 200;
         $json['productos'] = array_values($agrupados);
 
         return response()->json($json);
@@ -602,8 +218,8 @@ class GeneralController extends Controller
                             GROUP BY fecha");
 
         return response()->json([
-            'code'  => 200,
-            'compras'    => $compras
+            'code' => 200,
+            'compras' => $compras
         ]);
     }
 
@@ -624,8 +240,8 @@ class GeneralController extends Controller
                             GROUP BY fecha");
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas
+            'code' => 200,
+            'ventas' => $ventas
         ]);
     }
 
@@ -634,178 +250,167 @@ class GeneralController extends Controller
         set_time_limit(0);
 
         $data = json_decode($request->input("data"));
+        $data->producto = urldecode(trim($data->producto));
 
-        $data->producto = str_replace('%20', '', $data->producto);
-        $documentos_almacen = array();
+        $bindings = [$data->producto];
+        $where = "modelo.sku = ?";
 
-        $extra_query = "";
-
-        if ($data->tipo_documento != "") {
-            $extra_query .= " AND documento_tipo.id = " . $data->tipo_documento . "";
+        if (!empty($data->tipo_documento)) {
+            $where .= " AND documento_tipo.id = ?";
+            $bindings[] = $data->tipo_documento;
         }
 
-        if ($data->fecha_inicial != "" || $data->fecha_final != "") {
-            $extra_query .=  " AND documento.created_at BETWEEN '" . $data->fecha_inicial . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'";
+        if (!empty($data->fecha_inicial) && !empty($data->fecha_final)) {
+            $where .= " AND documento.created_at BETWEEN ? AND ?";
+            $bindings[] = $data->fecha_inicial . " 00:00:00";
+            $bindings[] = $data->fecha_final . " 23:59:59";
         }
 
-        $documentos = DB::select("SELECT
-                                    documento.id,
-                                    documento.no_venta,
-                                    documento.tipo_cambio,
-                                    documento.factura_serie,
-                                    documento.factura_folio,
-                                    documento.documento_extra,
-                                    documento.observacion,
-                                    documento.created_at,
-                                    documento.status,
-                                    documento.autorizado_by AS autorizado_por,
-                                    documento.id_almacen_principal_empresa AS id_almacen_principal,
-                                    documento.id_almacen_secundario_empresa AS id_almacen_secundario,
-                                    (
-                                        SELECT
-                                            almacen
-                                        FROM empresa_almacen
-                                        INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                        WHERE empresa_almacen.id = id_almacen_principal
-                                    ) AS almacen_principal,
-                                    (
-                                        SELECT
-                                            almacen
-                                        FROM empresa_almacen
-                                        INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                        WHERE empresa_almacen.id = id_almacen_secundario
-                                    ) AS almacen_alterno,
-                                    (
-                                        SELECT
-                                            nombre
-                                        FROM usuario
-                                        WHERE id = autorizado_por
-                                    ) AS autorizador,
-                                    documento.id_tipo,
-                                    IF(documento_tipo.tipo = 'ORDEN DE COMPRA', 'RECEPCION', documento_tipo.tipo) AS tipo,
-                                    documento_fase.fase,
-                                    documento_entidad.razon_social,
-                                    moneda.moneda,
-                                    movimiento.cantidad,
-                                    documento_recepcion.cantidad AS cantidad_recepcion,
-                                    documento_recepcion.documento_erp AS recepcion_erp,
-                                    ROUND(IF (documento_tipo.tipo = 'COMPRA', movimiento.precio, movimiento.precio * 1.16), 2) AS precio,
-                                    marketplace_area.serie AS serie_factura,
-                                    marketplace.marketplace,
-                                    area.area
-                                FROM documento 
-                                INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                INNER JOIN documento_tipo ON documento.id_tipo = documento_tipo.id
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                LEFT JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                LEFT JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                LEFT JOIN area ON marketplace_area.id_area = area.id
-                                INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento 
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                LEFT JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
-                                WHERE modelo.sku = '" . trim($data->producto) . "'
-                                " . $extra_query . "");
+        $query = "SELECT
+                documento.id,
+                documento.no_venta,
+                documento.tipo_cambio,
+                documento.factura_serie,
+                documento.factura_folio,
+                documento.documento_extra,
+                documento.observacion,
+                documento.created_at,
+                documento.status,
+                documento.autorizado_by AS autorizado_por,
+                documento.id_almacen_principal_empresa AS id_almacen_principal,
+                documento.id_almacen_secundario_empresa AS id_almacen_secundario,
+                (
+                    SELECT almacen
+                    FROM empresa_almacen
+                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+                    WHERE empresa_almacen.id = id_almacen_principal
+                ) AS almacen_principal,
+                (
+                    SELECT almacen
+                    FROM empresa_almacen
+                    INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+                    WHERE empresa_almacen.id = id_almacen_secundario
+                ) AS almacen_alterno,
+                (
+                    SELECT nombre
+                    FROM usuario
+                    WHERE id = autorizado_por
+                ) AS autorizador,
+                documento.id_tipo,
+                IF(documento_tipo.tipo = 'ORDEN DE COMPRA', 'RECEPCION', documento_tipo.tipo) AS tipo,
+                documento_fase.fase,
+                documento_entidad.razon_social,
+                moneda.moneda,
+                movimiento.cantidad,
+                documento_recepcion.cantidad AS cantidad_recepcion,
+                documento_recepcion.documento_erp AS recepcion_erp,
+                ROUND(IF (documento_tipo.tipo = 'COMPRA', movimiento.precio, movimiento.precio * 1.16), 2) AS precio,
+                marketplace_area.serie AS serie_factura,
+                marketplace.marketplace,
+                area.area
+            FROM documento
+            INNER JOIN moneda ON documento.id_moneda = moneda.id
+            INNER JOIN documento_tipo ON documento.id_tipo = documento_tipo.id
+            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+            LEFT JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
+            LEFT JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
+            LEFT JOIN area ON marketplace_area.id_area = area.id
+            INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+            INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
+            LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
+            INNER JOIN movimiento ON documento.id = movimiento.id_documento
+            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+            LEFT JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
+            WHERE $where";
+
+        $documentos = DB::select($query, $bindings);
+
+        $documentos_almacen = [];
 
         foreach ($documentos as $documento) {
-            $existe_almacen = 0;
-
-            if ($documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA) {
-                if (is_null($documento->cantidad_recepcion)) {
-                    continue;
-                }
+            if ($documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA && is_null($documento->cantidad_recepcion)) {
+                continue;
             }
 
-            foreach ($documentos_almacen as $documento_almacen) {
-                if ($documento_almacen->almacen == $documento->id_almacen_principal) {
-                    array_push($documento_almacen->documentos, $documento);
+            $existe_almacen = false;
 
-                    $existe_almacen = 1;
+            foreach ($documentos_almacen as $doc_almacen) {
+                if ($doc_almacen->almacen == $documento->id_almacen_principal) {
+                    $doc_almacen->documentos[] = $documento;
+                    $existe_almacen = true;
+                    break;
                 }
             }
 
             if (!$existe_almacen) {
-                $nuevo_almacen = new \stdClass();
-                $nuevo_almacen->almacen = $documento->id_almacen_principal;
-                $nuevo_almacen->almacen_nombre = $documento->almacen_principal;
-                $nuevo_almacen->documentos = array();
-
-                array_push($nuevo_almacen->documentos, $documento);
-                array_push($documentos_almacen, $nuevo_almacen);
+                $nuevo = new \stdClass();
+                $nuevo->almacen = $documento->id_almacen_principal;
+                $nuevo->almacen_nombre = $documento->almacen_principal;
+                $nuevo->documentos = [$documento];
+                $documentos_almacen[] = $nuevo;
             }
+        }
+
+        $json['documentos'] = $documentos_almacen;
+
+        if (empty($data->needs_excel)) {
+            return response()->json($json);
         }
 
         $spreadsheet = new Spreadsheet();
 
         foreach ($documentos_almacen as $index => $almacen) {
             $spreadsheet->createSheet();
-
             $spreadsheet->setActiveSheetIndex($index + 1);
-            $spreadsheet->getActiveSheet()->setTitle($almacen->almacen_nombre);
-            $spreadsheet->getActiveSheet()->getStyle('A1:Q1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
-
             $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle($almacen->almacen_nombre);
+            $sheet->getStyle('A1:Q1')->getFont()->setBold(1)->getColor()->setARGB('DE573A');
+
+            $sheet->fromArray([
+                ['DOCUMENTO CRM', 'VENTA (MARKETPLACE)', 'FOLIO', 'ENTIDAD', 'ALMACEN PRINCIPAL',
+                    'ALMACEN SECUNDARIO', 'MONEDA', 'T.C', 'CANTIDAD', 'COSTO', 'TOTAL', 'OBSERVACION', 'FASE',
+                    'FECHA', 'ESTADO', 'TIPO DOCUMENTO']
+            ], null, 'A1');
+
             $fila = 2;
 
-            $sheet->setCellValue('A1', 'DOCUMENTO ERP');
-            $sheet->setCellValue('B1', 'DOCUMENTO CRM');
-            $sheet->setCellValue('C1', 'VENTA (MARKETPLACE)');
-            $sheet->setCellValue('D1', 'FOLIO');
-            $sheet->setCellValue('E1', 'ENTIDAD');
-            $sheet->setCellValue('F1', 'ALMACEN PRINCIPAL');
-            $sheet->setCellValue('G1', 'ALMACEN SECUNDARIO');
-            $sheet->setCellValue('H1', 'MONEDA');
-            $sheet->setCellValue('I1', 'T.C');
-            $sheet->setCellValue('J1', 'CANTIDAD');
-            $sheet->setCellValue('K1', 'COSTO');
-            $sheet->setCellValue('L1', 'TOTAL');
-            $sheet->setCellValue('M1', 'OBSERVACION');
-            $sheet->setCellValue('N1', 'FASE');
-            $sheet->setCellValue('O1', 'FECHA');
-            $sheet->setCellValue('P1', 'ESTADO');
-            $sheet->setCellValue('Q1', 'TIPO DOCUMENTO');
+            foreach ($almacen->documentos as $d) {
+                $cantidad = $d->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA ? $d->cantidad_recepcion : $d->cantidad;
 
-            foreach ($almacen->documentos as $documento) {
-                $sheet->setCellValue('A' . $fila, $documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA ? $documento->recepcion_erp : $documento->documento_extra);
-                $sheet->setCellValue('B' . $fila, $documento->id);
-                $sheet->setCellValue('C' . $fila, $documento->no_venta);
-                $sheet->setCellValue('D' . $fila, $documento->factura_serie . " " . $documento->factura_folio);
-                $sheet->setCellValue('E' . $fila, $documento->razon_social);
-                $sheet->setCellValue('F' . $fila, $documento->almacen_principal);
-                $sheet->setCellValue('G' . $fila, $documento->almacen_alterno);
-                $sheet->setCellValue('H' . $fila, $documento->moneda);
-                $sheet->setCellValue('I' . $fila, $documento->tipo_cambio);
-                $sheet->setCellValue('J' . $fila, $documento->id_tipo == EnumDocumentoTipo::ORDEN_DE_COMPRA ? $documento->cantidad_recepcion : $documento->cantidad);
-                $sheet->setCellValue('K' . $fila, $documento->precio);
-                $sheet->setCellValue('L' . $fila, (float) $documento->tipo_cambio * (int) $documento->cantidad * (float) $documento->precio);
-                $sheet->setCellValue('M' . $fila, $documento->observacion);
-                $sheet->setCellValue('N' . $fila, $documento->fase);
-                $sheet->setCellValue('O' . $fila, $documento->created_at);
-                $sheet->setCellValue('P' . $fila, $documento->status ? 'ACTIVA' : 'CANCELADA');
-                $sheet->setCellValue('Q' . $fila, $documento->tipo);
+                $sheet->fromArray([
+                    $d->id,
+                    $d->no_venta,
+                    $d->factura_serie . ' ' . $d->factura_folio,
+                    $d->razon_social,
+                    $d->almacen_principal,
+                    $d->almacen_alterno,
+                    $d->moneda,
+                    $d->tipo_cambio,
+                    $cantidad,
+                    $d->precio,
+                    $d->tipo_cambio * $cantidad * $d->precio,
+                    $d->observacion,
+                    $d->fase,
+                    $d->created_at,
+                    $d->status ? 'ACTIVA' : 'CANCELADA',
+                    $d->tipo
+                ], null, "A$fila");
 
-                $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($documento->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getCell("C$fila")->setValueExplicit($d->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getStyle("I$fila:L$fila")->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
 
-                $spreadsheet->getActiveSheet()->getStyle("I" . $fila . ":L" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                // 2) Formatear J (cantidad) como número entero (sin decimales ni símbolo)
-                $spreadsheet->getActiveSheet()
-                    ->getStyle("J{$fila}")
-                    ->getNumberFormat()
-                    ->setFormatCode('0');
-
-                if (!$documento->status) {
-                    $spreadsheet->getActiveSheet()->getStyle('A' . $fila . ":Q" . $fila)->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('CD5C5C');
-                }
-
-                foreach (range('A', 'Q') as $columna) {
-                    $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+                if (!$d->status) {
+                    $sheet->getStyle("A$fila:Q$fila")->getFill()
+                        ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+                        ->getStartColor()->setARGB('CD5C5C');
                 }
 
                 $fila++;
+            }
+
+            foreach (range('A', 'Q') as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
             }
         }
 
@@ -815,11 +420,9 @@ class GeneralController extends Controller
         }
 
         $excel_name = uniqid() . ".xlsx";
-
         $writer = new Xlsx($spreadsheet);
         $writer->save($excel_name);
 
-        $json['documentos'] = $documentos_almacen;
         $json['excel_data'] = base64_encode(file_get_contents($excel_name));
         $json['excel_name'] = $excel_name;
 
@@ -929,7 +532,7 @@ class GeneralController extends Controller
             }
         }
 
-        $factura_data = @json_decode(file_get_contents(config('webservice.url') . $data->empresa  . '/Factura/Estado/Folio/' . $doc));
+        $factura_data = @json_decode(file_get_contents(config('webservice.url') . $data->empresa . '/Factura/Estado/Folio/' . $doc));
 
         if (!empty($factura_data)) {
             $factura_data = is_array($factura_data) ? $factura_data[0] : $factura_data;
@@ -944,7 +547,7 @@ class GeneralController extends Controller
                 "documento" => $doc,
                 "marketplace" => $marketplace,
                 "titulo" => $titulo,
-                'periodo' =>  $periodo,
+                'periodo' => $periodo,
                 'almacen' => $almacen,
                 'empresa' => $empresa,
                 'uso_cod' => $uso_cod, 'uso_desc' => $uso_desc,
@@ -963,7 +566,7 @@ class GeneralController extends Controller
                     "documento" => $doc,
                     "marketplace" => $marketplace,
                     "titulo" => $titulo,
-                    'periodo' =>  $periodo,
+                    'periodo' => $periodo,
                     'almacen' => $almacen,
                     'empresa' => $empresa,
                     'uso_cod' => $uso_cod,
@@ -980,7 +583,7 @@ class GeneralController extends Controller
             "documento" => $doc,
             "marketplace" => $marketplace,
             "titulo" => $titulo,
-            'periodo' =>  $periodo,
+            'periodo' => $periodo,
             'almacen' => $almacen,
             'empresa' => $empresa,
             'uso_cod' => $uso_cod,
@@ -989,7 +592,6 @@ class GeneralController extends Controller
             "formapago" => $formapago
         ]);
     }
-
 
 
     public function general_busqueda_venta_nota_informacion_canceladas(Request $request)
@@ -1125,7 +727,7 @@ class GeneralController extends Controller
             $venta->productos = DB::table('movimiento')
                 ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
                 ->where('id_documento', $venta->id)
-                ->select('movimiento.id', 'movimiento.cantidad','movimiento.garantia',
+                ->select('movimiento.id', 'movimiento.cantidad', 'movimiento.garantia',
                     'modelo.sku', 'modelo.descripcion', 'modelo.serie',
                     DB::raw('ROUND((movimiento.precio * 1.16), 2) AS precio'))
                 ->get();
@@ -1147,11 +749,11 @@ class GeneralController extends Controller
 
             $venta->seguimiento = DB::table('seguimiento')
                 ->select('seguimiento.*', 'usuario.nombre')
-                ->join('usuario','seguimiento.id_usuario','=','usuario.id')
-                ->where('id_documento',$venta->id)
+                ->join('usuario', 'seguimiento.id_usuario', '=', 'usuario.id')
+                ->where('id_documento', $venta->id)
                 ->get();
 
-            $venta->api = DB::table('marketplace_api')->where('id_marketplace_area','=',$venta->id_marketplace_area)->first() ?? 0;
+            $venta->api = DB::table('marketplace_api')->where('id_marketplace_area', '=', $venta->id_marketplace_area)->first() ?? 0;
             $venta->refacturacion_pendiente = DB::table('refacturacion')->where('id_documento', $venta->id)->whereNotIn('step', ['99'])->first() ? 1 : 0;
 
             $empresa_externa = DB::table('documento')
@@ -1183,10 +785,11 @@ class GeneralController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $ventas
+            'code' => 200,
+            'ventas' => $ventas
         ]);
     }
+
     private function determinarFase($venta)
     {
         $fase = $venta->fase;
@@ -1209,7 +812,7 @@ class GeneralController extends Controller
         DB::table('documento_archivo')->where(['dropbox' => $dropbox])->update(['status' => 0]);
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
@@ -1234,24 +837,24 @@ class GeneralController extends Controller
 
         if ($crear_refacturacion->error) {
             return response()->json([
-                'code'  => 500,
-                'message'   => $crear_refacturacion->mensaje,
-                'raw'   => property_exists($crear_refacturacion, 'raw') ? $crear_refacturacion->raw : null,
-                'data'  => property_exists($crear_refacturacion, 'data') ? $crear_refacturacion->data : null
+                'code' => 500,
+                'message' => $crear_refacturacion->mensaje,
+                'raw' => property_exists($crear_refacturacion, 'raw') ? $crear_refacturacion->raw : null,
+                'data' => property_exists($crear_refacturacion, 'data') ? $crear_refacturacion->data : null
             ]);
         }
 
         if (!empty($crear_refacturacion->seguimiento)) {
             DB::table('seguimiento')->insert([
-                'id_documento'  => $data->documento,
-                'id_usuario'    => $auth->id,
-                'seguimiento'   => $crear_refacturacion->seguimiento
+                'id_documento' => $data->documento,
+                'id_usuario' => $auth->id,
+                'seguimiento' => $crear_refacturacion->seguimiento
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'message'   => $crear_refacturacion->mensaje
+            'code' => 200,
+            'message' => $crear_refacturacion->mensaje
         ]);
     }
 
@@ -1279,9 +882,9 @@ class GeneralController extends Controller
 
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "<p>Se envía la nota a autorización</p>"
+            'id_documento' => $data,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "<p>Se envía la nota a autorización</p>"
         ]);
 
         return response()->json([
@@ -1339,9 +942,9 @@ class GeneralController extends Controller
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth,
-            'seguimiento'   => "<p>Se envía la nota a autorización</p>"
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth,
+            'seguimiento' => "<p>Se envía la nota a autorización</p>"
         ]);
 
         return response()->json([
@@ -1391,7 +994,7 @@ class GeneralController extends Controller
 
         $folio_factura = ($info_documento->factura_serie == 'N/A') ? $documento : $info_documento->factura_folio;
 
-        $informacion_factura = @json_decode(file_get_contents(config('webservice.url')  . $info_documento->bd . '/Factura/Estado/Folio/' . $folio_factura));
+        $informacion_factura = @json_decode(file_get_contents(config('webservice.url') . $info_documento->bd . '/Factura/Estado/Folio/' . $folio_factura));
 
         if (empty($informacion_factura)) {
             return response()->json([
@@ -1475,9 +1078,9 @@ class GeneralController extends Controller
         $seguimiento .= "<p>Factura saldada correctamente con la NC: " . $crear_nota_credito->id . "</p>";
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $seguimiento
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $seguimiento
         ]);
 
         return response()->json([
@@ -1493,9 +1096,9 @@ class GeneralController extends Controller
         $auth = json_decode($request->auth);
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         if (!empty($data->archivos)) {
@@ -1508,11 +1111,11 @@ class GeneralController extends Controller
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->documento,
-                        'id_usuario'   => $auth->id,
-                        'tipo'         => $archivo->guia,
+                        'id_usuario' => $auth->id,
+                        'tipo' => $archivo->guia,
                         'id_impresora' => $archivo->impresora,
-                        'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response['id']
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -1520,8 +1123,8 @@ class GeneralController extends Controller
 
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Seguimiento guardado correctamente"
+            'code' => 200,
+            'message' => "Seguimiento guardado correctamente"
         ]);
     }
 
@@ -1876,15 +1479,16 @@ class GeneralController extends Controller
     }
 
 
-    public function general_reporte_venta_diario(){
+    public function general_reporte_venta_diario()
+    {
         set_time_limit(0);
 
         $marketplaces = DB::select("SELECT id, marketplace FROM marketplace GROUP BY marketplace");
         $productos = DB::select("SELECT id, sku, descripcion FROM modelo WHERE id_tipo = 1 LIMIT 50");
-        
-        $spreadsheet    = new Spreadsheet();
-        $sheet          = $spreadsheet->getActiveSheet();
-        $contador_fila  = 2;
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $contador_fila = 2;
 
         $spreadsheet->getActiveSheet()->getStyle('A1:' . range('A', 'Z')[5 + COUNT($marketplaces)] . '1')->getFont()->setBold(1); # Cabecera en negritas
         $spreadsheet->getActiveSheet()->getStyle('A1:' . range('A', 'Z')[5 + COUNT($marketplaces)] . '1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('A2ECE2');
@@ -1910,7 +1514,7 @@ class GeneralController extends Controller
                                         WHERE movimiento.id_modelo = " . $producto->id . "
                                         AND documento.id_marketplace_area = " . $marketplace->id . "
                                         AND documento.id_tipo = 2
-                                        AND documento.created_at BETWEEN '" . date('Y-m-d 00:00:00', (strtotime ( '-1 day' , strtotime (date('Y-m-d'))))) . "' AND '" . date('Y-m-d 23:59:59', (strtotime ( '-1 day' , strtotime (date('Y-m-d'))))) . "'")[0]->cantidad;
+                                        AND documento.created_at BETWEEN '" . date('Y-m-d 00:00:00', (strtotime('-1 day', strtotime(date('Y-m-d'))))) . "' AND '" . date('Y-m-d 23:59:59', (strtotime('-1 day', strtotime(date('Y-m-d'))))) . "'")[0]->cantidad;
 
                 $sheet->setCellValue(range('A', 'Z')[5 + $index_marketplace] . $contador_fila, $cantidad);
             }
@@ -1928,21 +1532,19 @@ class GeneralController extends Controller
 
             if (empty($producto_data)) {
                 $disponible = "SIN EXISTENCIA";
-            }
-            else {
+            } else {
                 $producto_data = $producto_data[0];
 
                 if (empty($producto_data->existencias->almacenes)) {
-                    $disponible  = "SIN EXISTENCIA";
-                }
-                else {
+                    $disponible = "SIN EXISTENCIA";
+                } else {
                     foreach ($producto_data->existencias->almacenes as $index_producto => $almacen) {
                         if ($almacen->almacenid == 17 || $almacen->almacenid == 0) {
                             unset($producto_data->existencias->almacenes[$index_producto]);
-        
+
                             continue;
                         }
-        
+
                         $pendientes_surtir = DB::select("SELECT
                                                             IFNULL(SUM(movimiento.cantidad), 0) as cantidad
                                                         FROM documento
@@ -1955,7 +1557,7 @@ class GeneralController extends Controller
                                                         AND documento.status = 1
                                                         AND documento.anticipada = 0
                                                         AND documento.id_fase < 6")[0]->cantidad;
-        
+
                         $pendientes_pretransferencia = DB::select("SELECT
                                                                     IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
                                                                 FROM documento
@@ -1967,7 +1569,7 @@ class GeneralController extends Controller
                                                                 AND documento.id_tipo = 9
                                                                 AND documento.status = 1
                                                                 AND documento.id_fase IN (401, 402, 403)")[0]->cantidad;
-        
+
                         $pendientes_recibir = DB::select("SELECT
                                                             movimiento.id AS movimiento_id,
                                                             modelo.sku,
@@ -1989,18 +1591,17 @@ class GeneralController extends Controller
                                                         AND modelo.sku = '" . $producto_data->sku . "'
                                                         AND empresa_almacen.id_erp = " . $almacen->almacenid . "
                                                         AND documento.id_fase = 89");
-        
+
                         $total_pendientes = 0;
-        
+
                         foreach ($pendientes_recibir as $pendiente) {
                             if ($pendiente->serie) {
                                 $total_pendientes += $pendiente->cantidad - $pendiente->recepcionadas;
-                            }
-                            else {
+                            } else {
                                 $total_pendientes += ($pendiente->completa) ? 0 : $pendiente->cantidad;
                             }
                         }
-        
+
                         $disponible .= $almacen->almacen . ": " . ($almacen->fisico - $pendientes_surtir - $total_pendientes) . "\n";
                     }
 
@@ -2010,7 +1611,7 @@ class GeneralController extends Controller
 
             # Excel
             $sheet->setCellValue('A' . $contador_fila, $producto->sku);
-            $sheet->setCellValue('B' . $contador_fila, $producto->descripcion);                                            
+            $sheet->setCellValue('B' . $contador_fila, $producto->descripcion);
             $sheet->setCellValue('C' . $contador_fila, (empty($ultima_compra) ? 0 : $ultima_compra[0]->cantidad));
             $sheet->setCellValue('D' . $contador_fila, $disponible);
 
@@ -2018,7 +1619,7 @@ class GeneralController extends Controller
         }
 
         # Poner en automatico el ancho de la columna dependiendo el texto que esté dentro
-        foreach(range('A','Z') as $columna) {
+        foreach (range('A', 'Z') as $columna) {
             $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
         }
 
@@ -2048,17 +1649,17 @@ class GeneralController extends Controller
 
         $html = view('email.notificacion_reporte_diario')->with(['anio' => date('Y')]);
 
-        $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
+        $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
         $domain = "omg.com.mx";
-        $mg->messages()->send($domain, array('from'  => 'Reportes OMG International <crm@omg.com.mx>',
-                                'to'      => 'desarrollo1@omg.com.mx',
-                                'subject' => 'Reporte de actividades OMG International ' . date('d/m/Y'),
-                                'html'    => $html->render()),
-                                array(
-                                    'attachment' => array(
-                                        'reporte_diario.xlsx'
-                                    )
-                                ));
+        $mg->messages()->send($domain, array('from' => 'Reportes OMG International <crm@omg.com.mx>',
+            'to' => 'desarrollo1@omg.com.mx',
+            'subject' => 'Reporte de actividades OMG International ' . date('d/m/Y'),
+            'html' => $html->render()),
+            array(
+                'attachment' => array(
+                    'reporte_diario.xlsx'
+                )
+            ));
 
         unlink('estado_cuenta.xlsx');
     }
@@ -2074,8 +1675,8 @@ class GeneralController extends Controller
 
         if (empty($credenciales)) {
             return response()->json([
-                'code'      => 500,
-                'message'   => "No se encontró información de la API REST del marketplace."
+                'code' => 500,
+                'message' => "No se encontró información de la API REST del marketplace."
             ]);
         }
 
@@ -2086,7 +1687,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS MERCADOLIBRE');
-        $contador_fila  = 2;
+        $contador_fila = 2;
 
         # Cabecera
         $sheet->setCellValue('A1', 'PAQUETE');
@@ -2255,7 +1856,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS MERCADOLIBRE ');
-        $fila  = 2;
+        $fila = 2;
 
         # Cabecera
         $sheet->setCellValue('A1', 'VENTA');
@@ -2389,8 +1990,8 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('VENTAS MERCADOLIBRE.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('VENTAS MERCADOLIBRE.xlsx'));
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('VENTAS MERCADOLIBRE.xlsx'));
 
         unlink('VENTAS MERCADOLIBRE.xlsx');
 
@@ -2416,7 +2017,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('PUBLICACIONES MERCADOLIBRE');
-        $fila  = 2;
+        $fila = 2;
 
         # Cabecera
         $sheet->setCellValue('A1', 'ID');
@@ -2466,7 +2067,7 @@ class GeneralController extends Controller
                         }
                     }
 
-                    $sheet->setCellValue('E' . $fila, round((float) $ultimo_costo[0]->ultimo_costo, 2));
+                    $sheet->setCellValue('E' . $fila, round((float)$ultimo_costo[0]->ultimo_costo, 2));
 
                     $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                     $spreadsheet->getActiveSheet()->getStyle("E" . $fila . ":F" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
@@ -2484,8 +2085,8 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('PUBLICACIONES MERCADOLIBRE.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('PUBLICACIONES MERCADOLIBRE.xlsx'));
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('PUBLICACIONES MERCADOLIBRE.xlsx'));
 
         unlink('PUBLICACIONES MERCADOLIBRE.xlsx');
 
@@ -2511,7 +2112,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('PUBLICACIONES MERCADOLIBRE');
-        $fila  = 2;
+        $fila = 2;
 
         # Cabecera
         $sheet->setCellValue('A1', 'ID');
@@ -2561,7 +2162,7 @@ class GeneralController extends Controller
                         }
                     }
 
-                    $sheet->setCellValue('E' . $fila, round((float) $ultimo_costo[0]->ultimo_costo, 2));
+                    $sheet->setCellValue('E' . $fila, round((float)$ultimo_costo[0]->ultimo_costo, 2));
 
                     $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                     $spreadsheet->getActiveSheet()->getStyle("E" . $fila . ":F" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
@@ -2579,8 +2180,8 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('PUBLICACIONES MERCADOLIBRE.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('PUBLICACIONES MERCADOLIBRE.xlsx'));
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('PUBLICACIONES MERCADOLIBRE.xlsx'));
 
         unlink('PUBLICACIONES MERCADOLIBRE.xlsx');
 
@@ -2594,7 +2195,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('REPORTE DE VENTAS AMAZON');
-        $contador_fila  = 2;
+        $contador_fila = 2;
 
         # Cabecera
         $sheet->setCellValue('A1', 'VENTA AMAZON');
@@ -2643,17 +2244,17 @@ class GeneralController extends Controller
         try {
             $correo = DB::select("SELECT nombre, email FROM usuario WHERE id = " . $auth->id . "")[0];
 
-            $view       = view('email.notificacion_reporte_ventas_amazon')->with(['nombre' => $correo->nombre, 'anio' => date('Y')]);
+            $view = view('email.notificacion_reporte_ventas_amazon')->with(['nombre' => $correo->nombre, 'anio' => date('Y')]);
 
-            $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+            $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
             $domain = "omg.com.mx";
             $mg->messages()->send(
                 $domain,
                 array(
-                    'from'  => 'CRM OMG International <crm@omg.com.mx>',
-                    'to'            => $correo->email,
-                    'subject'       => 'REPORTE DE VENTAS AMAZON.',
-                    'html'          => $view->render()
+                    'from' => 'CRM OMG International <crm@omg.com.mx>',
+                    'to' => $correo->email,
+                    'subject' => 'REPORTE DE VENTAS AMAZON.',
+                    'html' => $view->render()
                 ),
                 array(
                     'attachment' => array(
@@ -2665,15 +2266,15 @@ class GeneralController extends Controller
             unlink('reporte_ventas_amazon.xlsx');
 
             return response()->json([
-                'code'  => 200,
-                'message'   => "Reporte generado correctamente, en unos momentos lo recibirás en tu correo."
+                'code' => 200,
+                'message' => "Reporte generado correctamente, en unos momentos lo recibirás en tu correo."
             ]);
         } catch (Exception $e) {
             unlink('reporte_ventas_amazon.xlsx');
 
             return response()->json([
-                'code'  => 500,
-                'message'   => "Ocurrió un error al enviar el correo con el archivo, mensaje de error: " . $e->getMessage()
+                'code' => 500,
+                'message' => "Ocurrió un error al enviar el correo con el archivo, mensaje de error: " . $e->getMessage()
             ]);
         }
     }
@@ -2691,7 +2292,7 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('REPORTE DE VENTAS HUAWEI');
-        $fila  = 2;
+        $fila = 2;
 
         if ($data->huawei) {
             # Cabecera
@@ -2818,8 +2419,8 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('VENTAS HUAWEI.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('VENTAS HUAWEI.xlsx'));
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('VENTAS HUAWEI.xlsx'));
 
         unlink('VENTAS HUAWEI.xlsx');
 
@@ -2908,8 +2509,8 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('VENTAS DEVOLUCIONES.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('VENTAS DEVOLUCIONES.xlsx'));
+        $json['code'] = 200;
+        $json['excel'] = base64_encode(file_get_contents('VENTAS DEVOLUCIONES.xlsx'));
 
         unlink('VENTAS DEVOLUCIONES.xlsx');
 
@@ -2932,8 +2533,8 @@ class GeneralController extends Controller
                                     AND marketplace.marketplace = 'MERCADOLIBRE'");
 
         return response()->json([
-            'code'  => 200,
-            'credenciales'  => $credenciales
+            'code' => 200,
+            'credenciales' => $credenciales
         ]);
     }
 
@@ -3053,7 +2654,7 @@ class GeneralController extends Controller
         $writer->save($file_name);
 
         $json = [
-            'code'  => 200,
+            'code' => 200,
             'guias' => $guias,
             'excel' => array(
                 "file_name" => $file_name,
@@ -3090,8 +2691,8 @@ class GeneralController extends Controller
         $binario = base64_encode(file_get_contents($pdf));
 
         return response()->json([
-            'code'  => 200,
-            'binario'   => $binario
+            'code' => 200,
+            'binario' => $binario
         ]);
     }
 
@@ -3140,9 +2741,9 @@ class GeneralController extends Controller
                             FROM manifiesto
                             WHERE manifiesto = '" . $fecha_manifiesto . "' AND salida = 1 AND impreso = 1");
 
-        $contador   = 0;
-        $suma       = 0;
-        $arrayE     = array();
+        $contador = 0;
+        $suma = 0;
+        $arrayE = array();
 
         $pdf->SetFont('Arial', '', 12);
 
@@ -3159,15 +2760,15 @@ class GeneralController extends Controller
         $pdf->Write(0.5, 'Total de guias: ');
         $pdf->Write(0.5, $contador);
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
 
-        $file_name  = "MANIFIESTO_" . mb_strtoupper($paqueteria, 'UTF-8') . "_" . date('d-m-Y') . "_" . uniqid() . ".pdf";
+        $file_name = "MANIFIESTO_" . mb_strtoupper($paqueteria, 'UTF-8') . "_" . date('d-m-Y') . "_" . uniqid() . ".pdf";
 
         return response()->json([
-            'code'  => 200,
-            'file'  => base64_encode($pdf_data),
-            'name'  => $file_name
+            'code' => 200,
+            'file' => base64_encode($pdf_data),
+            'name' => $file_name
         ]);
     }
 
@@ -3406,31 +3007,31 @@ class GeneralController extends Controller
         $data = json_decode($request->input('data'));
 
         $validator = Validator::make(json_decode($raw_data, true), [
-            'cliente'       => "required|unique:documento_entidad_ftp,id_entidad",
-            'api_key'       => "required|unique:documento_entidad_ftp,api_key",
-            'ftp'           => "required|max:50|regex:([^'&quot;]$)",
-            'marketplace'   => "required|max:2",
-            'uso_venta'     => "required",
-            'periodo'       => "required"
+            'cliente' => "required|unique:documento_entidad_ftp,id_entidad",
+            'api_key' => "required|unique:documento_entidad_ftp,api_key",
+            'ftp' => "required|max:50|regex:([^'&quot;]$)",
+            'marketplace' => "required|max:2",
+            'uso_venta' => "required",
+            'periodo' => "required"
         ]);
 
         if (!$validator->passes()) {
             return response()->json([
-                'code'  => 500,
-                'message'   => implode("; ", $validator->errors()->all())
+                'code' => 500,
+                'message' => implode("; ", $validator->errors()->all())
             ]);
         }
 
         DB::table("documento_entidad_ftp")->insert([
-            'id_entidad'            => $data->cliente,
-            'ftp'                   => $data->ftp,
-            'id_cfdi'               => $data->uso_venta,
-            'id_periodo'            => $data->periodo,
-            'api_key'               => $data->api_key,
-            'id_marketplace_area'   => $data->marketplace
+            'id_entidad' => $data->cliente,
+            'ftp' => $data->ftp,
+            'id_cfdi' => $data->uso_venta,
+            'id_periodo' => $data->periodo,
+            'api_key' => $data->api_key,
+            'id_marketplace_area' => $data->marketplace
         ]);
 
-        $clientes   = DB::select("SELECT
+        $clientes = DB::select("SELECT
                                     documento_entidad_ftp.id,
                                     documento_entidad_ftp.ftp,
                                     documento_entidad_ftp.created_at,
@@ -3445,9 +3046,9 @@ class GeneralController extends Controller
                                 WHERE documento_entidad_ftp.status = 1");
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Cliente agregado correctamente.",
-            'clientes'  => $clientes
+            'code' => 200,
+            'message' => "Cliente agregado correctamente.",
+            'clientes' => $clientes
         ]);
     }
 
@@ -3500,7 +3101,7 @@ class GeneralController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'productos' => $productos
         ]);
     }
@@ -3519,7 +3120,7 @@ class GeneralController extends Controller
                 'id_tipo' => 1,
                 'sku' => mb_strtoupper(trim($producto->producto), 'UTF-8'),
                 'descripcion' => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                'costo' => (float) $producto->precio,
+                'costo' => (float)$producto->precio,
                 'alto' => 0,
                 'ancho' => 0,
                 'largo' => 0,
@@ -3565,7 +3166,7 @@ class GeneralController extends Controller
         DB::table('documento_entidad_modelo_margen')->where(['id' => $producto])->delete();
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
@@ -3576,7 +3177,7 @@ class GeneralController extends Controller
         ]);
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
@@ -3687,7 +3288,7 @@ class GeneralController extends Controller
                                 INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
                                 WHERE documento_pago_re.id_documento = " . $venta->id . "");
 
-            $venta->productos   = $productos;
+            $venta->productos = $productos;
             $venta->total = $total;
 
             array_push($ventas_shifted, $venta);
@@ -3953,8 +3554,8 @@ class GeneralController extends Controller
             if (!empty($usuarios)) {
                 foreach ($usuarios as $usuario) {
                     if ($auth->id == $usuario->id_usuario) {
-                        $data       = json_decode($notificacion->data);
-                        $data->id   = $notificacion->id;
+                        $data = json_decode($notificacion->data);
+                        $data->id = $notificacion->id;
 
                         array_push($array, $data);
                     }
@@ -3975,23 +3576,23 @@ class GeneralController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'notificaciones' => $array
         ]);
     }
 
     public function general_notificacion_dismiss(Request $request)
     {
-        $notificacion   = $request->input('notificacion');
+        $notificacion = $request->input('notificacion');
         $auth = json_decode($request->auth);
 
         DB::table('notificacion')->where(['id' => $notificacion])->update([
-            'dismissed'     => 1,
-            'dismissed_by'  => $auth->id
+            'dismissed' => 1,
+            'dismissed_by' => $auth->id
         ]);
 
         return response()->json([
-            'code'  => 200
+            'code' => 200
         ]);
     }
 
@@ -4023,35 +3624,35 @@ class GeneralController extends Controller
                     }
 
                     try {
-                        $notificacion['titulo']     = "Pedido en problemas.";
-                        $notificacion['message']    = "Se te recuerda que todavía cuentas con los siguientes pedidos en problemas: " . implode(" ", $array_documentos) . ".";
-                        $notificacion['tipo']       = "danger"; // success, warning, danger
-                        $notificacion['link']       = "/venta/venta/problema";
+                        $notificacion['titulo'] = "Pedido en problemas.";
+                        $notificacion['message'] = "Se te recuerda que todavía cuentas con los siguientes pedidos en problemas: " . implode(" ", $array_documentos) . ".";
+                        $notificacion['tipo'] = "danger"; // success, warning, danger
+                        $notificacion['link'] = "/venta/venta/problema";
 
                         $notificacion_id = DB::table('notificacion')->insertGetId([
-                            'data'  => json_encode($notificacion)
+                            'data' => json_encode($notificacion)
                         ]);
 
-                        $notificacion['id']         = $notificacion_id;
+                        $notificacion['id'] = $notificacion_id;
 
                         DB::table('notificacion_usuario')->insert([
-                            'id_usuario'        => $usuario->id,
-                            'id_notificacion'   => $notificacion_id
+                            'id_usuario' => $usuario->id,
+                            'id_notificacion' => $notificacion_id
                         ]);
 
-                        $notificacion['usuario']    = $usuario->id;
+                        $notificacion['usuario'] = $usuario->id;
 
                         event(new PusherEvent(json_encode($notificacion)));
 
-                        $view       = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
+                        $view = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
 
-                        $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+                        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
                         $domain = "omg.com.mx";
                         $mg->messages()->send($domain, array(
-                            'from'  => 'CRM OMG International <generico@omg.com.mx>',
-                            'to'            => $usuario->email,
-                            'subject'       => 'Recordatorio de pedidos en problemas',
-                            'html'          => $view->render()
+                            'from' => 'CRM OMG International <generico@omg.com.mx>',
+                            'to' => $usuario->email,
+                            'subject' => 'Recordatorio de pedidos en problemas',
+                            'html' => $view->render()
                         ));
 
                         # Generar bitacora
@@ -4099,18 +3700,6 @@ class GeneralController extends Controller
         }
     }
 
-    private function excelColumnRange($lower, $upper)
-    {
-        $range = array();
-
-        ++$upper;
-        for ($i = $lower; $i !== $upper; ++$i) {
-            $range[] = $i;
-        }
-
-        return $range;
-    }
-
     public function general_reporte_venta_mercadolibre_ventas_crm(Request $request)
     {
         set_time_limit(0);
@@ -4118,7 +3707,7 @@ class GeneralController extends Controller
         $data = json_decode($request->input('data'));
 
         return response()->json([
-            'ventasCRM' =>  DB::select("SELECT
+            'ventasCRM' => DB::select("SELECT
                                 documento.id,
                                 documento.status,
                                 documento.id_tipo,
@@ -4143,8 +3732,8 @@ class GeneralController extends Controller
 
         if (empty($credenciales)) {
             return response()->json([
-                'code'      => 500,
-                'message'   => "No se encontró información de la API REST del marketplace."
+                'code' => 500,
+                'message' => "No se encontró información de la API REST del marketplace."
             ]);
         }
 
@@ -4152,7 +3741,7 @@ class GeneralController extends Controller
         $credenciales[0]->fecha_final = $data->fecha_final;
 
         return response()->json([
-            'ventasML' =>  MercadolibreService::ventas($credenciales[0], $data->publicacion)
+            'ventasML' => MercadolibreService::ventas($credenciales[0], $data->publicacion)
         ]);
     }
 
@@ -4236,7 +3825,6 @@ class GeneralController extends Controller
         ]);
     }
 
-
     public function general_reporte_venta_mercadolibre_estatus(Request $request)
     {
         set_time_limit(0);
@@ -4246,7 +3834,7 @@ class GeneralController extends Controller
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS FALTANTES MERCADOLIBRE');
 
-        $contador_fila  = 2;
+        $contador_fila = 2;
         # Cabecera
         $sheet->setCellValue('A1', 'VENTA');
         $sheet->setCellValue('B1', 'FECHA');
@@ -4287,6 +3875,7 @@ class GeneralController extends Controller
 
         return response()->json($json);
     }
+
     public function general_reporte_venta_mercadolibre_estatus_cancelados(Request $request)
     {
         set_time_limit(0);
@@ -4297,7 +3886,7 @@ class GeneralController extends Controller
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS CANCELADAS MERCADOLIBRE');
 
-        $contador_fila  = 2;
+        $contador_fila = 2;
         # Cabecera
         $sheet->setCellValue('A1', 'VENTA');
         $sheet->setCellValue('B1', 'PEDIDO');
@@ -4463,6 +4052,18 @@ class GeneralController extends Controller
         return response()->json($json);
     }
 
+    private function excelColumnRange($lower, $upper)
+    {
+        $range = array();
+
+        ++$upper;
+        for ($i = $lower; $i !== $upper; ++$i) {
+            $range[] = $i;
+        }
+
+        return $range;
+    }
+
     private function getHpSkusArray()
     {
         return DB::table('modelo')
@@ -4498,21 +4099,6 @@ class GeneralController extends Controller
         }
 
         return $filteredCompras;
-    }
-
-    private function getProductos($filteredCompras)
-    {
-        $productos = [];
-        foreach ($filteredCompras as $document) {
-            if (isset($document->productos) && is_array($document->productos)) {
-                foreach ($document->productos as $producto) {
-                    $producto->id_documento = $document->id_documento;
-                    $producto->razon_social = $document->proveedor;
-                    $productos[] = $producto;
-                }
-            }
-        }
-        return $productos;
     }
 
     private function compras_raw_data($compra)
@@ -4553,7 +4139,7 @@ class GeneralController extends Controller
         $compras->proveedor = $filteredResults[0]->razon_social;
         $compras->rfc = $filteredResults[0]->rfc;
         $compras->productos = array_map(function ($result) {
-            return (object) [
+            return (object)[
                 'id' => $result->movimiento_id,
                 'cantidad' => $result->cantidad,
                 'cantidad_aceptada' => $result->cantidad_aceptada,
@@ -4565,6 +4151,21 @@ class GeneralController extends Controller
         }, $filteredResults);
 
         return $compras;
+    }
+
+    private function getProductos($filteredCompras)
+    {
+        $productos = [];
+        foreach ($filteredCompras as $document) {
+            if (isset($document->productos) && is_array($document->productos)) {
+                foreach ($document->productos as $producto) {
+                    $producto->id_documento = $document->id_documento;
+                    $producto->razon_social = $document->proveedor;
+                    $productos[] = $producto;
+                }
+            }
+        }
+        return $productos;
     }
 
     private function processProductos($productos, $hpSkus, $date)
