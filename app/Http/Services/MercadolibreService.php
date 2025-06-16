@@ -3674,6 +3674,7 @@ class MercadolibreService
             return $response;
         }
 
+
         $marketplaceData = $marketplace->marketplace_data;
         $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
@@ -3701,7 +3702,7 @@ class MercadolibreService
         return self::callMlApi(
             $data->marketplace_id,
             'sites/{marketplace}/listing_types',
-            ['{marketplace}' => $data->marketplace_id]
+            ['{marketplace}' => 'MLM']
         );
     }
 
