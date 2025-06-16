@@ -1588,49 +1588,54 @@ class CompraController extends Controller
     {
         set_time_limit(0);
 
-        $documentos = DB::select("SELECT
-                                    documento.id, 
-                                    documento.id_fase,
-                                    documento.factura_serie,
-                                    documento.factura_folio,
-                                    documento.autorizado,
-                                    documento.observacion,
-                                    documento.info_extra,
-                                    documento.comentario AS extranjero,
-                                    documento.importado,
-                                    documento.created_at,
-                                    documento.expired_at AS fecha_pago,
-                                    documento.finished_at,
-                                    documento.arrived_at AS fecha_entrega,
-                                    documento.uuid,
-                                    usuario.nombre,
-                                    documento_entidad.id_erp,
-                                    documento_entidad.rfc,
-                                    documento_entidad.razon_social,
-                                    documento_periodo.id AS id_periodo,
-                                    documento_periodo.periodo,
-                                    documento_fase.fase,
-                                    documento.tipo_cambio,
-                                    moneda.id AS id_moneda,
-                                    moneda.moneda,
-                                    empresa.bd AS empresa,
-                                    empresa.empresa AS empresa_nombre,
-                                    almacen.almacen,
-                                    0 as agrupar
-                                FROM documento
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                LEFT JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                                INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                                INNER JOIN usuario ON documento.id_usuario = usuario.id
-                                INNER JOIN documento_periodo ON documento.id_periodo = documento_periodo.id
-                                INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                LEFT JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                WHERE documento.id_tipo = 0
-                                " . $extra_data . "
-                                GROUP BY documento.id");
+        $query = DB::table('documento')
+            ->select([
+                'documento.id',
+                'documento.id_fase',
+                'documento.factura_serie',
+                'documento.factura_folio',
+                'documento.autorizado',
+                'documento.observacion',
+                'documento.info_extra',
+                'documento.comentario AS extranjero',
+                'documento.importado',
+                'documento.created_at',
+                'documento.expired_at AS fecha_pago',
+                'documento.finished_at',
+                'documento.arrived_at AS fecha_entrega',
+                'documento.uuid',
+                'usuario.nombre',
+                'documento_entidad.id_erp',
+                'documento_entidad.rfc',
+                'documento_entidad.razon_social',
+                'documento_periodo.id AS id_periodo',
+                'documento_periodo.periodo',
+                'documento_fase.fase',
+                'documento.tipo_cambio',
+                'moneda.id AS id_moneda',
+                'moneda.moneda',
+                'empresa.bd AS empresa',
+                'empresa.empresa AS empresa_nombre',
+                'almacen.almacen',
+                DB::raw('0 as agrupar')
+            ])
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+            ->leftJoin('documento_recepcion', 'movimiento.id', '=', 'documento_recepcion.id_movimiento')
+            ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('documento_fase', 'documento.id_fase', '=', 'documento_fase.id')
+            ->join('usuario', 'documento.id_usuario', '=', 'usuario.id')
+            ->join('documento_periodo', 'documento.id_periodo', '=', 'documento_periodo.id')
+            ->join('moneda', 'documento.id_moneda', '=', 'moneda.id')
+            ->leftJoin('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
+            ->where('documento.id_tipo', 0);
+
+        if (!empty($extra_data)) {
+            $query->whereRaw("1=1 $extra_data");
+        }
+
+        $documentos = $query->groupBy((array)'documento.id')->get()->toArray();
 
         $documentoIds = array_map(function ($d) {
             return $d->id;
@@ -1822,7 +1827,10 @@ class CompraController extends Controller
             ]);
         }
 
-        $usuario = DB::select("SELECT id, nombre, email FROM usuario WHERE id = " . $auth->id)[0];
+        $usuario = DB::table('usuario')
+            ->select('id', 'nombre', 'email')
+            ->where('id', $auth->id)
+            ->first();
 
         $view = view('email.notificacion_requisicion_autorizacion')->with([
             'anio' => date('Y'),
@@ -1843,7 +1851,7 @@ class CompraController extends Controller
 
             $notificacion['titulo'] = "Requisición autorizada";
             $notificacion['message'] = "Tu requisición con el ID " . $documento . " ha sido autorizada";
-            $notificacion['tipo'] = "success"; // success, warning, danger
+            $notificacion['tipo'] = "success";
             $notificacion['link'] = "/compra/orden/historial";
 
             $notificacion_id = DB::table('notificacion')->insertGetId([
