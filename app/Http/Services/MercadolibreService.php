@@ -3674,7 +3674,6 @@ class MercadolibreService
             return $response;
         }
 
-
         $marketplaceData = $marketplace->marketplace_data;
         $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
@@ -3701,8 +3700,7 @@ class MercadolibreService
     {
         return self::callMlApi(
             $data->marketplace_id,
-            'sites/{marketplace}/listing_types',
-            ['{marketplace}' => 'MLM']
+            'sites/MLM/listing_types'
         );
     }
 
@@ -3723,6 +3721,27 @@ class MercadolibreService
             ['{category}' => $data->category_id]
         );
     }
+
+    public static function api_usersMe($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'users/me'
+        );
+    }
+
+    public static function api_userID($data)
+    {
+        return self::callMlApi(
+            $data->marketplace_id,
+            'users/{user_id}',
+            ['{user_id}' => $data->user_id]
+
+        );
+    }
+
+
+
     public static function logVariableLocation(): string
     {
         // $log = self::logVariableLocation();

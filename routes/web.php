@@ -414,6 +414,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('listing_types', 'MercadolibreController@api_getListingTypes');
                 $router->post('sale_terms', 'MercadolibreController@api_getSaleTerms');
                 $router->post('category_variants', 'MercadolibreController@api_getCategoryVariants');
+                $router->post('usersMe', 'MercadolibreController@api_usersMe');
+                $router->post('userID', 'MercadolibreController@api_userID');
             });
 
             $router->group(['prefix' => 'token'], function () use ($router) {

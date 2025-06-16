@@ -659,5 +659,17 @@ class MercadolibreController extends Controller{
         return MercadolibreService::api_categoryVariants($data);
     }
 
+    public function api_usersMe(Request $request)
+    {
+        $data = json_decode($request->input("data"));
 
+        return MercadolibreService::api_usersMe($data);
+    }
+
+    public function api_userId(Request $request)
+    {
+        $data = json_decode($request->input("data"));
+
+        return MercadolibreService::api_userID($data);
+    }
 }
