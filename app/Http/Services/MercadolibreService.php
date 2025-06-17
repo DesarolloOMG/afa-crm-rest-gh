@@ -1496,7 +1496,7 @@ class MercadolibreService
         if (property_exists($informacion_venta, "mediations")) {
             foreach ($informacion_venta->mediations as $mediacion) {
 
-                $url = "https://api.mercadolibre.com/post-purchase/v1/claims/" . $mediacion->id;
+                $url = config("webservice.mercadolibre_enpoint") . "post-purchase/v1/claims/" . $mediacion->id;
 
                 $options = [
                     "http" => [
@@ -1847,7 +1847,7 @@ class MercadolibreService
             return $response;
         }
 
-        $urlZpl = "https://api.mercadolibre.com/orders/shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
+        $urlZpl = config("webservice.mercadolibre_enpoint") . "orders/shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
         $context = stream_context_create([
             "http" => [
                 "header" => "Authorization: Bearer " . $token
@@ -3621,7 +3621,7 @@ class MercadolibreService
 
         $token = self::token($marketplace_data->app_id, $marketplace_data->secret);
 
-        $url = "https://api.mercadolibre.com/sites/MLM/search?nickname={$nickname}";
+        $url = config("webservice.mercadolibre_enpoint") . "sites/MLM/search?nickname={$nickname}";
 
         $options = [
             "http" => [
@@ -3663,7 +3663,7 @@ class MercadolibreService
         return $response;
     }
 
-    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [])
+    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
     {
         $response = new stdClass();
         $response->error = 1;
@@ -3678,13 +3678,14 @@ class MercadolibreService
         $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
         $endpoint = strtr($endpointTemplate, $placeholders);
-        $url = "https://api.mercadolibre.com/" . $endpoint;
+        $url = config("webservice.mercadolibre_enpoint") . $endpoint;
 
         $options = [
             "http" => [
                 "header" => "Authorization: Bearer " . $token
             ]
         ];
+
         $context = stream_context_create($options);
 
         $raw = @file_get_contents($url, false, $context);
@@ -3736,7 +3737,6 @@ class MercadolibreService
             $data->marketplace_id,
             'users/{user_id}',
             ['{user_id}' => $data->user_id]
-
         );
     }
 
@@ -3744,7 +3744,7 @@ class MercadolibreService
     {
         return self::callMlApi(
             $data->marketplace_id,
-            'items/${item_id}',
+            'items/{item_id}',
             ['{item_id}' => $data->item_id]
         );
     }
@@ -3753,8 +3753,8 @@ class MercadolibreService
     {
         return self::callMlApi(
             $data->marketplace_id,
-            'items/${item_id}/description',
-            ['{item_id}' => $data->item_id]
+            'items/{item_id}/description',
+            ['{item_id}' => $data->item_id], 1
         );
     }
 

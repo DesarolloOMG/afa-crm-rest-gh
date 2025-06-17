@@ -29,7 +29,7 @@ class MercadolibreController extends Controller{
         $seller = MercadolibreService::seller($pseudonimo);
 
 		$orden_ml = json_decode(
-            file_get_contents("https://api.mercadolibre.com/orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($orden) . "&access_token=" . $token)
+            file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($orden) . "&access_token=" . $token)
         );
 
         if (!empty($orden_ml->results)) {
@@ -47,16 +47,16 @@ class MercadolibreController extends Controller{
         
         foreach ($orden_ml->results as $orden) {
             $envio = @json_decode(
-                file_get_contents("https://api.mercadolibre.com/orders/". $orden->id ."/shipments?access_token=" . $token)
+                file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . $orden->id . "/shipments?access_token=" . $token)
             );
     
             $orden->shipping = $envio;
 
             if (!empty($orden->mediations)) {
                 foreach ($orden->mediations as $index => $mediation) {
-                    $info       = json_decode(file_get_contents("https://api.mercadolibre.com/v1/claims/" . $mediation->id . "?access_token=" . $token));
-                    $messages   = json_decode(file_get_contents("https://api.mercadolibre.com/v1/claims/" . $mediation->id . "/messages?access_token=" . $token));
-                    $evidence   = json_decode(file_get_contents("https://api.mercadolibre.com/v1/claims/" . $mediation->id . "/evidences?access_token=" . $token));
+                    $info = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "v1/claims/" . $mediation->id . "?access_token=" . $token));
+                    $messages = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "v1/claims/" . $mediation->id . "/messages?access_token=" . $token));
+                    $evidence = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "v1/claims/" . $mediation->id . "/evidences?access_token=" . $token));
     
                     $info->messages = $messages;
                     $info->evidence = $evidence;
@@ -89,12 +89,12 @@ class MercadolibreController extends Controller{
         
         $seller = json_decode(
             file_get_contents(
-            "https://api.mercadolibre.com/"
+                config("webservice.mercadolibre_enpoint")
             . "sites/MLM/search?nickname="
             . str_replace(" ", "%20", $pseudonimo)
         ))->seller->id;
 
-        $ordenes    = json_decode(file_get_contents("https://api.mercadolibre.com/orders/search?seller=" . $seller . "&access_token=" . $token ."&sort=date_desc"));
+        $ordenes = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller . "&access_token=" . $token . "&sort=date_desc"));
         
         print_r($ordenes);
     }
@@ -404,7 +404,7 @@ class MercadolibreController extends Controller{
                     if (!$publicacion->error) {
                         $envio = $publicacion->data->shipping->logistic_type == "drop_off" ? "Drop off" : "Fulfillment";
 
-                        $vendedor = json_decode(file_get_contents("https://api.mercadolibre.com/users/" . $publicacion->data->seller_id));
+                        $vendedor = json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "users/" . $publicacion->data->seller_id));
 
                         $texto = $publicacion->data->title . "\n\n" .
                                 "*Vendedor:* " . $vendedor->nickname . "\n" .
