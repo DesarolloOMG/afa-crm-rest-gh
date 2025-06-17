@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Exception;
 use Illuminate\Http\Request;
 use App\Http\Services\DropboxService;
 
@@ -12,6 +13,25 @@ class DropboxController extends Controller
     public function __construct(DropboxService $dropbox)
     {
         $this->dropbox = $dropbox;
+    }
+
+    public function actualizarTokenDropbox()
+    {
+        set_time_limit(0);
+        $dropbox = new DropboxService();
+        try {
+            $token = $dropbox->refreshAccessToken();
+
+            return response()->json(['code' => 200, 'token' => $token]);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'error' => $e->getMessage()]);
+        }
+    }
+
+    public function getDropboxToken()
+    {
+        $token = config('keys.dropbox');
+        return response()->json(['token' => $token]);
     }
 
     /**

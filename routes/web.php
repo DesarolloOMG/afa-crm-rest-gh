@@ -1069,3 +1069,10 @@ $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
     $router->get('testApis', 'DeveloperController@testApiWalmart');
 });
+
+$router->group(['prefix' => 'dropbox'], function () use ($router) {
+    $router->post('getToken', 'DropboxController@getDropboxToken');
+    $router->post('actualizarToken', 'DropboxController@actualizarTokenDropbox');
+    $router->post('delete', 'DropboxController@deleteFile');
+    $router->post('upload', 'DropboxController@uploadFile');
+});
