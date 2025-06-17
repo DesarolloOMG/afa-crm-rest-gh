@@ -1110,14 +1110,19 @@ class GeneralController extends Controller
                     $dropboxService = new DropboxService();
                     $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
-                    DB::table('documento_archivo')->insert([
-                        'id_documento' => $data->documento,
-                        'id_usuario' => $auth->id,
-                        'tipo' => $archivo->guia,
-                        'id_impresora' => $archivo->impresora,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response['id']
+                    return response()->json([
+                        'code' => 200,
+                        'message' => $response
                     ]);
+
+//                    DB::table('documento_archivo')->insert([
+//                        'id_documento' => $data->documento,
+//                        'id_usuario' => $auth->id,
+//                        'tipo' => $archivo->guia,
+//                        'id_impresora' => $archivo->impresora,
+//                        'nombre' => $archivo->nombre,
+//                        'dropbox' => $response['id']
+//                    ]);
                 }
             }
         }

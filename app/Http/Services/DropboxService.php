@@ -147,13 +147,17 @@ class DropboxService
                     'http_errors' => false,
                 ]);
                 $data = json_decode($response->getBody()->getContents(), true);
+
+                return response()->json(['data' => $data]);
                 if ($response->getStatusCode() === 200 && isset($data['name'])) {
                     return $data;
                 }
                 sleep(1);
             } catch (\Exception $e) {
-                Log::error('Dropbox uploadFile error: '.$e->getMessage());
-                sleep(1);
+                return [
+                    'error' => true,
+                    'message' => $e->getMessage(),
+                ];
             }
         }
         return [

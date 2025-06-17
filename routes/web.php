@@ -1070,9 +1070,6 @@ $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->get('testApis', 'DeveloperController@testApiWalmart');
 });
 
-$router->group(['prefix' => 'dropbox'], function () use ($router) {
-    $router->post('getToken', 'DropboxController@getDropboxToken');
-    $router->post('actualizarToken', 'DropboxController@actualizarTokenDropbox');
-    $router->post('delete', 'DropboxController@deleteFile');
-    $router->post('upload', 'DropboxController@uploadFile');
-});
+
+$router->get('getToken', 'DropboxController@getDropboxToken');
+$router->get('cron/actualizarToken', 'DropboxController@actualizarTokenDropbox');
