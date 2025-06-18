@@ -1133,7 +1133,7 @@ class AlmacenController extends Controller
 
                 $impresora = DB::table("usuario")
                     ->join("impresora", "usuario.id_impresora_packing", "=", "impresora.id")
-                    ->select("impresora.cups", "impresora.servidor")
+                    ->select("impresora.id", "impresora.servidor")
                     ->where("usuario.id", $auth->id)
                     ->first();
 
@@ -1209,7 +1209,10 @@ class AlmacenController extends Controller
                 $pdf = "";
 
                 if($auth->id != 9999) {
-                    $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token")));
+                    $impresion_raw = json_decode(file_get_contents(
+                        $impresora->servidor .
+                        "api/guias/print/"
+                        . $data->documento . "/" . $impresora->id . "?token=" . $request->get("token")));
                     $impresion = @$impresion_raw;
 
                     if (empty($impresion)) {

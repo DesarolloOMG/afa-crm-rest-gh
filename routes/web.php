@@ -1053,6 +1053,11 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->post('sendWhatsAppWithOption', 'WhatsAppController@whatsapp_send_with_option');
         $router->post('validateWhatsAppWithOption', 'WhatsAppController@whatsapp_validate_with_option');
     });
+
+    $router->group(['prefix' => 'developer'], function () use ($router) {
+        $router->get('test', 'DeveloperController@test');
+    });
+
 });
 
 $router->group(['prefix' => 'estado'], function () use ($router) {
@@ -1064,8 +1069,4 @@ $router->post('rawinfo/mercadolibre/notificaciones/{marketplace_id}', 'Notificac
 $router->get('pruebaPicking', 'AlmacenController@rawinfo_almacen_picking');
 $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2@mercadolibre_notificaciones_callbacks');
 
-$router->group(['prefix' => 'developer'], function () use ($router) {
-    $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
-    $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
-    $router->get('testApis', 'DeveloperController@testApiWalmart');
-});
+
