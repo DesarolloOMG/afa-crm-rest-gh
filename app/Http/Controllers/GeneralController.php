@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
 use App\Http\Services\DocumentoService;
+use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
 use App\Http\Services\WhatsAppService;
@@ -1109,6 +1110,16 @@ class GeneralController extends Controller
                     $dropboxService = new DropboxService();
                     $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
+                    if (isset($response['error']) && $response['error']) {
+                        // Puedes personalizar el código (400, 422, 500, etc)
+                        return response()->json([
+                            'code'    => 500,
+                            'error'   => true,
+                            'message' => $response['message'],
+                            'dropbox' => $response['dropbox'] ?? null
+                        ]);
+                    }
+
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->documento,
                         'id_usuario' => $auth->id,
@@ -1120,7 +1131,6 @@ class GeneralController extends Controller
                 }
             }
         }
-
 
         return response()->json([
             'code' => 200,

@@ -3,6 +3,7 @@
 namespace App\Http\Services;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -12,7 +13,6 @@ class DropboxService
     protected $clientSecret;
     protected $refreshToken;
     protected $client;
-    protected $maxRetries = 3;
 
     public function __construct()
     {
@@ -90,20 +90,18 @@ class DropboxService
             'Dropbox-API-Arg' => json_encode(['path' => $path])
         ];
 
-        for ($i = 0; $i < $this->maxRetries; $i++) {
-            try {
-                $response = $this->client->post($url, [
-                    'headers' => $headers,
-                    'http_errors' => false,
-                ]);
-                if ($response->getStatusCode() === 200) {
-                    return $response->getBody()->getContents();
-                }
-                sleep(1);
-            } catch (\Exception $e) {
-                Log::error('Dropbox downloadFile error: '.$e->getMessage());
-                sleep(1);
+        try {
+            $response = $this->client->post($url, [
+                'headers' => $headers,
+                'http_errors' => false,
+            ]);
+            if ($response->getStatusCode() === 200) {
+                return $response->getBody()->getContents();
             }
+            sleep(1);
+        } catch (\Exception $e) {
+            Log::error('Dropbox downloadFile error: '.$e->getMessage());
+            sleep(1);
         }
         // Si falla, retorna error estándar
         return null;
@@ -139,27 +137,46 @@ class DropboxService
 
         $body = $isBase64 ? base64_decode($fileContent) : $fileContent;
 
-        for ($i = 0; $i < $this->maxRetries; $i++) {
-            try {
-                $response = $this->client->post($url, [
-                    'headers' => $headers,
-                    'body' => $body,
-                    'http_errors' => false,
-                ]);
-                $data = json_decode($response->getBody()->getContents(), true);
-                if ($response->getStatusCode() === 200 && isset($data['name'])) {
-                    return $data;
-                }
-                sleep(1);
-            } catch (\Exception $e) {
-                Log::error('Dropbox uploadFile error: '.$e->getMessage());
-                sleep(1);
+        try {
+            $response = $this->client->post($url, [
+                'headers' => $headers,
+                'body' => $body,
+                'http_errors' => false,
+                'verify' => false,
+            ]);
+            $data = json_decode($response->getBody()->getContents(), true);
+
+            if ($response->getStatusCode() === 200 && isset($data['name'])) {
+                return $data;
             }
+
+            // Si hay error, devuelve el mensaje real
+            if (isset($data['error_summary'])) {
+                return [
+                    'error' => true,
+                    'message' => $data['error_summary'],
+                    'dropbox' => $data
+                ];
+            } elseif (isset($data['error'])) {
+                return [
+                    'error' => true,
+                    'message' => is_array($data['error']) ? json_encode($data['error']) : $data['error'],
+                    'dropbox' => $data
+                ];
+            } else {
+                return [
+                    'error' => true,
+                    'message' => 'Error desconocido de Dropbox',
+                    'dropbox' => $data
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error('Dropbox uploadFile error: ' . $e->getMessage());
+            return [
+                'error' => true,
+                'message' => $e->getMessage()
+            ];
         }
-        return [
-            'error' => true,
-            'message' => 'No se pudo subir el archivo a Dropbox'
-        ];
     }
 
     /**
@@ -173,26 +190,24 @@ class DropboxService
             'Content-Type' => 'application/json',
         ];
 
-        for ($i = 0; $i < $this->maxRetries; $i++) {
-            try {
-                $response = $this->client->request('POST', $url, [
-                    'headers' => $headers,
-                    'body' => !empty($body) ? json_encode($body) : null,
-                    'http_errors' => false,
-                ]);
-                $status = $response->getStatusCode();
-                $res = $response->getBody()->getContents();
+        try {
+            $response = $this->client->request('POST', $url, [
+                'headers' => $headers,
+                'body' => !empty($body) ? json_encode($body) : null,
+                'http_errors' => false,
+            ]);
+            $status = $response->getStatusCode();
+            $res = $response->getBody()->getContents();
 
-                if ($status === 200) {
-                    return $asJson ? json_decode($res, true) : $res;
-                } else {
-                    Log::warning('Dropbox request ('.$url.') status: '.$status.' | response: '.$res);
-                    sleep(1);
-                }
-            } catch (\Exception $e) {
-                Log::error('Dropbox request error: '.$e->getMessage());
+            if ($status === 200) {
+                return $asJson ? json_decode($res, true) : $res;
+            } else {
+                Log::warning('Dropbox request ('.$url.') status: '.$status.' | response: '.$res);
                 sleep(1);
             }
+        } catch (\Exception $e) {
+            Log::error('Dropbox request error: '.$e->getMessage());
+            sleep(1);
         }
         return [
             'error' => true,

@@ -1070,3 +1070,7 @@ $router->get('pruebaPicking', 'AlmacenController@rawinfo_almacen_picking');
 $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2@mercadolibre_notificaciones_callbacks');
 
 
+
+
+$router->get('getToken', 'DropboxController@getDropboxToken');
+$router->get('cron/actualizarToken', 'DropboxController@actualizarTokenDropbox');
