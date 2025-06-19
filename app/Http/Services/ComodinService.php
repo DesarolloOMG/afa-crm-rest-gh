@@ -147,10 +147,6 @@ class ComodinService
         // Crea un objeto para la respuesta final.
         $response = new \stdClass();
 
-        // Objeto temporal para almacenar datos de validación de cada serie.
-        // NOTA: Este objeto se reutiliza en cada iteración, por lo que podría ser necesario reinicializarlo dentro del bucle para evitar efectos colaterales.
-        $object = new \stdClass();
-
         // Array que contendrá el resultado de cada validación de serie.
         $array = array();
 
@@ -161,6 +157,7 @@ class ComodinService
 
         // Itera sobre cada serie en la lista.
         foreach ($series as $serie) {
+            $object = new \stdClass();
             // Almacena la serie original en el objeto temporal.
             $object->serie = $serie;
 
@@ -186,6 +183,7 @@ class ComodinService
                         if($existe_serie->id_modelo != $id_modelo) {
                             // Si no coinciden, marca la serie como inválida y registra el error.
                             $object->status = 0;
+                            $object->mensaje = "La serie " . $serie . " no pertenece a" . $sku;
                             array_push($errores, "La serie " . $serie . " no pertenece a" . $sku);
                         } else {
                             // Si coincide, marca la serie como válida.
@@ -195,16 +193,19 @@ class ComodinService
                     } else {
                         // Si la serie no se encontró en la tabla "producto", se marca como error.
                         $object->status = 0;
+                        $object->mensaje = "La serie " . $serie . " no existe en la Base de Datos";
                         array_push($errores, "La serie " . $serie . " no existe en la Base de Datos");
                     }
                 } else {
                     // Si la serie es un sinónimo (existe en "modelo_sinonimo"), se marca como error.
                     $object->status = 0;
+                    $object->mensaje = "La serie " . $serie . " es un sinonimo.";
                     array_push($errores, "La serie " . $serie . " es un sinonimo.");
                 }
             } else {
                 // Si la serie se encontró en la tabla "modelo" (es un SKU), se marca como error.
                 $object->status = 0;
+                $object->mensaje = "La serie " . $serie . " es un sku.";
                 array_push($errores, "La serie " . $serie . " es un sku.");
             }
             // Agrega el objeto de validación de la serie al array de resultados.
@@ -239,10 +240,6 @@ class ComodinService
         // Crea un objeto para la respuesta final.
         $response = new \stdClass();
 
-        // Objeto temporal para almacenar datos de validación de cada serie.
-        // NOTA: Este objeto se reutiliza en cada iteración, por lo que podría ser necesario reinicializarlo dentro del bucle para evitar efectos colaterales.
-        $object = new \stdClass();
-
         // Array que contendrá el resultado de cada validación de serie.
         $array = array();
 
@@ -253,6 +250,7 @@ class ComodinService
 
         // Itera sobre cada serie en la lista.
         foreach ($series as $serie) {
+            $object = new \stdClass();
             // Almacena la serie original en el objeto temporal.
             $object->serie = $serie;
 

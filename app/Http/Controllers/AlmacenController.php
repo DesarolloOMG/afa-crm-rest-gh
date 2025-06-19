@@ -1026,38 +1026,6 @@ class AlmacenController extends Controller
                             'message'   => "Hay series repetidas: " . implode(', ', array_keys($series_repetidas)) . " " . self::logVariableLocation()
                         ]);
                     }
-
-                    // Procesar cada serie validada
-                    foreach ($producto->series as $serie) {
-                        // Se limpian caracteres potencialmente problemáticos
-                        $serie = str_replace(["'", '\\'], '', $serie);
-
-                        $existe = DB::select("SELECT
-                                            producto.id,
-                                            modelo.sku
-                                        FROM documento
-                                        INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                        INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                        WHERE producto.serie = '" . $serie . "'
-                                        AND modelo.sku = '" . $producto->sku . "'");
-
-                        if (!empty($existe)) {
-
-                            DB::table('producto')->where(['id' => $existe[0]->id])->update([
-                                'id_almacen' => $info_documento->id_almacen,
-                                'status' => 0
-                            ]);
-
-                            DB::table('movimiento_producto')->insert([
-                                'id_movimiento' => $movimiento[0]->id,
-                                'id_producto' => $existe[0]->id
-                            ]);
-                        } else {
-                            $errores[] = "La serie " . $serie . " no existe en el producto " . trim($producto->sku);
-                        }
-                    }
                 }
             } else {
                 $errores[] = "Mensaje: No se encontró el movimiento relacionado con el producto " . $producto->sku . ", por lo tanto no se generó la relación de las series. " . self::logVariableLocation();
@@ -1285,24 +1253,10 @@ class AlmacenController extends Controller
                 DB::table('seguimiento')->insert([
                     'id_documento' => $data->documento,
                     'id_usuario' => 1,
-                    'seguimiento' => "Ocurrió un error al generar la factura y se manda a fase Factura."
+                    'seguimiento' => "Ocurrió un error al afectar el inventario y se manda a fase Factura."
                 ]);
 
-                $emails = "";
-                $correos = DB::select("SELECT
-                                usuario.email
-                            FROM usuario
-                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
-                            WHERE subnivel.subnivel in ('CXC','CXP') and usuario.email like '%@omg%'
-                            GROUP BY usuario.email");
-
-                foreach ($correos as $correo) {
-                    $emails .= $correo->email . ";";
-                }
-
-                $emails .= "sistemas@omg.com.mx";
+                $emails = "sistemas@omg.com.mx";
 
                 $vista = view('email.notificacion_factura')->with([
                     'mensaje' => $crear_factura->mensaje,
@@ -1315,13 +1269,13 @@ class AlmacenController extends Controller
                 $mg->messages()->send($domain, array(
                     'from' => 'CRM OMG International <crm@omg.com.mx>',
                     'to' => $emails,
-                    'subject' => 'Error al generar factura',
+                    'subject' => 'Error al afectar inventario',
                     'html' => $vista->render()
                 ));
 
                 return response()->json([
                     "code" => 200,
-                    "message" => "No fue posible generar la factura del documento, mensaje de error: " . $crear_factura->mensaje . ", favor de contactar a un administrador." . self::logVariableLocation(),
+                    "message" => "No fue posible afectar el inventario, mensaje de error: " . $crear_factura->mensaje . ", favor de contactar a un administrador." . self::logVariableLocation(),
                     "raw" => property_exists($crear_factura, "raw") ? $crear_factura->raw : 0,
                     "color" => "pink-border-top",
                     "data" => property_exists($crear_factura, "data") ? $crear_factura->data : 0,
