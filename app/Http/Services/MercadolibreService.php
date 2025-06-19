@@ -672,7 +672,7 @@ class MercadolibreService
 
                     $productos_publicacion = $productos_query->get();
 
-                    if ($productos_publicacion->isEmpty()) {
+                    if (empty($productos_publicacion)) {
                         $pack->error = 0;
                         $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}";
                         $pack->venta_principal->fase = 1;
@@ -972,13 +972,15 @@ class MercadolibreService
             $referencia = $payment->id ?? null;
         }
 
-        $entidad = DB::table('documento_entidad')->insertGetId([
-            'razon_social' => 'PUBLICO GENERAL',
-            'rfc' => mb_strtoupper('XAXX010101000', 'UTF-8'),
-            'telefono' => "0",
-            'telefono_alt' => "0",
-            'correo' => "0"
-        ]);
+//        $entidad = DB::table('documento_entidad')->insertGetId([
+//            'razon_social' => 'PUBLICO GENERAL',
+//            'rfc' => mb_strtoupper('XAXX010101000', 'UTF-8'),
+//            'telefono' => "0",
+//            'telefono_alt' => "0",
+//            'correo' => "0"
+//        ]);
+
+        $entidad = 68;
 
         $documentoId = DB::table('documento')->insertGetId([
             'id_cfdi' => 3,
@@ -1079,11 +1081,6 @@ class MercadolibreService
             DB::table("documento")->where("id", $documentoId)->update(["id_fase" => 1]);
             $venta->fase = 1;
         }
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad,
-            'id_documento' => $documentoId
-        ]);
 
         $response->error = 0;
         $response->mensaje = "Venta {$venta->id} importada correctamente";
