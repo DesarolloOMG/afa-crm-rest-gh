@@ -134,7 +134,6 @@ class VentaController extends Controller
                 $cliente = $existe_cliente[0]->id;
 
                 DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                    'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
                     'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
                     'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
                     'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
