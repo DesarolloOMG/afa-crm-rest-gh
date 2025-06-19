@@ -147,6 +147,42 @@ class MercadolibreService
         return $response;
     }
 
+    public static function logVariableLocation(): string
+    {
+        // $log = self::logVariableLocation();
+        $sis = 'BE'; //Front o Back
+        $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'BRE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
+    }
+
+    public static function token($app_id, $secret_key)
+    {
+        $existe = DB::select("SELECT token FROM marketplace_api WHERE app_id = '" . $app_id . "' AND secret = '" . $secret_key . "' AND '" . date("Y-m-d H:i:s") . "' >= token_created_at AND '" . date("Y-m-d H:i:s") . "' <= token_expired_at AND token != 'N/A'");
+
+        if (empty($existe)) {
+            try {
+                $decoded_secret_key = Crypt::decrypt($secret_key);
+            } catch (DecryptException $e) {
+                $decoded_secret_key = "";
+            }
+
+            $mp = new MP($app_id, $decoded_secret_key);
+            $access_token = $mp->get_access_token();
+
+            DB::table("marketplace_api")->where(["app_id" => $app_id, "secret" => $secret_key])->update([
+                "token" => $access_token,
+                "token_created_at" => date("Y-m-d H:i:s"),
+                "token_expired_at" => date("Y-m-d H:i:s", strtotime("+6 hours"))
+            ]);
+
+            return $access_token;
+        }
+
+        return $existe[0]->token;
+    }
+
     public static function venta2($venta, $marketplace_id)
     {
         $response = new stdClass();
@@ -199,6 +235,28 @@ class MercadolibreService
         $response->data = $informacion_venta->results;
 
         return $response;
+    }
+
+    public static function seller($pseudonimo, $token)
+    {
+        $url = config("webservice.mercadolibre_enpoint") . "users/me";
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+
+        $context = stream_context_create($options);
+
+        $response = @file_get_contents($url, false, $context);
+
+        if ($response === false) {
+            return response()->json(["error" => "No se pudo obtener información del usuario"], 500);
+        }
+
+        return @json_decode($response, false);
+
     }
 
     public static function ventas($credenciales, $publicacion)
@@ -333,42 +391,23 @@ class MercadolibreService
         return $packs;
     }
 
-    public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = "Y-m-01\T00:00:00.000\Z", $fecha_final = "Y-m-d\T00:00:00.000\Z")
+    public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = "Y-m-01\T00:00:00.000\Z", $fecha_final = "Y-m-d\T00:00:00.000\Z", $dropOrFull = false)
     {
         set_time_limit(0);
 
         $response = new stdClass();
-        $error = array();
-        $datas = array();
 
-        $marketplace_info = DB::select("SELECT
-                                            marketplace_area.id,
-                                            marketplace_api.extra_2,
-                                            marketplace_api.app_id,
-                                            marketplace_api.secret
-                                        FROM marketplace_area
-                                        INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                        INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                        WHERE marketplace_area.id = " . $marketplace_id . "");
-
-        if (empty($marketplace_info)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "No se encontraron las credenciales del marketplace seleccionado, favor de contactar al administrador." . $log;
-
+        $marketplace_info = self::getMarketplaceData($marketplace_id);
+        if (!$marketplace_info) {
+            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
             return $response;
         }
 
-        if (!file_exists("logs")) {
-            mkdir("logs", 777);
-            mkdir("logs/mercadolibre", 777);
-        }
+        $marketplaceData = $marketplace_info->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
-        $marketplace_info = $marketplace_info[0];
-
-        $token = self::token($marketplace_info->app_id, $marketplace_info->secret);
-        $seller = self::seller($marketplace_info->extra_2, $token);
+        $seller = self::seller(str_replace(" ", "%20", $marketplaceData->extra_2), $token);
+        $seller_id = $seller->id;
 
         if (empty($seller)) {
             $log = self::logVariableLocation();
@@ -379,61 +418,87 @@ class MercadolibreService
             return $response;
         }
 
+        if (!file_exists("logs")) {
+            mkdir("logs", 777);
+            mkdir("logs/mercadolibre", 777);
+        }
+
         $fecha_inicial = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_inicial . "-1 day"));
         $fecha_final = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_final . "+1 day"));
 
-        $url = config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&access_token=" . $token;
+        $sellerEndpoint = "orders/search?seller={seller}";
 
         if (!empty($publicacion_id)) {
-            $url .= "&q=" . $publicacion_id;
+            $sellerEndpoint .= "&q=" . $publicacion_id;
         } else {
-            $url .= "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final;
+            $sellerEndpoint .= "&order.date_created.from=" . $fecha_inicial . "&order.date_created.to=" . $fecha_final;
         }
+        $sellerData = self::callMlApi($marketplaceData->id, $sellerEndpoint, [
+            '{seller}' => $seller_id
+        ]);
 
-        $ventas = json_decode(file_get_contents($url));
+        $ventas = json_decode($sellerData->getContent());
         $limite = $ventas->paging->limit;
         $total_ciclo = ceil($ventas->paging->total / $limite);
         $offset = 0;
         $packs = array();
-        # Agrupar ventas por PACK ID
+
+        // Agrupar ventas por PACK ID
         for ($i = 0; $i < $total_ciclo + 1; $i++) {
-            $ventas = @json_decode(file_get_contents($url . "&offset=" . $offset));
+            $sellerData = self::callMlApi($marketplaceData->id, $sellerEndpoint . "&offset=" . $offset, [
+                '{seller}' => $seller_id
+            ]);
+
+            $ventas = json_decode($sellerData->getContent());
 
             if (empty($ventas)) {
                 break;
             }
 
             foreach ($ventas->results as $venta) {
-                $existe_pack = 0;
+                $existe_pack = false;
 
-                $venta->pack_id = explode(".", empty($venta->pack_id) ? $venta->id : sprintf('%lf', $venta->pack_id))[0];
-                $venta->shipping = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . $venta->id . "/shipments?access_token=" . $token));
+                $packIdRaw = empty($venta->pack_id) ? $venta->id : sprintf('%lf', $venta->pack_id);
+                $venta->pack_id = explode('.', $packIdRaw)[0];
 
-                if ($venta->shipping) {
-                    $venta->is_buffered = $venta->shipping->status === 'pending' && $venta->shipping->substatus === 'buffered';
-                    $venta->is_manufacturing = $venta->shipping->status === 'pending' && $venta->shipping->substatus === 'manufacturing';
-                    $venta->is_creating_route = $venta->shipping->status === 'pending' && $venta->shipping->substatus === 'creating_route';
-                    $venta->is_ready_to_ship = $venta->shipping->status === 'ready_to_ship' && $venta->shipping->substatus === 'ready_to_print';
-                    $venta->is_delivered = $venta->shipping->status === 'delivered';
-                } else {
-                    $venta->is_buffered = $venta->is_manufacturing = $venta->is_ready_to_ship = $venta->is_creating_route = $venta->is_delivered = false;
+                $shippingData = self::callMlApi($marketplaceData->id, "orders/{venta_id}/shipments", [
+                    '{venta_id}' => $venta->id
+                ]);
+
+                $venta->shipping = @json_decode($shippingData->getContent());
+
+                $tipo_logistica = $venta->shipping->logistic_type ?? null;
+
+                if ($dropOrFull === true && $tipo_logistica !== 'fulfillment') {
+                    continue;
                 }
+
+                if ($dropOrFull === false && $tipo_logistica === 'fulfillment') {
+                    continue;
+                }
+
+                $status = $venta->shipping->status ?? null;
+                $substatus = $venta->shipping->substatus ?? null;
+
+                $venta->is_buffered = $status === 'pending' && $substatus === 'buffered';
+                $venta->is_manufacturing = $status === 'pending' && $substatus === 'manufacturing';
+                $venta->is_creating_route = $status === 'pending' && $substatus === 'creating_route';
+                $venta->is_ready_to_ship = $status === 'ready_to_ship' && $substatus === 'ready_to_print';
+                $venta->is_delivered = $status === 'delivered';
 
                 foreach ($packs as $pack) {
                     if ($venta->pack_id === $pack->id) {
-                        array_push($pack->ventas, $venta);
-
-                        $existe_pack = 1;
+                        $pack->ventas[] = $venta;
+                        $existe_pack = true;
+                        break;
                     }
                 }
 
                 if (!$existe_pack) {
                     $pack_object = new stdClass();
                     $pack_object->id = $venta->pack_id;
-                    $pack_object->ventas = array();
-
-                    array_push($pack_object->ventas, $venta);
-                    array_push($packs, $pack_object);
+                    $pack_object->ventas = [$venta];
+                    $packs[] = $pack_object;
                 }
             }
 
@@ -446,20 +511,22 @@ class MercadolibreService
             $pack->mensaje = "";
             $pack->ventas_relacionadas = "";
 
-            $existe_pack = DB::select("SELECT id FROM documento WHERE comentario = '" . $pack->id . "' AND status = 1");
+            $existe_pack = DB::table('documento')
+                ->select('id')
+                ->where('comentario', $pack->id)
+                ->where('status', 1)
+                ->first();
 
-            if (!empty($existe_pack)) {
-
+            if ($existe_pack) {
                 $venta_p = $pack->ventas[0];
 
                 if ($venta_p->is_delivered) {
                     self::actualizarDelivered_com($existe_pack);
 
                     $pack->error = 1;
-                    $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a delivered. Marketplace: ";
+                    $pack->mensaje = "El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a delivered. Marketplace: ";
 
-                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a delivered." . PHP_EOL, FILE_APPEND);
-
+                    self::log_meli_error("El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a delivered.", $publicacion_id);
                     continue;
                 }
 
@@ -467,23 +534,21 @@ class MercadolibreService
                     self::actualizarRTS_com($existe_pack);
 
                     $pack->error = 1;
-                    $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a ready to ship.";
+                    $pack->mensaje = "El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a ready to ship.";
 
-                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a ready to ship. " . PHP_EOL, FILE_APPEND);
-
+                    self::log_meli_error("El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a ready to ship.", $publicacion_id);
                     continue;
                 }
 
                 $pack->error = 1;
-                $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado";
+                $pack->mensaje = "El pack {$pack->id} ya ha sido importado";
 
-                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: El pack " . $pack->id . " ya ha sido importado " . PHP_EOL, FILE_APPEND);
-
+                self::log_meli_error("El pack {$pack->id} ya ha sido importado", $publicacion_id);
                 continue;
             }
 
             $venta_principal = $pack->ventas[0];
-            $venta_principal->productos = array();
+            $venta_principal->productos = [];
             $venta_principal->almacen = 0;
             $venta_principal->proveedor = 0;
             $venta_principal->fase = 1;
@@ -495,293 +560,199 @@ class MercadolibreService
 
             foreach ($pack->ventas as $venta) {
                 $pack->ventas_relacionadas .= $venta->id . ",";
+
                 $pack->venta_principal->publicacion = $venta->order_items[0]->item->id;
                 $pack->venta_principal->pack = $pack->id;
-                $pack->venta_principal->total_envio = is_object($venta->shipping) ? (property_exists($venta->shipping, "shipping_option") ? $venta->shipping->shipping_option->list_cost : 0) : 0;
+                $pack->venta_principal->total_envio = is_object($venta->shipping) && property_exists($venta->shipping, "shipping_option")
+                    ? $venta->shipping->shipping_option->list_cost
+                    : 0;
 
                 if (!empty($venta->mediations)) {
                     foreach ($venta->mediations as $mediation) {
-                        $informacion_mediacion = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "v1/claims/" . $mediation->id . "?access_token=" . $token . ""));
 
-                        if (!empty($informacion_mediacion)) {
-                            if ($informacion_mediacion->status != "claim_closed" && $informacion_mediacion->status != "dispute_closed") {
-                                $pack->error = 1;
-                                $pack->mensaje = "La venta " . $venta->id . " contiene un reclamo en la plataforma de Mercadolibre.";
+                        $mediationData = self::callMlApi($marketplaceData->id, "v1/claims/{mediation_id}", [
+                            '{mediation_id}' => $mediation->id
+                        ]);
 
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " contiene un reclamo en la plataforma de Mercadolibre. " . PHP_EOL, FILE_APPEND);
+                        $informacion_mediacion = @json_decode($mediationData->getContent());
 
-                                unset($pack->ventas);
-
-                                continue 3;
-                            }
+                        if ($informacion_mediacion && !in_array($informacion_mediacion->status, ['claim_closed', 'dispute_closed'])) {
+                            $pack->error = 1;
+                            $pack->mensaje = "La venta {$venta->id} contiene un reclamo en la plataforma de Mercadolibre.";
+                            self::log_meli_error("La venta {$venta->id} contiene un reclamo en la plataforma de Mercadolibre.", $publicacion_id);
+                            unset($pack->ventas);
+                            continue 3;
                         }
                     }
                 }
 
-                $total_productos = 0;
-                $existe_venta = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta->id . "'");
+                $existe_venta = DB::table('documento')->select('id')->where('no_venta', $venta->id)->first();
 
-                if (!empty($existe_venta)) {
-
+                if ($existe_venta) {
                     if ($venta->is_delivered) {
                         self::actualizarDelivered_doc_o($venta->id);
                         $pack->error = 1;
-                        $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a delivered.";
-
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya ha sido importado anteriormente, se detectó cambio a delivered, pedido: " . $existe_venta[0]->id . " " . PHP_EOL, FILE_APPEND);
-
+                        $pack->mensaje = "El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a delivered.";
+                        self::log_meli_error("La venta {$venta->id} ya fue importada (delivered), pedido: {$existe_venta->id}", $publicacion_id);
                         unset($pack->ventas);
-
                         continue 2;
                     }
 
                     if ($venta->is_ready_to_ship) {
                         self::actualizarRTS_doc_o($venta->id);
                         $pack->error = 1;
-                        $pack->mensaje = "El pack " . $pack->id . " ya ha sido importado anteriormente, se detectó cambio a ready to ship.";
-
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya ha sido importado anteriormente, se detectó cambio a ready to ship, pedido: " . $existe_venta[0]->id . " " . PHP_EOL, FILE_APPEND);
-
+                        $pack->mensaje = "El pack {$pack->id} ya ha sido importado anteriormente, se detectó cambio a ready to ship.";
+                        self::log_meli_error("La venta {$venta->id} ya fue importada (ready_to_ship), pedido: {$existe_venta->id}", $publicacion_id);
                         unset($pack->ventas);
-
                         continue 2;
                     }
 
                     $pack->error = 1;
-                    $pack->mensaje = "La venta " . $venta->id . " ya existe registrada en el sistema, pedido: " . $existe_venta[0]->id . "";
-
-
-                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya existe en el sistema, pedido: " . $existe_venta[0]->id . " " . PHP_EOL, FILE_APPEND);
-
+                    $pack->mensaje = "La venta {$venta->id} ya existe registrada en el sistema, pedido: {$existe_venta->id}";
+                    self::log_meli_error("La venta {$venta->id} ya existe, pedido: {$existe_venta->id}", $publicacion_id);
                     unset($pack->ventas);
-
                     continue 2;
                 }
 
                 if (empty($venta->shipping)) {
                     $pack->error = 1;
-                    $pack->mensaje = "No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id . "";
-
-                    file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id . " " . PHP_EOL, FILE_APPEND);
-
+                    $pack->mensaje = "No se encontró información del envío en la venta {$venta->id}";
+                    self::log_meli_error("No se encontró información del envío en la venta {$venta->id}", $publicacion_id);
                     unset($pack->ventas);
-
                     continue 2;
                 }
-                if ($venta->shipping) {
-                    if ($venta->shipping->status == "pending") {
-                        $pack->venta_principal->fase = 1;
-                    }
+
+                if ($venta->shipping->status === "pending") {
+                    $pack->venta_principal->fase = 1;
                 }
 
                 foreach ($venta->order_items as $item) {
                     $pack->venta_principal->total_fee += (float)$item->sale_fee * (int)$item->quantity;
 
-                    $existe_publicacion = DB::select("SELECT 
-                                                            marketplace_publicacion.id, 
-                                                            marketplace_publicacion.id_almacen_empresa,
-                                                            marketplace_publicacion.id_almacen_empresa_fulfillment,
-                                                            marketplace_publicacion.id_proveedor,
-                                                            marketplace_publicacion.shipping_null,
-                                                            empresa.bd,
-                                                            empresa_almacen.id_erp AS id_almacen
-                                                    FROM marketplace_publicacion 
-                                                    INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    WHERE publicacion_id = '" . $item->item->id . "'");
+                    $existe_publicacion = DB::table('marketplace_publicacion')
+                        ->join('empresa_almacen', 'marketplace_publicacion.id_almacen_empresa', '=', 'empresa_almacen.id')
+                        ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+                        ->select(
+                            'marketplace_publicacion.id',
+                            'marketplace_publicacion.id_almacen_empresa',
+                            'marketplace_publicacion.id_almacen_empresa_fulfillment',
+                            'marketplace_publicacion.id_proveedor',
+                            'marketplace_publicacion.shipping_null',
+                            'empresa.id',
+                            'empresa_almacen.id_almacen'
+                        )
+                        ->where('publicacion_id', $item->item->id)
+                        ->first();
 
-                    if (empty($existe_publicacion)) {
+                    if (!$existe_publicacion) {
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "No se encontró la publicación de la venta " . $venta->id . " registrada en el sistema, por lo tanto, no hay relación de productos " . $item->item->id . "";
+                        $pack->venta_principal->seguimiento = "No se encontró la publicación de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relación de productos {$item->item->id}";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No se encontró la publicación de la venta " . $venta->id . " registrada en el sistema, por lo tanto, no hay relación de productos " . $item->item->id . " " . PHP_EOL, FILE_APPEND);
-
+                        self::log_meli_error("No se encontró la publicación de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relación de productos {$item->item->id}", $publicacion_id);
                         unset($pack->ventas);
-
                         continue 3;
                     }
 
-                    $existe_publicacion = $existe_publicacion[0];
                     $pack->venta_principal->shipping_null = $existe_publicacion->shipping_null ?? 0;
 
-                    $extra_query = !is_null($item->item->variation_id) ? " AND etiqueta = '" . $item->item->variation_id . "'" : "";
-                    $productos_publicacion = DB::select("SELECT * FROM marketplace_publicacion_producto WHERE id_publicacion = " . $existe_publicacion->id . $extra_query);
+                    $productos_query = DB::table('marketplace_publicacion_producto')
+                        ->where('id_publicacion', $existe_publicacion->id);
 
-                    if (empty($productos_publicacion)) {
+                    if (!is_null($item->item->variation_id)) {
+                        $productos_query->where('etiqueta', $item->item->variation_id);
+                    }
+
+                    $productos_publicacion = $productos_query->get();
+
+                    if ($productos_publicacion->isEmpty()) {
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación " . $item->item->id . " en la venta " . $venta->id . "";
+                        $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay relación entre productos y la publicación " . $item->item->id . " en la venta " . $venta->id . " " . PHP_EOL, FILE_APPEND);
-
+                        self::log_meli_error("No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}", $publicacion_id);
                         unset($pack->ventas);
-
                         continue 3;
                     }
 
-                    $porcentaje_total = 0;
-
-                    foreach ($productos_publicacion as $producto) {
-                        $porcentaje_total += $producto->porcentaje;
-                    }
+                    $porcentaje_total = $productos_publicacion->sum('porcentaje');
 
                     if ($porcentaje_total != 100) {
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "Los productos de la publicación " . $item->item->id . " no suman un porcentaje total de 100%.";
+                        $pack->venta_principal->seguimiento = "Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Los productos de la publicación " . $item->item->id . " no suman un porcentaje total de 100%. " . PHP_EOL, FILE_APPEND);
-
+                        self::log_meli_error("Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.", $publicacion_id);
                         unset($pack->ventas);
-
                         continue 3;
                     }
 
-                    $pack->venta_principal->almacen = property_exists($venta->shipping, 'logistic_type') ? ($venta->shipping->logistic_type == 'fulfillment' ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa) : $existe_publicacion->id_almacen_empresa;
+                    $pack->venta_principal->almacen = property_exists($venta->shipping, 'logistic_type') && $venta->shipping->logistic_type === 'fulfillment'
+                        ? $existe_publicacion->id_almacen_empresa_fulfillment
+                        : $existe_publicacion->id_almacen_empresa;
+
                     $pack->venta_principal->proveedor = $existe_publicacion->id_proveedor;
 
-                    # La publicacion es dropshipping, y no se checa existencias
-                    if ($existe_publicacion->id_proveedor == 0) {
-                        foreach ($productos_publicacion as $producto) {
-                            $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
-                            $producto->cantidad = $producto->cantidad * $item->quantity;
+                    foreach ($productos_publicacion as $producto) {
+                        $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
+                        $producto->cantidad = $producto->cantidad * $item->quantity;
 
-                            $producto_sku = DB::select("SELECT sku FROM modelo WHERE id = " . $producto->id_modelo . "")[0]->sku;
+                        $modelo = DB::table('modelo')
+                            ->select('sku')
+                            ->where('id', $producto->id_modelo)
+                            ->first();
 
-                            $existencia = DocumentoService::existenciaProducto($producto_sku, $pack->venta_principal->almacen);
-                            $empresa_info = DB::table("empresa_almacen")->where("id", $pack->venta_principal->almacen)->first();
-                            $empresa_bd = DB::table("empresa")->where("id", $empresa_info->id_empresa)->first();
+                        if (!$modelo) {
+                            $pack->error = 0;
+                            $pack->venta_principal->seguimiento = "No se encontró el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.";
+                            $pack->venta_principal->fase = 1;
+                            $pack->venta_principal->error = 1;
 
-                            $pendientes_bo = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto_sku . "'
-                                                    AND empresa.bd = " . $empresa_bd->bd . "
-                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.id_fase = 1")[0]->cantidad;
-
-                            $pendientes_surtir = DB::select("SELECT
-                                                        IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                    FROM documento
-                                                    INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                    INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                    INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                    WHERE modelo.sku = '" . $producto_sku . "'
-                                                    AND empresa.bd = " . $empresa_bd->bd . "
-                                                    AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                    AND documento.id_tipo = 2
-                                                    AND documento.status = 1
-                                                    AND documento.anticipada = 0
-                                                    AND documento.id_fase IN (2, 3)")[0]->cantidad;
-
-                            $pendientes_importar = DB::select("SELECT
-                                                    IFNULL(SUM(movimiento.cantidad), 0) as cantidad
-                                                FROM documento
-                                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                WHERE modelo.sku = '" . $producto_sku . "'
-                                                AND empresa.bd = " . $empresa_bd->bd . "
-                                                AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                AND documento.id_tipo = 2
-                                                AND documento.status = 1
-                                                AND documento.anticipada = 0
-                                                AND documento.id_fase BETWEEN 4 AND 5")[0]->cantidad;
-
-                            $pendientes_pretransferencia = DB::select("SELECT
-                                                                IFNULL(SUM(movimiento.cantidad), 0) AS cantidad
-                                                            FROM documento
-                                                            INNER JOIN empresa_almacen ON documento.id_almacen_secundario_empresa = empresa_almacen.id
-                                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                            WHERE modelo.sku = '" . $producto_sku . "'
-                                                            AND empresa.bd = " . $empresa_bd->bd . "
-                                                            AND empresa_almacen.id_erp = " . $empresa_info->id_erp . "
-                                                            AND documento.id_tipo = 9
-                                                            AND documento.status = 1
-                                                            AND documento.id_fase IN (401, 402, 403, 404)")[0]->cantidad;
-
-
-                            if ($existencia->error) {
-                                $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . "";
-                                $pack->venta_principal->fase = 1;
-                                $pack->venta_principal->error = 1;
-
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: Ocurrió un error al buscar la existencia del producto " . $producto_sku . " en la venta " . $venta->id . ", mensaje de error: " . $existencia->mensaje . " " . PHP_EOL, FILE_APPEND);
-
-                                unset($pack->ventas);
-
-                                continue 3;
-                            }
-
-                            $existencia_real = $existencia->existencia - $pendientes_bo - $pendientes_surtir - $pendientes_importar - $pendientes_pretransferencia;
-
-                            if ((int)$existencia->existencia < (int)$producto->cantidad) {
-                                $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . "";
-                                $pack->venta_principal->fase = 1;
-                                $pack->venta_principal->error = 1;
-
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No hay suficiente existencia para procesar la venta " . $venta->id . " en el almacén " . $pack->venta_principal->almacen . " del producto " . $producto_sku . " " . PHP_EOL, FILE_APPEND);
-
-                                unset($pack->ventas);
-
-                                continue 3;
-                            }
+                            self::log_meli_error("No se encontró el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.", $publicacion_id);
+                            unset($pack->ventas);
+                            continue 3;
                         }
-                    } else {
-                        foreach ($productos_publicacion as $producto) {
-                            $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
-                            $producto->cantidad = $producto->cantidad * $item->quantity;
 
-                            $existe_en_proveedor = DB::table("modelo_proveedor_producto")
-                                ->where("id_modelo", $producto->id_modelo)
-                                ->where("id_modelo_proveedor", $existe_publicacion->id_proveedor)
-                                ->first();
+                        $producto_sku = $modelo->sku;
 
-                            if (!$existe_en_proveedor) {
-                                $pack->error = 0;
-                                $pack->venta_principal->seguimiento = "No existe relación entre productos de la publicación y codigos de proveedor, favor de crear la relación para poder continuar con el proceso.";
-                                $pack->venta_principal->fase = 1;
-                                $pack->venta_principal->error = 1;
+                        $existencia = InventarioService::existenciaProducto($producto_sku, $pack->venta_principal->almacen);
 
-                                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . "-" . $publicacion_id . ".log", date("H:i:s") . " Error: No existe relación entre productos de la publicación y codigos de proveedor de la venta " . $venta->id . " " . PHP_EOL, FILE_APPEND);
+                        if ($existencia->error) {
+                            $pack->error = 0;
+                            $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto {$producto_sku} en la venta {$venta->id}, mensaje: {$existencia->mensaje}";
+                            $pack->venta_principal->fase = 1;
+                            $pack->venta_principal->error = 1;
 
-                                unset($pack->ventas);
+                            self::log_meli_error("Error al buscar existencia del producto {$producto_sku} en venta {$venta->id}: {$existencia->mensaje}", $publicacion_id);
+                            unset($pack->ventas);
+                            continue 3;
+                        }
 
-                                continue 3;
-                            }
+                        if ((int)$existencia->existencia < (int)$producto->cantidad) {
+                            $pack->error = 0;
+                            $pack->venta_principal->seguimiento = "No hay suficiente existencia para venta {$venta->id} en almacén {$pack->venta_principal->almacen} del producto {$producto_sku}.";
+                            $pack->venta_principal->fase = 1;
+                            $pack->venta_principal->error = 1;
+
+                            self::log_meli_error("Sin existencia suficiente para venta {$venta->id} en almacén {$pack->venta_principal->almacen}, producto: {$producto_sku}", $publicacion_id);
+                            unset($pack->ventas);
+                            continue 3;
                         }
                     }
 
                     $pack->venta_principal->productos = array_merge($pack->venta_principal->productos, $productos_publicacion);
-                    $pack->venta_principal->fase = property_exists($venta->shipping, 'logistic_type') ? ($venta->shipping->logistic_type == 'fulfillment' ? 6 : 3) : 1;
+                    $pack->venta_principal->fase = property_exists($venta->shipping, 'logistic_type')
+                        ? ($venta->shipping->logistic_type === 'fulfillment' ? 6 : 3)
+                        : 1;
 
-                    if ($pack->venta_principal->almacen == 34) {
-                        $pack->venta_principal->fase = 1;
-                        $pack->venta_principal->error = 1;
-                    }
                 }
-
                 unset($pack->ventas);
             }
         }
 
-        # Importar el paquete de ventas que no dió error en las validaciones
         foreach ($packs as $pack) {
             $pack->documento = 'N/A';
 
@@ -802,72 +773,137 @@ class MercadolibreService
             $pack->documento = $response_venta->documento;
         }
 
-        return [$packs, $url];
+        return [$packs, $sellerEndpoint];
     }
 
-    public static function importarVenta($venta, $marketplace, $usuario)
+    public static function getMarketplaceData($marketplace_id)
+    {
+        $response = new stdClass();
+        $response->error = 0;
+
+        $marketplace_data = DB::table("marketplace_api")
+            ->where("id_marketplace_area", $marketplace_id)
+            ->first();
+
+        if (!$marketplace_data) {
+            $log = self::logVariableLocation();
+
+            $response->error = 1;
+            $response->mensaje = "No se encontró información de la publicación." . $log;
+
+            return $response;
+        }
+        $response->marketplace_data = $marketplace_data;
+
+        return $response;
+    }
+
+    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
+    {
+        $response = new stdClass();
+        $response->error = 1;
+
+        $marketplace = self::getMarketplaceData($marketplaceId);
+        if (!$marketplace) {
+            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
+            return $response;
+        }
+
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $endpoint = strtr($endpointTemplate, $placeholders);
+        $url = config("webservice.mercadolibre_enpoint") . $endpoint;
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+
+        $context = stream_context_create($options);
+
+        $raw = @file_get_contents($url, false, $context);
+
+        if ($raw === false) {
+            return response()->json(["error" => "No se pudo obtener información"], 500);
+        }
+
+        return response()->json(json_decode($raw, true));
+    }
+
+    public static function actualizarDelivered_com($existe_pack)
+    {
+        foreach ($existe_pack as $key) {
+            DB::table('documento')->where(['id' => $key->id])->update([
+                'id_fase' => 6
+            ]);
+        }
+    }
+
+    public static function actualizarRTS_com($existe_pack)
+    {
+        foreach ($existe_pack as $key) {
+            DB::table('documento')->where(['id' => $key->id])->update([
+                'id_fase' => 3,
+                'picking' => 0,
+                'picking_by' => 0
+            ]);
+        }
+    }
+
+    public static function actualizarDelivered_doc_o($venta)
+    {
+        DB::table('documento')->where('no_venta', $venta)
+            ->where('status', 1)
+            ->update([
+                'id_fase' => 6,
+            ]);
+    }
+
+    public static function actualizarRTS_doc_o($venta)
+    {
+        DB::table('documento')->where('no_venta', $venta)
+            ->where('status', 1)
+            ->update([
+                'id_fase' => 3,
+                'picking' => 0,
+                'picking_by' => 0
+            ]);
+    }
+
+    public static function importarVenta($venta, $marketplace, $usuario): stdClass
     {
         $response = new stdClass();
 
-        $existe_venta = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta->id . "' AND status = 1");
-        if ($venta->id == 2000009252429830) {
-            dump("Existe venta en crm");
-            dump($existe_venta);
-            dump(empty($existe_venta));
-        }
+        $ventaExistente = DB::table('documento')
+            ->select('id')
+            ->where('no_venta', $venta->id)
+            ->where('status', 1)
+            ->first();
 
-        if (!empty($existe_venta)) {
+        if ($ventaExistente) {
+            $documentoId = $ventaExistente->id;
 
             if ($venta->is_delivered) {
-
                 self::actualizarDelivered_doc($venta->id);
-                $response->error = 1;
-                $response->mensaje = "Venta " . $venta->id . " actualizada correctamente a delivered";
-                $response->documento = $existe_venta[0]->id;
-                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya ha sido importado anteriormente, se detectó cambio a delivered, pedido: " . $existe_venta[0]->id . "" . PHP_EOL, FILE_APPEND);
-
-                return $response;
+                return self::logResponse(1, "Venta {$venta->id} actualizada a delivered", $documentoId);
             }
+
             if ($venta->is_ready_to_ship) {
                 self::actualizarRTS_doc($venta->id);
-                $response->error = 1;
-                $response->mensaje = "Venta " . $venta->id . " actualizada correctamente";
-                $response->documento = $existe_venta[0]->id;
-                file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya ha sido importado anteriormente, se detectó cambio a ready to ship, pedido: " . $existe_venta[0]->id . "" . PHP_EOL, FILE_APPEND);
-
-                return $response;
+                return self::logResponse(1, "Venta {$venta->id} actualizada a ready to ship", $documentoId);
             }
 
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "La venta " . $venta->id . " ya existe en el sistema, pedido: " . $existe_venta[0]->id . "" . $log;
-
-            file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " ya existe en el sistema, pedido: " . $existe_venta[0]->id . "" . PHP_EOL, FILE_APPEND);
-
-            return $response;
+            return self::logResponse(1, "Venta {$venta->id} ya existe en el sistema", $documentoId);
         }
 
-        if ($venta->status == "cancelled") {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "La venta " . $venta->id . " se encuentra cancelada o es invalida según los sistemas de mercadolibre, favor de verificar" . $log;
-
-            file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " Error: La venta " . $venta->id . " se encuentra cancelada o es invalida según los sistemas de mercadolibre, favor de verificar" . PHP_EOL, FILE_APPEND);
-
-            return $response;
+        if ($venta->status === "cancelled") {
+            return self::logResponse(1, "Venta {$venta->id} está cancelada o inválida");
         }
 
         if (empty($venta->shipping)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "No se encontro informacion del envío de la venta " . $venta->id . "" . $log;
-
-            file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " Error: No se encontro informacion del envío de la venta " . $venta->id . "" . PHP_EOL, FILE_APPEND);
-
-            return $response;
+            return self::logResponse(1, "Venta {$venta->id} no tiene información de envío");
         }
 
         if (empty($venta->productos)) {
@@ -877,37 +913,16 @@ class MercadolibreService
         $fulfillment = 0;
         $marketplace_fee = 0;
         $marketplace_coupon = 0;
-        $id_paqueteria = 1;
 
         if (property_exists($venta->shipping, 'logistic_type')) {
             if ($venta->shipping->logistic_type == 'fulfillment') {
                 $id_paqueteria = 9;
                 $fulfillment = 1;
             } else {
-                $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1");
-
-                foreach ($paqueterias as $paqueteria) {
-                    if ($venta->shipping->tracking_method == 'Express' && $paqueteria->id == 2) {
-                        $id_paqueteria = 2;
-                    } else {
-                        if ($paqueteria->paqueteria == explode(" ", $venta->shipping->tracking_method)[0]) {
-                            $id_paqueteria = $paqueteria->id;
-                        }
-                    }
-                }
+                $id_paqueteria = self::determinarPaqueteria($venta);
             }
         } else {
-            $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1");
-
-            foreach ($paqueterias as $paqueteria) {
-                if ($venta->shipping->tracking_method == 'Express' && $paqueteria->id == 2) {
-                    $id_paqueteria = 2;
-                } else {
-                    if ($paqueteria->paqueteria == explode(" ", $venta->shipping->tracking_method)[0]) {
-                        $id_paqueteria = $paqueteria->id;
-                    }
-                }
-            }
+            $id_paqueteria = self::determinarPaqueteria($venta);
         }
 
         if ($id_paqueteria == 19) {
@@ -919,16 +934,12 @@ class MercadolibreService
             $venta->fase = 6;
         }
 
-        foreach ($venta->payments as $payment) {
-            $marketplace_fee_pago = property_exists($payment, 'marketplace_fee') ? $payment->marketplace_fee : 0;
-            $total_ml = $payment->transaction_amount - $payment->shipping_cost - $marketplace_fee_pago + $payment->coupon_amount;
-
-            $referencia = $payment->id;
-
-            if ($payment->status == "approved") {
-                $marketplace_fee += (float)$marketplace_fee_pago;
-                $marketplace_coupon += (float)$payment->coupon_amount;
+        foreach ($venta->payments ?? [] as $payment) {
+            if ($payment->status === "approved") {
+                $marketplace_fee += (float)($payment->marketplace_fee ?? 0);
+                $marketplace_coupon += (float)($payment->coupon_amount ?? 0);
             }
+            $referencia = $payment->id ?? null;
         }
 
         $entidad = DB::table('documento_entidad')->insertGetId([
@@ -939,138 +950,64 @@ class MercadolibreService
             'correo' => "0"
         ]);
 
-        $documento = DB::table('documento')->insertGetId([
+        $documentoId = DB::table('documento')->insertGetId([
             'id_cfdi' => 3,
             'id_almacen_principal_empresa' => $venta->almacen,
             'id_marketplace_area' => $marketplace,
             'id_usuario' => $usuario,
             'id_paqueteria' => $id_paqueteria,
-            'id_fase' => $venta->is_buffered ? 7 : ($venta->is_creating_route ? 1 : ($venta->is_manufacturing ? 1 : (property_exists($venta, 'fase') ? $venta->fase : 1))),
+            'id_fase' => self::faseDocumento($venta),
             'id_modelo_proveedor' => $venta->proveedor,
             'no_venta' => $venta->id,
-            'referencia' => $referencia,
-            'observacion' => $venta->buyer->nickname,
+            'referencia' => $referencia ?? '',
+            'observacion' => $venta->buyer->nickname ?? '',
             'info_extra' => json_encode($venta->shipping),
             'shipping_null' => $venta->shipping_null ?? 0,
             'fulfillment' => $fulfillment,
-            'comentario' => property_exists($venta, 'pack') ? $venta->pack : "",
-            'mkt_publicacion' => property_exists($venta, 'publicacion') ? $venta->publicacion : "N/A",
-            'mkt_total' => $venta->total_amount,
-            'mkt_fee' => property_exists($venta, "total_fee") ? $venta->total_fee : $marketplace_fee,
+            'comentario' => $venta->pack ?? '',
+            'mkt_publicacion' => $venta->publicacion ?? 'N/A',
+            'mkt_total' => $venta->total_amount ?? 0,
+            'mkt_fee' => $venta->total_fee ?? $marketplace_fee,
             'mkt_coupon' => $marketplace_coupon,
-            'mkt_shipping_total' => property_exists($venta, "total_envio") ? $venta->total_envio : ((property_exists($venta->shipping, 'cost') ? ($venta->shipping->cost ? $venta->shipping->cost : 0) : $venta->shipping->base_cost) ? $venta->shipping->base_cost : 0),
+            'mkt_shipping_total' => $venta->total_envio ?? ($venta->shipping->cost ?? $venta->shipping->base_cost ?? 0),
             'mkt_created_at' => $venta->date_created,
             'started_at' => date('Y-m-d H:i:s'),
         ]);
 
         DB::table('seguimiento')->insert([
-            'id_documento' => $documento,
+            'id_documento' => $documentoId,
             'id_usuario' => $usuario,
             'seguimiento' => "<h2>PEDIDO IMPORTADO AUTOMATICAMENTE</h2>"
         ]);
 
         if (property_exists($venta, 'seguimiento')) {
             DB::table('seguimiento')->insert([
-                'id_documento' => $documento,
+                'id_documento' => $documentoId,
                 'id_usuario' => $usuario,
                 'seguimiento' => $venta->seguimiento
             ]);
         }
 
-        if ($venta->is_buffered) {
+        if ($venta->is_buffered || $venta->is_creating_route || $venta->is_manufacturing) {
             DB::table('seguimiento')->insert([
-                'id_documento' => $documento,
+                'id_documento' => $documentoId,
                 'id_usuario' => $usuario,
-                'seguimiento' => "<p>Se manda a fase de pedido por falta de guía. Estará disponible los próximos días, consulte el marketplace</p>"
-            ]);
-        }
-
-        if ($venta->is_manufacturing) {
-            DB::table('seguimiento')->insert([
-                'id_documento' => $documento,
-                'id_usuario' => $usuario,
-                'seguimiento' => "<p>Se manda a fase de pedido por falta de producto. Notificar a Mercadolibre</p>"
-            ]);
-        }
-
-        if ($venta->is_creating_route) {
-            DB::table('seguimiento')->insert([
-                'id_documento' => $documento,
-                'id_usuario' => $usuario,
-                'seguimiento' => "<p>Se manda a fase de pedido por falta de guía. consulte el marketplace</p>"
+                'seguimiento' => "<p>Se manda a fase de pedido por falta de guía o producto. Verifique en el marketplace</p>"
             ]);
         }
 
         DB::table('documento_entidad_re')->insert([
             'id_entidad' => $entidad,
-            'id_documento' => $documento
+            'id_documento' => $documentoId
         ]);
 
-        try {
-            $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
-
-            if ($direccion->code == 200) {
-                $estado = $direccion->estado[0]->estado;
-                $ciudad = $direccion->municipio[0]->municipio;
-                $colonia = "";
-                $id_direccion_pro = "";
-
-                foreach ($direccion->colonia as $colonia_text) {
-                    if (strtolower($colonia_text->colonia) == strtolower($venta->shipping->receiver_address->neighborhood->name)) {
-                        $colonia = $colonia_text->colonia;
-                        $id_direccion_pro = $colonia_text->codigo;
-                    }
-                }
-            } else {
-                $estado = $venta->shipping->receiver_address->state->name;
-                $ciudad = $venta->shipping->receiver_address->city->name;
-                $colonia = $venta->shipping->receiver_address->neighborhood->name;
-                $id_direccion_pro = "";
-            }
-        } catch (Exception $e) {
-            $estado = $venta->shipping->receiver_address->state->name;
-            $ciudad = $venta->shipping->receiver_address->city->name;
-            $colonia = $venta->shipping->receiver_address->neighborhood->name;
-            $id_direccion_pro = "";
-        }
-
-        DB::table('documento_direccion')->insert([
-            'id_documento' => $documento,
-            'id_direccion_pro' => $id_direccion_pro,
-            'contacto' => mb_strtoupper($venta->shipping->receiver_address->receiver_name, 'UTF-8'),
-            'calle' => mb_strtoupper($venta->shipping->receiver_address->street_name, 'UTF-8'),
-            'numero' => mb_strtoupper($venta->shipping->receiver_address->street_number, 'UTF-8'),
-            'numero_int' => mb_strtoupper('', 'UTF-8'),
-            'colonia' => $colonia,
-            'ciudad' => $ciudad,
-            'estado' => $estado,
-            'codigo_postal' => mb_strtoupper($venta->shipping->receiver_address->zip_code, 'UTF-8'),
-            'referencia' => mb_strtoupper($venta->shipping->receiver_address->comment, 'UTF-8'),
-        ]);
+        self::insertarDireccion($documentoId, $venta);
+        $productosAgrupados = self::agruparProductos($venta->productos ?? []);
 
         $total_pago = 0;
-
-        $productos_documento = array();
-
-        foreach ($venta->productos as $producto) {
-            $existe_en_arreglo = false;
-
-            foreach ($productos_documento as $producto_documento) {
-                if ($producto_documento->id_modelo == $producto->id_modelo) {
-                    $existe_en_arreglo = true;
-
-                    $producto_documento->cantidad += $producto->cantidad;
-
-                    break;
-                }
-            }
-
-            if (!$existe_en_arreglo) array_push($productos_documento, $producto);
-        }
-
-        foreach ($productos_documento as $producto) {
-            $movimiento = DB::table('movimiento')->insertGetId([
-                'id_documento' => $documento,
+        foreach ($productosAgrupados as $producto) {
+            DB::table('movimiento')->insert([
+                'id_documento' => $documentoId,
                 'id_modelo' => $producto->id_modelo,
                 'cantidad' => $producto->cantidad,
                 'precio' => $producto->precio / 1.16,
@@ -1078,7 +1015,6 @@ class MercadolibreService
                 'modificacion' => '',
                 'regalo' => $producto->regalo
             ]);
-
             $total_pago += $producto->cantidad * $producto->precio;
         }
 
@@ -1105,205 +1041,143 @@ class MercadolibreService
         ]);
 
         DB::table('documento_pago_re')->insert([
-            'id_documento' => $documento,
+            'id_documento' => $documentoId,
             'id_pago' => $pago
         ]);
 
-        if (property_exists($venta, 'proveedor')) {
-            if ($venta->proveedor != 0) {
-                # Logica para crear la venta en la API del proveedor
-                $tiene_archivos = DB::table("documento_archivo")
-                    ->where("id_documento", $documento)
-                    ->get()
-                    ->toArray();
-
-                /* La venta no tiene achivos de embarque */
-                if (empty($tiene_archivos)) {
-                    $marketplace_data = DB::select("SELECT
-                                                        marketplace_area.id,
-                                                        marketplace_api.app_id,
-                                                        marketplace_api.secret,
-                                                        marketplace_api.extra_2,
-                                                        marketplace.marketplace
-                                                    FROM marketplace_area
-                                                    INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                                    WHERE marketplace_area.id = " . $marketplace . "")[0];
-
-                    $guia = self::documento($venta->id, $marketplace_data, 0 /* tipo 0 es para devuelva el archivo en zpl */);
-
-                    if ($guia->error) {
-                        $venta->error = 1;
-
-                        DB::table('documento')->where(['id' => $documento])->update([
-                            'id_fase' => 1
-                        ]);
-
-                        DB::table('seguimiento')->insert([
-                            'id_documento' => $documento,
-                            'id_usuario' => 1,
-                            'seguimiento' => "<p>No fue posible descargar las guías de embarque para solicitar la orden de compra al proveedor B2B, mensaje de error: " . $guia->mensaje . "</p>"
-                        ]);
-                    } else {
-                        $extension = $guia->pdf ? ".pdf" : ".zpl";
-                        $nombre = "etiqueta_" . trim($venta->id) . $extension;
-
-                        $dropboxService = new DropboxService();
-                        $response = $dropboxService->uploadFile('/' . $nombre, base64_decode($guia->file), false);
-
-                        DB::table('documento_archivo')->insert([
-                            'id_documento' => $documento,
-                            'id_usuario' => 1,
-                            'nombre' => $nombre,
-                            'dropbox' => $response['id'],
-                            'tipo' => 2
-                        ]);
-
-
-                        switch ($venta->proveedor) {
-                            case '4':
-                                $crear_pedido_btob = ExelDelNorteService::crearPedido($documento);
-                                break;
-
-                            case '5':
-                                $crear_pedido_btob = CTService::crearPedido($documento);
-                                break;
-
-                            default:
-                                $log = self::logVariableLocation();
-                                $crear_pedido_btob = new stdClass();
-
-                                $crear_pedido_btob->error = 1;
-                                $crear_pedido_btob->mensaje = "El proveedor no ha sido configurado " . $log;
-
-                                break;
-                        }
-
-                        if ($crear_pedido_btob->error) {
-                            $venta->error = 1;
-
-                            DB::table('documento')->where(['id' => $documento])->update([
-                                'id_fase' => 1
-                            ]);
-
-                            DB::table('seguimiento')->insert([
-                                'id_documento' => $documento,
-                                'id_usuario' => 1,
-                                'seguimiento' => "<p>No fue posible crear la venta en el sistema del proveedor B2B, mensaje de error: " . $crear_pedido_btob->mensaje . "</p>"
-                            ]);
-                        }
-
-                        /* Crear documento de compra */
-                        $documento_data = DB::table("documento")->find($documento);
-
-                        $entidad_documento = DB::table("documento_entidad_re")
-                            ->join("documento_entidad", "documento_entidad_re.id_entidad", "=", "documento_entidad.id")
-                            ->select("documento_entidad.*")
-                            ->where("documento_entidad_re.id_documento", $documento_data->id)
-                            ->first();
-
-                        $documento_compra = DB::table('documento')->insertGetId([
-                            'id_tipo' => 1,
-                            'id_almacen_principal_empresa' => $documento_data->id_almacen_principal_empresa,
-                            'id_periodo' => $documento_data->id_periodo,
-                            'id_cfdi' => $documento_data->id_cfdi,
-                            'id_marketplace_area' => $documento_data->id_marketplace_area,
-                            'id_usuario' => $auth->id,
-                            'id_moneda' => $documento_data->id_moneda,
-                            'id_paqueteria' => $documento_data->id_paqueteria,
-                            'id_fase' => 94,
-                            'id_modelo_proveedor' => $documento_data->id_modelo_proveedor,
-                            'factura_serie' => "N/A", # Se insertará cuando contabilidad agregue el XML de la compra
-                            'factura_folio' => "N/A",
-                            'tipo_cambio' => $documento_data->tipo_cambio,
-                            'referencia' => "Compra creada a partir de la venta con el ID " . $documento_data->id,
-                            'observacion' => "N/A",
-                            'info_extra' => 'N/A',
-                            'comentario' => "03",
-                            'pedimento' => "N/A",
-                            'uuid' => "N/A",
-                            'expired_at' => date("Y-m-d H:i:s")
-                        ]);
-
-                        # Existe entidad como proveedor
-                        $proveedor_btob = DB::table("modelo_proveedor")->find($documento_data->id_modelo_proveedor);
-
-                        $existe_entidad = DB::table("documento_entidad")
-                            ->where("rfc", $proveedor_btob->rfc)
-                            ->where("tipo", [2, 3])
-                            ->first();
-
-                        if (empty($existe_entidad)) {
-                            $entidad_id = DB::table('documento_entidad')->insertGetId([
-                                'id_erp' => 0,
-                                'tipo' => 2,
-                                'razon_social' => $proveedor_btob->razon_social,
-                                'rfc' => $proveedor_btob->rfc,
-                                'telefono' => 'N/A',
-                                'correo' => $proveedor_btob->correo
-                            ]);
-                        } else {
-                            $entidad_id = $existe_entidad->id;
-                        }
-
-                        DB::table('documento_entidad_re')->insert([
-                            'id_documento' => $documento_compra,
-                            'id_entidad' => $entidad_id
-                        ]);
-
-                        $productos_data = DB::table("movimiento")
-                            ->where("id_documento", $documento_data->id)
-                            ->get()
-                            ->toArray();
-
-
-                        foreach ($productos_data as $producto) {
-                            DB::table('movimiento')->insert([
-                                'id_documento' => $documento_data->id,
-                                'id_modelo' => $producto->id_modelo,
-                                'cantidad' => $producto->cantidad,
-                                'precio' => $producto->precio,
-                                'garantia' => $producto->garantia,
-                                'modificacion' => $producto->modificacion,
-                                'comentario' => $producto->comentario,
-                                'regalo' => $producto->regalo
-                            ]);
-                        }
-                    }
-                }
-            }
-        }
-
         if ($venta->error) {
-            DB::table("documento")->where(["id" => $documento])->update([
-                "id_fase" => 1
-            ]);
-
+            DB::table("documento")->where("id", $documentoId)->update(["id_fase" => 1]);
             $venta->fase = 1;
         }
 
-        if ($venta->fase == 6 && $fulfillment) {
-            //Aqui ta
-            $factura = DocumentoService::crearFactura($documento, 0, 0);
-
-            if ($factura->error) {
-                DB::table('seguimiento')->insert([
-                    'id_documento' => $documento,
-                    'id_usuario' => $usuario,
-                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
-                ]);
-
-                DB::table('documento')->where(['id' => $documento])->update([
-                    'id_fase' => 5
-                ]);
-            }
-        }
+        DB::table('documento_entidad_re')->insert([
+            'id_entidad' => $entidad,
+            'id_documento' => $documentoId
+        ]);
 
         $response->error = 0;
-        $response->mensaje = "Venta " . $venta->id . " importada correctamente";
-        $response->documento = $documento;
+        $response->mensaje = "Venta {$venta->id} importada correctamente";
+        $response->documento = $documentoId;
 
         return $response;
+    }
+
+//        if ($venta->fase == 6 && $fulfillment) {
+    //Aqui ta
+//            $factura = DocumentoService::crearFactura($documento, 0, 0);
+
+//            if ($factura->error) {
+//                DB::table('seguimiento')->insert([
+//                    'id_documento' => $documento,
+//                    'id_usuario' => $usuario,
+//                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
+//                ]);
+//
+//                DB::table('documento')->where(['id' => $documento])->update([
+//                    'id_fase' => 5
+//                ]);
+//            }
+//        }
+
+    public static function actualizarDelivered_doc($venta)
+    {
+        DB::table('documento')->where('no_venta', $venta)
+            ->where('status', 1)
+            ->update([
+                'id_fase' => 6,
+            ]);
+    }
+
+    public static function actualizarRTS_doc($venta)
+    {
+        DB::table('documento')->where('no_venta', $venta)
+            ->where('status', 1)
+            ->update([
+                'id_fase' => 3,
+                'picking' => 0,
+                'picking_by' => 0
+            ]);
+    }
+
+    public static function documento($venta, $credenciales, $tipo = 1 /* 0 ZPL; 1 PDF */)
+    {
+        $response = new stdClass();
+
+        $ventaData = self::callMlApi($credenciales->id, "orders/{venta}", [
+            '{venta}' => rawurlencode($venta)
+        ]);
+
+        $informacion_venta = json_decode($ventaData->getContent());
+
+        if (empty($informacion_venta)) {
+            $response->error = 1;
+            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
+            return $response;
+        }
+
+        $tmp = tempnam('', 'me2');
+        rename($tmp, $tmp .= '.zip');
+        $file = fopen($tmp, 'r+');
+
+        $shipment_id = $informacion_venta->shipping->id ?? null;
+
+        if (!$shipment_id) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró ID de envío en la orden." . self::logVariableLocation();
+            return $response;
+        }
+
+        $url = config("webservice.mercadolibre_enpoint") .
+            "shipment_labels?shipment_ids=" . $shipment_id .
+            "&response_type=zpl2";
+
+        $zpl = @file_get_contents($url);
+
+        if (empty($zpl)) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró la etiqueta del envío, revisar si es SellCenter o cancelado." . self::logVariableLocation();
+            $response->raw = $url;
+            return $response;
+        }
+
+        fwrite($file, $zpl);
+
+        $zip = new ZipArchive;
+        $zip->open($tmp);
+
+        $file_data = base64_encode($tipo
+            ? file_get_contents(self::postLabelary($zip->getFromIndex(0), true))
+            : $zip->getFromIndex(0));
+
+        $response->error = 0;
+        $response->file = $file_data;
+        $response->pdf = $tipo;
+
+        return $response;
+    }
+
+    private static function postLabelary($path, $isFile)
+    {
+        $curl = curl_init();
+        /* Cambiar a PDF cuando vuelva a funcionar el servicio de Labelary */
+        curl_setopt($curl, CURLOPT_URL, "http://api.labelary.com/v1/printers/8dpmm/labels/4x8/");
+        curl_setopt($curl, CURLOPT_POST, true);
+
+        if ($isFile) {
+            curl_setopt($curl, CURLOPT_POSTFIELDS, $path);
+        } else {
+            curl_setopt($curl, CURLOPT_POSTFIELDS, substr(file_get_contents($path), 0, 3) . "^CI28" . substr(file_get_contents($path), 3, strlen(file_get_contents($path))));
+        }
+
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_HTTPHEADER, array("Accept: application/pdf"));
+
+        $pdf = tempnam('', 'zpl');
+        rename($pdf, $pdf .= '.pdf');
+        $file = fopen($pdf, 'r+');
+        fwrite($file, curl_exec($curl));
+
+        return $pdf;
     }
 
     public static function validarPendingBuffered($documento)
@@ -1690,123 +1564,6 @@ class MercadolibreService
         }
 
         return $pack;
-    }
-
-    public static function actualizarRTS_com($existe_pack)
-    {
-        foreach ($existe_pack as $key) {
-            DB::table('documento')->where(['id' => $key->id])->update([
-                'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
-            ]);
-        }
-    }
-
-    public static function actualizarRTS_doc_o($venta)
-    {
-        DB::table('documento')->where('no_venta', $venta)
-            ->where('status', 1)
-            ->update([
-                'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
-            ]);
-    }
-
-    public static function actualizarRTS_doc($venta)
-    {
-        DB::table('documento')->where('no_venta', $venta)
-            ->where('status', 1)
-            ->update([
-                'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
-            ]);
-    }
-
-    public static function actualizarDelivered_com($existe_pack)
-    {
-        foreach ($existe_pack as $key) {
-            DB::table('documento')->where(['id' => $key->id])->update([
-                'id_fase' => 6
-            ]);
-        }
-    }
-
-    public static function actualizarDelivered_doc_o($venta)
-    {
-        DB::table('documento')->where('no_venta', $venta)
-            ->where('status', 1)
-            ->update([
-                'id_fase' => 6,
-            ]);
-    }
-
-    public static function actualizarDelivered_doc($venta)
-    {
-        DB::table('documento')->where('no_venta', $venta)
-            ->where('status', 1)
-            ->update([
-                'id_fase' => 6,
-            ]);
-    }
-
-    public static function documento($venta, $credenciales, $tipo = 1 /* 0 ZPL; 1 PDF */)
-    {
-        $response = new stdClass();
-
-        $ventaData = self::callMlApi($credenciales->id, "orders/{venta}", [
-            '{venta}' => rawurlencode($venta)
-        ]);
-
-        $informacion_venta = json_decode($ventaData->getContent());
-
-        if (empty($informacion_venta)) {
-            $response->error = 1;
-            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
-            return $response;
-        }
-
-        $tmp = tempnam('', 'me2');
-        rename($tmp, $tmp .= '.zip');
-        $file = fopen($tmp, 'r+');
-
-        $shipment_id = $informacion_venta->shipping->id ?? null;
-
-        if (!$shipment_id) {
-            $response->error = 1;
-            $response->mensaje = "No se encontró ID de envío en la orden." . self::logVariableLocation();
-            return $response;
-        }
-
-        $url = config("webservice.mercadolibre_enpoint") .
-            "shipment_labels?shipment_ids=" . $shipment_id .
-            "&response_type=zpl2";
-
-        $zpl = @file_get_contents($url);
-
-        if (empty($zpl)) {
-            $response->error = 1;
-            $response->mensaje = "No se encontró la etiqueta del envío, revisar si es SellCenter o cancelado." . self::logVariableLocation();
-            $response->raw = $url;
-            return $response;
-        }
-
-        fwrite($file, $zpl);
-
-        $zip = new ZipArchive;
-        $zip->open($tmp);
-
-        $file_data = base64_encode($tipo
-            ? file_get_contents(self::postLabelary($zip->getFromIndex(0), true))
-            : $zip->getFromIndex(0));
-
-        $response->error = 0;
-        $response->file = $file_data;
-        $response->pdf = $tipo;
-
-        return $response;
     }
 
     public static function documentoZPL($venta, $credenciales)
@@ -2667,6 +2424,8 @@ class MercadolibreService
         return $response;
     }
 
+    // public static function enviarMensaje($marketplace, $venta, $mensaje)
+
     public static function buscarPublicacionCompetencia($publicacion)
     {
         $response = new stdClass();
@@ -3047,7 +2806,6 @@ class MercadolibreService
         return $response;
     }
 
-    // public static function enviarMensaje($marketplace, $venta, $mensaje)
     public static function enviarMensaje($marketplace, $venta)
     {
         set_time_limit(0);
@@ -3288,78 +3046,6 @@ class MercadolibreService
 
             return $response;
         }
-    }
-
-    private static function postLabelary($path, $isFile)
-    {
-        $curl = curl_init();
-        /* Cambiar a PDF cuando vuelva a funcionar el servicio de Labelary */
-        curl_setopt($curl, CURLOPT_URL, "http://api.labelary.com/v1/printers/8dpmm/labels/4x8/");
-        curl_setopt($curl, CURLOPT_POST, true);
-
-        if ($isFile) {
-            curl_setopt($curl, CURLOPT_POSTFIELDS, $path);
-        } else {
-            curl_setopt($curl, CURLOPT_POSTFIELDS, substr(file_get_contents($path), 0, 3) . "^CI28" . substr(file_get_contents($path), 3, strlen(file_get_contents($path))));
-        }
-
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_HTTPHEADER, array("Accept: application/pdf"));
-
-        $pdf = tempnam('', 'zpl');
-        rename($pdf, $pdf .= '.pdf');
-        $file = fopen($pdf, 'r+');
-        fwrite($file, curl_exec($curl));
-
-        return $pdf;
-    }
-
-    public static function seller($pseudonimo, $token)
-    {
-        $url = config("webservice.mercadolibre_enpoint") . "users/me";
-
-        $options = [
-            "http" => [
-                "header" => "Authorization: Bearer " . $token
-            ]
-        ];
-
-        $context = stream_context_create($options);
-
-        $response = @file_get_contents($url, false, $context);
-
-        if ($response === false) {
-            return response()->json(["error" => "No se pudo obtener información del usuario"], 500);
-        }
-
-        return @json_decode($response, false);
-
-    }
-
-    public static function token($app_id, $secret_key)
-    {
-        $existe = DB::select("SELECT token FROM marketplace_api WHERE app_id = '" . $app_id . "' AND secret = '" . $secret_key . "' AND '" . date("Y-m-d H:i:s") . "' >= token_created_at AND '" . date("Y-m-d H:i:s") . "' <= token_expired_at AND token != 'N/A'");
-
-        if (empty($existe)) {
-            try {
-                $decoded_secret_key = Crypt::decrypt($secret_key);
-            } catch (DecryptException $e) {
-                $decoded_secret_key = "";
-            }
-
-            $mp = new MP($app_id, $decoded_secret_key);
-            $access_token = $mp->get_access_token();
-
-            DB::table("marketplace_api")->where(["app_id" => $app_id, "secret" => $secret_key])->update([
-                "token" => $access_token,
-                "token_created_at" => date("Y-m-d H:i:s"),
-                "token_expired_at" => date("Y-m-d H:i:s", strtotime("+6 hours"))
-            ]);
-
-            return $access_token;
-        }
-
-        return $existe[0]->token;
     }
 
     public static function checarEstado($documento, $tipo, $marketplace_id)
@@ -3641,62 +3327,6 @@ class MercadolibreService
 
     }
 
-    public static function getMarketplaceData($marketplace_id)
-    {
-        $response = new stdClass();
-        $response->error = 0;
-
-        $marketplace_data = DB::table("marketplace_api")
-            ->where("id_marketplace_area", $marketplace_id)
-            ->first();
-
-        if (!$marketplace_data) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "No se encontró información de la publicación." . $log;
-
-            return $response;
-        }
-        $response->marketplace_data = $marketplace_data;
-
-        return $response;
-    }
-
-    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
-    {
-        $response = new stdClass();
-        $response->error = 1;
-
-        $marketplace = self::getMarketplaceData($marketplaceId);
-        if (!$marketplace) {
-            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
-            return $response;
-        }
-
-        $marketplaceData = $marketplace->marketplace_data;
-        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
-
-        $endpoint = strtr($endpointTemplate, $placeholders);
-        $url = config("webservice.mercadolibre_enpoint") . $endpoint;
-
-        $options = [
-            "http" => [
-                "header" => "Authorization: Bearer " . $token
-            ]
-        ];
-
-        $context = stream_context_create($options);
-
-        $raw = @file_get_contents($url, false, $context);
-
-        if ($raw === false) {
-            return response()->json(["error" => "No se pudo obtener información"], 500);
-        }
-
-        return response()->json(json_decode($raw, true));
-    }
-
     public static function api_listingTypes($data)
     {
         return self::callMlApi(
@@ -3758,13 +3388,107 @@ class MercadolibreService
         );
     }
 
-    public static function logVariableLocation(): string
+    public static function log_meli_error(string $mensaje, string $publicacion_id)
     {
-        // $log = self::logVariableLocation();
-        $sis = 'BE'; //Front o Back
-        $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'BRE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
+        $ruta = "logs/mercadolibre/" . date("Y.m.d") . "-{$publicacion_id}.log";
+        file_put_contents($ruta, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
     }
+
+    private static function logResponse($error, $mensaje, $documento = 'N/A'): stdClass
+    {
+        $response = new stdClass();
+        $response->error = $error;
+        $response->mensaje = $mensaje;
+        $response->documento = $documento;
+
+        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " $mensaje, pedido: $documento" . PHP_EOL, FILE_APPEND);
+        return $response;
+    }
+
+    private static function determinarPaqueteria($venta)
+    {
+        $paqueterias = DB::table('paqueteria')
+            ->select('id', 'paqueteria')
+            ->where('status', 1)
+            ->get();
+
+        $tracking = $venta->shipping->tracking_method ?? '';
+
+        foreach ($paqueterias as $paq) {
+            if ($tracking === 'Express' && $paq->id == 2) return 2;
+            if (explode(" ", $tracking)[0] === $paq->paqueteria) return $paq->id;
+        }
+
+        return 1;
+    }
+
+    private static function faseDocumento($venta): int
+    {
+        return $venta->is_buffered || $venta->is_creating_route || $venta->is_manufacturing ? 1 : ($venta->fase ?? 1);
+    }
+
+    public static function insertarDireccion($documentoId, $venta)
+    {
+        try {
+            $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
+
+            if ($direccion->code == 200) {
+                $estado = $direccion->estado[0]->estado;
+                $ciudad = $direccion->municipio[0]->municipio;
+                $colonia = "";
+                $id_direccion_pro = "";
+
+                foreach ($direccion->colonia as $colonia_text) {
+                    if (strtolower($colonia_text->colonia) == strtolower($venta->shipping->receiver_address->neighborhood->name)) {
+                        $colonia = $colonia_text->colonia;
+                        $id_direccion_pro = $colonia_text->codigo;
+                        break;
+                    }
+                }
+            } else {
+                $estado = $venta->shipping->receiver_address->state->name ?? '';
+                $ciudad = $venta->shipping->receiver_address->city->name ?? '';
+                $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
+                $id_direccion_pro = "";
+            }
+        } catch (Exception $e) {
+            $estado = $venta->shipping->receiver_address->state->name ?? '';
+            $ciudad = $venta->shipping->receiver_address->city->name ?? '';
+            $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
+            $id_direccion_pro = "";
+        }
+
+        DB::table('documento_direccion')->insert([
+            'id_documento' => $documentoId,
+            'id_direccion_pro' => $id_direccion_pro,
+            'contacto' => mb_strtoupper($venta->shipping->receiver_address->receiver_name ?? '', 'UTF-8'),
+            'calle' => mb_strtoupper($venta->shipping->receiver_address->street_name ?? '', 'UTF-8'),
+            'numero' => mb_strtoupper($venta->shipping->receiver_address->street_number ?? '', 'UTF-8'),
+            'numero_int' => '',
+            'colonia' => $colonia,
+            'ciudad' => $ciudad,
+            'estado' => $estado,
+            'codigo_postal' => mb_strtoupper($venta->shipping->receiver_address->zip_code ?? '', 'UTF-8'),
+            'referencia' => mb_strtoupper($venta->shipping->receiver_address->comment ?? '', 'UTF-8'),
+        ]);
+    }
+
+    public static function agruparProductos(array $productos): array
+    {
+        $agrupados = [];
+
+        foreach ($productos as $producto) {
+            $id = $producto->id_modelo;
+
+            if (!isset($agrupados[$id])) {
+                $agrupados[$id] = clone $producto;
+            } else {
+                $agrupados[$id]->cantidad += $producto->cantidad;
+            }
+        }
+
+        return array_values($agrupados);
+    }
+
+
 }

@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\MercadolibreService;
-use DB;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -135,16 +135,15 @@ class MercadolibreController extends Controller{
         }
 
         $data = json_decode($request->input("data"));
+        $cuenta = DB::table('marketplace_api')
+            ->join('marketplace_area', 'marketplace_api.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->select('marketplace_api.id_marketplace_area')
+            ->where('marketplace_api.id', $data->marketplace)
+            ->where('marketplace.marketplace', 'MERCADOLIBRE')
+            ->first();
 
-        $cuenta = DB::select("SELECT
-                                    id_marketplace_area
-                                FROM marketplace_api
-                                INNER JOIN marketplace_area ON marketplace_api.id_marketplace_area = marketplace_area.id
-                                INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                WHERE marketplace_api.extra_2 = '" . str_replace("%20", " ", $data->marketplace) . "'
-                                AND marketplace.marketplace = 'MERCADOLIBRE'");
-		
-		if(empty($cuenta)){
+        if (empty($cuenta)) {
             return response()->json([
                 'code'  => 500,
                 'message' => "Pseudonimo no encontrado."
@@ -153,8 +152,8 @@ class MercadolibreController extends Controller{
 
         flock($fp, LOCK_UN);
         fclose($fp);
-        
-        return MercadolibreService::importarVentas($cuenta[0]->id_marketplace_area, $data->publicacion, $data->fecha_inicial, $data->fecha_final);
+
+        return MercadolibreService::importarVentas($cuenta->id_marketplace_area, $data->publicacion, $data->fecha_inicial, $data->fecha_final, $data->dropOrFull);
     }
 
     public function rawinfo_ventas($pseudonimo){
