@@ -394,7 +394,10 @@ class MercadolibreService
     public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = "Y-m-01\T00:00:00.000\Z", $fecha_final = "Y-m-d\T00:00:00.000\Z", $dropOrFull = false)
     {
         set_time_limit(0);
-
+        if (!file_exists("logs")) {
+            mkdir("logs", 777);
+            mkdir("logs/mercadolibre", 777);
+        }
         $response = new stdClass();
 
         $marketplace_info = self::getMarketplaceData($marketplace_id);
@@ -418,10 +421,6 @@ class MercadolibreService
             return $response;
         }
 
-        if (!file_exists("logs")) {
-            mkdir("logs", 777);
-            mkdir("logs/mercadolibre", 777);
-        }
 
         $fecha_inicial = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_inicial . "-1 day"));
         $fecha_final = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_final . "+1 day"));
@@ -570,12 +569,11 @@ class MercadolibreService
                 if (!empty($venta->mediations)) {
                     foreach ($venta->mediations as $mediation) {
 
-                        $mediationData = self::callMlApi($marketplaceData->id, "v1/claims/{mediation_id}", [
+                        $mediationData = self::callMlApi($marketplaceData->id, "post-purchase/v1/claims/{mediation_id}", [
                             '{mediation_id}' => $mediation->id
                         ]);
 
                         $informacion_mediacion = @json_decode($mediationData->getContent());
-
                         if ($informacion_mediacion && !in_array($informacion_mediacion->status, ['claim_closed', 'dispute_closed'])) {
                             $pack->error = 1;
                             $pack->mensaje = "La venta {$venta->id} contiene un reclamo en la plataforma de Mercadolibre.";
@@ -622,7 +620,15 @@ class MercadolibreService
                     continue 2;
                 }
 
-                if ($venta->shipping->status === "pending") {
+                if (property_exists($venta->shipping, 'error')) {
+                    $pack->error = 1;
+                    $pack->mensaje = "No se encontró información del envío en la venta {$venta->id}";
+                    self::log_meli_error("No se encontró información del envío en la venta {$venta->id}", $publicacion_id);
+                    unset($pack->ventas);
+                    continue 2;
+                }
+
+                if ($venta->shipping->status == "pending") {
                     $pack->venta_principal->fase = 1;
                 }
 
@@ -800,6 +806,7 @@ class MercadolibreService
 
     protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
     {
+        set_time_limit(0);
         $response = new stdClass();
         $response->error = 1;
 
@@ -834,22 +841,26 @@ class MercadolibreService
 
     public static function actualizarDelivered_com($existe_pack)
     {
-        foreach ($existe_pack as $key) {
-            DB::table('documento')->where(['id' => $key->id])->update([
-                'id_fase' => 6
-            ]);
-        }
+        DB::table('documento')->where(['id' => $existe_pack->id])->update([
+            'id_fase' => 6
+        ]);
+    }
+
+    public static function log_meli_error(string $mensaje, string $publicacion_id)
+    {
+        $ruta = "logs/mercadolibre/" . date("Y.m.d") . "-{$publicacion_id}.log";
+        file_put_contents($ruta, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
     }
 
     public static function actualizarRTS_com($existe_pack)
     {
-        foreach ($existe_pack as $key) {
-            DB::table('documento')->where(['id' => $key->id])->update([
-                'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
-            ]);
-        }
+
+        DB::table('documento')->where(['id' => $existe_pack->id])->update([
+            'id_fase' => 3,
+            'picking' => 0,
+            'picking_by' => 0
+        ]);
+
     }
 
     public static function actualizarDelivered_doc_o($venta)
@@ -872,8 +883,27 @@ class MercadolibreService
             ]);
     }
 
+//        if ($venta->fase == 6 && $fulfillment) {
+    //Aqui ta
+//            $factura = DocumentoService::crearFactura($documento, 0, 0);
+
+//            if ($factura->error) {
+//                DB::table('seguimiento')->insert([
+//                    'id_documento' => $documento,
+//                    'id_usuario' => $usuario,
+//                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
+//                ]);
+//
+//                DB::table('documento')->where(['id' => $documento])->update([
+//                    'id_fase' => 5
+//                ]);
+//            }
+//        }
+
     public static function importarVenta($venta, $marketplace, $usuario): stdClass
     {
+        set_time_limit(0);
+
         $response = new stdClass();
 
         $ventaExistente = DB::table('documento')
@@ -1062,23 +1092,6 @@ class MercadolibreService
         return $response;
     }
 
-//        if ($venta->fase == 6 && $fulfillment) {
-    //Aqui ta
-//            $factura = DocumentoService::crearFactura($documento, 0, 0);
-
-//            if ($factura->error) {
-//                DB::table('seguimiento')->insert([
-//                    'id_documento' => $documento,
-//                    'id_usuario' => $usuario,
-//                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
-//                ]);
-//
-//                DB::table('documento')->where(['id' => $documento])->update([
-//                    'id_fase' => 5
-//                ]);
-//            }
-//        }
-
     public static function actualizarDelivered_doc($venta)
     {
         DB::table('documento')->where('no_venta', $venta)
@@ -1086,6 +1099,17 @@ class MercadolibreService
             ->update([
                 'id_fase' => 6,
             ]);
+    }
+
+    private static function logResponse($error, $mensaje, $documento = 'N/A'): stdClass
+    {
+        $response = new stdClass();
+        $response->error = $error;
+        $response->mensaje = $mensaje;
+        $response->documento = $documento;
+
+        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " $mensaje, pedido: $documento" . PHP_EOL, FILE_APPEND);
+        return $response;
     }
 
     public static function actualizarRTS_doc($venta)
@@ -1097,6 +1121,91 @@ class MercadolibreService
                 'picking' => 0,
                 'picking_by' => 0
             ]);
+    }
+
+    private static function determinarPaqueteria($venta)
+    {
+        $paqueterias = DB::table('paqueteria')
+            ->select('id', 'paqueteria')
+            ->where('status', 1)
+            ->get();
+
+        $tracking = $venta->shipping->tracking_method ?? '';
+
+        foreach ($paqueterias as $paq) {
+            if ($tracking === 'Express' && $paq->id == 2) return 2;
+            if (explode(" ", $tracking)[0] === $paq->paqueteria) return $paq->id;
+        }
+
+        return 1;
+    }
+
+    private static function faseDocumento($venta): int
+    {
+        return $venta->is_buffered || $venta->is_creating_route || $venta->is_manufacturing ? 1 : ($venta->fase ?? 1);
+    }
+
+    public static function insertarDireccion($documentoId, $venta)
+    {
+        try {
+            $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
+
+            if ($direccion->code == 200) {
+                $estado = $direccion->estado[0]->estado;
+                $ciudad = $direccion->municipio[0]->municipio;
+                $colonia = "";
+                $id_direccion_pro = "";
+
+                foreach ($direccion->colonia as $colonia_text) {
+                    if (strtolower($colonia_text->colonia) == strtolower($venta->shipping->receiver_address->neighborhood->name)) {
+                        $colonia = $colonia_text->colonia;
+                        $id_direccion_pro = $colonia_text->codigo;
+                        break;
+                    }
+                }
+            } else {
+                $estado = $venta->shipping->receiver_address->state->name ?? '';
+                $ciudad = $venta->shipping->receiver_address->city->name ?? '';
+                $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
+                $id_direccion_pro = "";
+            }
+        } catch (Exception $e) {
+            $estado = $venta->shipping->receiver_address->state->name ?? '';
+            $ciudad = $venta->shipping->receiver_address->city->name ?? '';
+            $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
+            $id_direccion_pro = "";
+        }
+
+        DB::table('documento_direccion')->insert([
+            'id_documento' => $documentoId,
+            'id_direccion_pro' => $id_direccion_pro,
+            'contacto' => mb_strtoupper($venta->shipping->receiver_address->receiver_name ?? '', 'UTF-8'),
+            'calle' => mb_strtoupper($venta->shipping->receiver_address->street_name ?? '', 'UTF-8'),
+            'numero' => mb_strtoupper($venta->shipping->receiver_address->street_number ?? '', 'UTF-8'),
+            'numero_int' => '',
+            'colonia' => $colonia,
+            'ciudad' => $ciudad,
+            'estado' => $estado,
+            'codigo_postal' => mb_strtoupper($venta->shipping->receiver_address->zip_code ?? '', 'UTF-8'),
+            'referencia' => mb_strtoupper($venta->shipping->receiver_address->comment ?? '', 'UTF-8'),
+        ]);
+    }
+
+    public static function agruparProductos(array $productos): array
+    {
+        $agrupados = [];
+
+        foreach ($productos as $producto) {
+            $id = $producto->id_modelo;
+
+            if (!isset($agrupados[$id])) {
+                $agrupados[$id] = clone $producto;
+            } else {
+                $agrupados[$id]->cantidad += $producto->cantidad;
+            }
+        }
+
+        return array_values($agrupados);
     }
 
     public static function documento($venta, $credenciales, $tipo = 1 /* 0 ZPL; 1 PDF */)
@@ -1300,6 +1409,8 @@ class MercadolibreService
 
         return $response;
     }
+
+    // public static function enviarMensaje($marketplace, $venta, $mensaje)
 
     public static function validarVenta($documento)
     {
@@ -2424,8 +2535,6 @@ class MercadolibreService
         return $response;
     }
 
-    // public static function enviarMensaje($marketplace, $venta, $mensaje)
-
     public static function buscarPublicacionCompetencia($publicacion)
     {
         $response = new stdClass();
@@ -3386,108 +3495,6 @@ class MercadolibreService
             'items/{item_id}/description',
             ['{item_id}' => $data->item_id], 1
         );
-    }
-
-    public static function log_meli_error(string $mensaje, string $publicacion_id)
-    {
-        $ruta = "logs/mercadolibre/" . date("Y.m.d") . "-{$publicacion_id}.log";
-        file_put_contents($ruta, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
-    }
-
-    private static function logResponse($error, $mensaje, $documento = 'N/A'): stdClass
-    {
-        $response = new stdClass();
-        $response->error = $error;
-        $response->mensaje = $mensaje;
-        $response->documento = $documento;
-
-        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " $mensaje, pedido: $documento" . PHP_EOL, FILE_APPEND);
-        return $response;
-    }
-
-    private static function determinarPaqueteria($venta)
-    {
-        $paqueterias = DB::table('paqueteria')
-            ->select('id', 'paqueteria')
-            ->where('status', 1)
-            ->get();
-
-        $tracking = $venta->shipping->tracking_method ?? '';
-
-        foreach ($paqueterias as $paq) {
-            if ($tracking === 'Express' && $paq->id == 2) return 2;
-            if (explode(" ", $tracking)[0] === $paq->paqueteria) return $paq->id;
-        }
-
-        return 1;
-    }
-
-    private static function faseDocumento($venta): int
-    {
-        return $venta->is_buffered || $venta->is_creating_route || $venta->is_manufacturing ? 1 : ($venta->fase ?? 1);
-    }
-
-    public static function insertarDireccion($documentoId, $venta)
-    {
-        try {
-            $direccion = @json_decode(file_get_contents(config("webservice.url") . 'Consultas/CP/' . $venta->shipping->receiver_address->zip_code));
-
-            if ($direccion->code == 200) {
-                $estado = $direccion->estado[0]->estado;
-                $ciudad = $direccion->municipio[0]->municipio;
-                $colonia = "";
-                $id_direccion_pro = "";
-
-                foreach ($direccion->colonia as $colonia_text) {
-                    if (strtolower($colonia_text->colonia) == strtolower($venta->shipping->receiver_address->neighborhood->name)) {
-                        $colonia = $colonia_text->colonia;
-                        $id_direccion_pro = $colonia_text->codigo;
-                        break;
-                    }
-                }
-            } else {
-                $estado = $venta->shipping->receiver_address->state->name ?? '';
-                $ciudad = $venta->shipping->receiver_address->city->name ?? '';
-                $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
-                $id_direccion_pro = "";
-            }
-        } catch (Exception $e) {
-            $estado = $venta->shipping->receiver_address->state->name ?? '';
-            $ciudad = $venta->shipping->receiver_address->city->name ?? '';
-            $colonia = $venta->shipping->receiver_address->neighborhood->name ?? '';
-            $id_direccion_pro = "";
-        }
-
-        DB::table('documento_direccion')->insert([
-            'id_documento' => $documentoId,
-            'id_direccion_pro' => $id_direccion_pro,
-            'contacto' => mb_strtoupper($venta->shipping->receiver_address->receiver_name ?? '', 'UTF-8'),
-            'calle' => mb_strtoupper($venta->shipping->receiver_address->street_name ?? '', 'UTF-8'),
-            'numero' => mb_strtoupper($venta->shipping->receiver_address->street_number ?? '', 'UTF-8'),
-            'numero_int' => '',
-            'colonia' => $colonia,
-            'ciudad' => $ciudad,
-            'estado' => $estado,
-            'codigo_postal' => mb_strtoupper($venta->shipping->receiver_address->zip_code ?? '', 'UTF-8'),
-            'referencia' => mb_strtoupper($venta->shipping->receiver_address->comment ?? '', 'UTF-8'),
-        ]);
-    }
-
-    public static function agruparProductos(array $productos): array
-    {
-        $agrupados = [];
-
-        foreach ($productos as $producto) {
-            $id = $producto->id_modelo;
-
-            if (!isset($agrupados[$id])) {
-                $agrupados[$id] = clone $producto;
-            } else {
-                $agrupados[$id]->cantidad += $producto->cantidad;
-            }
-        }
-
-        return array_values($agrupados);
     }
 
 

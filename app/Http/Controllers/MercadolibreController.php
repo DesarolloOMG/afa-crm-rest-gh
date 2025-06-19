@@ -128,6 +128,7 @@ class MercadolibreController extends Controller{
     }
 
     public function rawinfo_importar_publicaciones_fecha(Request $request){
+        set_time_limit(0);
         $fp = fopen('rawinfoimportarpublicacionfecha', 'w+');
 
         if (!flock($fp, LOCK_SH | LOCK_NB)) {
