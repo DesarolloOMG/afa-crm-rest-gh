@@ -123,7 +123,28 @@ class VentaController extends Controller
         }
 
         if (strpos(TRIM($data->cliente->rfc), 'XAXX010101000') === false && strpos(TRIM($data->cliente->rfc), 'XEXX010101000') === false) {
-            $cliente = $data->cliente->select;
+            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
+
+            if (empty($existe_cliente)) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No hay un cliente que coincida con el rfc."
+                ]);
+            } else {
+                $cliente = $existe_cliente[0]->id;
+
+                DB::table('documento_entidad')->where(['id' => $cliente])->update([
+                    'id_erp' => trim(mb_strtoupper($data->cliente->select, 'UTF-8')),
+                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
+                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
+                ]);
+            }
         } else {
             $cliente = DB::table('documento_entidad')->insertGetId([
                 'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
