@@ -41,6 +41,7 @@ use Picqer\Barcode\BarcodeGeneratorJPG;
 use Picqer\Barcode\Exceptions\BarcodeException;
 use stdClass;
 use Throwable;
+use Crabbly\FPDF\FPDF;
 
 class AlmacenController extends Controller
 {
