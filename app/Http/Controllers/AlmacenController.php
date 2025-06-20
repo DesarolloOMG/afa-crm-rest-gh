@@ -41,6 +41,7 @@ use Picqer\Barcode\BarcodeGeneratorJPG;
 use Picqer\Barcode\Exceptions\BarcodeException;
 use stdClass;
 use Throwable;
+use Crabbly\Fpdf\Fpdf;
 
 class AlmacenController extends Controller
 {
@@ -2358,7 +2359,7 @@ class AlmacenController extends Controller
         $pageline = 3;
         $anchotexto = 60;
 
-        $pdf = app('FPDF');
+        $pdf = new Fpdf();
 
         $pdf->AddPage('L', 'Letter');
         $pdf->SetFont('Arial', '', $fontsize);
