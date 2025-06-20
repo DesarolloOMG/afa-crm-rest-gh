@@ -16,14 +16,16 @@ use App\Http\Services\ShopifyService;
 use App\Http\Services\WalmartService;
 use App\Models\Paqueteria;
 use App\Models\Usuario;
-use DB;
+use Crabbly\FPDF\FPDF;
 use Exception;
 use Httpful\Mime;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Mailgun\Mailgun;
 use stdClass;
 use Throwable;
+
 
 class LogisticaController extends Controller
 {
@@ -563,7 +565,7 @@ class LogisticaController extends Controller
 
             # Formato de celda: X -> margen izquierdo, Y -> Margen de arriba, Z -> Texto
 
-            $pdf = app('FPDF');
+            $pdf = new FPDF();
 
             $pdf->AddPage();
             $pdf->SetFont('Arial', '', 10);
@@ -1364,7 +1366,7 @@ class LogisticaController extends Controller
 
         $total  = 0;
 
-        $pdf = app('FPDF');
+        $pdf = new FPDF();
 
         $x = $pdf->GetX();
         $y = $pdf->GetY();

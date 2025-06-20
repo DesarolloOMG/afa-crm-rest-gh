@@ -27,6 +27,7 @@ use App\Models\Movimiento;
 use App\Models\MovimientoProducto;
 use App\Models\Paqueteria;
 use App\Models\Producto;
+use Crabbly\FPDF\FPDF;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
@@ -41,6 +42,7 @@ use Picqer\Barcode\BarcodeGeneratorJPG;
 use Picqer\Barcode\Exceptions\BarcodeException;
 use stdClass;
 use Throwable;
+
 
 class AlmacenController extends Controller
 {
@@ -2358,7 +2360,7 @@ class AlmacenController extends Controller
         $pageline = 3;
         $anchotexto = 60;
 
-        $pdf = app('FPDF');
+        $pdf = new FPDF();
 
         $pdf->AddPage('L', 'Letter');
         $pdf->SetFont('Arial', '', $fontsize);
@@ -3557,8 +3559,7 @@ class AlmacenController extends Controller
             $producto->unidad = empty($informacion_producto) ? "" : $informacion_producto[0]->unidad;
             $producto->claveunidad = empty($informacion_producto) ? "" : $informacion_producto[0]->claveunidad;
         }
-
-        $pdf = app('FPDF');
+        $pdf = new FPDF();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);

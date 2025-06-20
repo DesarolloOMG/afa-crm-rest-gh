@@ -2708,7 +2708,6 @@ class GeneralController extends Controller
 
     public function general_reporte_logistica_manifiesto_generar($paqueteria, $fecha)
     {
-        //$pdf = app('FPDF');
         $pdf = new FPDF('P', 'in', array(8, 4));
 
         $pdf->AddPage();
