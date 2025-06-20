@@ -3560,7 +3560,8 @@ class AlmacenController extends Controller
             $producto->claveunidad = empty($informacion_producto) ? "" : $informacion_producto[0]->claveunidad;
         }
 
-        $pdf = app('FPDF');
+//        $pdf = app('FPDF');
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);

@@ -13,6 +13,7 @@ use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
+use Crabbly\FPDF\FPDF;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
@@ -1006,7 +1007,8 @@ class CompraController extends Controller
                                     WHERE documento.id = " . $data->documento);
 
         if (!empty($info_compra)) {
-            $pdf = app('FPDF');
+//            $pdf = app('FPDF');
+            $pdf = new Fpdf();
 
             $pdf->AddPage('');
             $pdf->SetFont('Arial', 'B', 15);
@@ -2110,7 +2112,8 @@ class CompraController extends Controller
         $informacion_documento->info_extra = json_decode($informacion_documento->info_extra);
         $impuesto = "1." . $informacion_documento->info_extra->impuesto;
 
-        $pdf = app('FPDF');
+//        $pdf = app('FPDF');
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 20);
@@ -3123,7 +3126,8 @@ class CompraController extends Controller
             ->where("documento_erp", $recepcion_erp)
             ->first();
 
-        $pdf = app('FPDF');
+//        $pdf = app('FPDF');
+        $pdf = new Fpdf();
 
         $pdf->AddPage('');
         $pdf->SetFont('Arial', 'B', 15);
