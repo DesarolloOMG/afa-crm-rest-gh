@@ -1058,6 +1058,24 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->get('test', 'DeveloperController@test');
     });
 
+    $router->group(['prefix' => 'print'], function () use ($router) {
+        $router->group(['prefix' => 'etiquetas'], function () use ($router) {
+            $router->get('/data', 'PrintController@data');
+
+            $router->post('/', 'PrintController@etiquetas');
+            $router->post('/serie', 'PrintController@serie');
+            $router->post('/busqueda', 'PrintController@busqueda');
+        });
+
+        $router->group(['prefix' => 'tickets'], function () use ($router) {
+            $router->get('/', 'PrintController@tickets');
+        });
+
+        $router->group(['prefix' => 'guias'], function () use ($router) {
+            $router->get('/print/{documentoId}/{impresoraNombre}', 'PrintController@guias');
+        });
+    });
+
 });
 
 $router->group(['prefix' => 'estado'], function () use ($router) {
