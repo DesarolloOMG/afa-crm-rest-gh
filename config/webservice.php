@@ -20,4 +20,5 @@ return [
     'ct_internacional' => env('API_ENDPOINT_CT_INTERNACIONAL', ''),
     'arroba' => env('API_ENDPOINT_ARROBA', ''),
     'autoazur' => env('API_ENDPOINT_AUTOAZUR', ''),
+    'printserver' => env('API_ENDPOINT_PRINTSERVER', ''),
 ];
