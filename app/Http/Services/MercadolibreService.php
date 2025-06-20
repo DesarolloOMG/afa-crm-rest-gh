@@ -978,16 +978,6 @@ class MercadolibreService
             $referencia = $payment->id ?? null;
         }
 
-//        $entidad = DB::table('documento_entidad')->insertGetId([
-//            'razon_social' => 'PUBLICO GENERAL',
-//            'rfc' => mb_strtoupper('XAXX010101000', 'UTF-8'),
-//            'telefono' => "0",
-//            'telefono_alt' => "0",
-//            'correo' => "0"
-//        ]);
-
-        $entidad = 68;
-
         $documentoId = DB::table('documento')->insertGetId([
             'id_cfdi' => 3,
             'id_almacen_principal_empresa' => $venta->almacen,
@@ -995,6 +985,7 @@ class MercadolibreService
             'id_usuario' => $usuario,
             'id_paqueteria' => $id_paqueteria,
             'id_fase' => self::faseDocumento($venta),
+            'id_entidad' => 68,
             'id_modelo_proveedor' => $venta->proveedor,
             'no_venta' => $venta->id,
             'referencia' => $referencia ?? '',
@@ -1033,11 +1024,6 @@ class MercadolibreService
                 'seguimiento' => "<p>Se manda a fase de pedido por falta de guía o producto. Verifique en el marketplace</p>"
             ]);
         }
-
-        DB::table('documento_entidad_re')->insert([
-            'id_entidad' => $entidad,
-            'id_documento' => $documentoId
-        ]);
 
         self::insertarDireccion($documentoId, $venta);
         $productosAgrupados = self::agruparProductos($venta->productos ?? []);
