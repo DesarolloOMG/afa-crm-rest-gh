@@ -100,7 +100,7 @@ $app->routeMiddleware([
 |
 */
 
-$app->register(Crabbly\FPDF\FpdfServiceProvider::class);
+$app->register(Crabbly\Fpdf\FpdfServiceProvider::class);
 $app->register(App\Providers\EventServiceProvider::class);
 $app->register('Nord\Lumen\Cors\CorsServiceProvider');
 // $app->register(App\Providers\AppServiceProvider::class);
