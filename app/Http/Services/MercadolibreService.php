@@ -1612,7 +1612,7 @@ class MercadolibreService
                                                         marketplace_publicacion.id_almacen_empresa,
                                                         marketplace_publicacion.id_almacen_empresa_fulfillment,
                                                         empresa.bd,
-                                                        empresa_almacen.id_erp AS id_almacen
+                                                        empresa_almacen.id_almacen
                                                 FROM marketplace_publicacion 
                                                 INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
                                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
