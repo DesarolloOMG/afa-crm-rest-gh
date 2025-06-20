@@ -2735,7 +2735,7 @@ class VentaController extends Controller
                     ]);
                 }
 
-                if ($response->existencia < $producto->cantidad) {
+                if ($response->disponible < $producto->cantidad) {
                     return response()->json([
                         "code" => 500,
                         "message" => "No hay suficiente existencia del codigo " . $producto->sku . "<br><br><b>Cantidad solicitada: " . $producto->cantidad . "</b><br><b>Cantidad disponible</b>: " . $response->existencia
@@ -3454,7 +3454,7 @@ class VentaController extends Controller
                     $hayError = true;
                 }
 
-                if ($existencia->existencia < $producto->cantidad) {
+                if ($existencia->disponible < $producto->cantidad) {
                     BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
                         "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id);
 

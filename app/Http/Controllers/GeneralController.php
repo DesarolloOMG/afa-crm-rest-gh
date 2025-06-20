@@ -3093,7 +3093,7 @@ class GeneralController extends Controller
         foreach ($productos as $producto) {
             $response = InventarioService::existenciaProducto($producto->sku, 1);
 
-            $producto->existencia = $response->error ? 0 : $response->existencia;
+            $producto->existencia = $response->error ? 0 : $response->disponible;
         }
 
         return response()->json([

@@ -4542,7 +4542,7 @@ class CompraController extends Controller
 
                 $existencia = InventarioService::existenciaProducto($producto->sku, 1); # Solo almacén de vidriera y emperesa OMG
 
-                $producto->existencia = $existencia->error ? 0 : $existencia->existencia;
+                $producto->existencia = $existencia->error ? 0 : $existencia->disponible;
             }
         }
 

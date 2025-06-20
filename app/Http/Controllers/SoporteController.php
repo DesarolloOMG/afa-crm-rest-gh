@@ -1023,7 +1023,7 @@ class SoporteController extends Controller
                             ]);
                         }
 
-                        if (((int) $existencia_codigo->existencia + (int) $producto->cantidad) < $producto->cantidad) {
+                        if (((int) $existencia_codigo->disponible + (int) $producto->cantidad) < $producto->cantidad) {
                             return response()->json([
                                 "code" => 500,
                                 "message" => "No hay suficiente existencia para procesar la solicitud<br><br>Cantidad con nota: " . ((int) $existencia_codigo->existencia + (int) $producto->cantidad) . "<br>Cantidad solicitada: " . $producto->cantidad . "<br><br>Favor de revisiar el inventario con el encargado"

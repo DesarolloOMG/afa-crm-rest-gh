@@ -743,7 +743,7 @@ class MercadolibreService
                             continue 3;
                         }
 
-                        if ((int)$existencia->existencia < (int)$producto->cantidad) {
+                        if ((int)$existencia->disponible < (int)$producto->cantidad) {
                             $pack->error = 0;
                             $pack->venta_principal->seguimiento = "No hay suficiente existencia para venta {$venta->id} en almacén {$pack->venta_principal->almacen} del producto {$producto_sku}.";
                             $pack->venta_principal->fase = 1;
