@@ -704,7 +704,7 @@ class MercadolibreService
 
                     $pack->venta_principal->almacen = property_exists($venta->shipping, 'logistic_type') && $venta->shipping->logistic_type === 'fulfillment'
                         ? $existe_publicacion->id_almacen_empresa_fulfillment
-                        : $existe_publicacion->id_almacen_empresa;
+                        : $existe_publicacion->id_almacen_empresa ?? 1;
 
                     $pack->venta_principal->proveedor = $existe_publicacion->id_proveedor;
 
@@ -1075,6 +1075,8 @@ class MercadolibreService
             'id_documento' => $documentoId,
             'id_pago' => $pago
         ]);
+
+        DB::table("documento")->where("id", $documentoId)->update(["pagado" => 1]);
 
         if ($venta->error) {
             DB::table("documento")->where("id", $documentoId)->update(["id_fase" => 1]);
@@ -1659,7 +1661,7 @@ class MercadolibreService
                     break 2;
                 }
 
-                $pack->almacen = property_exists($venta->shipping, "logistic_type") ? ($venta->shipping->logistic_type == 'fulfillment' ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa) : $existe_publicacion->id_almacen_empresa;
+                $pack->almacen = property_exists($venta->shipping, "logistic_type") ? ($venta->shipping->logistic_type == 'fulfillment' ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa ?? 1) : $existe_publicacion->id_almacen_empresa ?? 1;
 
                 foreach ($productos_publicacion as $producto) {
                     $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
