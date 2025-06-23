@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Http\Request;
-use Crabbly\FPDF\FPDF;
+use Crabbly\Fpdf\Fpdf;
 use Mailgun\Mailgun;
 use Exception;
 use Validator;

@@ -31,7 +31,7 @@ use App\Models\Enums\UsuarioNivel;
 use App\Models\MarketplaceArea;
 use App\Models\Paqueteria;
 use App\Models\Usuario;
-use Crabbly\FPDF\FPDF;
+use Crabbly\Fpdf\Fpdf;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
@@ -1641,7 +1641,7 @@ class VentaController extends Controller
             $producto->claveunidad = empty($informacion_producto) ? "" : $informacion_producto[0]->claveunidad;
         }
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);
@@ -5010,7 +5010,7 @@ class VentaController extends Controller
         $informacion_documento->info_extra = json_decode($informacion_documento->info_extra);
         $impuesto = "1." . $informacion_documento->info_extra->impuesto;
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 20);

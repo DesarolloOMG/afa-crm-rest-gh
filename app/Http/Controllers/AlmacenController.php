@@ -27,7 +27,7 @@ use App\Models\Movimiento;
 use App\Models\MovimientoProducto;
 use App\Models\Paqueteria;
 use App\Models\Producto;
-use Crabbly\FPDF\FPDF;
+use Crabbly\Fpdf\Fpdf;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Mime;
@@ -2360,7 +2360,7 @@ class AlmacenController extends Controller
         $pageline = 3;
         $anchotexto = 60;
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $pdf->AddPage('L', 'Letter');
         $pdf->SetFont('Arial', '', $fontsize);
@@ -3559,7 +3559,7 @@ class AlmacenController extends Controller
             $producto->unidad = empty($informacion_producto) ? "" : $informacion_producto[0]->unidad;
             $producto->claveunidad = empty($informacion_producto) ? "" : $informacion_producto[0]->claveunidad;
         }
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);

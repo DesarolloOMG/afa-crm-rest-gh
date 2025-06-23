@@ -17,7 +17,7 @@ use App\Models\Enums\HttpStatusCode;
 use App\Models\Enums\UsuarioNivel;
 use App\Models\Paqueteria;
 use App\Models\Usuario;
-use Crabbly\FPDF\FPDF;
+use Crabbly\Fpdf\Fpdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -1467,7 +1467,7 @@ class SoporteController extends Controller
 
         $usuario_info = $usuario_info[0];
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $x = $pdf->GetX();
         $y = $pdf->GetY();
@@ -2446,7 +2446,7 @@ class SoporteController extends Controller
 
         $info_cliente = $info_cliente[0];
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $pdf->AddPage();
         $pdf->SetFont('Arial', 'B', 24);
@@ -2770,7 +2770,7 @@ class SoporteController extends Controller
 
         $seguimientos = DB::select("SELECT * FROM documento_garantia_seguimiento WHERE id_documento = " . $documento . "");
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $x = $pdf->GetX();
         $y = $pdf->GetY();
@@ -2924,7 +2924,7 @@ class SoporteController extends Controller
 
         $seguimientos = DB::select("SELECT * FROM documento_garantia_seguimiento WHERE id_documento = " . $documento . "");
 
-        $pdf = new FPDF();
+        $pdf = new Fpdf();
 
         $x = $pdf->GetX();
         $y = $pdf->GetY();

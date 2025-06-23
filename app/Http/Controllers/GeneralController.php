@@ -10,7 +10,7 @@ use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
 use App\Http\Services\WhatsAppService;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
-use Crabbly\FPDF\FPDF;
+use Crabbly\Fpdf\Fpdf;
 use DateTime;
 use DB;
 use Exception;
