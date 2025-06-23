@@ -809,7 +809,7 @@ class MercadolibreService
         return $response;
     }
 
-    protected static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
+    public static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
     {
         set_time_limit(0);
         $response = new stdClass();
@@ -1215,6 +1215,8 @@ class MercadolibreService
 
         $informacion_venta = json_decode($ventaData->getContent());
 
+        dump($informacion_venta);
+
         if (empty($informacion_venta)) {
             $response->error = 1;
             $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
@@ -1226,6 +1228,7 @@ class MercadolibreService
         $file = fopen($tmp, 'r+');
 
         $shipment_id = $informacion_venta->shipping->id ?? null;
+        dump($shipment_id);
 
         if (!$shipment_id) {
             $response->error = 1;
@@ -1233,11 +1236,19 @@ class MercadolibreService
             return $response;
         }
 
-        $url = config("webservice.mercadolibre_enpoint") .
-            "shipment_labels?shipment_ids=" . $shipment_id .
-            "&response_type=zpl2";
+        $token = self::token($credenciales->app_id, $credenciales->secret);
 
-        $zpl = @file_get_contents($url);
+        $url = "https://api.mercadolibre.com/shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer {$token}",
+                "method" => "GET"
+            ]
+        ];
+
+        $context = stream_context_create($options);
+        $zpl = @file_get_contents($url, false, $context);
 
         if (empty($zpl)) {
             $response->error = 1;
