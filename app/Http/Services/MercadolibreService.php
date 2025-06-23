@@ -854,8 +854,15 @@ class MercadolibreService
 
     public static function log_meli_error(string $mensaje, string $publicacion_id)
     {
-        $ruta = "logs/mercadolibre/" . date("Y.m.d") . "-{$publicacion_id}.log";
-        file_put_contents($ruta, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
+        $publicacion_id = $publicacion_id ?: 'sin_id';
+
+        $dir = "logs/mercadolibre";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $archivo = "{$dir}/" . date("Y.m.d") . "-{$publicacion_id}.log";
+        file_put_contents($archivo, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
     }
 
     public static function actualizarRTS_com($existe_pack)
