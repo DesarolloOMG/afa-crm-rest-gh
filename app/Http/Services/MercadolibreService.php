@@ -671,14 +671,13 @@ class MercadolibreService
 
                     $productos_publicacion = $productos_query->get();
 
-                    if ($productos_publicacion->isEmpty()) {
-                        // Reintentamos sin aplicar la etiqueta
+                    if (empty($productos_publicacion)) {
                         $productos_publicacion = DB::table('marketplace_publicacion_producto')
-                            ->where('id_publicacion', $existe_publicacion->id)
+                            ->where('id_publicacion', $item->item->id)
                             ->get();
                     }
 
-                    if ($productos_publicacion->isEmpty()) {
+                    if (empty($productos_publicacion)) {
                         $pack->error = 0;
                         $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}";
                         $pack->venta_principal->fase = 1;
