@@ -1723,7 +1723,7 @@ class MercadolibreService
             return $response;
         }
 
-        $urlZpl = config("webservice.mercadolibre_enpoint") . "orders/shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
+        $urlZpl = config("webservice.mercadolibre_enpoint") . "shipment_labels?shipment_ids={$shipment_id}&response_type=zpl2";
         $context = stream_context_create([
             "http" => [
                 "header" => "Authorization: Bearer " . $token
