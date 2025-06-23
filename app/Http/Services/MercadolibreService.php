@@ -482,7 +482,7 @@ class MercadolibreService
                 $venta->is_buffered = $status === 'pending' && $substatus === 'buffered';
                 $venta->is_manufacturing = $status === 'pending' && $substatus === 'manufacturing';
                 $venta->is_creating_route = $status === 'pending' && $substatus === 'creating_route';
-                $venta->is_ready_to_ship = $status === 'ready_to_ship' && $substatus === 'ready_to_print';
+                $venta->is_ready_to_ship = $status === 'ready_to_ship' && ($substatus === 'ready_to_print' || $substatus === 'printed');
                 $venta->is_delivered = $status === 'delivered';
 
                 foreach ($packs as $pack) {
