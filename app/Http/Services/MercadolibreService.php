@@ -14,136 +14,116 @@ use ZipArchive;
 
 class MercadolibreService
 {
-    public static function venta($venta, $marketplace_id)
+    public static function venta($venta, $marketplace_id): stdClass
     {
         $response = new stdClass();
-
-        $marketplace = DB::select("SELECT
-                                        marketplace_area.id,
-                                        marketplace_api.extra_2,
-                                        marketplace_api.app_id,
-                                        marketplace_api.secret
-                                    FROM marketplace_area
-                                    INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE marketplace_area.id = " . $marketplace_id . "");
-
-        if (empty($marketplace)) {
-            $log = self::logVariableLocation();
-            $response->error = 1;
-            $response->mensaje = "No se encontraron las credenciales del marketplace seleccionado, favor de contactar al administrador." . $log;
-
-            return $response;
-        }
-
-        $marketplace = $marketplace[0];
-        $token = self::token($marketplace->app_id, $marketplace->secret);
-        //$seller = self::seller($marketplace->extra_2, $token);
-
-        $venta = str_replace("%20", " ", $venta);
         $ventas = [];
 
-        $opts = [
-            "http" => [
-                "method" => "GET",
-                "header" => "Authorization: Bearer " . $token
-            ]
-        ];
+        $venta = rawurlencode($venta);
+        $paqueteData = self::callMlApi($marketplace_id, "packs/{venta}", ['{venta}' => $venta]);
+        $informacion_paquete = json_decode($paqueteData->getContent());
 
-        $context = stream_context_create($opts);
-
-        //$informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
-        $informacion_paquete = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "packs/" . rawurlencode($venta), false, $context));
-
-        if (empty($informacion_paquete)) {
-            $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta), false, $context));
-
-            if (empty($informacion_venta)) {
-                $log = self::logVariableLocation();
-
-                $response->error = 1;
-                $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
-
-                return $response;
-            }
-
-            array_push($ventas, $informacion_venta);
-        } else {
+        if (!empty($informacion_paquete)) {
             foreach ($informacion_paquete->orders as $venta_paquete) {
-                $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . rawurlencode($venta_paquete->id), false, $context));
-
-                if (empty($informacion_venta)) {
-                    $log = self::logVariableLocation();
-
+                $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", [
+                    '{venta}' => rawurlencode($venta_paquete->id)
+                ]);
+                $info = json_decode($ventaData->getContent());
+                if (empty($info)) {
                     $response->error = 1;
-                    $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log;
-
+                    $response->mensaje = "Error al obtener información de una venta del paquete." . self::logVariableLocation();
                     return $response;
                 }
-
-                array_push($ventas, $informacion_venta);
+                $ventas[] = $info;
             }
+        } else {
+            $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", ['{venta}' => $venta]);
+            $info = json_decode($ventaData->getContent());
+
+            if (empty($info)) {
+                $response->error = 1;
+                $response->mensaje = "Error al obtener información de la venta." . self::logVariableLocation();
+                return $response;
+            }
+            $ventas[] = $info;
         }
 
         foreach ($ventas as $venta) {
-            $venta->productos = array();
+            $venta->productos = [];
 
-            $pack_id = explode(".", empty($venta->pack_id) ? $venta->id : sprintf('%lf', $venta->pack_id))[0];
+            $pack_id = explode('.', (string)($venta->pack_id ?? $venta->id))[0];
 
-            $envio = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . $venta->id . "/shipments?access_token=" . $token));
-            $mensajes = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "messages/packs/" . $pack_id . "/sellers/" . $venta->seller->id . "?access_token=" . $token));
+            $envioData = self::callMlApi($marketplace_id, "orders/{ventaId}/shipments", [
+                '{ventaId}' => $venta->id
+            ]);
+            $envio = json_decode($envioData->getContent());
 
-            $venta->mensajes = empty($mensajes) ? [] : $mensajes->messages;
-
-            if (!empty($envio)) {
-                if ($envio->status == "to_be_agreed" || $envio->status == "shipping_deferred") {
-                    $venta->shipping = 0;
-                } else {
-                    $envio->costo = $envio->shipping_option->cost;
-                    $venta->shipping = $envio;
-                }
+            if (!empty($envio) && !in_array($envio->status, ['to_be_agreed', 'shipping_deferred'])) {
+                $envio->costo = $envio->shipping_option->cost ?? 0;
+                $venta->shipping = $envio;
             } else {
                 $venta->shipping = 0;
             }
 
-            foreach ($venta->payments as $payment) {
-                $detalle_pago = @json_decode(file_get_contents("https://api.mercadopago.com/v1/payments/" . $payment->id . "?access_token=" . $token));
+            // Mensajes
+            $mensajesData = self::callMlApi($marketplace_id, "messages/packs/{packId}/sellers/{sellerId}?tag=post_sale", [
+                '{packId}' => $pack_id,
+                '{sellerId}' => $venta->seller->id
+            ]);
+            $mensajes = json_decode($mensajesData->getContent());
+            $venta->mensajes = $mensajes->messages ?? [];
 
-                $payment->more_details = $detalle_pago;
+            // Pagos
+            foreach ($venta->payments as $payment) {
+                $pagoData = self::callMpApi($marketplace_id, "v1/payments/{paymentId}", [
+                    '{paymentId}' => $payment->id
+                ]);
+                $payment->more_details = json_decode($pagoData->getContent());
+            }
+
+            $ids_publicacion = [];
+            foreach ($venta->order_items as $item) {
+                $ids_publicacion[] = $item->item->id;
+            }
+            $ids_publicacion = array_values(array_unique($ids_publicacion));
+
+            $publicaciones = DB::table('marketplace_publicacion')
+                ->join('empresa_almacen', 'marketplace_publicacion.id_almacen_empresa', '=', 'empresa_almacen.id')
+                ->select('marketplace_publicacion.id', 'empresa_almacen.id_almacen', 'marketplace_publicacion.publicacion_id')
+                ->whereIn('marketplace_publicacion.publicacion_id', $ids_publicacion)
+                ->get();
+
+            $publicaciones_indexadas = [];
+            foreach ($publicaciones as $pub) {
+                $publicaciones_indexadas[$pub->publicacion_id] = $pub;
             }
 
             foreach ($venta->order_items as $item) {
-                $existe_publicacion = DB::select("SELECT
-                                                    marketplace_publicacion.id,
-                                                    empresa_almacen.id_almacen
-                                                FROM marketplace_publicacion 
-                                                INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
-                                                WHERE publicacion_id = '" . $item->item->id . "'");
+                $publicacion = $publicaciones_indexadas[$item->item->id] ?? null;
+                if (!$publicacion) continue;
 
-                if (!empty($existe_publicacion)) {
-                    $productos_publicacion = DB::select("SELECT
-                                                            marketplace_publicacion_producto.id_modelo,
-                                                            marketplace_publicacion_producto.garantia,
-                                                            (marketplace_publicacion_producto.cantidad * " . $item->quantity . ") AS cantidad,
-                                                            marketplace_publicacion_producto.regalo,
-                                                            modelo.sku,
-                                                            modelo.descripcion
-                                                        FROM marketplace_publicacion_producto 
-                                                        INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                                        WHERE id_publicacion = " . $existe_publicacion[0]->id . "");
+                $productosPublicacion = DB::table('marketplace_publicacion_producto')
+                    ->join('modelo', 'marketplace_publicacion_producto.id_modelo', '=', 'modelo.id')
+                    ->select(
+                        'marketplace_publicacion_producto.id_modelo',
+                        'marketplace_publicacion_producto.garantia',
+                        DB::raw('marketplace_publicacion_producto.cantidad * ' . (int)$item->quantity . ' AS cantidad'),
+                        'marketplace_publicacion_producto.regalo',
+                        'modelo.sku',
+                        'modelo.descripcion'
+                    )
+                    ->where('marketplace_publicacion_producto.id_publicacion', $publicacion->id)
+                    ->get();
 
-                    if (!empty($productos_publicacion)) {
-                        $existe_publicacion[0]->productos = $productos_publicacion;
-
-                        array_push($venta->productos, $existe_publicacion[0]);
-                    }
+                if (count($productosPublicacion)) {
+                    $publicacion->productos = $productosPublicacion;
+                    $venta->productos[] = $publicacion;
                 }
             }
         }
 
         $response->error = 0;
         $response->data = $ventas;
-
         return $response;
     }
 
@@ -839,6 +819,41 @@ class MercadolibreService
 
         if ($raw === false) {
             return response()->json(["error" => "No se pudo obtener información"], 500);
+        }
+
+        return response()->json(json_decode($raw, true));
+    }
+
+    public static function callMpApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
+    {
+        set_time_limit(0);
+        $response = new stdClass();
+        $response->error = 1;
+
+        $marketplace = self::getMarketplaceData($marketplaceId);
+        if (!$marketplace) {
+            $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
+            return $response;
+        }
+
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $endpoint = strtr($endpointTemplate, $placeholders);
+        $url = "https://api.mercadopago.com/" . $endpoint;
+
+        $options = [
+            "http" => [
+                "header" => "Authorization: Bearer " . $token
+            ]
+        ];
+
+        $context = stream_context_create($options);
+
+        $raw = @file_get_contents($url, false, $context);
+
+        if ($raw === false) {
+            return response()->json(["error" => "No se pudo obtener información. " . $url], 500);
         }
 
         return response()->json(json_decode($raw, true));
