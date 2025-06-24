@@ -1388,11 +1388,13 @@ class AlmacenController extends Controller
         }
 
         $impresora = DB::table("impresora")
-            ->select("servidor", "cups")
+            ->select("servidor", "id")
             ->where("id", $data->impresora)
             ->first();
-
-        $impresion_raw = json_decode(file_get_contents($impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token")));
+        $impresion_raw = json_decode(file_get_contents(
+            $impresora->servidor .
+            "api/guias/print/"
+            . $data->documento . "/" . $impresora->id . "?token=" . $request->get("token")));
         $impresion = @$impresion_raw;
 
         if (empty($impresion)) {
@@ -1400,7 +1402,6 @@ class AlmacenController extends Controller
                 "code" => 500,
                 "message" => "No fue posible imprimir la guía de embarque, favor de contactar a un administrador, error desconocido." . self::logVariableLocation(),
                 "raw" => $impresion_raw,
-                "a" => $impresora->servidor . "/raspberry-print-server/public/print/" . $data->documento . "/" . $impresora->cups . "?token=" . $request->get("token")
             ]);
         }
 
