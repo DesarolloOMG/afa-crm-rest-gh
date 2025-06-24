@@ -86,7 +86,7 @@ class DropboxService
         $url = 'https://content.dropboxapi.com/2/files/download';
 
         $headers = [
-            'Authorization' => 'Bearer ' . $this->token,
+            'Authorization' => 'Bearer ' . config('keys.dropbox'),
             'Dropbox-API-Arg' => json_encode(['path' => $path])
         ];
 
