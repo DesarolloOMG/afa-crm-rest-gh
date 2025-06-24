@@ -1202,10 +1202,7 @@ class AlmacenController extends Controller
                 $pdf = "";
 
                 if($auth->id != 9999) {
-                    $impresion_raw = json_decode(file_get_contents(
-                        $impresora->servidor .
-                        "api/guias/print/"
-                        . $data->documento . "/" . $impresora->id . "?token=" . $request->get("token")));
+                    $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
                     $impresion = @$impresion_raw;
 
                     if (empty($impresion)) {
@@ -1391,10 +1388,7 @@ class AlmacenController extends Controller
             ->select("servidor", "id")
             ->where("id", $data->impresora)
             ->first();
-        $impresion_raw = json_decode(file_get_contents(
-            $impresora->servidor .
-            "api/guias/print/"
-            . $data->documento . "/" . $impresora->id . "?token=" . $request->get("token")));
+        $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
         $impresion = @$impresion_raw;
 
         if (empty($impresion)) {
@@ -1405,7 +1399,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        if ($impresion->code != 200) {
+        if (property_exists($impresion, 'code') && $impresion->code != 200) {
             return response()->json([
                 "code" => 500,
                 "message" => "No fue posible imprimir la guía de embarque, favor de contactar a un administrador, error: " . $impresion->message . ".",

@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use Exception;
 use Httpful\Request as HttpfulRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 class PrintController extends Controller
 {
@@ -30,7 +32,7 @@ class PrintController extends Controller
                     ->sendsJson()
                     ->body(['data' => $request->input('data')]);
             } else {
-                throw new \InvalidArgumentException("Método HTTP no soportado: $method");
+                throw new InvalidArgumentException("Método HTTP no soportado: $method");
             }
 
             $response = $httpful->send();
@@ -44,7 +46,7 @@ class PrintController extends Controller
                 'details' => $response->body,
             ], $response->code);
 
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'error' => 'No se pudo contactar con el printserver',
                 'message' => $e->getMessage(),
@@ -65,5 +67,10 @@ class PrintController extends Controller
     public function busqueda(Request $request): JsonResponse
     {
         return $this->forwardRequest('POST', 'api/etiquetas/busqueda', $request);
+    }
+
+    public function print($documento, $impresora, Request $request): JsonResponse
+    {
+        return $this->forwardRequest('GET', "api/guias/print/" . $documento . "/" . $impresora, $request);
     }
 }
