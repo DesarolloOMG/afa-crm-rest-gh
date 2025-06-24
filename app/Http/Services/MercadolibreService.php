@@ -127,16 +127,6 @@ class MercadolibreService
         return $response;
     }
 
-    public static function logVariableLocation(): string
-    {
-        // $log = self::logVariableLocation();
-        $sis = 'BE'; //Front o Back
-        $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'BRE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
-    }
-
     public static function token($app_id, $secret_key)
     {
         $existe = DB::select("SELECT token FROM marketplace_api WHERE app_id = '" . $app_id . "' AND secret = '" . $secret_key . "' AND '" . date("Y-m-d H:i:s") . "' >= token_created_at AND '" . date("Y-m-d H:i:s") . "' <= token_expired_at AND token != 'N/A'");
@@ -161,60 +151,6 @@ class MercadolibreService
         }
 
         return $existe[0]->token;
-    }
-
-    public static function venta2($venta, $marketplace_id)
-    {
-        $response = new stdClass();
-
-        $marketplace = DB::select("SELECT
-                                        marketplace_area.id,
-                                        marketplace_api.extra_2,
-                                        marketplace_api.app_id,
-                                        marketplace_api.secret
-                                    FROM marketplace_area
-                                    INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE marketplace_area.id = " . $marketplace_id . "");
-
-        if (empty($marketplace)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "No se encontraron las credenciales del marketplace seleccionado, favor de contactar al administrador." . $log;
-
-            return $response;
-        }
-
-        $marketplace = $marketplace[0];
-        $token = self::token($marketplace->app_id, $marketplace->secret);
-        $seller = self::seller($marketplace->extra_2, $token);
-
-        $venta = str_replace("%20", " ", $venta);
-
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . rawurlencode($venta) . "&sort=date_desc&access_token=" . $token));
-
-        if (empty($informacion_venta)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . $log . "" . $venta;
-
-            return $response;
-        }
-
-        if (empty($informacion_venta->results)) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "La venta no fue encontrada en los sistemas de Mercadolibre." . $log;
-
-            return $response;
-        }
-
-        $response->data = $informacion_venta->results;
-
-        return $response;
     }
 
     public static function seller($pseudonimo, $token)
@@ -3520,5 +3456,13 @@ class MercadolibreService
         );
     }
 
-
+    private static function logVariableLocation(): string
+    {
+        // $log = self::logVariableLocation();
+        $sis = 'BE'; //Front o Back
+        $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'BRE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
+    }
 }
