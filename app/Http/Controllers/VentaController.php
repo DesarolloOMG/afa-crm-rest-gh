@@ -1106,31 +1106,45 @@ class VentaController extends Controller
         }
 
         foreach ($data->documento->productos as $producto) {
-            $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
 
-            if ($existencia->error) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => $existencia->mensaje
+            if ($producto->id == 0) {
+                $existe_modelo = DB::select("SELECT id FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
+
+                if (empty($existe_modelo)) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "No existe el producto en la base datos."
+                    ]);
+                } else {
+                    $modelo = $existe_modelo[0]->id;
+                }
+
+                $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
+
+                if($existencia->error) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $existencia->mensaje
+                    ]);
+                }
+
+                if($existencia->disponible < $producto->cantidad) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => 'No hay suficiente existencia para procesar la venta'
+                    ]);
+                }
+
+                $movimiento = DB::table('movimiento')->insertGetId([
+                    'id_documento'  => $data->documento->documento,
+                    'id_modelo'     => $modelo,
+                    'cantidad'      => $producto->cantidad,
+                    'precio'        => $producto->precio,
+                    'garantia'      => $producto->garantia,
+                    'modificacion'  => $producto->modificacion,
+                    'regalo'        => $producto->regalo
                 ]);
             }
-
-            if ($existencia->disponible < $producto->cantidad) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => 'No hay suficiente existencia para procesar la venta'
-                ]);
-            }
-
-            $movimiento = DB::table('movimiento')->insertGetId([
-                'id_documento' => $data->documento->documento,
-                'id_modelo' => $producto->id,
-                'cantidad' => $producto->cantidad,
-                'precio' => $producto->precio,
-                'garantia' => $producto->garantia,
-                'modificacion' => $producto->modificacion,
-                'regalo' => $producto->regalo
-            ]);
         }
 
         foreach ($data->documento->archivos as $archivo) {
