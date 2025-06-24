@@ -3659,23 +3659,23 @@ class VentaController extends Controller
 
             if ($validar_buffered->substatus == "delivered") {
                 DB::table('documento')->where('id', $documento)->update([
-                    'id_fase' => $venta->fulfillment ? $hayError ? 1 : 5 : 1
+                    'id_fase' => $venta->fulfillment ? $hayError ? 1 : 5 : 5
                 ]);
 
                 BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, $venta->fulfillment ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
-                    : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Pedido.");
+                    : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA.");
 
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
                     'id_usuario' => 1,
                     'seguimiento' => $venta->fulfillment ? $hayError ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar." : "El pedido esta ENTREGADO en MERCADOLIBRE."
-                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Pedido."
+                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
                 ]);
 
                 return response()->json([
                     'code' => 500,
                     'mensaje' => $venta->fulfillment ? $hayError ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar." : "El pedido esta ENTREGADO en MERCADOLIBRE."
-                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Pedido."
+                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
                 ]);
             }
         }
