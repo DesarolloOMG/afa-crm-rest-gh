@@ -581,15 +581,16 @@ class MercadolibreService
 
                     $productos_query = DB::table('marketplace_publicacion_producto')
                         ->where('id_publicacion', $existe_publicacion->id);
+
                     if (!is_null($item->item->variation_id)) {
-                        $productos_query->where('etiqueta', $item->item->variation_id);
+                        $productos_query->whereRaw('CAST(etiqueta AS CHAR) = ?', [(string)$item->item->variation_id]);
                     }
 
                     $productos_publicacion = $productos_query->get();
 
                     if (empty($productos_publicacion)) {
                         $productos_publicacion = DB::table('marketplace_publicacion_producto')
-                            ->where('id_publicacion', $item->item->id)
+                            ->where('id_publicacion', $existe_publicacion->id)
                             ->get();
                     }
 
