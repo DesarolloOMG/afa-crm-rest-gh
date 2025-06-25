@@ -484,11 +484,20 @@ class VentaController extends Controller
         $empresaIds = $empresas->pluck('id');
         $almacenesPorEmpresa = DB::table('empresa_almacen')
             ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('usuario_empresa_almacen', function ($join) use ($userId) {
+                $join->on('usuario_empresa_almacen.id_empresa_almacen', '=', 'empresa_almacen.id')
+                    ->where('usuario_empresa_almacen.id_usuario', '=', $userId);
+            })
             ->whereIn('empresa_almacen.id_empresa', $empresaIds)
             ->where('almacen.status', 1)
             ->where('almacen.id', '!=', 0)
             ->orderBy('almacen.almacen')
-            ->select('empresa_almacen.id_empresa', 'almacen.id as id_almacen', 'empresa_almacen.id', 'almacen.almacen')
+            ->select(
+                'empresa_almacen.id_empresa',
+                'almacen.id as id_almacen',
+                'empresa_almacen.id',
+                'almacen.almacen'
+            )
             ->get()
             ->groupBy('id_empresa');
 
