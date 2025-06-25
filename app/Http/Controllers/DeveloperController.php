@@ -24,58 +24,12 @@ class DeveloperController extends Controller
 
     public function test(Request $request)
     {
-        $existe_publicacion = new stdClass();
+        $impresion_raw = (new PrintController)->print(990, 4, $request);
+        $impresion = @$impresion_raw;
 
-        $ventaData = self::callMlApi(1, "orders/{venta}", ['{venta}' => 2000012073771010]);
-        $info = json_decode($ventaData->getContent());
-
-        $item = $info->order_items[0];
-        $existe_publicacion->id = 910;
-
-        $productos_query = DB::table('marketplace_publicacion_producto')
-            ->where('id_publicacion', $existe_publicacion->id);
-
-        if (!is_null($item->item->variation_id)) {
-            $productos_query->whereRaw('CAST(etiqueta AS CHAR) = ?', [(string)$item->item->variation_id]);
-        }
-
-        $productos_publicacion = $productos_query->get();
-
-        if (empty($productos_publicacion)) {
-            $productos_publicacion = DB::table('marketplace_publicacion_producto')
-                ->where('id_publicacion', $existe_publicacion->id)
-                ->get();
-        }
-
-        if (empty($productos_publicacion)) {
-            $pack = new stdClass();
-            $pack->error = 0;
-            $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}";
-            $pack->venta_principal->fase = 1;
-            $pack->venta_principal->error = 1;
-
-            return response()->json([
-                'Respuesta' => $pack
-            ]);
-
-        }
-
-        $porcentaje_total = $productos_publicacion->sum('porcentaje');
-
-        if ($porcentaje_total != 100) {
-            $pack = new stdClass();
-
-            $pack->error = 0;
-            $pack->venta_principal->seguimiento = "Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.";
-            $pack->venta_principal->fase = 1;
-            $pack->venta_principal->error = 1;
-
-            return response()->json([
-                'Respuesta' => $pack
-            ]);
-        }
         return response()->json([
-            'Respuesta' => $porcentaje_total
+            '1' => $impresion_raw,
+            '2' => $impresion
         ]);
 
     }
