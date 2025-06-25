@@ -3231,8 +3231,7 @@ class CompraController extends Controller
 
         $impresoras = DB::table("impresora")
             ->where("status", 1)
-            ->where("cups", "<>", "N/A")
-            ->where("tamanio", "4x8")
+            ->where("tamanio", "2x1")
             ->get()
             ->toArray();
 
