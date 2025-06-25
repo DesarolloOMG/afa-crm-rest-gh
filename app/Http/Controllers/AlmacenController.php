@@ -1221,7 +1221,7 @@ class AlmacenController extends Controller
                         ]);
                     }
 
-                    if ($impresion->code != 200) {
+                    if (property_exists($impresion, 'code') && $impresion->code != 200) {
                         $this->eliminarSeries($data->documento);
                         DB::table('seguimiento')->insert([
                             'id_documento' => $data->documento,
