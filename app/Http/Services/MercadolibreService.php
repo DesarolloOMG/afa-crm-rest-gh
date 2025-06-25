@@ -464,9 +464,9 @@ class MercadolibreService
 
             $venta_principal = $pack->ventas[0];
             $venta_principal->productos = [];
-            $venta_principal->almacen = 0;
+            $venta_principal->almacen = 1;
             $venta_principal->proveedor = 0;
-            $venta_principal->fase = 1;
+            $venta_principal->fase = 3;
             $venta_principal->error = 0;
             $venta_principal->total_fee = 0;
             $venta_principal->total_envio = 0;
@@ -1623,7 +1623,10 @@ class MercadolibreService
                     break 2;
                 }
 
-                $pack->almacen = property_exists($venta->shipping, "logistic_type") ? ($venta->shipping->logistic_type == 'fulfillment' ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa ?? 1) : $existe_publicacion->id_almacen_empresa ?? 1;
+                $pack->almacen = property_exists($venta->shipping, "logistic_type")
+                    ? ($venta->shipping->logistic_type == 'fulfillment'
+                        ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa ?? 1)
+                    : $existe_publicacion->id_almacen_empresa ?? 1;
 
                 foreach ($productos_publicacion as $producto) {
                     $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
@@ -2444,6 +2447,8 @@ class MercadolibreService
                 } else {
                     $publicacion_id = DB::table('marketplace_publicacion')->insertGetId([
                         'id_marketplace_area' => $marketplace->id,
+                        'id_almacen_empresa' => 1,
+                        'id_almacen_empresa_fulfillment' => 3,
                         'publicacion_id' => $publicacion_info->id,
                         'publicacion' => $publicacion_info->title,
                         'total' => $publicacion_info->price,
