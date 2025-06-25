@@ -52,10 +52,22 @@ class CatalogoController extends Controller
                 'data' => $existe_modelo
             ]);
         } else {
-            return response()->json([
-                'code'  => 404,
-                'message' => "Producto no encontrado."
-            ]);
+            $existe_sinonimo = DB::table('modelo_sinonimo')->where('sku', $criterio)->first();
+
+            if($existe_sinonimo){
+                $modelo = DB::table('modelo')->where('id', $existe_sinonimo->id_modelo)->first();
+
+                return response()->json([
+                    'code'  => 200,
+                    'message' => "Producto encontrado.",
+                    'data' => $modelo
+                ]);
+            } else {
+                return response()->json([
+                    'code'  => 404,
+                    'message' => "Producto no encontrado."
+                ]);
+            }
         }
     }
 }
