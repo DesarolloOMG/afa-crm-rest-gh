@@ -64,50 +64,84 @@ class MovimientoContableService
      */
     public static function aplicarADocumentos($idMovimiento, $documentos, $monedaMovimiento, $tipoCambioMovimiento = 1)
     {
+        $resultados = [];
+
         foreach ($documentos as $doc) {
-            $idDocumento        = $doc['id_documento'];
-            $montoAplicado      = $doc['monto_aplicado'];
-            $monedaDocumento    = $doc['moneda'] ?? $monedaMovimiento;
-            $tipoCambioAplicado = $doc['tipo_cambio_aplicado'] ?? $tipoCambioMovimiento;
-            $parcialidad        = $doc['parcialidad'] ?? 1;
+            try {
+                $idDocumento        = $doc['id_documento'];
+                $montoAplicado      = $doc['monto_aplicado'];
+                $monedaDocumento    = $doc['moneda'] ?? $monedaMovimiento;
+                $tipoCambioAplicado = $doc['tipo_cambio_aplicado'] ?? $tipoCambioMovimiento;
+                $parcialidad        = $doc['parcialidad'] ?? 1;
 
-            // 1. Insertar en movimiento_contable_documento
-            DB::table('movimiento_contable_documento')->insert([
-                'id_movimiento_contable' => $idMovimiento,
-                'id_documento'           => $idDocumento,
-                'monto_aplicado'         => $montoAplicado,
-                'saldo_documento'        => null, // Se actualizará después
-                'moneda'                 => $monedaDocumento,
-                'tipo_cambio_aplicado'   => $tipoCambioAplicado,
-                'parcialidad'            => $parcialidad
-            ]);
+                // 1. Verifica que el documento exista
+                $documento = DB::table('documento')->where('id', $idDocumento)->first();
+                if (!$documento) {
+                    $resultados[] = [
+                        'id_documento' => $idDocumento,
+                        'status' => 'error',
+                        'message' => "Documento no encontrado"
+                    ];
+                    continue;
+                }
 
-            // 2. Actualizar saldo en la tabla documento
-            $documento = DB::table('documento')->where('id', $idDocumento)->first();
+                // 2. Verifica que el saldo sea suficiente
+                // Si el monto a aplicar es mayor al saldo, marca error
+                if ($documento->saldo < $montoAplicado) {
+                    $resultados[] = [
+                        'id_documento' => $idDocumento,
+                        'status' => 'error',
+                        'message' => "El monto a aplicar es mayor al saldo del documento"
+                    ];
+                    continue;
+                }
 
-            if (!$documento) {
-                throw new Exception("Documento no encontrado: $idDocumento");
+                // 3. Inserta en movimiento_contable_documento
+                DB::table('movimiento_contable_documento')->insert([
+                    'id_movimiento_contable' => $idMovimiento,
+                    'id_documento'           => $idDocumento,
+                    'monto_aplicado'         => $montoAplicado,
+                    'saldo_documento'        => null, // Se puede actualizar después
+                    'moneda'                 => $monedaDocumento,
+                    'tipo_cambio_aplicado'   => $tipoCambioAplicado,
+                    'parcialidad'            => $parcialidad
+                ]);
+
+                // 4. Actualiza saldo del documento (conversión de moneda si aplica)
+                if ($monedaMovimiento != $monedaDocumento) {
+                    $montoAplicadoEnDoc = ($monedaMovimiento == 'USD' && $monedaDocumento == 'MXN')
+                        ? $montoAplicado * $tipoCambioAplicado
+                        : $montoAplicado / $tipoCambioAplicado;
+                } else {
+                    $montoAplicadoEnDoc = $montoAplicado;
+                }
+
+                $nuevoSaldo = max(0, $documento->saldo - $montoAplicadoEnDoc);
+
+                DB::table('documento')->where('id', $idDocumento)->update([
+                    'saldo' => $nuevoSaldo,
+                    'pagado' => ($nuevoSaldo == 0) ? 1 : 0
+                ]);
+
+                $resultados[] = [
+                    'id_documento' => $idDocumento,
+                    'status' => 'success',
+                    'message' => "Aplicado correctamente",
+                    'nuevo_saldo' => $nuevoSaldo
+                ];
+
+            } catch (\Exception $e) {
+                $resultados[] = [
+                    'id_documento' => $doc['id_documento'] ?? null,
+                    'status' => 'error',
+                    'message' => "Excepción: " . $e->getMessage()
+                ];
             }
-
-            // Convertir monto aplicado a moneda del documento si es necesario
-            if ($monedaMovimiento != $monedaDocumento) {
-                // Siempre convierte el monto del movimiento a la moneda del documento usando el tipo de cambio proporcionado
-                $montoAplicadoEnDoc = ($monedaMovimiento == 'USD' && $monedaDocumento == 'MXN')
-                    ? $montoAplicado * $tipoCambioAplicado
-                    : $montoAplicado / $tipoCambioAplicado;
-            } else {
-                $montoAplicadoEnDoc = $montoAplicado;
-            }
-
-            // Asegura que no se pase de saldar el saldo pendiente
-            $nuevoSaldo = max(0, $documento->saldo - $montoAplicadoEnDoc);
-
-            DB::table('documento')->where('id', $idDocumento)->update([
-                'saldo' => $nuevoSaldo,
-                'pagado' => ($nuevoSaldo == 0) ? 1 : 0
-            ]);
         }
+
+        return $resultados;
     }
+
 
     public static function logVariableLocation()
     {

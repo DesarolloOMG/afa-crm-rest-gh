@@ -765,26 +765,34 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
     # Menú contabilidad
     $router->group(['prefix' => 'contabilidad'], function () use ($router) {
-        $router->group(['prefix' => 'pagos'], function () use ($router) {
-            $router->get('data', 'ContabilidadController@contabilidad_pagos_data');
-            $router->post('guardar', 'ContabilidadController@contabilidad_pagos_guardar');
-        });
 
         $router->group(['prefix' => 'facturas'], function () use ($router) {
             $router->group(['prefix' => 'pendiente'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
-                $router->post('guardar', 'ContabilidadController@contabilidad_facturas_pendiente_guardar');
+                $router->post('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
             });
 
-            $router->group(['prefix' => 'saldo'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_facturas_saldo_data');
+            $router->group(['prefix' => 'saldar'], function () use ($router) {
+                $router->get('data', 'ContabilidadController@contabilidad_facturas_saldar_data');
+                $router->post('guardar', 'ContabilidadController@contabilidad_facturas_saldar_guardar');
             });
 
-            $router->group(['prefix' => 'seguimiento'], function () use ($router) {
-                $router->get('data/{documento}', 'ContabilidadController@contabilidad_facturas_seguimiento_data');
-                $router->post('guardar', 'ContabilidadController@contabilidad_facturas_seguimiento_guardar');
+            $router->group(['prefix' => 'dessaldar'], function () use ($router) {
+                $router->get('data', 'ContabilidadController@contabilidad_facturas_dessaldar_buscar');
+                $router->post('guardar', 'ContabilidadController@contabilidad_facturas_dessaldar_guardar');
             });
         });
+
+        $router->group(['prefix' => 'compras-gastos'], function () use ($router) {
+            $router->group(['prefix' => 'gasto'], function () use ($router) {
+                $router->post('proveedor/buscar', 'ContabilidadController@proveedor_buscar');
+                $router->post('crear', 'ContabilidadController@compras_gasto_crear');
+            });
+            $router->group(['prefix' => 'compras'], function () use ($router) {
+                $router->post('data', 'ContabilidadController@compras_documentos_egresos');
+                $router->post('aplicar', 'ContabilidadController@compras_aplicar_egreso');
+            });
+        });
+
 
         $router->group(['prefix' => 'estado'], function () use ($router) {
             $router->group(['prefix' => 'factura'], function () use ($router) {
@@ -798,9 +806,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
         $router->group(['prefix' => 'ingreso'], function () use ($router) {
             $router->group(['prefix' => 'generar'], function () use ($router) {
-                $router->post('', 'ContabilidadController@contabilidad_ingreso_generar');
                 $router->get('data', 'ContabilidadController@contabilidad_ingreso_generar_data');
-                $router->get('ultimo/{entidad}', 'ContabilidadController@contabilidad_ingreso_generar_ultimo');
+                $router->post('crear', 'ContabilidadController@contabilidad_ingreso_crear');
             });
 
             $router->group(['prefix' => 'editar'], function () use ($router) {
@@ -808,62 +815,13 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
 
             $router->group(['prefix' => 'historial'], function () use ($router) {
-                $router->post('data', 'ContabilidadController@contabilidad_ingreso_historial_data');
-                $router->post('traspaso', 'ContabilidadController@contabilidad_ingreso_historial_traspaso');
-                $router->get('eliminar/{movimiento}', 'ContabilidadController@contabilidad_ingreso_historial_eliminar');
-                $router->post('poliza', 'ContabilidadController@contabilidad_ingreso_historial_poliza');
-            });
-
-            $router->group(['prefix' => 'cuenta'], function () use ($router) {
-                $router->get('data/{empresa}', 'ContabilidadController@contabilidad_ingreso_cuenta_data');
-                $router->post('crear', 'ContabilidadController@contabilidad_ingreso_cuenta_crear');
-                $router->get('sincronizar/{empresa}', 'ContabilidadController@contabilidad_ingreso_cuenta_sincronizar');
-                $router->post('actualizar', 'ContabilidadController@contabilidad_ingreso_cuenta_actualizar');
-                $router->post('conciliar', 'ContabilidadController@contabilidad_ingreso_cuenta_conciliar');
-                $router->post('desconciliar', 'ContabilidadController@contabilidad_ingreso_cuenta_desconciliar');
-                $router->post('estado', 'ContabilidadController@contabilidad_ingreso_cuenta_estado');
-            });
-
-            $router->group(['prefix' => 'configuracion'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_ingreso_configuracion_data');
-                $router->post('vertical', 'ContabilidadController@contabilidad_ingreso_configuracion_vertical');
-                $router->post('categoria', 'ContabilidadController@contabilidad_ingreso_configuracion_categoria');
-            });
-
-            $router->group(['prefix' => 'eliminar'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_ingreso_eliminar_data');
+                $router->get('data', 'ContabilidadController@contabilidad_ingreso_historial_data');
+                $router->post('buscar', 'ContabilidadController@contabilidad_historial_filtrado');
             });
         });
 
-        $router->group(['prefix' => 'proveedor'], function () use ($router) {
-            $router->get('archivos/{rfc}', 'ContabilidadController@contabilidad_proveedor_archivos');
-            $router->post('guardar', 'ContabilidadController@contabilidad_proveedor_guardar');
-        });
-
-        $router->group(['prefix' => 'compra-gasto'], function () use ($router) {
-            $router->post('crear-gasto', 'ContabilidadController@contabilidad_compra_gasto_crear_gasto');
-        });
-
-        $router->group(['prefix' => 'globalizar'], function () use ($router) {
-            $router->post('data', 'ContabilidadController@contabilidad_globalizar_data');
-            $router->post('excel', 'ContabilidadController@contabilidad_globalizar_excel');
-        });
-
-        $router->group(['prefix' => 'documentos-importar'], function () use ($router) {
-            $router->get('data/{anio}', 'ContabilidadController@contabilidad_documentos_importar_data');
-            $router->get('importar/{venta}', 'ContabilidadController@contabilidad_documentos_importar_importar');
-        });
-
-        $router->group(['prefix' => 'documentos-actualizar'], function () use ($router) {
-            $router->get('data/{documento}', 'ContabilidadController@contabilidad_documentos_actualizar_data');
-            $router->get('terminar/{documento}', 'ContabilidadController@contabilidad_documentos_actualizar_terminar');
-        });
-
-        $router->group(['prefix' => 'refacturacion'], function () use ($router) {
-            $router->get('data', 'ContabilidadController@contabilidad_refacturacion_data');
-            $router->post('crear', 'ContabilidadController@contabilidad_refacturacion_crear');
-            $router->get('cancelar/{documento}', 'ContabilidadController@contabilidad_refacturacion_cancelar');
-        });
+        $router->post('globalizar', 'ContabilidadController@contabilidad_documentos_globalizar');
+        $router->post('desglobalizar', 'ContabilidadController@contabilidad_documentos_desglobalizar');
 
         $router->group(['prefix' => 'tesoreria'], function () use ($router) {
             $router->get('data', 'ContabilidadController@contabilidad_tesoreria_data');
@@ -1002,11 +960,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('huawei', 'CompraController@rawinfo_compra_huawei');
         });
 
-        $router->group(['prefix' => 'contabilidad'], function () use ($router) {
-            $router->get('encuesta', 'ReporteController@rawinfo_contabilidad_encuesta');
-            $router->get('encuesta', 'ReporteController@rawinfo_contabilidad_encuesta');
-        });
-
         $router->group(['prefix' => 'logistica'], function () use ($router) {
             $router->group(['prefix' => 'envia'], function () use ($router) {
                 $router->get('cotizar', 'LogisticaController@rawinfo_logistica_envia_cotizar');
@@ -1077,11 +1030,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
 });
 
-$router->group(['prefix' => 'estado'], function () use ($router) {
-    $router->group(['prefix' => 'factura'], function () use ($router) {
-        $router->get('reporteSemanal/{reRun}', 'ContabilidadController@contabilidad_estado_factura_reporte_semanal');
-    });
-});
 $router->post('rawinfo/mercadolibre/notificaciones/{marketplace_id}', 'NotificacionesController@notificacion');
 $router->get('pruebaPicking', 'AlmacenController@rawinfo_almacen_picking');
 $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2@mercadolibre_notificaciones_callbacks');
@@ -1089,7 +1037,7 @@ $router->post('mercadolibre/notificaciones/callbacks', 'MercadolibreControllerV2
 $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
-    $router->get('testApis', 'DeveloperController@testApiWalmart');
+    $router->get('test', 'DeveloperController@test');
 });
 
 $router->get('getToken', 'DropboxController@getDropboxToken');
