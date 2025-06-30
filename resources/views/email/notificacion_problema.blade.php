@@ -44,7 +44,7 @@
         class="content">
         <tr>
             <td align="center" bgcolor="#0073AA" style="padding: 20px 20px 20px 20px; color: #ffffff; font-family: Arial, sans-serif; font-size: 36px; font-weight: bold;">
-                <img src="http://www.omg.com.mx/images/logo-omg.png" alt="OMG International" width="300" height="120" style="display: block;" />
+                <img src="https://afainnova.com/assets/images/logo_omg.png" alt="AFA Innova" width="300" height="120" style="display: block;" />
             </td>
         </tr>
         <tr>
