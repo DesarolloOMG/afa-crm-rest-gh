@@ -820,8 +820,10 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
         });
 
-        $router->post('globalizar', 'ContabilidadController@contabilidad_documentos_globalizar');
-        $router->post('desglobalizar', 'ContabilidadController@contabilidad_documentos_desglobalizar');
+        $router->group(['prefix' => 'globalizar'], function () use ($router) {
+            $router->post('globalizar', 'ContabilidadController@contabilidad_globalizar_globalizar');
+            $router->post('desglobalizar', 'ContabilidadController@contabilidad_globalizar_desglobalizar');
+        });
 
         $router->group(['prefix' => 'tesoreria'], function () use ($router) {
             $router->get('data', 'ContabilidadController@contabilidad_tesoreria_data');

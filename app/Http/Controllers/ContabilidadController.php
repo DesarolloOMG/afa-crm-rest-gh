@@ -1,35 +1,32 @@
 <?php /** @noinspection PhpUnused */
-/** @noinspection PhpUndefinedFieldInspection */
 
-/** @noinspection PhpComposerExtensionStubsInspection */
+/** @noinspection PhpUndefinedFieldInspection */
 
 namespace App\Http\Controllers;
 
-use App\Http\Services\DocumentoService;
-use App\Http\Services\InventarioService;
 use App\Http\Services\MovimientoContableService;
-use App\Http\Services\MovimientoService;
-use App\Http\Services\WhatsAppService;
 use Exception;
-use Httpful\Exception\ConnectionErrorException;
-use Httpful\Mime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Mailgun\Mailgun;
-use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PDO;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Color;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use stdClass;
-use Throwable;
 
 class ContabilidadController extends Controller
 {
     /* Contabilidad > Facturas */
+    public static function logVariableLocation(): string
+    {
+        $sis = 'BE'; //Front o Back
+        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'DAD'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
+    }
+
     public function contabilidad_facturas_pendiente_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -38,7 +35,7 @@ class ContabilidadController extends Controller
         $ventas = DB::select('CALL sp_ventas_raw_data(?)', [$auth->id]);
 
         // Opcional: Decodifica los campos JSON si quieres arrays en lugar de strings
-        foreach ($ventas as &$venta) {
+        foreach ($ventas as $venta) {
             $venta->productos = json_decode($venta->productos, true) ?? [];
             $venta->pagos = json_decode($venta->pagos, true) ?? [];
             $venta->archivos = json_decode($venta->archivos, true) ?? [];
@@ -82,11 +79,11 @@ class ContabilidadController extends Controller
         $documentos_formateados = [];
         foreach ($documentos as $doc) {
             $documentos_formateados[] = [
-                'id_documento'   => $doc['id'],
+                'id_documento' => $doc['id'],
                 'monto_aplicado' => $doc['monto'],
-                'moneda'         => $doc['moneda'] ?? $ingreso->moneda,
+                'moneda' => $doc['moneda'] ?? $ingreso->moneda,
                 'tipo_cambio_aplicado' => $doc['tipo_cambio_aplicado'] ?? 1,
-                'parcialidad'   => 1,
+                'parcialidad' => 1,
             ];
         }
 
@@ -99,8 +96,7 @@ class ContabilidadController extends Controller
                 $ingreso->tipo_cambio
             );
 
-            // Si hubo errores, revierte todo
-            $errores = array_filter($resultados, function($res) {
+            $errores = array_filter($resultados, function ($res) {
                 return $res['status'] === 'error';
             });
 
@@ -119,7 +115,7 @@ class ContabilidadController extends Controller
                 'msg' => 'Ingreso aplicado correctamente',
                 'resultados' => $resultados
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
             return response()->json([
                 'code' => 500,
@@ -186,7 +182,7 @@ class ContabilidadController extends Controller
                 'msg' => 'Monto dessaldado correctamente',
                 'nuevo_saldo' => $resultado[0]->nuevo_saldo ?? null
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'code' => 500,
                 'msg' => 'Error al desaldar documento',
@@ -205,15 +201,15 @@ class ContabilidadController extends Controller
         $stmt->execute([$razon_social]);
 
         // 1. Entidades encontradas
-        $proveedores = $stmt->fetchAll(\PDO::FETCH_OBJ);
+        $proveedores = $stmt->fetchAll(PDO::FETCH_OBJ);
         $stmt->nextRowset();
 
         // 2. Documentos pendientes del proveedor
-        $documentos = $stmt->fetchAll(\PDO::FETCH_OBJ);
+        $documentos = $stmt->fetchAll(PDO::FETCH_OBJ);
         $stmt->nextRowset();
 
         // 3. Egresos creados
-        $egresos = $stmt->fetchAll(\PDO::FETCH_OBJ);
+        $egresos = $stmt->fetchAll(PDO::FETCH_OBJ);
 
         return response()->json([
             'code' => 200,
@@ -236,9 +232,9 @@ class ContabilidadController extends Controller
 
         $documentos_formateados = [
             [
-                'id_documento'   => $id_documento,
+                'id_documento' => $id_documento,
                 'monto_aplicado' => $monto,
-                'moneda'         => $egreso->moneda,
+                'moneda' => $egreso->moneda,
                 'tipo_cambio_aplicado' => $egreso->tipo_cambio
             ]
         ];
@@ -252,7 +248,7 @@ class ContabilidadController extends Controller
                 $egreso->tipo_cambio
             );
 
-            $errores = array_filter($resultados, function($res) {
+            $errores = array_filter($resultados, function ($res) {
                 return $res['status'] === 'error';
             });
 
@@ -271,7 +267,7 @@ class ContabilidadController extends Controller
                 'msg' => 'Egreso aplicado correctamente',
                 'resultados' => $resultados
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             DB::rollBack();
             return response()->json([
                 'code' => 500,
@@ -288,9 +284,9 @@ class ContabilidadController extends Controller
         // Busca por razón social o RFC
         $proveedores = DB::table('documento_entidad')
             ->where('tipo', 2)
-            ->where(function($q) use ($query) {
-                $q->where('razon_social', 'like', "%{$query}%")
-                    ->orWhere('rfc', 'like', "%{$query}%");
+            ->where(function ($q) use ($query) {
+                $q->where('razon_social', 'like', "%$query%")
+                    ->orWhere('rfc', 'like', "%$query%");
             })
             ->select('id', 'razon_social', 'rfc', 'telefono', 'correo')
             ->orderBy('razon_social')
@@ -302,6 +298,8 @@ class ContabilidadController extends Controller
             'proveedores' => $proveedores
         ]);
     }
+
+    /* Contabilidad > Estado de cuenta */
 
     public function compras_gasto_crear(Request $request): JsonResponse
     {
@@ -320,37 +318,37 @@ class ContabilidadController extends Controller
 
         // Insertar documento
         $documento_id = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa'  => $data->id_almacen_principal_empresa,
+            'id_almacen_principal_empresa' => $data->id_almacen_principal_empresa,
             'id_almacen_secundario_empresa' => $data->id_almacen_secundario_empresa ?? 0,
-            'id_tipo'        => 12, // 12 = Gasto
-            'id_periodo'     => $data->id_periodo ?? 1,
-            'id_cfdi'        => $data->id_cfdi ?? 1,
-            'id_usuario'     => $auth->id,
-            'id_moneda'      => $data->id_moneda,
-            'tipo_cambio'    => $data->tipo_cambio,
-            'referencia'     => trim($data->referencia ?? ''),
-            'observacion'    => trim($data->observacion ?? ''),
-            'info_extra'     => trim($data->info_extra ?? ''),
-            'id_entidad'     => $data->id_entidad,
-            'factura_serie'  => $data->factura_serie ?? null,
-            'factura_folio'  => $data->factura_folio ?? null,
-            'monto'          => $monto,
-            'saldo'          => $monto,
-            'status'         => 1
+            'id_tipo' => 12, // 12 = Gasto
+            'id_periodo' => $data->id_periodo ?? 1,
+            'id_cfdi' => $data->id_cfdi ?? 1,
+            'id_usuario' => $auth->id,
+            'id_moneda' => $data->id_moneda,
+            'tipo_cambio' => $data->tipo_cambio,
+            'referencia' => trim($data->referencia ?? ''),
+            'observacion' => trim($data->observacion ?? ''),
+            'info_extra' => trim($data->info_extra ?? ''),
+            'id_entidad' => $data->id_entidad,
+            'factura_serie' => $data->factura_serie ?? null,
+            'factura_folio' => $data->factura_folio ?? null,
+            'monto' => $monto,
+            'saldo' => $monto,
+            'status' => 1
         ]);
 
         // Insertar productos
         foreach ($data->productos as $producto) {
             DB::table('movimiento')->insert([
                 'id_documento' => $documento_id,
-                'id_modelo'    => $producto->id_modelo,
-                'cantidad'     => $producto->cantidad,
-                'precio'       => $producto->precio,
-                'descuento'    => $producto->descuento ?? 0,
-                'comentario'   => $producto->comentario ?? '',
-                'addenda'      => $producto->addenda ?? '',
-                'garantia'     => $producto->garantia ?? 'N/A',
-                'regalo'       => $producto->regalo ?? 0
+                'id_modelo' => $producto->id_modelo,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->precio,
+                'descuento' => $producto->descuento ?? 0,
+                'comentario' => $producto->comentario ?? '',
+                'addenda' => $producto->addenda ?? '',
+                'garantia' => $producto->garantia ?? 'N/A',
+                'regalo' => $producto->regalo ?? 0
             ]);
         }
 
@@ -358,8 +356,8 @@ class ContabilidadController extends Controller
         if (!empty($data->seguimiento)) {
             DB::table('seguimiento')->insert([
                 'id_documento' => $documento_id,
-                'id_usuario'   => $auth->id,
-                'seguimiento'  => $data->seguimiento,
+                'id_usuario' => $auth->id,
+                'seguimiento' => $data->seguimiento,
             ]);
         }
 
@@ -370,7 +368,9 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    /* Contabilidad > Estado de cuenta */
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
     public function contabilidad_estado_ingreso_reporte(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -399,13 +399,7 @@ class ContabilidadController extends Controller
 
         // Cabecera
         $headers = ['FOLIO', 'MONTO', 'MONEDA', 'T.C', 'FORMA PAGO', 'FECHA', 'FACTURAS PAGADAS'];
-        foreach ($headers as $k => $header) {
-            $col = chr(65 + $k);
-            $sheet->setCellValue($col . '1', $header);
-            $sheet->getStyle($col . '1')->getFont()->setBold(true);
-            $sheet->getStyle($col . '1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        $this->setExcelHeader($headers, $sheet);
 
         // Datos
         $row = 2;
@@ -436,6 +430,27 @@ class ContabilidadController extends Controller
         ]);
     }
 
+    /* Facturas > Flujo */
+
+    /**
+     * @param array $headers
+     * @param Worksheet $sheet
+     * @return void
+     */
+    public function setExcelHeader(array $headers, Worksheet $sheet): void
+    {
+        foreach ($headers as $k => $header) {
+            $col = chr(65 + $k);
+            $sheet->setCellValue($col . '1', $header);
+            $sheet->getStyle($col . '1')->getFont()->setBold(true);
+            $sheet->getStyle($col . '1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
     public function contabilidad_estado_factura_reporte(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -466,13 +481,7 @@ class ContabilidadController extends Controller
 
         // Cabecera
         $headers = ['SERIE', 'FOLIO', 'FECHA', 'UUID', 'MONEDA', 'T.C', 'TOTAL', 'SALDO', 'RAZÓN SOCIAL', 'RFC', 'PAGOS'];
-        foreach ($headers as $k => $header) {
-            $col = chr(65 + $k);
-            $sheet->setCellValue($col . '1', $header);
-            $sheet->getStyle($col . '1')->getFont()->setBold(true);
-            $sheet->getStyle($col . '1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        $this->setExcelHeader($headers, $sheet);
 
         // Datos
         $row = 2;
@@ -507,7 +516,6 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    /* Facturas > Flujo */
     public function contabilidad_ingreso_generar_data(): JsonResponse
     {
         // Catálogo de afectaciones (ingreso, egreso, nota de crédito, etc.)
@@ -587,9 +595,6 @@ class ContabilidadController extends Controller
         }
 
         // Deducción de origen_tipo y destino_tipo según id_tipo_afectacion
-        $origen_tipo = null;
-        $destino_tipo = null;
-
         switch ($data->id_tipo_afectacion) {
             case 1: // Ingreso
                 $origen_tipo = 1;   // Entidad financiera
@@ -605,24 +610,24 @@ class ContabilidadController extends Controller
         }
 
         $id_movimiento = DB::table('movimiento_contable')->insertGetId([
-            'folio'                  => $data->folio ?? null,
-            'id_tipo_afectacion'     => $data->id_tipo_afectacion,
-            'fecha_operacion'        => $data->fecha_operacion,
-            'fecha_afectacion'       => $data->fecha_afectacion ?? null,
-            'id_moneda'              => $data->id_moneda,
-            'tipo_cambio'            => $data->tipo_cambio ?? 1,
-            'monto'                  => $data->monto,
-            'origen_tipo'            => $origen_tipo,
-            'entidad_origen'         => $data->entidad_origen,
-            'nombre_entidad_origen'  => $data->nombre_entidad_origen ?? null,
-            'destino_tipo'           => $destino_tipo,
-            'entidad_destino'        => $data->entidad_destino,
+            'folio' => $data->folio ?? null,
+            'id_tipo_afectacion' => $data->id_tipo_afectacion,
+            'fecha_operacion' => $data->fecha_operacion,
+            'fecha_afectacion' => $data->fecha_afectacion ?? null,
+            'id_moneda' => $data->id_moneda,
+            'tipo_cambio' => $data->tipo_cambio ?? 1,
+            'monto' => $data->monto,
+            'origen_tipo' => $origen_tipo,
+            'entidad_origen' => $data->entidad_origen,
+            'nombre_entidad_origen' => $data->nombre_entidad_origen ?? null,
+            'destino_tipo' => $destino_tipo,
+            'entidad_destino' => $data->entidad_destino,
             'nombre_entidad_destino' => $data->nombre_entidad_destino ?? null,
-            'id_forma_pago'          => $data->id_forma_pago,
-            'referencia_pago'        => $data->referencia_pago ?? null,
-            'descripcion_pago'       => $data->descripcion_pago ?? null,
-            'comentarios'            => $data->comentarios ?? null,
-            'creado_por'             => $auth->id ?? null,
+            'id_forma_pago' => $data->id_forma_pago,
+            'referencia_pago' => $data->referencia_pago ?? null,
+            'descripcion_pago' => $data->descripcion_pago ?? null,
+            'comentarios' => $data->comentarios ?? null,
+            'creado_por' => $auth->id ?? null,
         ]);
 
         return response()->json([
@@ -710,6 +715,10 @@ class ContabilidadController extends Controller
             'tipos_afectacion' => $tipos_afectacion
         ]);
     }
+
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
     public function contabilidad_historial_filtrado(Request $request): JsonResponse
     {
         $cuenta = $request->input('cuenta');
@@ -738,11 +747,11 @@ class ContabilidadController extends Controller
 
         // Filtros
         if (!empty($cuenta)) {
-            $query->where(function($q) use ($cuenta) {
-                $q->where(function($q1) use ($cuenta) {
+            $query->where(function ($q) use ($cuenta) {
+                $q->where(function ($q1) use ($cuenta) {
                     $q1->where('mc.origen_tipo', 2)
                         ->where('mc.entidad_origen', $cuenta);
-                })->orWhere(function($q2) use ($cuenta) {
+                })->orWhere(function ($q2) use ($cuenta) {
                     $q2->where('mc.destino_tipo', 2)
                         ->where('mc.entidad_destino', $cuenta);
                 });
@@ -776,13 +785,7 @@ class ContabilidadController extends Controller
         $headers = [
             'FOLIO', 'TIPO AFECTACIÓN', 'FECHA OPERACIÓN', 'MONTO', 'MONEDA', 'CUENTA', 'REFERENCIA', 'ORIGEN', 'DESTINO', 'COMENTARIOS'
         ];
-        foreach ($headers as $k => $header) {
-            $col = chr(65 + $k);
-            $sheet->setCellValue($col . '1', $header);
-            $sheet->getStyle($col . '1')->getFont()->setBold(true);
-            $sheet->getStyle($col . '1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+        $this->setExcelHeader($headers, $sheet);
 
         // Datos
         $row = 2;
@@ -816,10 +819,11 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_documentos_globalizar(Request $request): JsonResponse
+    public function contabilidad_globalizar_globalizar(Request $request): JsonResponse
     {
-        $uuid = $request->input('uuid');
-        $documentos = $request->input('documentos'); // array de IDs
+        $data = json_decode($request->input('data'));
+        $uuid = $data->uuid;
+        $documentos = $data->documentos;
 
         $afectados = [];
         $no_afectados = [];
@@ -845,7 +849,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_documentos_desglobalizar(Request $request): JsonResponse
+    public function contabilidad_globalizar_desglobalizar(Request $request): JsonResponse
     {
         $uuid = $request->input('uuid');
         $docs = DB::table('documento')->where('uuid', $uuid)->pluck('id');
@@ -869,8 +873,8 @@ class ContabilidadController extends Controller
         ]);
     }
 
-
-    public function contabilidad_tesoreria_data() {
+    public function contabilidad_tesoreria_data(): JsonResponse
+    {
         $monedas = DB::table('moneda')->get();
 
         return response()->json([
@@ -879,7 +883,7 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_tesoreria_buscar_banco(Request $request)
+    public function contabilidad_tesoreria_buscar_banco(Request $request): JsonResponse
     {
         try {
             $search = trim($request->input('banco', ''));
@@ -894,7 +898,7 @@ class ContabilidadController extends Controller
 
             $bancos = DB::table('cat_bancos')
                 ->select('id', 'razon_social as nombre', 'rfc', 'codigo_sat', 'valor')
-                ->where('razon_social', 'like', "%{$search}%")
+                ->where('razon_social', 'like', "%$search%")
                 ->orderBy('razon_social')
                 ->get();
 
@@ -912,7 +916,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_tesoreria_cuenta_crear(Request $request)
+    public function contabilidad_tesoreria_cuenta_crear(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -926,16 +930,16 @@ class ContabilidadController extends Controller
             }
 
             $insert = [
-                'nombre'     => $data['nombre'],
-                'id_tipo'    => 1, // Cuenta bancaria
-                'id_banco'   => $data['id_banco'],
-                'id_moneda'  => $data['id_moneda'],
-                'no_cuenta'  => $data['no_cuenta'] ?? null,
-                'sucursal'   => $data['sucursal'] ?? null,
-                'convenio'   => $data['convenio'] ?? null,
-                'clabe'      => $data['clabe'] ?? null,
-                'swift'      => $data['swift'] ?? null,
-                'comentarios'=> $data['comentarios'] ?? null,
+                'nombre' => $data['nombre'],
+                'id_tipo' => 1, // Cuenta bancaria
+                'id_banco' => $data['id_banco'],
+                'id_moneda' => $data['id_moneda'],
+                'no_cuenta' => $data['no_cuenta'] ?? null,
+                'sucursal' => $data['sucursal'] ?? null,
+                'convenio' => $data['convenio'] ?? null,
+                'clabe' => $data['clabe'] ?? null,
+                'swift' => $data['swift'] ?? null,
+                'comentarios' => $data['comentarios'] ?? null,
                 // 'plazo'     => null, // <-- No incluirlo
             ];
 
@@ -954,7 +958,7 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_tesoreria_cuenta_editar(Request $request)
+    public function contabilidad_tesoreria_cuenta_editar(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -967,15 +971,15 @@ class ContabilidadController extends Controller
             }
 
             $update = [
-                'nombre'     => $data['nombre'],
-                'id_banco'   => $data['id_banco'],
-                'id_moneda'  => $data['id_moneda'],
-                'no_cuenta'  => $data['no_cuenta'] ?? null,
-                'sucursal'   => $data['sucursal'] ?? null,
-                'convenio'   => $data['convenio'] ?? null,
-                'clabe'      => $data['clabe'] ?? null,
-                'swift'      => $data['swift'] ?? null,
-                'comentarios'=> $data['comentarios'] ?? null,
+                'nombre' => $data['nombre'],
+                'id_banco' => $data['id_banco'],
+                'id_moneda' => $data['id_moneda'],
+                'no_cuenta' => $data['no_cuenta'] ?? null,
+                'sucursal' => $data['sucursal'] ?? null,
+                'convenio' => $data['convenio'] ?? null,
+                'clabe' => $data['clabe'] ?? null,
+                'swift' => $data['swift'] ?? null,
+                'comentarios' => $data['comentarios'] ?? null,
                 // 'plazo'     => null, // <-- No incluirlo
             ];
 
@@ -995,10 +999,12 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_tesoreria_cuentas_bancarias()
+    // Listar cajas chicas
+
+    public function contabilidad_tesoreria_cuentas_bancarias(): JsonResponse
     {
         try {
-            $cuentas = \DB::table('cat_entidad_financiera as ef')
+            $cuentas = DB::table('cat_entidad_financiera as ef')
                 ->join('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
                 ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
                 ->select(
@@ -1031,7 +1037,9 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_tesoreria_cuenta_eliminar($id)
+// Crear
+
+    public function contabilidad_tesoreria_cuenta_eliminar($id): JsonResponse
     {
         try {
             DB::table('cat_entidad_financiera')->where('id', $id)->delete();
@@ -1048,11 +1056,12 @@ class ContabilidadController extends Controller
         }
     }
 
-    // Listar cajas chicas
-    public function contabilidad_tesoreria_cajas_chicas()
+// Editar
+
+    public function contabilidad_tesoreria_cajas_chicas(): JsonResponse
     {
         try {
-            $cajas = \DB::table('cat_entidad_financiera as ef')
+            $cajas = DB::table('cat_entidad_financiera as ef')
                 ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
                 ->select(
                     'ef.id',
@@ -1077,8 +1086,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Crear
-    public function contabilidad_tesoreria_caja_chica_crear(Request $request)
+// Eliminar
+
+    public function contabilidad_tesoreria_caja_chica_crear(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1091,11 +1101,11 @@ class ContabilidadController extends Controller
             }
 
             $id = DB::table('cat_entidad_financiera')->insertGetId([
-                'nombre'     => $data['nombre'],
-                'id_tipo'    => 2, // Caja chica
-                'id_banco'   => null,
-                'id_moneda'  => $data['id_moneda'],
-                'comentarios'=> $data['comentarios'] ?? null,
+                'nombre' => $data['nombre'],
+                'id_tipo' => 2, // Caja chica
+                'id_banco' => null,
+                'id_moneda' => $data['id_moneda'],
+                'comentarios' => $data['comentarios'] ?? null,
             ]);
 
             return response()->json([
@@ -1111,8 +1121,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Editar
-    public function contabilidad_tesoreria_caja_chica_editar(Request $request)
+    // Listar acreedores
+
+    public function contabilidad_tesoreria_caja_chica_editar(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1127,9 +1138,9 @@ class ContabilidadController extends Controller
             DB::table('cat_entidad_financiera')
                 ->where('id', $data['id'])
                 ->update([
-                    'nombre'     => $data['nombre'],
-                    'id_moneda'  => $data['id_moneda'],
-                    'comentarios'=> $data['comentarios'] ?? null,
+                    'nombre' => $data['nombre'],
+                    'id_moneda' => $data['id_moneda'],
+                    'comentarios' => $data['comentarios'] ?? null,
                 ]);
 
             return response()->json([
@@ -1144,8 +1155,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Eliminar
-    public function contabilidad_tesoreria_caja_chica_eliminar($id)
+// Crear
+
+    public function contabilidad_tesoreria_caja_chica_eliminar($id): JsonResponse
     {
         try {
             DB::table('cat_entidad_financiera')->where('id', $id)->delete();
@@ -1162,11 +1174,12 @@ class ContabilidadController extends Controller
         }
     }
 
-    // Listar acreedores
-    public function contabilidad_tesoreria_acreedores()
+// Editar
+
+    public function contabilidad_tesoreria_acreedores(): JsonResponse
     {
         try {
-            $acreedores = \DB::table('cat_entidad_financiera as ef')
+            $acreedores = DB::table('cat_entidad_financiera as ef')
                 ->leftJoin('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
                 ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
                 ->select(
@@ -1187,7 +1200,7 @@ class ContabilidadController extends Controller
                 'code' => 200,
                 'data' => $acreedores
             ]);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             return response()->json([
                 'code' => 500,
                 'message' => 'Error al listar acreedores: ' . $e->getMessage()
@@ -1195,8 +1208,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Crear
-    public function contabilidad_tesoreria_acreedor_crear(Request $request)
+// Eliminar
+
+    public function contabilidad_tesoreria_acreedor_crear(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1209,12 +1223,12 @@ class ContabilidadController extends Controller
             }
 
             $id = DB::table('cat_entidad_financiera')->insertGetId([
-                'nombre'     => $data['nombre'],
-                'id_tipo'    => 3, // Acreedor
-                'id_banco'   => $data['id_banco'],
-                'id_moneda'  => $data['id_moneda'],
-                'plazo'      => $data['plazo'],
-                'comentarios'=> $data['comentarios'] ?? null,
+                'nombre' => $data['nombre'],
+                'id_tipo' => 3, // Acreedor
+                'id_banco' => $data['id_banco'],
+                'id_moneda' => $data['id_moneda'],
+                'plazo' => $data['plazo'],
+                'comentarios' => $data['comentarios'] ?? null,
             ]);
 
             return response()->json([
@@ -1230,8 +1244,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Editar
-    public function contabilidad_tesoreria_acreedor_editar(Request $request)
+    // Listar deudores
+
+    public function contabilidad_tesoreria_acreedor_editar(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1246,11 +1261,11 @@ class ContabilidadController extends Controller
             DB::table('cat_entidad_financiera')
                 ->where('id', $data['id'])
                 ->update([
-                    'nombre'     => $data['nombre'],
-                    'id_banco'   => $data['id_banco'],
-                    'id_moneda'  => $data['id_moneda'],
-                    'plazo'      => $data['plazo'],
-                    'comentarios'=> $data['comentarios'] ?? null,
+                    'nombre' => $data['nombre'],
+                    'id_banco' => $data['id_banco'],
+                    'id_moneda' => $data['id_moneda'],
+                    'plazo' => $data['plazo'],
+                    'comentarios' => $data['comentarios'] ?? null,
                 ]);
 
             return response()->json([
@@ -1265,8 +1280,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Eliminar
-    public function contabilidad_tesoreria_acreedor_eliminar($id)
+// Crear
+
+    public function contabilidad_tesoreria_acreedor_eliminar($id): JsonResponse
     {
         try {
             DB::table('cat_entidad_financiera')->where('id', $id)->delete();
@@ -1283,11 +1299,12 @@ class ContabilidadController extends Controller
         }
     }
 
-    // Listar deudores
-    public function contabilidad_tesoreria_deudores()
+// Editar
+
+    public function contabilidad_tesoreria_deudores(): JsonResponse
     {
         try {
-            $deudores = \DB::table('cat_entidad_financiera as ef')
+            $deudores = DB::table('cat_entidad_financiera as ef')
                 ->leftJoin('cat_bancos as b', 'ef.id_banco', '=', 'b.id')
                 ->join('moneda as m', 'ef.id_moneda', '=', 'm.id')
                 ->select(
@@ -1315,8 +1332,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Crear
-    public function contabilidad_tesoreria_deudor_crear(Request $request)
+// Eliminar
+
+    public function contabilidad_tesoreria_deudor_crear(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1328,12 +1346,12 @@ class ContabilidadController extends Controller
                 ]);
             }
 
-            $id = \DB::table('cat_entidad_financiera')->insertGetId([
-                'nombre'     => $data['nombre'],
-                'id_tipo'    => 4, // Deudor
-                'id_banco'   => $data['id_banco'],
-                'id_moneda'  => $data['id_moneda'],
-                'comentarios'=> $data['comentarios'] ?? null,
+            $id = DB::table('cat_entidad_financiera')->insertGetId([
+                'nombre' => $data['nombre'],
+                'id_tipo' => 4, // Deudor
+                'id_banco' => $data['id_banco'],
+                'id_moneda' => $data['id_moneda'],
+                'comentarios' => $data['comentarios'] ?? null,
             ]);
 
             return response()->json([
@@ -1349,8 +1367,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Editar
-    public function contabilidad_tesoreria_deudor_editar(Request $request)
+    // Listar bancos
+
+    public function contabilidad_tesoreria_deudor_editar(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1365,10 +1384,10 @@ class ContabilidadController extends Controller
             DB::table('cat_entidad_financiera')
                 ->where('id', $data['id'])
                 ->update([
-                    'nombre'     => $data['nombre'],
-                    'id_banco'   => $data['id_banco'],
-                    'id_moneda'  => $data['id_moneda'],
-                    'comentarios'=> $data['comentarios'] ?? null,
+                    'nombre' => $data['nombre'],
+                    'id_banco' => $data['id_banco'],
+                    'id_moneda' => $data['id_moneda'],
+                    'comentarios' => $data['comentarios'] ?? null,
                 ]);
 
             return response()->json([
@@ -1383,8 +1402,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Eliminar
-    public function contabilidad_tesoreria_deudor_eliminar($id)
+// Crear
+
+    public function contabilidad_tesoreria_deudor_eliminar($id): JsonResponse
     {
         try {
             DB::table('cat_entidad_financiera')->where('id', $id)->delete();
@@ -1401,8 +1421,9 @@ class ContabilidadController extends Controller
         }
     }
 
-    // Listar bancos
-    public function contabilidad_tesoreria_bancos()
+// Editar
+
+    public function contabilidad_tesoreria_bancos(): JsonResponse
     {
         try {
             $bancos = DB::table('cat_bancos')->select('id', 'valor', 'razon_social', 'rfc', 'codigo_sat')->orderBy('razon_social')->get();
@@ -1412,8 +1433,9 @@ class ContabilidadController extends Controller
         }
     }
 
-// Crear
-    public function contabilidad_tesoreria_banco_crear(Request $request)
+// Eliminar
+
+    public function contabilidad_tesoreria_banco_crear(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1434,8 +1456,7 @@ class ContabilidadController extends Controller
         }
     }
 
-// Editar
-    public function contabilidad_tesoreria_banco_editar(Request $request)
+    public function contabilidad_tesoreria_banco_editar(Request $request): JsonResponse
     {
         try {
             $data = json_decode($request->input('data'), true);
@@ -1459,8 +1480,7 @@ class ContabilidadController extends Controller
         }
     }
 
-// Eliminar
-    public function contabilidad_tesoreria_banco_eliminar($id)
+    public function contabilidad_tesoreria_banco_eliminar($id): JsonResponse
     {
         try {
             DB::table('cat_bancos')->where('id', $id)->delete();
@@ -1469,15 +1489,5 @@ class ContabilidadController extends Controller
         } catch (Exception $e) {
             return response()->json(['code' => 500, 'message' => 'Error al eliminar banco: ' . $e->getMessage()]);
         }
-    }
-
-
-    public static function logVariableLocation(): string
-    {
-        $sis = 'BE'; //Front o Back
-        $ini = 'CC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'DAD'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }

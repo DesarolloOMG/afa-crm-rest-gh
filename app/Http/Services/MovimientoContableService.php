@@ -1,17 +1,16 @@
-<?php
+<?php /** @noinspection PhpUnused */
 
 namespace App\Http\Services;
 
 use Exception;
-use DateTime;
-use DB;
+use Illuminate\Support\Facades\DB;
 
 class MovimientoContableService
 {
     /**
      * Crea un movimiento contable (ingreso, egreso, traspaso, nota de crédito, etc.)
      */
-    public static function crearMovimiento($data)
+    public static function crearMovimiento($data): array
     {
         DB::beginTransaction();
 
@@ -62,7 +61,7 @@ class MovimientoContableService
      * Aplica un movimiento a uno o varios documentos
      * $documentos = [ [id_documento, monto_aplicado, moneda_documento, tipo_cambio_aplicado], ... ]
      */
-    public static function aplicarADocumentos($idMovimiento, $documentos, $monedaMovimiento, $tipoCambioMovimiento = 1)
+    public static function aplicarADocumentos($idMovimiento, $documentos, $monedaMovimiento, $tipoCambioMovimiento = 1): array
     {
         $resultados = [];
 
@@ -130,7 +129,7 @@ class MovimientoContableService
                     'nuevo_saldo' => $nuevoSaldo
                 ];
 
-            } catch (\Exception $e) {
+            } catch (Exception $e) {
                 $resultados[] = [
                     'id_documento' => $doc['id_documento'] ?? null,
                     'status' => 'error',
@@ -142,16 +141,12 @@ class MovimientoContableService
         return $resultados;
     }
 
-
-    public static function logVariableLocation()
+    public static function logVariableLocation(): string
     {
-        // $log = self::logVariableLocation();
         $sis = 'BE'; //Front o Back
-        $ini = 'AS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'OME'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $ini = 'MS'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'BLE'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
-        $text = ('<br>' . $sis . $ini . $trace['line'] . $fin);
-
-        return $text;
+        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
 }
