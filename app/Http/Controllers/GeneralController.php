@@ -8,6 +8,7 @@ use App\Http\Services\DocumentoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
+use App\Http\Services\MovimientoContableService;
 use App\Http\Services\WhatsAppService;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 use Crabbly\Fpdf\Fpdf;
@@ -819,43 +820,57 @@ class GeneralController extends Controller
 
     public function general_busqueda_venta_refacturacion(Request $request)
     {
-        $auth = json_decode($request->auth);
-        $data = json_decode($request->input("data"));
+        // 1. Obtener información de autenticación y parámetros de entrada
+        $auth   = json_decode($request->auth);
+        $data   = json_decode($request->input("data"));
+        // Opción: campo extra, por si necesitas datos adicionales
         $option = json_decode($request->input("option"));
 
-        if ($data->necesita_token) {
-
+        // 2. Si la petición requiere validación de token (2FA u otro medio), realiza la validación
+        if (!empty($data->necesita_token)) {
             $validate_wa = WhatsAppService::validateCode($auth->id, $data->token);
 
             if ($validate_wa->error) {
+                // Si el token no es válido, regresar error y no continuar
                 return response()->json([
                     "message" => $validate_wa->mensaje . " " . self::logVariableLocation()
                 ], 500);
             }
         }
 
-        $crear_refacturacion = DocumentoService::crearRefacturacion($data->documento, $option);
+        // 3. Llamar al nuevo metodo de refacturación local (ajusta el nombre si es diferente)
+        $crear_refacturacion = MovimientoContableService::refacturar(
+            $data->documento,           // ID del documento a refacturar
+            $auth->id,                  // ID del usuario autenticado
+            $data->observacion ?? ''    // Observación opcional
+        );
 
+        // 4. Si hay error en la refacturación, regresar respuesta de error
         if ($crear_refacturacion->error) {
             return response()->json([
-                'code' => 500,
+                'code'    => 500,
                 'message' => $crear_refacturacion->mensaje,
-                'raw' => property_exists($crear_refacturacion, 'raw') ? $crear_refacturacion->raw : null,
-                'data' => property_exists($crear_refacturacion, 'data') ? $crear_refacturacion->data : null
+                'raw'     => property_exists($crear_refacturacion, 'raw') ? $crear_refacturacion->raw : null,
+                'data'    => property_exists($crear_refacturacion, 'data') ? $crear_refacturacion->data : null
             ]);
         }
 
+        // 5. Si hay mensaje de seguimiento, lo guarda en la tabla seguimiento (opcional)
         if (!empty($crear_refacturacion->seguimiento)) {
             DB::table('seguimiento')->insert([
                 'id_documento' => $data->documento,
-                'id_usuario' => $auth->id,
-                'seguimiento' => $crear_refacturacion->seguimiento
+                'id_usuario'   => $auth->id,
+                'seguimiento'  => $crear_refacturacion->seguimiento
             ]);
         }
 
+        // 6. Respuesta de éxito, mensaje y IDs relacionados
         return response()->json([
-            'code' => 200,
-            'message' => $crear_refacturacion->mensaje
+            'code'                  => 200,
+            'message'               => $crear_refacturacion->mensaje,
+            'documento_nuevo'       => $crear_refacturacion->documento_nuevo ?? null,
+            'documento_nota_credito'=> $crear_refacturacion->documento_nota_credito ?? null,
+            'movimiento_nc'         => $crear_refacturacion->movimiento_nc ?? null
         ]);
     }
 

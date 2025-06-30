@@ -851,23 +851,6 @@ class MercadolibreService
             ]);
     }
 
-//        if ($venta->fase == 6 && $fulfillment) {
-    //Aqui ta
-//            $factura = DocumentoService::crearFactura($documento, 0, 0);
-
-//            if ($factura->error) {
-//                DB::table('seguimiento')->insert([
-//                    'id_documento' => $documento,
-//                    'id_usuario' => $usuario,
-//                    'seguimiento' => "<h2>" . $factura->mensaje . "</h2>"
-//                ]);
-//
-//                DB::table('documento')->where(['id' => $documento])->update([
-//                    'id_fase' => 5
-//                ]);
-//            }
-//        }
-
     public static function importarVenta($venta, $marketplace, $usuario): stdClass
     {
         set_time_limit(0);
@@ -956,6 +939,8 @@ class MercadolibreService
             'shipping_null' => $venta->shipping_null ?? 0,
             'fulfillment' => $fulfillment,
             'comentario' => $venta->pack ?? '',
+            'saldo' => $venta->paid_amount,
+            'total' => $venta->total_amount,
             'mkt_publicacion' => $venta->publicacion ?? 'N/A',
             'mkt_total' => $venta->total_amount ?? 0,
             'mkt_fee' => $venta->total_fee ?? $marketplace_fee,
@@ -990,6 +975,7 @@ class MercadolibreService
         self::insertarDireccion($documentoId, $venta);
         $productosAgrupados = self::agruparProductos($venta->productos ?? []);
 
+        // 1. Calcula el total de pago sumando cada producto (por si no existe paid_amount)
         $total_pago = 0;
         foreach ($productosAgrupados as $producto) {
             DB::table('movimiento')->insert([
@@ -1004,32 +990,74 @@ class MercadolibreService
             $total_pago += $producto->cantidad * $producto->precio;
         }
 
-        $pago = DB::table('documento_pago')->insertGetId([
-            'id_usuario' => $usuario,
-            'id_metodopago' => 31,
-            'id_vertical' => 0,
-            'id_categoria' => 0,
-            'id_clasificacion' => 0,
-            'tipo' => 1,
-            'origen_importe' => 0,
-            'destino_importe' => $total_pago,
-            'folio' => "",
-            'entidad_origen' => 1,
-            'origen_entidad' => 'XAXX010101000',
-            'entidad_destino' => '',
-            'destino_entidad' => '',
-            'referencia' => '',
-            'clave_rastreo' => '',
-            'autorizacion' => '',
-            'destino_fecha_operacion' => date('Y-m-d'),
-            'destino_fecha_afectacion' => '',
-            'cuenta_cliente' => ''
-        ]);
+        /* ESPERAR HASTA QUE CREEN CUENTAS BANCARIAS EN AFA
 
-        DB::table('documento_pago_re')->insert([
-            'id_documento' => $documentoId,
-            'id_pago' => $pago
-        ]);
+        // 2. Determina el monto a registrar: si tienes el paid_amount (lo que se pagó realmente en ML), úsalo. Si no, usa el total_pago calculado.
+        $monto_pagado = isset($venta->paid_amount) && $venta->paid_amount > 0 ? $venta->paid_amount : $total_pago;
+
+        // 3. Arma el folio único para el ingreso automático de ML, usando el ID del documento.
+        $folio_ingreso = "ML-" . $documentoId;
+
+        // 4. Revisa si ya existe un ingreso con ese folio para no duplicar ingresos (por ejemplo, si se reimporta/valida varias veces la misma venta).
+        $existeIngreso = DB::table('movimiento_contable')
+            ->where('folio', $folio_ingreso)
+            ->first();
+
+        // 5. Si no existe el ingreso aún, lo creamos y lo aplicamos.
+        if (!$existeIngreso) {
+            // 6. Trae la cuenta financiera de destino asociada al marketplace/área (ajusta el 1 si tienes varias áreas).
+            $cuenta_destino = DB::table('marketplace_cuenta')->where('id_marketplace_area', 1)->first();
+
+            if(!$cuenta_destino){
+                // 7. Si no tienes cuenta configurada para el marketplace, arma la respuesta de error.
+                $response->error = 1;
+                $response->mensaje = "Venta {$venta->id}: No se encontró una cuenta al cual aplicar el ingreso.";
+                $response->documento = $documentoId;
+            } else {
+                // 8. Trae los datos de la cuenta bancaria/financiera destino.
+                $datos_cuenta = DB::table('cat_entidad_financiera')->where('id', $cuenta_destino->id_entidad_financiera)->first();
+
+                // 9. Crea el registro del ingreso en la tabla movimiento_contable.
+                $id_ingreso = DB::table('movimiento_contable')->insertGetId([
+                    'folio'                  => $folio_ingreso,                        // Folio ML-<id_documento>
+                    'id_tipo_afectacion'     => 1,                                     // 1 = Ingreso
+                    'fecha_operacion'        => date('Y-m-d'),                         // Fecha actual
+                    'id_moneda'              => 1,                                     // 1 = MXN (ajusta si tienes más monedas)
+                    'tipo_cambio'            => 1,                                     // Tipo de cambio (1 si es MXN)
+                    'monto'                  => $monto_pagado,                         // Monto real pagado (paid_amount o total calculado)
+                    'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
+                    'entidad_origen'         => 68,                                    // ID de la entidad de ML o cliente (ajusta según tu config)
+                    'nombre_entidad_origen'  => 'MercadoLibre Publico General',        // Nombre del pagador (ajusta según tus catálogos)
+                    'destino_tipo'           => 2,                                     // 2 = cuenta bancaria/financiera de tu empresa
+                    'entidad_destino'        => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria
+                    'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',           // Nombre de la cuenta bancaria
+                    'id_forma_pago'          => 21,                                    // Forma de pago (ajusta tu catálogo)
+                    'referencia_pago'        => $referencia ?? '',                     // Referencia de pago (puedes poner el id de la venta ML)
+                    'descripcion_pago'       => 'Ingreso automático Mercado Libre',    // Descripción estándar
+                    'comentarios'            => 'Venta importada',                     // Comentario de auditoría
+                    'creado_por'             => $usuario                               // Usuario que ejecuta la importación
+                ]);
+
+                // 10. Relaciona/aplica el ingreso al documento de venta importado
+                MovimientoContableService::aplicarADocumentos(
+                    $id_ingreso,
+                    [
+                        [
+                            'id_documento'        => $documentoId,         // ID del documento que se salda
+                            'monto_aplicado'      => $monto_pagado,        // Monto que realmente se pagó
+                            'moneda'              => 1,                    // Moneda (1 = MXN)
+                            'tipo_cambio_aplicado'=> 1,                    // Tipo de cambio
+                            'parcialidad'         => 1                     // Parcialidad (por default 1)
+                        ]
+                    ],
+                    1 // Moneda (1 = MXN)
+                );
+            }
+        }
+
+        // 11. Marca el documento como pagado (aunque se haya aplicado anteriormente o justo ahora)
+
+        */
 
         DB::table("documento")->where("id", $documentoId)->update(["pagado" => 1]);
 

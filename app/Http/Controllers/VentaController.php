@@ -23,6 +23,7 @@ use App\Http\Services\InventarioService;
 use App\Http\Services\LinioService;
 use App\Http\Services\LiverpoolService;
 use App\Http\Services\MercadolibreService;
+use App\Http\Services\MovimientoContableService;
 use App\Http\Services\ShopifyService;
 use App\Http\Services\WalmartService;
 use App\Http\Services\WhatsAppService;
@@ -3394,7 +3395,6 @@ class VentaController extends Controller
             ->select(
                 "documento.id",
                 "documento.no_venta",
-                "documento.no_venta_btob",
                 "documento.id_modelo_proveedor",
                 "documento.fulfillment",
                 "documento.id_marketplace_area",
@@ -3509,158 +3509,91 @@ class VentaController extends Controller
                 " y el precio de " . $producto->precio . " al pedido " . $venta->id . ". El id del movimiento es " . $movimiento);
         }
 
-        $existe_pago = DB::table('documento_pago_re')->where('id_documento', $venta->id)->first();
+        /* ESPERAR HASTA QUE AGREGUEN CUENTAS BANCARIAS EN AFA ------------------------------------------------------------------
 
-        if (empty($existe_pago)) {
-            $pago = DB::table('documento_pago')->insertGetId([
-                'id_usuario' => 1,
-                'id_metodopago' => 31,
-                'id_vertical' => 0,
-                'id_categoria' => 0,
-                'id_clasificacion' => 0,
-                'tipo' => 1,
-                'origen_importe' => 0,
-                'destino_importe' => $total_pago,
-                'folio' => "",
-                'entidad_origen' => 1,
-                'origen_entidad' => $venta->rfc,
-                'entidad_destino' => '',
-                'destino_entidad' => '',
-                'referencia' => '',
-                'clave_rastreo' => '',
-                'autorizacion' => '',
-                'destino_fecha_operacion' => date('Y-m-d'),
-                'destino_fecha_afectacion' => '',
-                'cuenta_cliente' => ''
-            ]);
-
-            DB::table('documento_pago_re')->insert([
-                'id_documento' => $venta->id,
-                'id_pago' => $pago
-            ]);
-
-            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                "Se crea el pago en crm de " . $total_pago . " a la entidad " . $venta->rfc . ". El id del pago es " . $pago);
+        // === GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO (Mercado Libre) ===
+        // === INGRESO AUTOMÁTICO CON paid_amount ===
+        // 1. Si hay ventas y existe el campo paid_amount, lo usamos como monto pagado; si no, usamos el total calculado previamente.
+        if (!empty($response->ventas) && isset($response->ventas[0]->paid_amount)) {
+            $monto_pagado = $response->ventas[0]->paid_amount;  // Monto pagado real de la venta traída de ML
         } else {
-            DB::table('documento_pago')->where('id', $existe_pago->id_pago)->update([
-                'id_usuario' => 1,
-                'id_metodopago' => 31,
-                'id_vertical' => 0,
-                'id_categoria' => 0,
-                'id_clasificacion' => 0,
-                'tipo' => 1,
-                'origen_importe' => 0,
-                'destino_importe' => $total_pago,
-                'folio' => "",
-                'entidad_origen' => 1,
-                'origen_entidad' => $venta->rfc,
-                'entidad_destino' => '',
-                'destino_entidad' => '',
-                'referencia' => '',
-                'clave_rastreo' => '',
-                'autorizacion' => '',
-                'destino_fecha_operacion' => date('Y-m-d'),
-                'destino_fecha_afectacion' => '',
-                'cuenta_cliente' => ''
-            ]);
-
-            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                "Se actualiza el pago en crm de " . $total_pago . " a la entidad " . $venta->rfc . ". El id del pago es " . $existe_pago->id_pago);
+            $monto_pagado = $total_pago; // Si por alguna razón no está, usamos el monto que calculamos antes
         }
 
-        if ($venta->id_modelo_proveedor != 0) {
-            if ($venta->no_venta_btob == 'N/A') {
-                $tiene_archivos = DB::table('documento_archivo')->where('id_documento', $venta->id)->where('tipo', 2)
-                    ->pluck('id');
+        // 2. Creamos el folio único para el ingreso con prefijo ML y el ID del documento de venta
+        $folio_ingreso = "ML-" . $venta->id;
 
-                if (empty($tiene_archivos)) {
-                    $marketplace_info = DB::table('marketplace_area')
-                        ->select(
-                            'marketplace_area.id',
-                            'marketplace_api.extra_1',
-                            'marketplace_api.extra_2',
-                            'marketplace_api.app_id',
-                            'marketplace_api.secret'
-                        )
-                        ->join('marketplace_api', 'marketplace_area.id', '=', 'marketplace_api.id_marketplace_area')
-                        ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
-                        ->where('marketplace_area.id', $venta->id_marketplace_area)
-                        ->first();
+        // 3. Buscamos si ya existe un movimiento de ingreso con ese folio (para no duplicar ingresos si validamos más de una vez)
+        $existeIngreso = DB::table('movimiento_contable')
+            ->where('folio', $folio_ingreso)
+            ->first();
 
-                    $guia = MercadolibreService::documento(trim($venta->no_venta), $marketplace_info);
+        // 4. Si no existe ingreso registrado previamente...
+        if (!$existeIngreso) {
 
-                    if ($guia->error) {
-                        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Error al obtener la guia en ML. Error: " . $guia->mensaje);
+            // 5. Buscamos la cuenta financiera destino asociada al marketplace/área de la venta
+            $cuenta_destino = DB::table('marketplace_cuenta')
+                ->where('id_marketplace_area', $venta->id_marketplace_area)
+                ->first();
 
-                        DB::table("seguimiento")->insert([
-                            'id_documento' => $venta->id,
-                            'id_usuario' => 1,
-                            'seguimiento' => "Mensaje al validar la venta -> " . $guia->mensaje . ", en el pedido " . $venta->id
-                        ]);
+            // 6. Si no existe la cuenta destino, registramos el error en bitácora y en el seguimiento
+            if(!$cuenta_destino){
+                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No se encontró cuenta financiera para aplicar el ingreso de ML.");
+                DB::table("seguimiento")->insert([
+                    'id_documento' => $venta->id,
+                    'id_usuario' => 1,
+                    'seguimiento' => "No se encontró cuenta financiera para aplicar el ingreso de MercadoLibre."
+                ]);
+            } else {
+                // 7. Traemos los datos de la cuenta financiera a la que se va a aplicar el ingreso
+                $datos_cuenta = DB::table('cat_entidad_financiera')
+                    ->where('id', $cuenta_destino->id_entidad_financiera)
+                    ->first();
 
-                        $hayError = true;
-                    } else {
-                        try {
-                            $nombre = "etiqueta_" . $venta->id . ".pdf";
+                // 8. Insertamos el ingreso en la tabla movimiento_contable
+                $id_ingreso = DB::table('movimiento_contable')->insertGetId([
+                    'folio'                  => $folio_ingreso,                        // Folio único para identificar el ingreso
+                    'id_tipo_afectacion'     => 1,                                     // 1 = Ingreso
+                    'fecha_operacion'        => date('Y-m-d'),                         // Fecha del movimiento (hoy)
+                    'id_moneda'              => 1,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
+                    'tipo_cambio'            => 1,                                     // Tipo de cambio (por defecto 1 si es MXN)
+                    'monto'                  => $monto_pagado,                         // Monto real que se pagó en ML
+                    'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
+                    'entidad_origen'         => $venta->id_entidad,                    // ID de la entidad (cliente) que pagó
+                    'nombre_entidad_origen'  => $venta->razon_social,                  // Nombre del cliente
+                    'destino_tipo'           => 2,                                     // 2 = cuenta bancaria (destino = tu cuenta financiera)
+                    'entidad_destino'        => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria de la empresa
+                    'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',           // Nombre de la cuenta bancaria
+                    'id_forma_pago'          => 21,                                    // Forma de pago (ajusta el id si tienes otro)
+                    'referencia_pago'        => $venta->no_venta,                      // Referencia (no_venta) de la venta en ML
+                    'descripcion_pago'       => 'Ingreso automático Mercado Libre (Validación)', // Descripción para identificar el ingreso
+                    'comentarios'            => 'Ingreso creado desde validación de venta ML',   // Comentario para auditoría
+                    'creado_por'             => $auth->id                              // Usuario que realizó la operación
+                ]);
 
-                            $dropboxService = new DropboxService();
-                            $response = $dropboxService->uploadFile('/' . $nombre, base64_decode($guia->file), false);
+                // 9. Aplicamos el ingreso al documento de venta usando el Service (esto crea la relación y ajusta el saldo)
+                MovimientoContableService::aplicarADocumentos(
+                    $id_ingreso,                // ID del movimiento de ingreso recién creado
+                    [
+                        [
+                            'id_documento'        => $venta->id,        // ID del documento de venta a saldar
+                            'monto_aplicado'      => $monto_pagado,     // Monto aplicado (el real)
+                            'moneda'              => 1,                 // Moneda (ajusta si tienes más monedas)
+                            'tipo_cambio_aplicado'=> 1,                 // Tipo de cambio aplicado (1 si es MXN)
+                            'parcialidad'         => 1                  // Número de parcialidad (siempre 1 en este contexto)
+                        ]
+                    ],
+                    1                           // Moneda del movimiento (puede ser 1 = MXN)
+                );
 
-                            $guia_archivo = DB::table('documento_archivo')->insertGetId([
-                                'id_documento' => $venta->id,
-                                'id_usuario'   => 1,
-                                'id_impresora' => 36,
-                                'nombre'       => $nombre,
-                                'dropbox'      => $response['id'],
-                                'tipo'         => 2
-                            ]);
+                // 10. Actualizamos el documento de venta para marcarlo como pagado
+                DB::table("documento")->where("id", $venta->id)->update(["pagado" => 1]);
 
-                            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se agrega el archivo de la guia con el id " . $guia_archivo);
-                        } catch (Exception $e) {
-                            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Error al guardar la guia en dropbox. Error: " . $e->getMessage());
-
-                            DB::table("seguimiento")->insert([
-                                'id_documento' => $venta->id,
-                                'id_usuario' => 1,
-                                'seguimiento' => "Mensaje al validar la venta -> " . $e->getMessage() . ", en el pedido " . $venta->id
-                            ]);
-
-                            $hayError = true;
-                        }
-                    }
-                }
-
-                switch ($venta->id_modelo_proveedor) {
-                    case '4':
-                        $crear_pedido_btob = ExelDelNorteService::crearPedido($venta->id);
-                        break;
-
-                    case '5':
-                        $crear_pedido_btob = CTService::crearPedido($venta->id);
-                        break;
-
-                    default:
-                        $crear_pedido_btob = new stdClass();
-
-                        $crear_pedido_btob->error = 1;
-                        $crear_pedido_btob->mensaje = "El proveedor no ha sido configurado";
-
-                        break;
-                }
-
-                if ($crear_pedido_btob->error) {
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible crear la venta en el sistema del proveedor B2B, mensaje de error: " . $crear_pedido_btob->mensaje);
-
-                    DB::table('seguimiento')->insert([
-                        'id_documento' => $documento,
-                        'id_usuario' => 1,
-                        'seguimiento' => "<p>No fue posible crear la venta en el sistema del proveedor B2B, mensaje de error: " . $crear_pedido_btob->mensaje . "</p>"
-                    ]);
-
-                    $hayError = true;
-                }
+                // 11. Dejamos rastro en bitácora que el ingreso fue creado y aplicado correctamente
+                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se crea ingreso y se aplica el pago al documento. Folio: {$folio_ingreso}");
             }
         }
+        */
 
         $validar_buffered = MercadolibreService::validarPendingBuffered($venta->id);
 
