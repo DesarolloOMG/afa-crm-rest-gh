@@ -23,7 +23,7 @@ class MercadolibreService
         $paqueteData = self::callMlApi($marketplace_id, "packs/{venta}", ['{venta}' => $venta]);
         $informacion_paquete = json_decode($paqueteData->getContent());
 
-        if (!empty($informacion_paquete)) {
+        if (!isset($informacion_paquete->error) && isset($informacion_paquete->orders)) {
             foreach ($informacion_paquete->orders as $venta_paquete) {
                 $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", [
                     '{venta}' => rawurlencode($venta_paquete->id)
@@ -605,7 +605,11 @@ class MercadolibreService
                         continue 3;
                     }
 
-                    $porcentaje_total = $productos_publicacion->sum('porcentaje');
+                    $porcentaje_total = 0;
+
+                    foreach ($productos_publicacion as $producto) {
+                        $porcentaje_total += $producto->porcentaje;
+                    }
 
                     if ($porcentaje_total != 100) {
                         $pack->error = 0;
@@ -674,7 +678,7 @@ class MercadolibreService
                     $pack->venta_principal->productos = array_merge($pack->venta_principal->productos, $productos_publicacion);
                     $pack->venta_principal->fase = property_exists($venta->shipping, 'logistic_type')
                         ? ($venta->shipping->logistic_type === 'fulfillment' ? 6 : 3)
-                        : 1;
+                        : 3;
 
                 }
                 unset($pack->ventas);
