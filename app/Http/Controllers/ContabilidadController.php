@@ -125,9 +125,11 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function contabilidad_facturas_dessaldar_buscar(Request $request): JsonResponse
+        public function contabilidad_facturas_dessaldar_buscar(Request $request): JsonResponse
     {
-        $busqueda = trim($request->input('busqueda'));
+        $data = json_decode($request->input('data'));
+
+        $busqueda = trim($data->folio);
 
         // Primero, busca si es folio de ingreso
         $ingreso = DB::table('movimiento_contable')->where('folio', $busqueda)->first();
@@ -167,8 +169,10 @@ class ContabilidadController extends Controller
 
     public function contabilidad_facturas_dessaldar_guardar(Request $request): JsonResponse
     {
-        $id_ingreso = $request->input('id_ingreso');
-        $id_documento = $request->input('id_documento');
+        $data = json_decode($request->input('data'));
+
+        $id_ingreso = $data->id;
+        $id_documento = $data->folio;
         $auth = json_decode($request->auth);
 
         try {

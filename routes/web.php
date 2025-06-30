@@ -768,7 +768,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
         $router->group(['prefix' => 'facturas'], function () use ($router) {
             $router->group(['prefix' => 'pendiente'], function () use ($router) {
-                $router->post('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
+                $router->get('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
             });
 
             $router->group(['prefix' => 'saldar'], function () use ($router) {
