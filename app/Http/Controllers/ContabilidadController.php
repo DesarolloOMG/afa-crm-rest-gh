@@ -739,17 +739,41 @@ class ContabilidadController extends Controller
 
     public function contabilidad_ingreso_eliminar_eliminar($id): JsonResponse
     {
+        DB::beginTransaction();
         try {
-            DB::table('movimiento_contable')->where('id', $id)->delete();
+            // 1. Marcar el movimiento contable como cancelado
+            DB::table('movimiento_contable')
+                ->where('id', $id)
+                ->update(['status' => 0]);
 
+            // 2. Obtener documentos relacionados al movimiento
+            $relaciones = DB::table('movimiento_contable_documento')
+                ->where('id_movimiento_contable', $id)
+                ->where('status', 1) // solo los activos
+                ->get();
+
+            foreach ($relaciones as $rel) {
+                // 3. Marcar relación como cancelada
+                DB::table('movimiento_contable_documento')
+                    ->where('id', $rel->id)
+                    ->update(['status' => 0]);
+
+                // 4. Regresar el saldo del documento
+                DB::table('documento')
+                    ->where('id', $rel->id_documento)
+                    ->increment('saldo', $rel->monto_aplicado);
+            }
+
+            DB::commit();
             return response()->json([
                 'code' => 200,
-                'message' => 'Movimiento eliminado correctamente'
+                'message' => 'Movimiento cancelado correctamente y documentos revertidos'
             ]);
         } catch (Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'code' => 500,
-                'message' => 'Error al eliminar movimiento: ' . $e->getMessage()
+                'message' => 'Error al cancelar el movimiento: ' . $e->getMessage()
             ]);
         }
     }
@@ -780,107 +804,48 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    /**
-     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
-     */
     public function contabilidad_historial_filtrado(Request $request): JsonResponse
     {
-        $cuenta = $request->input('cuenta');
-        $tipo_afectacion = $request->input('tipo_afectacion');
-        $fecha_inicio = $request->input('fecha_inicio');
-        $fecha_final = $request->input('fecha_final');
-        $folio = $request->input('folio');
+        // decodificar el form_data
+        $data = json_decode($request->input('data'), true);
 
-        $query = DB::table('movimiento_contable as mc')
-            ->leftJoin('cat_entidades_financieras as cef_origen', 'mc.entidad_origen', '=', 'cef_origen.id')
-            ->leftJoin('cat_entidades_financieras as cef_destino', 'mc.entidad_destino', '=', 'cef_destino.id')
-            ->leftJoin('cat_tipo_afectacion as cta', 'mc.id_tipo_afectacion', '=', 'cta.id')
-            ->select(
-                'mc.*',
-                'cta.descripcion as tipo_afectacion',
-                DB::raw("CASE 
-                WHEN mc.origen_tipo = 2 THEN cef_origen.nombre 
-                WHEN mc.destino_tipo = 2 THEN cef_destino.nombre 
-                ELSE NULL END as cuenta_nombre"),
-                DB::raw("CASE 
-                WHEN mc.origen_tipo = 2 THEN cef_origen.id 
-                WHEN mc.destino_tipo = 2 THEN cef_destino.id 
-                ELSE NULL END as cuenta_id")
-            )
-            ->where('mc.status', 1);
+        $folio = isset($data['folio']) && trim($data['folio']) !== '' ? $data['folio'] : null;
+        $fecha_inicio = isset($data['fecha_inicio']) && trim($data['fecha_inicio']) !== '' ? $data['fecha_inicio'] : null;
+        $fecha_final = isset($data['fecha_final']) && trim($data['fecha_final']) !== '' ? $data['fecha_final'] : null;
+        if ($fecha_final) {
+            $fecha_final .= ' 23:59:59';
+        }
 
-        // Filtros
-        if (!empty($cuenta)) {
-            $query->where(function ($q) use ($cuenta) {
-                $q->where(function ($q1) use ($cuenta) {
-                    $q1->where('mc.origen_tipo', 2)
-                        ->where('mc.entidad_origen', $cuenta);
-                })->orWhere(function ($q2) use ($cuenta) {
-                    $q2->where('mc.destino_tipo', 2)
-                        ->where('mc.entidad_destino', $cuenta);
-                });
+        $cuenta = isset($data['cuenta']) && trim($data['cuenta']) !== '' ? $data['cuenta'] : null;
+        $tipo_afectacion = isset($data['tipo_afectacion']) && trim($data['tipo_afectacion']) !== '' ? $data['tipo_afectacion'] : null;
+
+        try {
+            $result = DB::select("CALL sp_contabilidad_historial_movimientos(?, ?, ?, ?, ?)", [
+                $cuenta,
+                $tipo_afectacion,
+                $fecha_inicio,
+                $fecha_final,
+                $folio
+            ]);
+
+            // decodificar el json de documentos_aplicados para cada movimiento
+            $movimientos = collect($result)->map(function($item) {
+                $item->documentos_aplicados = $item->documentos_aplicados
+                    ? json_decode($item->documentos_aplicados)
+                    : [];
+                return $item;
             });
+
+            return response()->json([
+                'code' => 200,
+                'movimientos' => $movimientos
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
         }
-
-        if (!empty($tipo_afectacion)) {
-            $query->where('mc.id_tipo_afectacion', $tipo_afectacion);
-        }
-
-        if (!empty($fecha_inicio)) {
-            $query->whereDate('mc.fecha_operacion', '>=', $fecha_inicio);
-        }
-
-        if (!empty($fecha_final)) {
-            $query->whereDate('mc.fecha_operacion', '<=', $fecha_final);
-        }
-
-        if (!empty($folio)) {
-            $query->where('mc.folio', $folio);
-        }
-
-        $result = $query->orderBy('mc.fecha_operacion', 'desc')->get();
-
-        // ----------- GENERACIÓN DEL EXCEL -----------
-        $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setTitle('Historial de Movimientos');
-
-        // Encabezados
-        $headers = [
-            'FOLIO', 'TIPO AFECTACIÓN', 'FECHA OPERACIÓN', 'MONTO', 'MONEDA', 'CUENTA', 'REFERENCIA', 'ORIGEN', 'DESTINO', 'COMENTARIOS'
-        ];
-        $this->setExcelHeader($headers, $sheet);
-
-        // Datos
-        $row = 2;
-        foreach ($result as $mov) {
-            $sheet->setCellValue('A' . $row, $mov->folio);
-            $sheet->setCellValue('B' . $row, $mov->tipo_afectacion);
-            $sheet->setCellValue('C' . $row, $mov->fecha_operacion);
-            $sheet->setCellValue('D' . $row, $mov->monto);
-            $sheet->setCellValue('E' . $row, $mov->id_moneda); // Si quieres el texto de la moneda, haz join a la tabla moneda
-            $sheet->setCellValue('F' . $row, $mov->cuenta_nombre);
-            $sheet->setCellValue('G' . $row, $mov->referencia_pago);
-            $sheet->setCellValue('H' . $row, $mov->nombre_entidad_origen);
-            $sheet->setCellValue('I' . $row, $mov->nombre_entidad_destino);
-            $sheet->setCellValue('J' . $row, $mov->comentarios);
-            $row++;
-        }
-
-        // Guarda y regresa el Excel como base64
-        $filename = 'historial_movimientos_' . date('Ymd_His') . '.xlsx';
-        $file_path = sys_get_temp_dir() . '/' . $filename;
-        $writer = new Xlsx($spreadsheet);
-        $writer->save($file_path);
-
-        $excel_base64 = base64_encode(file_get_contents($file_path));
-        unlink($file_path);
-
-        return response()->json([
-            'code' => 200,
-            'excel' => $excel_base64,
-            'movimientos' => $result
-        ]);
     }
 
     public function contabilidad_globalizar_globalizar(Request $request): JsonResponse
