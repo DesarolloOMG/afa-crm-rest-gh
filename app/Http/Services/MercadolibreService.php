@@ -611,8 +611,6 @@ class MercadolibreService
                         ? $existe_publicacion->id_almacen_empresa_fulfillment
                         : $existe_publicacion->id_almacen_empresa ?? 1;
 
-                    $pack->venta_principal->proveedor = $existe_publicacion->id_proveedor;
-
                     foreach ($productos_publicacion as $producto) {
                         $producto->precio = round(($producto->porcentaje * $item->unit_price / 100) / $producto->cantidad, 6);
                         $producto->cantidad = $producto->cantidad * $item->quantity;
