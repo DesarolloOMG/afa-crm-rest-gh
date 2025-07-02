@@ -818,6 +818,12 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('data', 'ContabilidadController@contabilidad_ingreso_historial_data');
                 $router->post('buscar', 'ContabilidadController@contabilidad_historial_filtrado');
             });
+
+            $router->group(['prefix' => 'eliminar'], function () use ($router) {
+                $router->post('data', 'ContabilidadController@contabilidad_ingreso_eliminar_data');
+                $router->delete('eliminar/{id}', 'ContabilidadController@contabilidad_ingreso_eliminar_eliminar');
+            });
+
         });
 
         $router->group(['prefix' => 'globalizar'], function () use ($router) {

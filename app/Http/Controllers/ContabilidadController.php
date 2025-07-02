@@ -125,7 +125,7 @@ class ContabilidadController extends Controller
         }
     }
 
-        public function contabilidad_facturas_dessaldar_buscar(Request $request): JsonResponse
+    public function contabilidad_facturas_dessaldar_buscar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
 
@@ -623,11 +623,11 @@ class ContabilidadController extends Controller
             'monto' => $data->monto,
             'origen_tipo' => $origen_tipo,
             'entidad_origen' => $data->entidad_origen,
-            'nombre_entidad_origen' => $data->nombre_entidad_origen ?? null,
+            'nombre_entidad_origen' => $data->nombre_entidad_origen ?? '',
             'destino_tipo' => $destino_tipo,
             'entidad_destino' => $data->entidad_destino,
-            'nombre_entidad_destino' => $data->nombre_entidad_destino ?? null,
-            'id_forma_pago' => $data->id_forma_pago,
+            'nombre_entidad_destino' => $data->nombre_entidad_destino ?? '',
+            'id_forma_pago' => $data->id_forma_pago ?? null,
             'referencia_pago' => $data->referencia_pago ?? null,
             'descripcion_pago' => $data->descripcion_pago ?? null,
             'comentarios' => $data->comentarios ?? null,
@@ -691,26 +691,62 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_historial_data(): JsonResponse
+    public function contabilidad_ingreso_eliminar_data(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+
+        $movimientos = DB::table('movimiento_contable')
+            ->join('moneda', 'movimiento_contable.id_moneda', '=', 'moneda.id')
+            ->select('movimiento_contable.*', 'moneda.moneda')
+            ->where('id_tipo_afectacion', $data->id_tipo_afectacion)
+            ->where(function ($query) use ($data) {
+                $query->where('entidad_origen', $data->id_entidad)
+                    ->orWhere('entidad_destino', $data->id_entidad);
+            })
+            ->get();
+
+
+        return response()->json([
+            'code' => 200,
+            'movimientos' => $movimientos,
+        ]);
+
+    }
+
+    public function contabilidad_ingreso_eliminar_eliminar($id): JsonResponse
+    {
+        try {
+            DB::table('movimiento_contable')->where('id', $id)->delete();
+
+            return response()->json([
+                'code' => 200,
+                'message' => 'Movimiento eliminado correctamente'
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al eliminar movimiento: ' . $e->getMessage()
+            ]);
+        }
+    }
+
+    public function contabilidad_ingreso_historial_data(): JsonResponse
     {
         // Traer todas las entidades financieras con información relacionada
-        $entidades_financieras = DB::table('cat_entidades_financieras as cef')
+        $entidades_financieras = DB::table('cat_entidad_financiera as cef')
             ->leftJoin('cat_entidades_financieras_tipo as ceft', 'cef.id_tipo', '=', 'ceft.id')
             ->leftJoin('cat_bancos as cb', 'cef.id_banco', '=', 'cb.id')
             ->leftJoin('moneda as m', 'cef.id_moneda', '=', 'm.id')
             ->select(
                 'cef.*',
-                'ceft.descripcion as tipo_entidad_financiera',
-                'cb.descripcion as banco',
+                'ceft.tipo as tipo_entidad_financiera',
+                'cb.razon_social as banco',
                 'm.moneda as moneda'
             )
-            ->where('cef.status', 1)
             ->get();
 
         // Catálogo de tipos de afectación
         $tipos_afectacion = DB::table('cat_tipo_afectacion')
-            ->where('status', 1)
-            ->orderBy('descripcion')
             ->get();
 
         return response()->json([
