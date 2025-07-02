@@ -57,16 +57,19 @@ class ContabilidadController extends Controller
         $documentos = DB::select('CALL sp_contabilidad_documentos_con_saldo()');
         // Si solo quieres los nunca aplicados, usa: $documentos = DB::select('CALL sp_contabilidad_documentos_nunca_aplicados()');
 
+        $monedas = DB::table('moneda')->get();
+
         return response()->json([
             'code' => 200,
             'ingresos' => $ingresos,
-            'documentos' => $documentos
+            'documentos' => $documentos,
+            'monedas' => $monedas
         ]);
     }
 
     public function contabilidad_facturas_saldar_guardar(Request $request): JsonResponse
     {
-        $documentos = json_decode($request->input("documentos"), true);
+        $documentos = $request->input("documentos");
         $id_ingreso = $request->input("id_ingreso");
 
         // Trae el ingreso (movimiento contable)
@@ -75,14 +78,17 @@ class ContabilidadController extends Controller
             return response()->json(['code' => 404, 'msg' => 'Ingreso no encontrado']);
         }
 
+        // Traduce id_moneda a código de moneda
+        $codigoMonedaIngreso = DB::table('moneda')->where('id', $ingreso->id_moneda)->value('moneda');
+
         // Arma el array de documentos para el service
         $documentos_formateados = [];
         foreach ($documentos as $doc) {
             $documentos_formateados[] = [
-                'id_documento' => $doc['id'],
+                'id_documento' => $doc['id_documento'],
                 'monto_aplicado' => $doc['monto'],
-                'moneda' => $doc['moneda'] ?? $ingreso->moneda,
-                'tipo_cambio_aplicado' => $doc['tipo_cambio_aplicado'] ?? 1,
+                'moneda' => (int)$doc['moneda'],
+                'tipo_cambio_aplicado' => $doc['tipo_cambio_aplicado'] ?? $ingreso->tipo_cambio,
                 'parcialidad' => 1,
             ];
         }
@@ -92,7 +98,7 @@ class ContabilidadController extends Controller
             $resultados = MovimientoContableService::aplicarADocumentos(
                 $id_ingreso,
                 $documentos_formateados,
-                $ingreso->moneda,
+                $codigoMonedaIngreso, // <-- código de moneda, NO id
                 $ingreso->tipo_cambio
             );
 
@@ -127,73 +133,91 @@ class ContabilidadController extends Controller
 
     public function contabilidad_facturas_dessaldar_buscar(Request $request): JsonResponse
     {
-        $data = json_decode($request->input('data'));
+        $folio = $request->input('folio');
 
-        $busqueda = trim($data->folio);
+        // Ejecuta el stored procedure que devuelve los datos del ingreso y los documentos aplicados
+        $pdo = DB::connection()->getPdo();
+        $stmt = $pdo->prepare("CALL sp_dessaldar_buscar_ingreso(?)");
+        $stmt->execute([$folio]);
 
-        // Primero, busca si es folio de ingreso
-        $ingreso = DB::table('movimiento_contable')->where('folio', $busqueda)->first();
+        // Primer resultset: datos del ingreso (solo uno)
+        $ingreso = $stmt->fetch(\PDO::FETCH_ASSOC);
 
-        if ($ingreso) {
-            $detalle = DB::select('CALL sp_detalle_ingreso_documentos(?)', [$busqueda]);
-            $ingresoDetalle = $detalle[0] ?? null;
-            // Decodifica el campo JSON si quieres los documentos como array:
-            $ingresoDetalle->documentos_aplicados = json_decode($ingresoDetalle->documentos_aplicados, true);
+        // Avanza al segundo resultset: lista de documentos aplicados a ese ingreso
+        $stmt->nextRowset();
+        $documentos = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
+        // Si no se encontró el ingreso activo con ese folio, retorna código 404
+        if (!$ingreso) {
             return response()->json([
-                'code' => 200,
-                'tipo' => 'ingreso',
-                'ingreso' => $ingresoDetalle,
-                'documentos' => $ingresoDetalle->documentos_aplicados
+                'code' => 404,
+                'msg' => 'No se encontró el ingreso activo con ese folio.'
             ]);
         }
 
-        // Si no, busca si es id_documento
-        $documento = DB::table('documento')->where('id', $busqueda)->first();
-
-        if ($documento) {
-            $detalleDocumento = DB::select('CALL sp_detalle_documento_completo(?)', [$busqueda]);
-            return response()->json([
-                'code' => 200,
-                'tipo' => 'documento',
-                'documento' => $detalleDocumento[0] ?? null
-            ]);
-        }
-
-        // Si no encontró nada
+        // Responde con los datos del ingreso y la lista de documentos relacionados
         return response()->json([
-            'code' => 404,
-            'msg' => 'No se encontró el folio de ingreso ni el id de documento.'
+            'code' => 200,
+            'msg' => 'OK',
+            'ingreso' => $ingreso,
+            'documentos' => $documentos
         ]);
     }
 
+
     public function contabilidad_facturas_dessaldar_guardar(Request $request): JsonResponse
     {
-        $data = json_decode($request->input('data'));
-
-        $id_ingreso = $data->id;
-        $id_documento = $data->folio;
+        $id_ingreso = $request->input('id_ingreso');
+        $documentos = $request->input('documentos', []);
         $auth = json_decode($request->auth);
 
-        try {
-            $resultado = DB::select('CALL sp_desaldar_documento_ingreso(?, ?, ?)', [
-                $id_ingreso,
-                $id_documento,
-                $auth->id
-            ]);
+        if (!$id_ingreso || !is_array($documentos) || count($documentos) === 0) {
             return response()->json([
-                'code' => 200,
-                'msg' => 'Monto dessaldado correctamente',
-                'nuevo_saldo' => $resultado[0]->nuevo_saldo ?? null
-            ]);
-        } catch (Exception $e) {
-            return response()->json([
-                'code' => 500,
-                'msg' => 'Error al desaldar documento',
-                'error' => $e->getMessage()
+                'code' => 400,
+                'msg' => 'Faltan datos para dessaldar los documentos'
             ]);
         }
+
+        $errores = [];
+        $resultados = [];
+
+        foreach ($documentos as $id_documento) {
+            try {
+                $resultado = DB::select('CALL sp_desaldar_documento_ingreso(?, ?, ?)', [
+                    $id_ingreso,
+                    $id_documento,
+                    $auth->id
+                ]);
+                $resultados[] = [
+                    'id_documento' => $id_documento,
+                    'nuevo_saldo' => $resultado[0]->nuevo_saldo ?? null,
+                    'status' => 'success'
+                ];
+            } catch (\Exception $e) {
+                $errores[] = [
+                    'id_documento' => $id_documento,
+                    'msg' => $e->getMessage(),
+                    'status' => 'error'
+                ];
+            }
+        }
+
+        if (count($errores) > 0) {
+            return response()->json([
+                'code' => 400,
+                'msg' => 'Algunos documentos no se pudieron dessaldar',
+                'errores' => $errores,
+                'resultados' => $resultados
+            ]);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'msg' => 'Documentos dessaldados correctamente',
+            'resultados' => $resultados
+        ]);
     }
+
 
     public function compras_documentos_egresos(Request $request): JsonResponse
     {
@@ -238,7 +262,7 @@ class ContabilidadController extends Controller
             [
                 'id_documento' => $id_documento,
                 'monto_aplicado' => $monto,
-                'moneda' => $egreso->moneda,
+                'moneda' => $egreso->id_moneda,
                 'tipo_cambio_aplicado' => $egreso->tipo_cambio
             ]
         ];

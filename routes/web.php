@@ -777,7 +777,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
 
             $router->group(['prefix' => 'dessaldar'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_facturas_dessaldar_buscar');
+                $router->post('data', 'ContabilidadController@contabilidad_facturas_dessaldar_buscar');
                 $router->post('guardar', 'ContabilidadController@contabilidad_facturas_dessaldar_guardar');
             });
         });

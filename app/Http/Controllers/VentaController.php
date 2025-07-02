@@ -3555,7 +3555,7 @@ class VentaController extends Controller
                     'folio'                  => $folio_ingreso,                        // Folio único para identificar el ingreso
                     'id_tipo_afectacion'     => 1,                                     // 1 = Ingreso
                     'fecha_operacion'        => date('Y-m-d'),                         // Fecha del movimiento (hoy)
-                    'id_moneda'              => 1,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
+                    'id_moneda'              => 3,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
                     'tipo_cambio'            => 1,                                     // Tipo de cambio (por defecto 1 si es MXN)
                     'monto'                  => $monto_pagado,                         // Monto real que se pagó en ML
                     'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
@@ -3578,8 +3578,8 @@ class VentaController extends Controller
                         [
                             'id_documento'        => $venta->id,        // ID del documento de venta a saldar
                             'monto_aplicado'      => $monto_pagado,     // Monto aplicado (el real)
-                            'moneda'              => 1,                 // Moneda (ajusta si tienes más monedas)
-                            'tipo_cambio_aplicado'=> 1,                 // Tipo de cambio aplicado (1 si es MXN)
+                            'moneda'              => 3,                 // Moneda (ajusta si tienes más monedas)
+                            'tipo_cambio'         => 1,                 // Tipo de cambio aplicado (1 si es MXN)
                             'parcialidad'         => 1                  // Número de parcialidad (siempre 1 en este contexto)
                         ]
                     ],

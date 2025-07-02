@@ -96,28 +96,36 @@ class MovimientoContableService
                     continue;
                 }
 
-                // 3. Inserta en movimiento_contable_documento
-                DB::table('movimiento_contable_documento')->insert([
-                    'id_movimiento_contable' => $idMovimiento,
-                    'id_documento'           => $idDocumento,
-                    'monto_aplicado'         => $montoAplicado,
-                    'saldo_documento'        => null, // Se puede actualizar después
-                    'moneda'                 => $monedaDocumento,
-                    'tipo_cambio_aplicado'   => $tipoCambioAplicado,
-                    'parcialidad'            => $parcialidad
-                ]);
+                // Obtener el saldo actual del documento antes de aplicar el movimiento
+                $saldoActual = $documento->saldo ?? 0;
 
-                // 4. Actualiza saldo del documento (conversión de moneda si aplica)
+                // Calcular el saldo resultante después de aplicar el abono, considerando la conversión de moneda si aplica
                 if ($monedaMovimiento != $monedaDocumento) {
+                    // Si la moneda del movimiento es diferente a la del documento, realiza la conversión correspondiente
+                    // Ejemplo: movimiento en USD, documento en MXN
                     $montoAplicadoEnDoc = ($monedaMovimiento == 'USD' && $monedaDocumento == 'MXN')
                         ? $montoAplicado * $tipoCambioAplicado
                         : $montoAplicado / $tipoCambioAplicado;
                 } else {
+                    // Si la moneda es la misma, no hay conversión
                     $montoAplicadoEnDoc = $montoAplicado;
                 }
 
-                $nuevoSaldo = max(0, $documento->saldo - $montoAplicadoEnDoc);
+                // Determinar el nuevo saldo del documento, asegurando que no sea negativo
+                $nuevoSaldo = max(0, $saldoActual - $montoAplicadoEnDoc);
 
+                // Insertar el registro en movimiento_contable_documento con el saldo ya calculado
+                DB::table('movimiento_contable_documento')->insert([
+                    'id_movimiento_contable' => $idMovimiento,
+                    'id_documento'           => $idDocumento,
+                    'monto_aplicado'         => $montoAplicado,
+                    'saldo_documento'        => $nuevoSaldo, // Saldo restante del documento tras aplicar este movimiento
+                    'moneda'                 => $monedaDocumento,
+                    'tipo_cambio'            => $tipoCambioAplicado,
+                    'parcialidad'            => $parcialidad
+                ]);
+
+                // Actualizar el saldo del documento principal
                 DB::table('documento')->where('id', $idDocumento)->update([
                     'saldo' => $nuevoSaldo,
                     'pagado' => ($nuevoSaldo == 0) ? 1 : 0

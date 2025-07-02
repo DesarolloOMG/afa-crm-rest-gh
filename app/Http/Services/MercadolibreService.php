@@ -1022,7 +1022,7 @@ class MercadolibreService
                     'folio'                  => $folio_ingreso,                        // Folio ML-<id_documento>
                     'id_tipo_afectacion'     => 1,                                     // 1 = Ingreso
                     'fecha_operacion'        => date('Y-m-d'),                         // Fecha actual
-                    'id_moneda'              => 1,                                     // 1 = MXN (ajusta si tienes más monedas)
+                    'id_moneda'              => 3,                                     // 1 = MXN (ajusta si tienes más monedas)
                     'tipo_cambio'            => 1,                                     // Tipo de cambio (1 si es MXN)
                     'monto'                  => $monto_pagado,                         // Monto real pagado (paid_amount o total calculado)
                     'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
@@ -1045,12 +1045,11 @@ class MercadolibreService
                         [
                             'id_documento'        => $documentoId,         // ID del documento que se salda
                             'monto_aplicado'      => $monto_pagado,        // Monto que realmente se pagó
-                            'moneda'              => 1,                    // Moneda (1 = MXN)
-                            'tipo_cambio_aplicado'=> 1,                    // Tipo de cambio
+                            'moneda'              => 3,                    // Moneda (1 = MXN)
+                            'tipo_cambio'         => 1,                    // Tipo de cambio
                             'parcialidad'         => 1                     // Parcialidad (por default 1)
                         ]
                     ],
-                    1 // Moneda (1 = MXN)
                 );
             }
         }
