@@ -774,6 +774,43 @@ class GeneralController extends Controller
                 ->first();
             $venta->nota_pendiente = $nota->estado ?? 0;
 
+            $venta->movimientos_contables = DB::table('movimiento_contable_documento')
+                ->join('movimiento_contable', 'movimiento_contable_documento.id_movimiento_contable', '=', 'movimiento_contable.id')
+                ->leftJoin('cat_tipo_afectacion', 'movimiento_contable.id_tipo_afectacion', '=', 'cat_tipo_afectacion.id')
+                ->leftJoin('cat_forma_pago', 'movimiento_contable.id_forma_pago', '=', 'cat_forma_pago.id')
+                ->leftJoin('moneda AS moneda_doc', 'movimiento_contable_documento.moneda', '=', 'moneda_doc.id')
+                ->where('movimiento_contable_documento.id_documento', $venta->id)
+                ->select(
+                    'movimiento_contable.id AS id_movimiento',
+                    'movimiento_contable_documento.monto_aplicado',
+                    'moneda_doc.moneda AS moneda_aplicada',
+                    'movimiento_contable.folio',
+                    'movimiento_contable.fecha_operacion AS fecha_movimiento',
+                    'movimiento_contable_documento.status AS activo',
+                    'cat_tipo_afectacion.nombre AS tipo_afectacion',
+                    'cat_forma_pago.descripcion AS forma_pago',
+                    DB::raw("
+                        CASE 
+                            WHEN movimiento_contable.origen_tipo = 1 THEN 
+                                (SELECT razon_social FROM documento_entidad WHERE id = movimiento_contable.entidad_origen)
+                            WHEN movimiento_contable.origen_tipo = 2 THEN 
+                                (SELECT nombre FROM cat_entidad_financiera WHERE id = movimiento_contable.entidad_origen)
+                            ELSE ''
+                        END
+                    AS origen_nombre"),
+                                DB::raw("
+                        CASE 
+                            WHEN movimiento_contable.destino_tipo = 1 THEN 
+                                (SELECT razon_social FROM documento_entidad WHERE id = movimiento_contable.entidad_destino)
+                            WHEN movimiento_contable.destino_tipo = 2 THEN 
+                                (SELECT nombre FROM cat_entidad_financiera WHERE id = movimiento_contable.entidad_destino)
+                            ELSE ''
+                        END
+                    AS destino_nombre")
+                )
+                ->get();
+
+
             $venta->usuario_agro = 0;
             if ($venta->area === "AGRO") {
                 $usuario_agro = DB::table('usuarios_agro')

@@ -551,22 +551,18 @@ class MercadolibreService
                 foreach ($venta->order_items as $item) {
                     $pack->venta_principal->total_fee += (float)$item->sale_fee * (int)$item->quantity;
 
-                    $existe_publicacion = DB::table('marketplace_publicacion')
-                        ->join('empresa_almacen', 'marketplace_publicacion.id_almacen_empresa', '=', 'empresa_almacen.id')
-                        ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
-                        ->select(
-                            'marketplace_publicacion.id',
-                            'marketplace_publicacion.id_almacen_empresa',
-                            'marketplace_publicacion.id_almacen_empresa_fulfillment',
-                            'marketplace_publicacion.id_proveedor',
-                            'marketplace_publicacion.shipping_null',
-                            'empresa.id',
-                            'empresa_almacen.id_almacen'
-                        )
-                        ->where('publicacion_id', $item->item->id)
-                        ->first();
+                    $existe_publicacion = DB::select("SELECT 
+                                                        marketplace_publicacion.id, 
+                                                        marketplace_publicacion.id_almacen_empresa,
+                                                        marketplace_publicacion.id_almacen_empresa_fulfillment,
+                                                        empresa.bd,
+                                                        empresa_almacen.id_almacen
+                                                FROM marketplace_publicacion 
+                                                INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
+                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                WHERE publicacion_id = '" . $item->item->id . "'");
 
-                    if (!$existe_publicacion) {
+                    if (empty($existe_publicacion)) {
                         $pack->error = 0;
                         $pack->venta_principal->seguimiento = "No se encontró la publicación de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relación de productos {$item->item->id}";
                         $pack->venta_principal->fase = 1;
@@ -577,22 +573,10 @@ class MercadolibreService
                         continue 3;
                     }
 
-                    $pack->venta_principal->shipping_null = $existe_publicacion->shipping_null ?? 0;
+                    $existe_publicacion = $existe_publicacion[0];
 
-                    $productos_query = DB::table('marketplace_publicacion_producto')
-                        ->where('id_publicacion', $existe_publicacion->id);
-
-                    if (!is_null($item->item->variation_id)) {
-                        $productos_query->whereRaw('CAST(etiqueta AS CHAR) = ?', [(string)$item->item->variation_id]);
-                    }
-
-                    $productos_publicacion = $productos_query->get();
-
-                    if (empty($productos_publicacion)) {
-                        $productos_publicacion = DB::table('marketplace_publicacion_producto')
-                            ->where('id_publicacion', $existe_publicacion->id)
-                            ->get();
-                    }
+                    $extra_query = !is_null($item->item->variation_id) ? " AND etiqueta = '" . $item->item->variation_id . "'" : "";
+                    $productos_publicacion = DB::select("SELECT * FROM marketplace_publicacion_producto WHERE id_publicacion = " . $existe_publicacion->id . $extra_query);
 
                     if (empty($productos_publicacion)) {
                         $pack->error = 0;
@@ -612,6 +596,7 @@ class MercadolibreService
                     }
 
                     if ($porcentaje_total != 100) {
+
                         $pack->error = 0;
                         $pack->venta_principal->seguimiento = "Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.";
                         $pack->venta_principal->fase = 1;
@@ -990,8 +975,6 @@ class MercadolibreService
             $total_pago += $producto->cantidad * $producto->precio;
         }
 
-        /* ESPERAR HASTA QUE CREEN CUENTAS BANCARIAS EN AFA
-
         // 2. Determina el monto a registrar: si tienes el paid_amount (lo que se pagó realmente en ML), úsalo. Si no, usa el total_pago calculado.
         $monto_pagado = isset($venta->paid_amount) && $venta->paid_amount > 0 ? $venta->paid_amount : $total_pago;
 
@@ -1043,20 +1026,20 @@ class MercadolibreService
                     $id_ingreso,
                     [
                         [
-                            'id_documento'        => $documentoId,         // ID del documento que se salda
-                            'monto_aplicado'      => $monto_pagado,        // Monto que realmente se pagó
-                            'moneda'              => 3,                    // Moneda (1 = MXN)
-                            'tipo_cambio'         => 1,                    // Tipo de cambio
-                            'parcialidad'         => 1                     // Parcialidad (por default 1)
-                        ]
+                            'id_documento'   => $documentoId,
+                            'monto_aplicado' => $monto_pagado,
+                            'moneda'         => 3,
+                            'tipo_cambio'    => 1,
+                            'parcialidad'    => 1,
+                        ],
                     ],
+                    3 // <-- Este es el $monedaMovimiento (probablemente 3 = MXN)
                 );
+
             }
         }
 
         // 11. Marca el documento como pagado (aunque se haya aplicado anteriormente o justo ahora)
-
-        */
 
         DB::table("documento")->where("id", $documentoId)->update(["pagado" => 1]);
 

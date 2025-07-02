@@ -3509,8 +3509,6 @@ class VentaController extends Controller
                 " y el precio de " . $producto->precio . " al pedido " . $venta->id . ". El id del movimiento es " . $movimiento);
         }
 
-        /* ESPERAR HASTA QUE AGREGUEN CUENTAS BANCARIAS EN AFA ------------------------------------------------------------------
-
         // === GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO (Mercado Libre) ===
         // === INGRESO AUTOMÁTICO CON paid_amount ===
         // 1. Si hay ventas y existe el campo paid_amount, lo usamos como monto pagado; si no, usamos el total calculado previamente.
@@ -3593,7 +3591,6 @@ class VentaController extends Controller
                 BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se crea ingreso y se aplica el pago al documento. Folio: {$folio_ingreso}");
             }
         }
-        */
 
         $validar_buffered = MercadolibreService::validarPendingBuffered($venta->id);
 
