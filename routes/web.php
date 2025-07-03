@@ -765,14 +765,14 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
     # Menú contabilidad
     $router->group(['prefix' => 'contabilidad'], function () use ($router) {
-
+        $router->post('cliente/buscar', 'ContabilidadController@cliente_buscar');
         $router->group(['prefix' => 'facturas'], function () use ($router) {
             $router->group(['prefix' => 'pendiente'], function () use ($router) {
                 $router->get('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
             });
 
             $router->group(['prefix' => 'saldar'], function () use ($router) {
-                $router->get('data', 'ContabilidadController@contabilidad_facturas_saldar_data');
+                $router->get('data/entidad/{documento}', 'ContabilidadController@contabilidad_facturas_saldar_data');
                 $router->post('guardar', 'ContabilidadController@contabilidad_facturas_saldar_guardar');
             });
 
@@ -792,7 +792,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('aplicar', 'ContabilidadController@compras_aplicar_egreso');
             });
         });
-
 
         $router->group(['prefix' => 'estado'], function () use ($router) {
             $router->group(['prefix' => 'factura'], function () use ($router) {

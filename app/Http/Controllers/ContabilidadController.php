@@ -48,14 +48,13 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    public function contabilidad_facturas_saldar_data(): JsonResponse
+    public function contabilidad_facturas_saldar_data($id_entidad): JsonResponse
     {
-        // SP de ingresos/NC con saldo disponible
-        $ingresos = DB::select('CALL sp_contabilidad_ingresos_disponibles()');
+        // ingresos filtrados por entidad
+        $ingresos = DB::select('CALL sp_contabilidad_ingresos_disponibles_por_entidad(?)', [$id_entidad]);
 
-        // SP de documentos con saldo pendiente (todos los faltantes por liquidar, aunque ya hayan tenido aplicaciones)
-        $documentos = DB::select('CALL sp_contabilidad_documentos_con_saldo()');
-        // Si solo quieres los nunca aplicados, usa: $documentos = DB::select('CALL sp_contabilidad_documentos_nunca_aplicados()');
+        // documentos filtrados por entidad
+        $documentos = DB::select('CALL sp_contabilidad_documentos_con_saldo_por_entidad(?)', [$id_entidad]);
 
         $monedas = DB::table('moneda')->get();
 
@@ -66,6 +65,7 @@ class ContabilidadController extends Controller
             'monedas' => $monedas
         ]);
     }
+
 
     public function contabilidad_facturas_saldar_guardar(Request $request): JsonResponse
     {
@@ -305,13 +305,13 @@ class ContabilidadController extends Controller
         }
     }
 
-    public function proveedor_buscar(Request $request): JsonResponse
+    public function cliente_buscar(Request $request): JsonResponse
     {
-        $query = trim($request->input('query'));
+        $query = trim($request->input('criterio'));
 
         // Busca por razón social o RFC
-        $proveedores = DB::table('documento_entidad')
-            ->where('tipo', 2)
+        $clientes = DB::table('documento_entidad')
+            ->where('tipo', 1)
             ->where(function ($q) use ($query) {
                 $q->where('razon_social', 'like', "%$query%")
                     ->orWhere('rfc', 'like', "%$query%");
@@ -323,7 +323,7 @@ class ContabilidadController extends Controller
 
         return response()->json([
             'code' => 200,
-            'proveedores' => $proveedores
+            'clientes' => $clientes
         ]);
     }
 
