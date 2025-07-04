@@ -164,6 +164,34 @@ class ContabilidadController extends Controller
         ]);
     }
 
+    public function contabilidad_facturas_dessaldar_buscar_documento($id_documento): JsonResponse
+    {
+        $pdo = DB::connection()->getPdo();
+        $stmt = $pdo->prepare("CALL sp_dessaldar_buscar_documento(?)");
+        $stmt->execute([$id_documento]);
+
+        // primer resultset: datos del documento
+        $documento = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        // segundo resultset: movimientos contables aplicados
+        $stmt->nextRowset();
+        $movimientos = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (!$documento) {
+            return response()->json([
+                'code' => 404,
+                'msg' => 'No se encontró el documento o no está activo.'
+            ]);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'msg' => 'OK',
+            'documento' => $documento,
+            'movimientos' => $movimientos
+        ]);
+    }
+
 
     public function contabilidad_facturas_dessaldar_guardar(Request $request): JsonResponse
     {
@@ -217,6 +245,47 @@ class ContabilidadController extends Controller
             'resultados' => $resultados
         ]);
     }
+
+    public function contabilidad_facturas_dessaldar_guardar_movimientos(Request $request): JsonResponse
+    {
+        $idDocumento = $request->input('id_documento');
+        $ingresos = $request->input('ingresos'); // array de id_movimiento_contable
+
+        if (!$idDocumento || empty($ingresos)) {
+            return response()->json([
+                'code' => 400,
+                'msg' => 'Parámetros incompletos.'
+            ]);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            foreach ($ingresos as $idIngreso) {
+                // actualizar la tabla pivote desactivando la relación
+                DB::table('movimiento_contable_documento')
+                    ->where('id_movimiento_contable', $idIngreso)
+                    ->where('id_documento', $idDocumento)
+                    ->where('status', 1)
+                    ->update(['status' => 0]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'code' => 200,
+                'msg' => 'Movimientos dessaldados correctamente.'
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error($e->getMessage());
+            return response()->json([
+                'code' => 500,
+                'msg' => 'Error interno al dessaldar movimientos.'
+            ]);
+        }
+    }
+
 
 
     public function compras_documentos_egresos(Request $request): JsonResponse
@@ -831,7 +900,12 @@ class ContabilidadController extends Controller
             // decodificar el json de documentos_aplicados para cada movimiento
             $movimientos = collect($result)->map(function($item) {
                 $item->documentos_aplicados = $item->documentos_aplicados
-                    ? json_decode($item->documentos_aplicados)
+                    ? collect(json_decode($item->documentos_aplicados))
+                        ->filter(function($doc) {
+                            return $doc !== null;
+                        })
+                        ->values()
+                        ->toArray()
                     : [];
                 return $item;
             });
