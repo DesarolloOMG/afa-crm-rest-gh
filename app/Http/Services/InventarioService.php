@@ -77,7 +77,6 @@ class InventarioService
             foreach ($movimientos as $mov) {
                 // Si es un traspaso, se procesa de forma especial.
                 if ($docTipo->tipo == 'TRASPASO' || $docTipo->id == 5) {
-                    dump("El documento es un traspaso.");
                     self::procesarTraspaso($mov, $documento);
                     continue; // Continuamos con el siguiente movimiento.
                 }

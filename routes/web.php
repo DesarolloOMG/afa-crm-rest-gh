@@ -15,11 +15,6 @@ $router->get('/', function () use ($router) {
     return date('Y-m-d H:i:s', time());
 });
 
-$router->options('/{any:.*}', function() {
-    return response('', 204);
-});
-
-
 # API Rest Cyberpuerta
 $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use ($router) {
     $router->group(['prefix' => 'v1'], function () use ($router) {
@@ -616,8 +611,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('data/producto/{producto}', 'AlmacenController@almacen_movimiento_data_producto');
 
             $router->group(['prefix' => 'historial'], function () use ($router) {
-                $router->get('', 'AlmacenController@almacen_movimiento_historial'); # Todo historial debe ser un get, acomodar los demás
-                $router->post('data', 'AlmacenController@almacen_movimiento_historial_data'); # Todo historial debe ser un get, acomodar los demás
+                $router->get('', 'AlmacenController@almacen_movimiento_historial');
+                $router->post('data', 'AlmacenController@almacen_movimiento_historial_data');
                 $router->post('afectar', 'AlmacenController@almacen_movimiento_historial_afectar');
                 $router->post('interno', 'AlmacenController@almacen_movimiento_historial_interno');
             });

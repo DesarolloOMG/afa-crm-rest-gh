@@ -1179,8 +1179,6 @@ class MercadolibreService
 
         $informacion_venta = json_decode($ventaData->getContent());
 
-        dump($informacion_venta);
-
         if (empty($informacion_venta)) {
             $response->error = 1;
             $response->mensaje = "Ocurrió un error al buscar información de la venta en el sistema exterior." . self::logVariableLocation();
@@ -1192,7 +1190,6 @@ class MercadolibreService
         $file = fopen($tmp, 'r+');
 
         $shipment_id = $informacion_venta->shipping->id ?? null;
-        dump($shipment_id);
 
         if (!$shipment_id) {
             $response->error = 1;
