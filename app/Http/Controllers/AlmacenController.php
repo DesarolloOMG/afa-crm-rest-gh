@@ -2131,12 +2131,14 @@ class AlmacenController extends Controller
             ]);
 
             return response()->json([
+                'code' => 200,
                 'message' => "Inventario afectado correctamente."
             ]);
         } catch (Exception $e) {
             return response()->json([
+                'code' => 500,
                 'message' => "Ocurrió un error al afectar el inventario, mensaje de error: " . $e->getMessage() . " " . self::logVariableLocation()
-            ], 500);
+            ]);
         }
     }
 

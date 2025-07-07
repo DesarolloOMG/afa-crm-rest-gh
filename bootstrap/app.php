@@ -74,7 +74,7 @@ $app->singleton(
 // ]);
 
 $app->middleware([
-	'Nord\Lumen\Cors\CorsMiddleware',
+    Nord\Lumen\Cors\CorsMiddleware::class,
 ]);
 
 $app->routeMiddleware([
@@ -102,7 +102,7 @@ $app->routeMiddleware([
 
 $app->register(Crabbly\Fpdf\FpdfServiceProvider::class);
 $app->register(App\Providers\EventServiceProvider::class);
-$app->register('Nord\Lumen\Cors\CorsServiceProvider');
+$app->register(Nord\Lumen\Cors\CorsServiceProvider::class);
 // $app->register(App\Providers\AppServiceProvider::class);
 // $app->register(App\Providers\AuthServiceProvider::class);
 // $app->register(App\Providers\EventServiceProvider::class);
@@ -134,5 +134,6 @@ $app->configure('webservice');
 $app->configure('twilio');
 $app->configure('keys');
 $app->configure('mailgun');
+$app->configure('cors');
 
 return $app;

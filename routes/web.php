@@ -15,6 +15,11 @@ $router->get('/', function () use ($router) {
     return date('Y-m-d H:i:s', time());
 });
 
+$router->options('/{any:.*}', function() {
+    return response('', 204);
+});
+
+
 # API Rest Cyberpuerta
 $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use ($router) {
     $router->group(['prefix' => 'v1'], function () use ($router) {
