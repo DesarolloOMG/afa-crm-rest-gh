@@ -71,6 +71,7 @@ class GeneralController extends Controller
      * @param Request $request Objeto con parámetros: criterio, almacen y con_existencia.
      * @return \Illuminate\Http\JsonResponse
      */
+
     public function general_busqueda_producto_existencia(Request $request)
     {
         set_time_limit(0);
@@ -78,7 +79,6 @@ class GeneralController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        // Validar criterio o almacén especificado
         if (empty($data->criterio) && (empty($data->almacen) || $data->almacen == 0)) {
             return response()->json([
                 "code" => 500,
@@ -86,120 +86,162 @@ class GeneralController extends Controller
             ]);
         }
 
-        // Preparar variables de entrada para el SP
         $criterio = $data->criterio ?? '';
         $id_almacen = $data->almacen ?? 0;
         $con_existencia = $data->con_existencia == false ? 0 : 1;
 
-        // Ejecutar el SP actualizado: sp_calcularExistenciaGeneral
+        // Llamada al SP
         $productos = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
             $criterio,
             $id_almacen,
             $con_existencia
         ]);
 
-        // Verificar que se encontraron resultados
-        if (empty($productos)) {
-            return response()->json([
-                "code" => 404,
-                "message" => "No se encontraron productos con el criterio: {$criterio}"
-            ]);
-        }
+        // Si SÍ hay productos con existencia, responder normal
+        if (!empty($productos)) {
+            // Crear el Excel con columnas alineadas con el SP actualizado
+            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+            $sheet = $spreadsheet->getActiveSheet();
 
-        // Crear el Excel con columnas alineadas con el SP actualizado
-        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet();
+            // Encabezados del Excel
+            $sheet->setCellValue('A1', 'CÓDIGO');
+            $sheet->setCellValue('B1', 'DESCRIPCIÓN');
+            $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
+            $sheet->setCellValue('D1', 'PRECIO');
+            $sheet->setCellValue('E1', 'ALMACÉN');
+            $sheet->setCellValue('F1', 'INVENTARIO');
+            $sheet->setCellValue('G1', 'PENDIENTES');
+            $sheet->setCellValue('H1', 'EN TRÁNSITO');
+            $sheet->setCellValue('I1', 'PRETRANSFERENCIA');
+            $sheet->setCellValue('J1', 'DISPONIBLE');
+            $sheet->setCellValue('K1', 'TIPO DE PRODUCTO');
+            $sheet->setCellValue('L1', 'MARCA');
+            $sheet->setCellValue('M1', 'SUBTIPO');
+            $sheet->setCellValue('N1', 'VERTICAL');
+            $sheet->setCellValue('O1', 'CÓDIGO SAT');
+            $sheet->setCellValue('P1', 'SERIE');
+            $sheet->setCellValue('Q1', 'NP');
 
-        // Encabezados del Excel
-        $sheet->setCellValue('A1', 'CÓDIGO');
-        $sheet->setCellValue('B1', 'DESCRIPCIÓN');
-        $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
-        $sheet->setCellValue('D1', 'PRECIO');
-        $sheet->setCellValue('E1', 'ALMACÉN');
-        $sheet->setCellValue('F1', 'INVENTARIO');
-        $sheet->setCellValue('G1', 'PENDIENTES');
-        $sheet->setCellValue('H1', 'EN TRÁNSITO');
-        $sheet->setCellValue('I1', 'PRETRANSFERENCIA');
-        $sheet->setCellValue('J1', 'DISPONIBLE');
-        $sheet->setCellValue('K1', 'TIPO DE PRODUCTO');
-        $sheet->setCellValue('L1', 'MARCA');
-        $sheet->setCellValue('M1', 'SUBTIPO');
-        $sheet->setCellValue('N1', 'VERTICAL');
-        $sheet->setCellValue('O1', 'CÓDIGO SAT');
-        $sheet->setCellValue('P1', 'SERIE');
-        $sheet->setCellValue('Q1', 'NP');
+            // Llenar filas del Excel
+            $contador_fila = 2;
+            foreach ($productos as $p) {
+                $sheet->setCellValue('A' . $contador_fila, $p->codigo);
+                $sheet->setCellValue('B' . $contador_fila, $p->descripcion);
+                $sheet->setCellValue('C' . $contador_fila, $p->ultimo_costo);
+                $sheet->setCellValue('D' . $contador_fila, $p->precio);
+                $sheet->setCellValue('E' . $contador_fila, $p->almacen);
+                $sheet->setCellValue('F' . $contador_fila, $p->stock);
+                $sheet->setCellValue('G' . $contador_fila, $p->pendientes);
+                $sheet->setCellValue('H' . $contador_fila, $p->en_transito);
+                $sheet->setCellValue('I' . $contador_fila, $p->pretransferencia);
+                $sheet->setCellValue('J' . $contador_fila, $p->disponible);
+                $sheet->setCellValue('K' . $contador_fila, $p->tipo_producto);
+                $sheet->setCellValue('L' . $contador_fila, $p->marca);
+                $sheet->setCellValue('M' . $contador_fila, $p->subtipo);
+                $sheet->setCellValue('N' . $contador_fila, $p->vertical);
+                $sheet->setCellValue('O' . $contador_fila, $p->codigo_sat);
+                $sheet->setCellValue('P' . $contador_fila, $p->serie);
+                $sheet->setCellValue('Q' . $contador_fila, $p->np);
 
-        // Llenar filas del Excel
-        $contador_fila = 2;
-        foreach ($productos as $p) {
-            $sheet->setCellValue('A' . $contador_fila, $p->codigo);
-            $sheet->setCellValue('B' . $contador_fila, $p->descripcion);
-            $sheet->setCellValue('C' . $contador_fila, $p->ultimo_costo);
-            $sheet->setCellValue('D' . $contador_fila, $p->precio);
-            $sheet->setCellValue('E' . $contador_fila, $p->almacen);
-            $sheet->setCellValue('F' . $contador_fila, $p->stock);
-            $sheet->setCellValue('G' . $contador_fila, $p->pendientes);
-            $sheet->setCellValue('H' . $contador_fila, $p->en_transito);
-            $sheet->setCellValue('I' . $contador_fila, $p->pretransferencia);
-            $sheet->setCellValue('J' . $contador_fila, $p->disponible);
-            $sheet->setCellValue('K' . $contador_fila, $p->tipo_producto);
-            $sheet->setCellValue('L' . $contador_fila, $p->marca);
-            $sheet->setCellValue('M' . $contador_fila, $p->subtipo);
-            $sheet->setCellValue('N' . $contador_fila, $p->vertical);
-            $sheet->setCellValue('O' . $contador_fila, $p->codigo_sat);
-            $sheet->setCellValue('P' . $contador_fila, $p->serie);
-            $sheet->setCellValue('Q' . $contador_fila, $p->np);
+                $contador_fila++;
+            }
 
-            $contador_fila++;
-        }
+            // Ajustar ancho de columnas
+            foreach (range('A', 'Q') as $col) {
+                $sheet->getColumnDimension($col)->setAutoSize(true);
+            }
 
-        // Ajustar ancho de columnas
-        foreach (range('A', 'Q') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
+            // Guardar archivo Excel temporal y codificar en base64
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $tempFile = 'reporte_productos.xlsx';
+            $writer->save($tempFile);
 
-        // Guardar archivo Excel temporal y codificar en base64
-        $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-        $tempFile = 'reporte_productos.xlsx';
-        $writer->save($tempFile);
+            $json['excel'] = base64_encode(file_get_contents($tempFile));
+            unlink($tempFile);
 
-        $json['excel'] = base64_encode(file_get_contents($tempFile));
-        unlink($tempFile);
+            // Agrupar resultados por código (SKU)
+            $agrupados = [];
+            foreach ($productos as $p) {
+                $codigo = $p->codigo;
+                if (!isset($agrupados[$codigo])) {
+                    $agrupados[$codigo] = [
+                        'codigo' => $p->codigo,
+                        'descripcion' => $p->descripcion,
+                        'ultimo_costo' => $p->ultimo_costo,
+                        'precio' => $p->precio,
+                        'tipo_producto' => $p->tipo_producto,
+                        'marca' => $p->marca,
+                        'subtipo' => $p->subtipo,
+                        'vertical' => $p->vertical,
+                        'codigo_sat' => $p->codigo_sat,
+                        'serie' => $p->serie,
+                        'np' => $p->np,
+                        'almacenes' => [],
+                    ];
+                }
 
-        // Agrupar resultados por código (SKU)
-        $agrupados = [];
-        foreach ($productos as $p) {
-            $codigo = $p->codigo;
-            if (!isset($agrupados[$codigo])) {
-                $agrupados[$codigo] = [
-                    'codigo' => $p->codigo,
-                    'descripcion' => $p->descripcion,
-                    'ultimo_costo' => $p->ultimo_costo,
-                    'precio' => $p->precio,
-                    'tipo_producto' => $p->tipo_producto,
-                    'marca' => $p->marca,
-                    'subtipo' => $p->subtipo,
-                    'vertical' => $p->vertical,
-                    'codigo_sat' => $p->codigo_sat,
-                    'serie' => $p->serie,
-                    'np' => $p->np,
-                    'almacenes' => [],
+                $agrupados[$codigo]['almacenes'][] = [
+                    'almacen' => $p->almacen,
+                    'inventario' => $p->stock,
+                    'pendientes' => $p->pendientes,
+                    'en_transito' => $p->en_transito,
+                    'pretransferencia' => $p->pretransferencia,
+                    'disponible' => $p->disponible,
                 ];
             }
 
-            $agrupados[$codigo]['almacenes'][] = [
-                'almacen' => $p->almacen,
-                'inventario' => $p->stock,
-                'pendientes' => $p->pendientes,
-                'en_transito' => $p->en_transito,
-                'pretransferencia' => $p->pretransferencia,
-                'disponible' => $p->disponible,
-            ];
+            // Respuesta JSON final
+            $json['code'] = 200;
+            $json['productos'] = array_values($agrupados);
+
+            return response()->json($json);
         }
 
-        // Respuesta JSON final
+        // Si NO hay productos con existencia, buscar el producto solo en catálogo
+        $modelo = DB::table('modelo')
+            ->where('sku', $criterio)
+            ->orWhere('descripcion', 'LIKE', '%' . $criterio . '%')
+            ->first();
+
+        if (!$modelo) {
+            return response()->json([
+                "code" => 404,
+                "message" => "No se encontró ningún producto con el criterio: {$criterio}"
+            ]);
+        }
+
+        // Buscar el último precio registrado (puede ser null)
+        $precio = DB::table('modelo_precio')
+            ->where('id_modelo', $modelo->id)
+            ->orderBy('created_at', 'desc')
+            ->value('precio');
+
+        $producto_catalogo = [
+            'codigo' => $modelo->sku,
+            'descripcion' => $modelo->descripcion,
+            'ultimo_costo' => $modelo->costo, // o null si prefieres
+            'precio' => $precio,
+            'tipo_producto' => $modelo->cat1,
+            'marca' => $modelo->cat2,
+            'subtipo' => $modelo->cat3,
+            'vertical' => $modelo->cat4,
+            'codigo_sat' => $modelo->clave_sat,
+            'serie' => $modelo->serie == 1 ? 'SÍ' : 'NO',
+            'np' => $modelo->np,
+            // Campos de almacenes, inventarios y movimientos en null
+            'almacenes' => [[
+                'almacen' => null,
+                'inventario' => null,
+                'pendientes' => null,
+                'en_transito' => null,
+                'pretransferencia' => null,
+                'disponible' => null,
+            ]]
+        ];
+
         $json['code'] = 200;
-        $json['productos'] = array_values($agrupados);
+        $json['productos'] = [$producto_catalogo];
+        // Si quieres, puedes poner el Excel vacío o solo con encabezados.
 
         return response()->json($json);
     }
