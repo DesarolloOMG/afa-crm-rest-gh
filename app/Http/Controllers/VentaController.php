@@ -1124,106 +1124,107 @@ class VentaController extends Controller
 
     /**
      * @throws Throwable
-     * @throws ConnectionErrorException
      * @noinspection PhpUnusedLocalVariableInspection
      */
     public function venta_venta_editar(Request $request): JsonResponse
     {
+        DB::beginTransaction();
+        try {
+            $data = json_decode($request->input('data'));
+            $auth = json_decode($request->auth);
 
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
+            $documento = DB::table("documento")->where("id", $data->documento->documento)->first();
 
-        if ($data->cliente->rfc != 'XAXX010101000') {
-            $id_entidad = $data->cliente->select;
-        } else {
-            $id_entidad = DB::select("SELECT id_entidad FROM documento WHERE id = " . $data->documento->documento)[0]->id_entidad;
+            if ($data->cliente->rfc != 'XAXX010101000') {
+                $id_entidad = $data->cliente->select;
+            } else {
+                $id_entidad = $documento->id_entidad;
 
-            # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
-            DB::table('documento_entidad')->where(['id' => $id_entidad])->update([
-                'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-            ]);
-        }
-
-        $documento_data = DB::table("documento")
-            ->where("id", $data->documento->documento)
-            ->first();
-
-        if (!$documento_data) {
-            return response()->json([
-                "code" => 500,
-                "message" => "No se encontró información del documento solicitado."
-            ]);
-        }
-
-        if (!$documento_data->solicitar_refacturacion && $data->documento->refacturacion) {
-            $usuarios_notificacion = array();
-            $notificacion = new stdClass();
-
-            $usuario_data = DB::table("usuario")
-                ->where("id", $auth->id)
-                ->first();
-
-            $notificacion->titulo = "Solicitud de refacturacón.";
-            $notificacion->message = "El usuario " . $usuario_data->nombre . " solicitó refacturación para el pedido " . $data->documento->documento;
-            $notificacion->tipo = "success"; // success, warning, danger
-            $notificacion->link = "/general/busqueda/venta/id/" . $data->documento->documento;
-
-            $notificacion_id = DB::table('notificacion')->insertGetId([
-                'data' => json_encode($notificacion)
-            ]);
-
-            $notificacion->id = $notificacion_id;
-
-            $usuarios_contabilidad = DB::table("usuario")
-                ->select("usuario.id")
-                ->join("usuario_subnivel_nivel", "usuario.id", "=", "usuario_subnivel_nivel.id_usuario")
-                ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
-                ->where("subnivel_nivel.id_nivel", 11)
-                ->groupBy("usuario.id")
-                ->get();
-
-            foreach ($usuarios_contabilidad as $usuario) {
-                DB::table('notificacion_usuario')->insert([
-                    'id_usuario' => $usuario->id,
-                    'id_notificacion' => $notificacion_id
+                # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
+                DB::table('documento_entidad')->where(['id' => $id_entidad])->update([
+                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
+                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
                 ]);
-
-                $usuarios_notificacion[] = $usuario->id;
             }
 
-            $notificacion->usuario = $usuarios_notificacion;
+            $documento_data = $documento;
 
-            event(new PusherEvent(json_encode($notificacion)));
-        }
+            if (!$documento_data) {
+                return response()->json([
+                    "code" => 500,
+                    "message" => "No se encontró información del documento solicitado."
+                ]);
+            }
 
-        DB::table('documento')->where(['id' => $data->documento->documento])->update([
-            'id_almacen_principal_empresa' => $data->documento->almacen,
-            'series_factura' => $data->documento->series_factura,
-            'id_moneda' => $data->documento->moneda,
-            'id_periodo' => $data->documento->periodo,
-            'id_cfdi' => $data->documento->uso_venta,
-            'tipo_cambio' => $data->documento->tipo_cambio,
-            'fulfillment' => $data->documento->fulfillment,
-            'observacion' => $data->documento->observacion,
-            'referencia' => $data->documento->referencia,
-            'id_paqueteria' => $data->documento->paqueteria,
-            'solicitar_refacturacion' => $data->documento->refacturacion,
-            'picking' => 0,
-            'picking_by' => 0,
-            'shipping_null' => $data->documento->shipping_null ?? 0,
-            'zoom_guia' => $data->documento->zoom_guia ?? 0,
-        ]);
+            if (!$documento_data->solicitar_refacturacion && $data->documento->refacturacion) {
+                $usuarios_notificacion = array();
+                $notificacion = new stdClass();
 
-        $tiene_direccion = DB::select("SELECT id FROM documento_direccion WHERE id_documento = " . $data->documento->documento);
+                $usuario_data = DB::table("usuario")
+                    ->where("id", $auth->id)
+                    ->first();
 
-        if (empty($tiene_direccion)) {
-            DB::table('documento_direccion')->insert([
+                $notificacion->titulo = "Solicitud de refacturacón.";
+                $notificacion->message = "El usuario " . $usuario_data->nombre . " solicitó refacturación para el pedido " . $data->documento->documento;
+                $notificacion->tipo = "success"; // success, warning, danger
+                $notificacion->link = "/general/busqueda/venta/id/" . $data->documento->documento;
+
+                $notificacion_id = DB::table('notificacion')->insertGetId([
+                    'data' => json_encode($notificacion)
+                ]);
+
+                $notificacion->id = $notificacion_id;
+
+                $usuarios_contabilidad = DB::table("usuario")
+                    ->select("usuario.id")
+                    ->join("usuario_subnivel_nivel", "usuario.id", "=", "usuario_subnivel_nivel.id_usuario")
+                    ->join("subnivel_nivel", "usuario_subnivel_nivel.id_subnivel_nivel", "=", "subnivel_nivel.id")
+                    ->where("subnivel_nivel.id_nivel", 11)
+                    ->groupBy("usuario.id")
+                    ->get();
+
+                foreach ($usuarios_contabilidad as $usuario) {
+                    DB::table('notificacion_usuario')->insert([
+                        'id_usuario' => $usuario->id,
+                        'id_notificacion' => $notificacion_id
+                    ]);
+
+                    $usuarios_notificacion[] = $usuario->id;
+                }
+
+                $notificacion->usuario = $usuarios_notificacion;
+
+                event(new PusherEvent(json_encode($notificacion)));
+            }
+
+            DB::table('documento')->where(['id' => $data->documento->documento])->update([
+                'id_almacen_principal_empresa' => $data->documento->almacen,
+                'series_factura' => $data->documento->series_factura,
+                'id_moneda' => $data->documento->moneda,
+                'id_periodo' => $data->documento->periodo,
+                'id_cfdi' => $data->documento->uso_venta,
+                'tipo_cambio' => $data->documento->tipo_cambio,
+                'fulfillment' => $data->documento->fulfillment,
+                'observacion' => $data->documento->observacion,
+                'referencia' => $data->documento->referencia,
+                'id_paqueteria' => $data->documento->paqueteria,
+                'solicitar_refacturacion' => $data->documento->refacturacion,
+                'picking' => 0,
+                'picking_by' => 0,
+                'shipping_null' => $data->documento->shipping_null ?? 0,
+                'zoom_guia' => $data->documento->zoom_guia ?? 0,
+            ]);
+
+            $direccionExiste = DB::table('documento_direccion')
+                ->where('id_documento', $data->documento->documento)
+                ->exists();
+
+            $direccionData = [
                 'id_documento' => $data->documento->documento,
                 'id_direccion_pro' => $data->documento->direccion_envio->colonia,
                 'calle' => $data->documento->direccion_envio->calle,
@@ -1236,155 +1237,163 @@ class VentaController extends Controller
                 'referencia' => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
                 'contenido' => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
                 'tipo_envio' => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
-            ]);
-        } else {
-            DB::table('documento_direccion')->where(['id_documento' => $data->documento->documento])->update([
-                'id_direccion_pro' => $data->documento->direccion_envio->colonia,
-                'calle' => $data->documento->direccion_envio->calle,
-                'numero' => $data->documento->direccion_envio->numero,
-                'numero_int' => $data->documento->direccion_envio->numero_int,
-                'colonia' => $data->documento->direccion_envio->colonia_text,
-                'ciudad' => $data->documento->direccion_envio->ciudad,
-                'estado' => $data->documento->direccion_envio->estado,
-                'codigo_postal' => $data->documento->direccion_envio->codigo_postal,
-                'referencia' => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : "N/A",
-                'contenido' => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : "PAQUETE",
-                'tipo_envio' => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : "N/A",
-            ]);
-        }
+            ];
 
-        $currentProducts = DB::table('movimiento')
-            ->where('id_documento', $data->documento->documento)
-            ->select('id_modelo', 'cantidad')
-            ->get()
-            ->keyBy('id_modelo')
-            ->toArray();
-
-        foreach ($data->documento->productos as $producto) {
-
-            $modelo = DB::table('modelo')
-                ->where('sku', trim($producto->codigo))
-                ->first();
-
-            if (!$modelo) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No existe el producto en la base datos. " . $producto->codigo
-                ]);
+            if ($direccionExiste) {
+                DB::table('documento_direccion')
+                    ->where('id_documento', $data->documento->documento)
+                    ->update($direccionData);
+            } else {
+                DB::table('documento_direccion')->insert($direccionData);
             }
 
-            $existe_modelo = $modelo->id;
+            $currentProducts = DB::table('movimiento')
+                ->where('id_documento', $data->documento->documento)
+                ->select('id_modelo', 'cantidad')
+                ->get()
+                ->keyBy('id_modelo')
+                ->toArray();
 
-            $productoActual = $currentProducts[$existe_modelo] ?? null;
+            $skus = collect($data->documento->productos)->pluck('codigo')->map('trim')->toArray();
 
-            if (!$productoActual) {
-                $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
+            $modelos = DB::table('modelo')
+                ->whereIn('sku', $skus)
+                ->get()
+                ->keyBy('sku');
 
-                if ($existencia->error) {
+            foreach ($data->documento->productos as $producto) {
+                $sku = trim($producto->codigo);
+                $modelo = $modelos[$sku] ?? null;
+
+                if (!$modelo) {
                     return response()->json([
                         'code' => 500,
-                        'message' => $existencia->mensaje
+                        'message' => "No existe el producto en la base datos: " . $sku
                     ]);
                 }
 
-                if ($existencia->disponible < $producto->cantidad) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => 'No hay suficiente existencia para procesar la venta'
+                $existe_modelo = $modelo->id;
+                $productoActual = $currentProducts[$existe_modelo] ?? null;
+
+                if (!$productoActual) {
+                    $existencia = InventarioService::obtenerExistencia($sku, $data->documento->almacen);
+
+                    if ($existencia->error) {
+                        return response()->json([
+                            'code' => 500,
+                            'message' => $existencia->mensaje
+                        ]);
+                    }
+
+                    if ($existencia->disponible < $producto->cantidad) {
+                        return response()->json([
+                            'code' => 500,
+                            'message' => "No hay suficiente existencia para el producto: $sku"
+                        ]);
+                    }
+
+                    DB::table('movimiento')->insert([
+                        'id_documento' => $data->documento->documento,
+                        'id_modelo' => $existe_modelo,
+                        'cantidad' => $producto->cantidad,
+                        'precio' => $producto->precio,
+                        'garantia' => $producto->garantia,
+                        'modificacion' => $producto->modificacion,
+                        'regalo' => $producto->regalo
                     ]);
                 }
-
-                $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento' => $data->documento->documento,
-                    'id_modelo' => $existe_modelo,
-                    'cantidad' => $producto->cantidad,
-                    'precio' => $producto->precio,
-                    'garantia' => $producto->garantia,
-                    'modificacion' => $producto->modificacion,
-                    'regalo' => $producto->regalo
-                ]);
             }
-        }
 
-        foreach ($data->documento->archivos as $archivo) {
-            if ($archivo->nombre != "" && $archivo->data != "") {
-                $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                $dropboxService = new DropboxService();
-                $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
+            foreach ($data->documento->archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                DB::table('documento_archivo')->insert([
-                    'id_documento' => $data->documento->documento,
-                    'id_usuario' => $auth->id,
-                    'tipo' => $archivo->guia,
-                    'id_impresora' => $archivo->impresora,
-                    'nombre' => $archivo->nombre,
-                    'dropbox' => $response['id']
-                ]);
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
+
+                    DB::table('documento_archivo')->insert([
+                        'id_documento' => $data->documento->documento,
+                        'id_usuario' => $auth->id,
+                        'tipo' => $archivo->guia,
+                        'id_impresora' => $archivo->impresora,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
+                    ]);
+                }
             }
-        }
 
 
-        DB::table('seguimiento')->insert([
-            'id_documento' => $data->documento->documento,
-            'id_usuario' => $auth->id,
-            'seguimiento' => $data->documento->seguimiento . "<p>Fecha de edición: " . date('d-m-Y H:i:s') . "</p>"
-        ]);
-
-        $info_documento = DB::table('documento')->where('id', $data->documento->documento)->first();
-
-        if ($info_documento->pagado == 1 && $info_documento->id_fase == 3) {
             DB::table('seguimiento')->insert([
                 'id_documento' => $data->documento->documento,
                 'id_usuario' => $auth->id,
-                'seguimiento' => "<h1>PICKING REIMPRESO</h1>"
+                'seguimiento' => $data->documento->seguimiento . "<p>Fecha de edición: " . date('d-m-Y H:i:s') . "</p>"
             ]);
-        }
 
-        DB::table('documento_updates_by')->insert([
-            'id_documento' => $data->documento->documento,
-            'id_usuario' => $auth->id
-        ]);
+            $info_documento = $documento;
 
-        $tiene_pago = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $data->documento->documento);
-
-        if (!empty($tiene_pago)) {
-            DB::table('documento_pago')->where(['id' => $tiene_pago[0]->id_pago])->update([
-                'origen_entidad' => $data->cliente->rfc
-            ]);
-        }
-
-        if ($data->documento->id_fase != 2) {
-            $esta_importado = DB::select("SELECT importado FROM documento WHERE id = " . $data->documento->documento)[0]->importado;
-
-            if ($data->documento->fulfillment && !$esta_importado) {
-                //Aqui ta
-//                $response = DocumentoService::crearFactura($data->documento->documento, 0, 0);
-                $response = InventarioService::aplicarMovimiento($data->documento->documento);
-
-                if ($response->error) {
-                    DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                        'id_fase' => 5
-                    ]);
-
-                    CorreoService::cambioFaseConta($data->documento->documento, $response->mensaje);
-
-                    return response()->json([
-                        'code' => 200,
-                        'message' => "Documento editado correctamente pero no fue posible importarlo al ERP, mensaje de error: " . $response->mensaje
-                    ]);
-                }
-
-                DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                    'id_fase' => 6
+            if ($info_documento->pagado == 1 && $info_documento->id_fase == 3) {
+                DB::table('seguimiento')->insert([
+                    'id_documento' => $data->documento->documento,
+                    'id_usuario' => $auth->id,
+                    'seguimiento' => "<h1>PICKING REIMPRESO</h1>"
                 ]);
             }
-        }
 
-        return response()->json([
-            'code' => 200,
-            'message' => "Venta editada correctamente."
-        ]);
+            DB::table('documento_updates_by')->insert([
+                'id_documento' => $data->documento->documento,
+                'id_usuario' => $auth->id
+            ]);
+
+            $id_pago = DB::table('documento_pago_re')
+                ->where('id_documento', $data->documento->documento)
+                ->value('id_pago');
+
+            if ($id_pago) {
+                DB::table('documento_pago')
+                    ->where('id', $id_pago)
+                    ->update([
+                        'origen_entidad' => $data->cliente->rfc
+                    ]);
+            }
+
+
+            if ($data->documento->id_fase != 2) {
+                $esta_importado = $documento->importado;
+
+                if ($data->documento->fulfillment && !$esta_importado) {
+                    $response = InventarioService::aplicarMovimiento($data->documento->documento);
+
+                    if ($response->error) {
+                        DB::table('documento')->where(['id' => $data->documento->documento])->update([
+                            'id_fase' => 5
+                        ]);
+
+                        CorreoService::cambioFaseConta($data->documento->documento, $response->mensaje);
+
+                        return response()->json([
+                            'code' => 200,
+                            'message' => "Documento editado correctamente pero no fue posible importarlo al ERP, mensaje de error: " . $response->mensaje
+                        ]);
+                    }
+
+                    DB::table('documento')->where(['id' => $data->documento->documento])->update([
+                        'id_fase' => 6
+                    ]);
+                }
+            }
+            DB::commit();
+            return response()->json([
+                'code' => 200,
+                'message' => "Venta editada correctamente."
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error al editar venta: ' . $e->getMessage()
+            ]);
+        }
     }
 
     /** @noinspection PhpUnusedLocalVariableInspection */
