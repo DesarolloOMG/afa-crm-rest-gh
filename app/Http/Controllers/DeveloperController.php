@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Services\DropboxService;
+use App\Http\Services\InventarioService;
+use App\Http\Services\MercadolibreService;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -11,6 +14,16 @@ use stdClass;
 
 class DeveloperController extends Controller
 {
+
+    /**
+     * @var DropboxService
+     */
+    private $dropbox;
+
+    public function __construct(DropboxService $dropbox)
+    {
+        $this->dropbox = $dropbox;
+    }
 
     public static function logVariableLocation(): string
     {
@@ -24,14 +37,32 @@ class DeveloperController extends Controller
 
     public function test(Request $request)
     {
-        $impresion_raw = (new PrintController)->print(990, 4, $request);
-        $impresion = @$impresion_raw;
-
-        return response()->json([
-            '1' => $impresion_raw,
-            '2' => $impresion
+        $url = 'https://api.dropboxapi.com/2/files/get_temporary_link';
+        $body = ['path' => 'id:uO766e59Np0AAAAAAAAACQ'];
+        $headers = [
+            'Authorization' => 'Bearer ' . env('DROPBOX_TOKEN'),
+            'Content-Type' => 'application/json'
+        ];
+        $client = new \GuzzleHttp\Client();
+        $response = $client->post($url, [
+            'headers' => $headers,
+            'body' => json_encode($body),
         ]);
+        $data = json_decode($response->getBody()->getContents(), true);
+        dd($data);
+    }
 
+    public static function log_meli_error(string $mensaje, string $publicacion_id)
+    {
+        $publicacion_id = $publicacion_id ?: 'sin_id';
+
+        $dir = "logs/mercadolibre";
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $archivo = "{$dir}/" . date("Y.m.d") . "-{$publicacion_id}.log";
+        file_put_contents($archivo, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
     }
 
     public static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
