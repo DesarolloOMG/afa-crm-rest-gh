@@ -1766,7 +1766,7 @@ class AlmacenController extends Controller
                 // Validar existencias para documentos que NO sean de entrada.
                 // Ahora, para SALIDA, TRASPASO y USO_INTERNO, se utiliza el almacén de salida para verificar el stock.
                 if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
-                    $sourceAlmacenId = $id_almacen_salida->id_almacen;
+                    $sourceAlmacenId = $data->almacen_salida;
                     $stock = InventarioService::stockDisponible(trim($producto->sku), $sourceAlmacenId);
                     $cantidadRequerida = $producto->serie ? count($producto->series) : $producto->cantidad;
                     if ($stock->error || $stock->disponible < $cantidadRequerida) {
