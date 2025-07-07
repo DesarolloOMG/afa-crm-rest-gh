@@ -1,10 +1,13 @@
-<?php /** @noinspection PhpParamsInspection */
-/** @noinspection PhpRedundantOptionalArgumentInspection */
+<?php /** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedMethodInspection */
+/** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedFieldInspection */
 /** @noinspection PhpUnused */
 
-/** @noinspection PhpComposerExtensionStubsInspection */
+/** @noinspection PhpParamsInspection */
 
 namespace App\Http\Controllers;
 
@@ -14,10 +17,8 @@ use App\Http\Services\BitacoraService;
 use App\Http\Services\ClaroshopServiceV2;
 use App\Http\Services\CoppelService;
 use App\Http\Services\CorreoService;
-use App\Http\Services\CTService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\ElektraService;
-use App\Http\Services\ExelDelNorteService;
 use App\Http\Services\GeneralService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\LinioService;
@@ -332,7 +333,7 @@ class VentaController extends Controller
             } catch (Exception $e) {
 
 
-                $message .= "<br><br>No fue posible notificar a los administradores para la autorización del pedido por baja utilidad. " .self::logVariableLocation();
+                $message .= "<br><br>No fue posible notificar a los administradores para la autorización del pedido por baja utilidad. " . self::logVariableLocation();
             }
         }
 
@@ -425,7 +426,19 @@ class VentaController extends Controller
     }
 
     // OPT
+
     /** @noinspection PhpUndefinedVariableInspection */
+
+    public static function logVariableLocation(): string
+    {
+        // $log = self::logVariableLocation();
+        $sis = 'BE'; //Front o Back
+        $ini = 'VC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
+        $fin = 'NTA'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
+        $trace = debug_backtrace()[0];
+        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
+    }
+
     public function venta_venta_crear_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -594,7 +607,6 @@ class VentaController extends Controller
         ]);
     }
 
-
     public function venta_venta_crear_existe($venta, $marketplaceId): JsonResponse
     {
         $marketplace = MarketplaceArea::with('marketplace')->find($marketplaceId);
@@ -619,7 +631,6 @@ class VentaController extends Controller
             'code' => 200
         ]);
     }
-
 
     public function venta_venta_crear_informacion(Request $request): JsonResponse
     {
@@ -845,6 +856,9 @@ class VentaController extends Controller
         ]);
     }
 
+
+    /* Venta > Venta > Autorizar */
+
     /**
      * @throws ConnectionErrorException
      */
@@ -949,8 +963,33 @@ class VentaController extends Controller
         ]);
     }
 
+    /**
+     * @throws ConnectionErrorException
+     */
+    private function cotizar_paqueteria($paqueteria, $array): string
+    {
+        $cotizar = \Httpful\Request::post('http://apipaqueterias.crmomg.mx/api/' . $paqueteria . '/Cotizar')
+            ->addHeader('authorization', 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjA4Njk2YjQxODczZTM4YTRkM2E1NjBjNTI2YTY3NmRhZmQ0YWNmOWUzNTFmNTkxZWM2NTIyOGRiOTJmODBlMmE0ZjNhNWJlZjcyNjg1ODQ3In0.eyJhdWQiOiIxIiwianRpIjoiMDg2OTZiNDE4NzNlMzhhNGQzYTU2MGM1MjZhNjc2ZGFmZDRhY2Y5ZTM1MWY1OTFlYzY1MjI4ZGI5MmY4MGUyYTRmM2E1YmVmNzI2ODU4NDciLCJpYXQiOjE1NTIwNzEzNzksIm5iZiI6MTU1MjA3MTM3OSwiZXhwIjoxNTgzNjkzNzc5LCJzdWIiOiIxIiwic2NvcGVzIjpbXX0.h6nCD2mqyp-QkXBd73BEM3kiwzry9JZJ5I35VJAcYesJc_kup3zVKrRIKz0wSsFt5zIGzg91LCnxgyr78GyIBpBkH-TVzzGSjTVNf5uFZhWGUVINM7SsKtbCHHyrUhOdOI2zgfO4_BIvkafnw_mYIgULMcwQU1w5G7XXnWeYaIxIooLEkw0TmtT0pD4aAYh9J15ak5cvVhTcoe-UO6XF63CkbAQmmeYpAjkxyLG_y5WIZIBXe5lhMYABjnKiBDlM6Ig8tcjXQ8egaLrAAsrRzFDwwzn23O3qTUo7pwxyHNn5guBXfaLpG7Pr5an-GslArwHApA6Ipdg4n5Qt4M42EHfO0KwrwAFMFHo1yDr3vcK7S05K_p9d9cAuZTZyYGo-39PUXcWoluR9W6KVA3X7tlZr3R8d7XLjDJ3Gp--tTmZpDsXKGLCh_uiFIHdmBXuN-eKbvrsxMnbgyK9EPY4PNbG35Ii6O6vZDVvfKia0tkpXof03uAs2OIcmlc5belFSpl7OHEO6HDXKfCmPjOMQFyxyAPrdEsJNJgz55tbdFPNZzpQSsWILVUgDq3pjpy503uyTS0NCvicIByBVwmOOXLm8l40dKhX-aaFOMiTzqxO0m9NJjoBwRsscUUYSXFOexYXGSiHXT4dqq_E4dAhEewKLSo1-RwwUtP0VGgmkiUo')
+            ->body($array, Mime::FORM)
+            ->send();
 
-    /* Venta > Venta > Autorizar */
+        $cotizar_res = @json_decode($cotizar->raw_body);
+
+        if (empty($cotizar_res)) {
+            return "No fue posible cotizar el envio, error desconocido.";
+        }
+
+        if ($cotizar_res->error == 1) {
+            return "Ocurrió un error, favor de contactar al adminsitrador. Mensaje de error: " . $cotizar_res->mensaje;
+        }
+
+        $costo_total = (float)$cotizar_res->base + (float)$cotizar_res->extra;
+
+        return "$ " . $costo_total;
+    }
+
+    /* Venta > Venta > Editar */
+
     public function venta_venta_autorizar(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -983,7 +1022,106 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Editar */
+    private function obtener_ventas($query_extra): array
+    {
+        $ventas = DB::select("SELECT 
+                                documento.id, 
+                                documento.id_fase,
+                                documento.id_periodo,
+                                documento.id_marketplace_area,
+                                documento.documento_extra,
+                                documento.no_venta,
+                                documento.pagado,
+                                documento.modificacion,
+                                documento.problema,
+                                documento.status,
+                                documento.fulfillment,
+                                documento.mkt_created_at,
+                                documento.mkt_publicacion,
+                                documento.created_at, 
+                                marketplace.marketplace, 
+                                marketplace_area.publico,
+                                area.area, 
+                                paqueteria.paqueteria, 
+                                usuario.nombre AS usuario,
+                                documento_entidad.razon_social AS cliente,
+                                documento_entidad.rfc,
+                                documento_entidad.correo,
+                                documento_fase.fase,
+                                almacen.almacen
+                            FROM documento
+                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+                            INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
+                            INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
+                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
+                            INNER JOIN usuario ON documento.id_usuario = usuario.id
+                            INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
+                            INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
+                            INNER JOIN area ON marketplace_area.id_area = area.id
+                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
+                            LEFT JOIN documento_guia ON documento.id = documento_guia.id_documento
+                            WHERE documento.id_tipo = 2
+                            AND documento.status = 1
+                            " . $query_extra);
+
+        foreach ($ventas as $venta) {
+            $total = 0;
+            $tiene_publicacion = DB::select("SELECT tee FROM marketplace_publicacion WHERE publicacion_id = '" . $venta->mkt_publicacion . "'");
+            $venta->dias_restantes = 0;
+
+            if (!empty($tiene_publicacion)) {
+                $fecha_entrega = date('Y-m-d', strtotime($venta->mkt_created_at . ' + ' . $tiene_publicacion[0]->tee . ' days'));
+
+                $fecha_actual = time();
+                $fecha_entrega = strtotime($fecha_entrega);
+                $diferencia = $fecha_entrega - $fecha_actual;
+
+                $venta->dias_restantes = floor($diferencia / (60 * 60 * 24));
+            }
+
+            $direccion = DB::select("SELECT
+                                        *
+                                    FROM documento_direccion
+                                    WHERE id_documento = " . $venta->id);
+
+            $productos = DB::select("SELECT 
+                                    movimiento.id,
+                                    movimiento.cantidad, 
+                                    modelo.sku, 
+                                    modelo.descripcion, 
+                                    modelo.serie,
+                                    ROUND((movimiento.precio * 1.16), 2) AS precio
+                                FROM movimiento 
+                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
+                                WHERE id_documento = " . $venta->id);
+
+            foreach ($productos as $producto) {
+                $total += round((int)$producto->cantidad * (float)$producto->precio, 2);
+            }
+
+            $archivos = DB::select("SELECT
+                                        usuario.id,
+                                        usuario.nombre AS usuario,
+                                        documento_archivo.nombre AS archivo,
+                                        documento_archivo.dropbox
+                                    FROM documento_archivo
+                                    INNER JOIN usuario ON documento_archivo.id_usuario = usuario.id
+                                    WHERE documento_archivo.id_documento = " . $venta->id . " AND documento_archivo.status = 1");
+
+            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id);
+
+            $venta->seguimiento = $seguimiento;
+            $venta->productos = $productos;
+            $venta->direccion = (empty($direccion)) ? 0 : $direccion[0];
+            $venta->archivos = $archivos;
+            $venta->total = $total;
+        }
+
+        return $ventas;
+    }
+
+    /* Venta > Venta > Cancelar */
+
     /**
      * @throws Throwable
      * @throws ConnectionErrorException
@@ -991,6 +1129,7 @@ class VentaController extends Controller
      */
     public function venta_venta_editar(Request $request): JsonResponse
     {
+
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
@@ -1041,7 +1180,6 @@ class VentaController extends Controller
 
             $notificacion->id = $notificacion_id;
 
-            /** @noinspection PhpParamsInspection */
             $usuarios_contabilidad = DB::table("usuario")
                 ->select("usuario.id")
                 ->join("usuario_subnivel_nivel", "usuario.id", "=", "usuario_subnivel_nivel.id_usuario")
@@ -1115,30 +1253,41 @@ class VentaController extends Controller
             ]);
         }
 
+        $currentProducts = DB::table('movimiento')
+            ->where('id_documento', $data->documento->documento)
+            ->select('id_modelo', 'cantidad')
+            ->get()
+            ->keyBy('id_modelo')
+            ->toArray();
+
         foreach ($data->documento->productos as $producto) {
 
-            if ($producto->id == 0) {
-                $existe_modelo = DB::select("SELECT id FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
+            $modelo = DB::table('modelo')
+                ->where('sku', trim($producto->codigo))
+                ->first();
 
-                if (empty($existe_modelo)) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No existe el producto en la base datos."
-                    ]);
-                } else {
-                    $modelo = $existe_modelo[0]->id;
-                }
+            if (!$modelo) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "No existe el producto en la base datos. " . $producto->codigo
+                ]);
+            }
 
+            $existe_modelo = $modelo->id;
+
+            $productoActual = $currentProducts[$existe_modelo] ?? null;
+
+            if (!$productoActual) {
                 $existencia = InventarioService::obtenerExistencia($producto->codigo, $data->documento->almacen);
 
-                if($existencia->error) {
+                if ($existencia->error) {
                     return response()->json([
                         'code' => 500,
                         'message' => $existencia->mensaje
                     ]);
                 }
 
-                if($existencia->disponible < $producto->cantidad) {
+                if ($existencia->disponible < $producto->cantidad) {
                     return response()->json([
                         'code' => 500,
                         'message' => 'No hay suficiente existencia para procesar la venta'
@@ -1146,13 +1295,13 @@ class VentaController extends Controller
                 }
 
                 $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento'  => $data->documento->documento,
-                    'id_modelo'     => $modelo,
-                    'cantidad'      => $producto->cantidad,
-                    'precio'        => $producto->precio,
-                    'garantia'      => $producto->garantia,
-                    'modificacion'  => $producto->modificacion,
-                    'regalo'        => $producto->regalo
+                    'id_documento' => $data->documento->documento,
+                    'id_modelo' => $existe_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio,
+                    'garantia' => $producto->garantia,
+                    'modificacion' => $producto->modificacion,
+                    'regalo' => $producto->regalo
                 ]);
             }
         }
@@ -1166,11 +1315,11 @@ class VentaController extends Controller
 
                 DB::table('documento_archivo')->insert([
                     'id_documento' => $data->documento->documento,
-                    'id_usuario'   => $auth->id,
-                    'tipo'         => $archivo->guia,
+                    'id_usuario' => $auth->id,
+                    'tipo' => $archivo->guia,
                     'id_impresora' => $archivo->impresora,
-                    'nombre'       => $archivo->nombre,
-                    'dropbox'      => $response['id']
+                    'nombre' => $archivo->nombre,
+                    'dropbox' => $response['id']
                 ]);
             }
         }
@@ -1237,6 +1386,8 @@ class VentaController extends Controller
             'message' => "Venta editada correctamente."
         ]);
     }
+
+    /** @noinspection PhpUnusedLocalVariableInspection */
 
     public function venta_venta_editar_documento($documento): JsonResponse
     {
@@ -1315,6 +1466,8 @@ class VentaController extends Controller
         ]);
     }
 
+    /* Venta > Venta > Problema */
+
     public function venta_venta_editar_producto_borrar($movimiento): JsonResponse
     {
         DB::table('movimiento')->where(['id' => $movimiento])->delete();
@@ -1324,7 +1477,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Cancelar */
     public function venta_venta_cancelar_data(): JsonResponse
     {
         $usuarios = DB::select("SELECT
@@ -1347,7 +1499,8 @@ class VentaController extends Controller
         ]);
     }
 
-    /** @noinspection PhpUnusedLocalVariableInspection */
+    /* Venta > Venta > Nota */
+
     public function venta_venta_cancelar(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -1460,6 +1613,7 @@ class VentaController extends Controller
                 'observacion' => 'Traspaso entre almacenes por cancelacion de venta ' . $documento, // Status de la compra
             ]);
 
+            /** @noinspection PhpUnusedLocalVariableInspection */
             foreach ($productos as $index => $producto) {
                 $movimiento = DB::table('movimiento')->insertGetId([
                     'id_documento' => $documento_traspaso,
@@ -1535,7 +1689,8 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Problema */
+    /* Venta > Venta > Importacion */
+
     public function venta_venta_problema(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -1565,7 +1720,8 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Nota */
+    /* Venta > Venta > Mensaje */
+
     /**
      * @throws Throwable
      */
@@ -1738,10 +1894,10 @@ class VentaController extends Controller
         $pdf->Ln(5);
 
         if (strlen($cliente->correo) > 35) {
-            $pdf->Cell(20, 10, "");
+            $pdf->Cell(20, 10);
             $pdf->Cell(80, 10, substr($cliente->correo, 35, 35));
         } else {
-            $pdf->Cell(100, 10, "");
+            $pdf->Cell(100, 10);
         }
 
         $pdf->SetFont('Arial', 'B', 10);
@@ -1752,7 +1908,7 @@ class VentaController extends Controller
 
         # Blank space
         $pdf->Ln(5);
-        $pdf->Cell(100, 10, "");
+        $pdf->Cell(100, 10);
 
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 10, 'Metodo de pago: ');
@@ -1780,44 +1936,44 @@ class VentaController extends Controller
             $pdf->Cell(20, 5, "$ " . round((float)$producto->precio * (float)$producto->cantidad, 2), "T");
             $pdf->Ln();
 
-            $pdf->Cell(20, 5, "");
+            $pdf->Cell(20, 5);
             $pdf->Cell(25, 5, $producto->claveunidad);
             $pdf->Cell(25, 5, $producto->codigo);
 
             if (strlen($producto->descripcion) > 40) {
                 $pdf->Cell(80, 5, substr($producto->descripcion, 40, 40));
-                $pdf->Cell(20, 5, "");
-                $pdf->Cell(20, 5, "");
+                $pdf->Cell(20, 5);
+                $pdf->Cell(20, 5);
             }
 
             $pdf->Ln();
 
             if (strlen($producto->descripcion) > 80) {
-                $pdf->Cell(25, 5, "");
-                $pdf->Cell(25, 5, "");
+                $pdf->Cell(25, 5);
+                $pdf->Cell(25, 5);
                 $pdf->Cell(80, 5, substr($producto->descripcion, 80, 40));
-                $pdf->Cell(20, 5, "");
-                $pdf->Cell(20, 5, "");
+                $pdf->Cell(20, 5);
+                $pdf->Cell(20, 5);
                 $pdf->Ln();
             }
         }
 
         $pdf->Ln(10);
-        $pdf->Cell(120, 10, '');
+        $pdf->Cell(120, 10);
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(40, 10, 'Subtotal: ');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Cell(10, 10, "$ " . round($total / 1.16), 2);
 
         $pdf->Ln(5);
-        $pdf->Cell(120, 10, '');
+        $pdf->Cell(120, 10);
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(40, 10, 'Iva (16%): ');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Cell(10, 10, "$ " . round($total - ($total / 1.16)), 2);
 
         $pdf->Ln(5);
-        $pdf->Cell(120, 10, '');
+        $pdf->Cell(120, 10);
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(40, 10, 'Total: ');
         $pdf->SetFont('Arial', '', 10);
@@ -1872,7 +2028,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Importacion */
     public function venta_venta_importacion_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -1911,6 +2066,8 @@ class VentaController extends Controller
             'empresas' => $empresas
         ]);
     }
+
+    /* Venta > Venta > Pedido de venta */
 
     public function venta_venta_importacion(Request $request): JsonResponse
     {
@@ -1959,7 +2116,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Mensaje */
     public function venta_venta_mensaje_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -2001,7 +2157,8 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Venta > Pedido de venta */
+    /* Venta > Publicación */
+
     public function venta_venta_pedido_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
@@ -2117,9 +2274,9 @@ class VentaController extends Controller
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $documento,
-                        'id_usuario'   => $auth->id,
-                        'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response['id']
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -2356,7 +2513,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Venta > Publicación */
     public function venta_publicacion_data(Request $request): JsonResponse
     {
         set_time_limit(0);
@@ -2435,6 +2591,89 @@ class VentaController extends Controller
         ]);
     }
 
+    private function publicaciones_raw_data($usuario, $query_extra = ""): array
+    {
+        $marketplaces = DB::select("SELECT
+                                        marketplace_area.id,
+                                        CONCAT(area.area, ' / ', marketplace.marketplace) AS marketplace,
+                                        marketplace_api.extra_1,
+                                        marketplace_api.extra_2
+                                    FROM usuario_marketplace_area 
+                                    INNER JOIN marketplace_area ON usuario_marketplace_area.id_marketplace_area = marketplace_area.id
+                                    LEFT JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
+                                    INNER JOIN area ON marketplace_area.id_area = area.id
+                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
+                                    WHERE usuario_marketplace_area.id_usuario = " . $usuario . "
+                                    AND marketplace.marketplace IN ('MERCADOLIBRE', 'AMAZON')");
+
+        foreach ($marketplaces as $marketplace) {
+            $publicaciones = DB::select("SELECT
+                                            marketplace_publicacion.id,
+                                            marketplace_publicacion.publicacion_id,
+                                            marketplace_publicacion.publicacion_sku AS sku,
+                                            marketplace_publicacion.publicacion,
+                                            marketplace_publicacion.total,
+                                            IF(marketplace_publicacion.status = 'active', 1, 0) AS status,
+                                            marketplace_publicacion.tee,
+                                            marketplace_publicacion.tipo,
+                                            marketplace_publicacion.logistic_type,
+                                            marketplace_publicacion.tienda,
+                                            marketplace_publicacion.id_almacen_empresa AS almacen,
+                                            marketplace_publicacion.id_almacen_empresa_fulfillment AS almacen_fulfillment,
+                                            marketplace_publicacion.url,
+                                            marketplace_publicacion.id_proveedor AS proveedor,
+                                            marketplace_publicacion.id_marketplace_area,
+                                            (
+                                                SELECT
+                                                    empresa.bd
+                                                FROM empresa_almacen
+                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                WHERE empresa_almacen.id = almacen
+                                            ) AS empresa_almacen_principal,
+                                            (
+                                                SELECT
+                                                    empresa.bd
+                                                FROM empresa_almacen
+                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                                WHERE empresa_almacen.id = almacen_fulfillment
+                                            ) AS empresa_almacen_secundario
+                                        FROM marketplace_publicacion
+                                        WHERE marketplace_publicacion.id_marketplace_area = " . $marketplace->id . "
+                                        " . $query_extra);
+
+            foreach ($publicaciones as $publicacion) {
+                $publicacion->productos = DB::select("SELECT
+                                            modelo.sku,
+                                            modelo.descripcion,
+                                            marketplace_publicacion_producto.id,
+                                            marketplace_publicacion_producto.garantia,
+                                            marketplace_publicacion_producto.cantidad,
+                                            marketplace_publicacion_producto.cantidad AS cantidad_envio,
+                                            marketplace_publicacion_producto.regalo,
+                                            marketplace_publicacion_producto.etiqueta
+                                        FROM marketplace_publicacion_producto
+                                        INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
+                                        WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
+
+                $publicacion->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion->id);
+                $publicacion->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion->id . " ORDER BY precio");
+                $publicacion->competencia = empty($publicacion->competencias) ? "Sín competencia" : "$ " . $publicacion->competencias[0]->precio_cambiado;
+                $publicacion->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion->id);
+
+                foreach ($publicacion->ofertas as $oferta) {
+                    $fecha_inicio = strtotime(date("Y-m-d H:i:s"));
+                    $fecha_final = strtotime($oferta->final);
+
+                    $oferta->dias = round(($fecha_final - $fecha_inicio) / (60 * 60 * 24));
+                }
+            }
+
+            $marketplace->publicaciones = $publicaciones;
+        }
+
+        return $marketplaces;
+    }
+
     public function venta_publicacion_competencia($competencia_id): JsonResponse
     {
         DB::table('marketplace_publicacion_competencia')->where(['id' => $competencia_id])->delete();
@@ -2444,6 +2683,8 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
+
     public function venta_publicacion_oferta($oferta): JsonResponse
     {
         DB::table('marketplace_publicacion_oferta')->where(['id' => $oferta])->delete();
@@ -2452,6 +2693,8 @@ class VentaController extends Controller
             'code' => 200
         ]);
     }
+
+    /* Nota de credito */
 
     public function venta_publicacion_15_dias($publicacion_id): JsonResponse
     {
@@ -2475,6 +2718,8 @@ class VentaController extends Controller
             "sugerido" => $surtido_sugerido < 1 ? 0 : $surtido_sugerido
         ]);
     }
+
+    /* Mercadolibre */
 
     public function venta_publicacion_guardar(Request $request): JsonResponse
     {
@@ -2743,7 +2988,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_publicacion_pretransferencia(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -2821,6 +3065,7 @@ class VentaController extends Controller
                     ->where("sku", trim($producto->sku))
                     ->first();
 
+                /** @noinspection PhpUnusedLocalVariableInspection */
                 $movimiento = DB::table('movimiento')->insertGetId([
                     'id_documento' => $documento,
                     'id_modelo' => $modelo->id,
@@ -2862,7 +3107,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Nota de credito */
     public function venta_nota_credito_get_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -2912,8 +3156,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Mercadolibre */
-
     public function venta_mercadolibre_token($marketplace_id): JsonResponse
     {
         $response = MercadolibreService::getMarketplaceData($marketplace_id);
@@ -2941,6 +3183,38 @@ class VentaController extends Controller
         ]);
     }
 
+    private function areas_marketplaces($usuario, $marketplace): array
+    {
+        $areas_cast = array();
+
+        $areas = DB::table("area")
+            ->where("status", 1)
+            ->where('area', '!=', 'N/A')
+            ->get()
+            ->toArray();
+
+        /** @noinspection PhpUnusedLocalVariableInspection */
+        foreach ($areas as $i => $area) {
+            $area->marketplaces = DB::table("marketplace_area")
+                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo", "marketplace_api.token AS marketplace_token")
+                ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
+                ->join("usuario_marketplace_area", "marketplace_area.id", "=", "usuario_marketplace_area.id_marketplace_area")
+                ->leftJoin("marketplace_api", "marketplace_area.id", "=", "marketplace_api.id_marketplace_area")
+                ->where("marketplace_area.id_area", $area->id)
+                ->where("marketplace.marketplace", "LIKE", "%" . $marketplace . "%")
+                ->where("marketplace_area.status", 1)
+                ->where("usuario_marketplace_area.id_usuario", $usuario)
+                ->get()
+                ->toArray();
+
+            if (!empty($area->marketplaces)) {
+                $areas_cast[] = $area;
+            }
+        }
+
+        return $areas_cast;
+    }
+
     public function venta_mercadolibre_pregunta_respuesta_get_preguntas($marketplace_id): JsonResponse
     {
         $data = MercadolibreService::buscarPreguntas($marketplace_id);
@@ -2961,6 +3235,9 @@ class VentaController extends Controller
             "raw" => property_exists($response, "raw") ? $response->raw : 0
         ], $response->error ? 500 : 200);
     }
+
+
+    /** @noinspection PhpUnusedLocalVariableInspection */
 
     public function venta_mercadolibre_pregunta_respuesta_post_borrar(Request $request): JsonResponse
     {
@@ -2985,6 +3262,8 @@ class VentaController extends Controller
             "raw" => property_exists($response, "raw") ? $response->raw : 0
         ], $response->error ? 500 : 200);
     }
+
+    /** @noinspection PhpUnusedLocalVariableInspection */
 
     public function venta_mercadolibre_nueva_publicacion(Request $request): JsonResponse
     {
@@ -3099,10 +3378,9 @@ class VentaController extends Controller
         ]);
     }
 
-
-    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_mercadolibre_publicaciones_publicacion_data($publicacion_id): JsonResponse
     {
+        /** @noinspection PhpUnusedLocalVariableInspection */
         $publicacion = DB::table("marketplace_publicacion")->find($publicacion_id);
 
         $productos = DB::table("marketplace_publicacion_producto")
@@ -3118,7 +3396,7 @@ class VentaController extends Controller
                             ->where("mkt_publicacion", $publicacion_id)
                             ->whereBetween("created_at", [date("Y-m-d 00:00:00", strtotime("-15 days")), date("Y-m-d 23:59:59")])
                             ->first()->total;
-        
+
          $surtido_sugerido = !$ventas_15_dias ? 0 : (($ventas_15_dias / 15) * 30 - (int) $publicacion->cantidad_disponible) < 1 ? 0 : (($ventas_15_dias / 15) * 30 - (int) $publicacion->cantidad_disponible);
         */
         return response()->json([
@@ -3127,6 +3405,8 @@ class VentaController extends Controller
             # "surtido_sugerido" => $surtido_sugerido < 0 ? 0 : $surtido_sugerido
         ]);
     }
+
+    /* Lino */
 
     public function venta_mercadolibre_publicaciones_actualizar(Request $request): JsonResponse
     {
@@ -3196,7 +3476,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /** @noinspection PhpUnusedLocalVariableInspection */
     public function venta_mercadolibre_publicaciones_guardar(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -3216,6 +3495,7 @@ class VentaController extends Controller
                 ->first();
 
             if (!$existe) {
+                /** @noinspection PhpUnusedLocalVariableInspection */
                 $modelo = DB::table("modelo")->firstOrUpdate([
                     "sku" => mb_strtoupper(trim($producto->sku), 'UTF-8'),
                     "descripcion" => mb_strtoupper(trim($producto->description), 'UTF-8'),
@@ -3382,6 +3662,8 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUndefinedVariableInspection */
+
     public function venta_mercadolibre_valida_venta(Request $request): JsonResponse
     {
         set_time_limit(0);
@@ -3535,7 +3817,7 @@ class VentaController extends Controller
                 ->first();
 
             // 6. Si no existe la cuenta destino, registramos el error en bitácora y en el seguimiento
-            if(!$cuenta_destino){
+            if (!$cuenta_destino) {
                 BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No se encontró cuenta financiera para aplicar el ingreso de ML.");
                 DB::table("seguimiento")->insert([
                     'id_documento' => $venta->id,
@@ -3550,23 +3832,23 @@ class VentaController extends Controller
 
                 // 8. Insertamos el ingreso en la tabla movimiento_contable
                 $id_ingreso = DB::table('movimiento_contable')->insertGetId([
-                    'folio'                  => $folio_ingreso,                        // Folio único para identificar el ingreso
-                    'id_tipo_afectacion'     => 1,                                     // 1 = Ingreso
-                    'fecha_operacion'        => date('Y-m-d'),                         // Fecha del movimiento (hoy)
-                    'id_moneda'              => 3,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
-                    'tipo_cambio'            => 1,                                     // Tipo de cambio (por defecto 1 si es MXN)
-                    'monto'                  => $monto_pagado,                         // Monto real que se pagó en ML
-                    'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
-                    'entidad_origen'         => $venta->id_entidad,                    // ID de la entidad (cliente) que pagó
-                    'nombre_entidad_origen'  => $venta->razon_social,                  // Nombre del cliente
-                    'destino_tipo'           => 2,                                     // 2 = cuenta bancaria (destino = tu cuenta financiera)
-                    'entidad_destino'        => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria de la empresa
+                    'folio' => $folio_ingreso,                        // Folio único para identificar el ingreso
+                    'id_tipo_afectacion' => 1,                                     // 1 = Ingreso
+                    'fecha_operacion' => date('Y-m-d'),                         // Fecha del movimiento (hoy)
+                    'id_moneda' => 3,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
+                    'tipo_cambio' => 1,                                     // Tipo de cambio (por defecto 1 si es MXN)
+                    'monto' => $monto_pagado,                         // Monto real que se pagó en ML
+                    'origen_tipo' => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
+                    'entidad_origen' => $venta->id_entidad,                    // ID de la entidad (cliente) que pagó
+                    'nombre_entidad_origen' => $venta->razon_social,                  // Nombre del cliente
+                    'destino_tipo' => 2,                                     // 2 = cuenta bancaria (destino = tu cuenta financiera)
+                    'entidad_destino' => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria de la empresa
                     'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',           // Nombre de la cuenta bancaria
-                    'id_forma_pago'          => 21,                                    // Forma de pago (ajusta el id si tienes otro)
-                    'referencia_pago'        => $venta->no_venta,                      // Referencia (no_venta) de la venta en ML
-                    'descripcion_pago'       => 'Ingreso automático Mercado Libre (Validación)', // Descripción para identificar el ingreso
-                    'comentarios'            => 'Ingreso creado desde validación de venta ML',   // Comentario para auditoría
-                    'creado_por'             => $auth->id                              // Usuario que realizó la operación
+                    'id_forma_pago' => 21,                                    // Forma de pago (ajusta el id si tienes otro)
+                    'referencia_pago' => $venta->no_venta,                      // Referencia (no_venta) de la venta en ML
+                    'descripcion_pago' => 'Ingreso automático Mercado Libre (Validación)', // Descripción para identificar el ingreso
+                    'comentarios' => 'Ingreso creado desde validación de venta ML',   // Comentario para auditoría
+                    'creado_por' => $auth->id                              // Usuario que realizó la operación
                 ]);
 
                 // 9. Aplicamos el ingreso al documento de venta usando el Service (esto crea la relación y ajusta el saldo)
@@ -3574,11 +3856,11 @@ class VentaController extends Controller
                     $id_ingreso,                // ID del movimiento de ingreso recién creado
                     [
                         [
-                            'id_documento'        => $venta->id,        // ID del documento de venta a saldar
-                            'monto_aplicado'      => $monto_pagado,     // Monto aplicado (el real)
-                            'moneda'              => 3,                 // Moneda (ajusta si tienes más monedas)
-                            'tipo_cambio'         => 1,                 // Tipo de cambio aplicado (1 si es MXN)
-                            'parcialidad'         => 1                  // Número de parcialidad (siempre 1 en este contexto)
+                            'id_documento' => $venta->id,        // ID del documento de venta a saldar
+                            'monto_aplicado' => $monto_pagado,     // Monto aplicado (el real)
+                            'moneda' => 3,                 // Moneda (ajusta si tienes más monedas)
+                            'tipo_cambio' => 1,                 // Tipo de cambio aplicado (1 si es MXN)
+                            'parcialidad' => 1                  // Número de parcialidad (siempre 1 en este contexto)
                         ]
                     ],
                     1                           // Moneda del movimiento (puede ser 1 = MXN)
@@ -3588,7 +3870,7 @@ class VentaController extends Controller
                 DB::table("documento")->where("id", $venta->id)->update(["pagado" => 1]);
 
                 // 11. Dejamos rastro en bitácora que el ingreso fue creado y aplicado correctamente
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se crea ingreso y se aplica el pago al documento. Folio: {$folio_ingreso}");
+                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se crea ingreso y se aplica el pago al documento. Folio: $folio_ingreso");
             }
         }
 
@@ -3737,7 +4019,8 @@ class VentaController extends Controller
         ]);
     }
 
-    /* Lino */
+    /* Rawinfo */
+
     public function venta_shopify_importar_ventas(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -3911,6 +4194,8 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
+
     public function venta_liverpool_importar_ventas(Request $request): JsonResponse
     {
         set_time_limit(0);
@@ -3933,7 +4218,6 @@ class VentaController extends Controller
         ]);
     }
 
-    /** @noinspection PhpUndefinedVariableInspection */
     public function venta_liverpool_getData(): JsonResponse
     {
         $empresas = DB::table("empresa")->where("status", 1)->whereIn("id", [1, 2])->get();
@@ -3958,245 +4242,6 @@ class VentaController extends Controller
             'empresas' => $empresas,
             'almacenes' => $almacenes,
         ]);
-    }
-
-    /* Rawinfo */
-    private function publicaciones_raw_data($usuario, $query_extra = ""): array
-    {
-        $marketplaces = DB::select("SELECT
-                                        marketplace_area.id,
-                                        CONCAT(area.area, ' / ', marketplace.marketplace) AS marketplace,
-                                        marketplace_api.extra_1,
-                                        marketplace_api.extra_2
-                                    FROM usuario_marketplace_area 
-                                    INNER JOIN marketplace_area ON usuario_marketplace_area.id_marketplace_area = marketplace_area.id
-                                    LEFT JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                    INNER JOIN area ON marketplace_area.id_area = area.id
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE usuario_marketplace_area.id_usuario = " . $usuario . "
-                                    AND marketplace.marketplace IN ('MERCADOLIBRE', 'AMAZON')");
-
-        foreach ($marketplaces as $marketplace) {
-            $publicaciones = DB::select("SELECT
-                                            marketplace_publicacion.id,
-                                            marketplace_publicacion.publicacion_id,
-                                            marketplace_publicacion.publicacion_sku AS sku,
-                                            marketplace_publicacion.publicacion,
-                                            marketplace_publicacion.total,
-                                            IF(marketplace_publicacion.status = 'active', 1, 0) AS status,
-                                            marketplace_publicacion.tee,
-                                            marketplace_publicacion.tipo,
-                                            marketplace_publicacion.logistic_type,
-                                            marketplace_publicacion.tienda,
-                                            marketplace_publicacion.id_almacen_empresa AS almacen,
-                                            marketplace_publicacion.id_almacen_empresa_fulfillment AS almacen_fulfillment,
-                                            marketplace_publicacion.url,
-                                            marketplace_publicacion.id_proveedor AS proveedor,
-                                            marketplace_publicacion.id_marketplace_area,
-                                            (
-                                                SELECT
-                                                    empresa.bd
-                                                FROM empresa_almacen
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                WHERE empresa_almacen.id = almacen
-                                            ) AS empresa_almacen_principal,
-                                            (
-                                                SELECT
-                                                    empresa.bd
-                                                FROM empresa_almacen
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                WHERE empresa_almacen.id = almacen_fulfillment
-                                            ) AS empresa_almacen_secundario
-                                        FROM marketplace_publicacion
-                                        WHERE marketplace_publicacion.id_marketplace_area = " . $marketplace->id . "
-                                        " . $query_extra);
-
-            foreach ($publicaciones as $publicacion) {
-                $publicacion->productos = DB::select("SELECT
-                                            modelo.sku,
-                                            modelo.descripcion,
-                                            marketplace_publicacion_producto.id,
-                                            marketplace_publicacion_producto.garantia,
-                                            marketplace_publicacion_producto.cantidad,
-                                            marketplace_publicacion_producto.cantidad AS cantidad_envio,
-                                            marketplace_publicacion_producto.regalo,
-                                            marketplace_publicacion_producto.etiqueta
-                                        FROM marketplace_publicacion_producto
-                                        INNER JOIN modelo ON marketplace_publicacion_producto.id_modelo = modelo.id
-                                        WHERE marketplace_publicacion_producto.id_publicacion = " . $publicacion->id);
-
-                $publicacion->variaciones = DB::select("SELECT id, id_etiqueta, valor, cantidad FROM marketplace_publicacion_etiqueta WHERE id_publicacion = " . $publicacion->id);
-                $publicacion->competencias = DB::select("SELECT * FROM marketplace_publicacion_competencia WHERE id_publicacion = " . $publicacion->id . " ORDER BY precio");
-                $publicacion->competencia = empty($publicacion->competencias) ? "Sín competencia" : "$ " . $publicacion->competencias[0]->precio_cambiado;
-                $publicacion->ofertas = DB::select("SELECT id, precio, inicio, final, promocion FROM marketplace_publicacion_oferta WHERE id_publicacion = " . $publicacion->id);
-
-                foreach ($publicacion->ofertas as $oferta) {
-                    $fecha_inicio = strtotime(date("Y-m-d H:i:s"));
-                    $fecha_final = strtotime($oferta->final);
-
-                    $oferta->dias = round(($fecha_final - $fecha_inicio) / (60 * 60 * 24));
-                }
-            }
-
-            $marketplace->publicaciones = $publicaciones;
-        }
-
-        return $marketplaces;
-    }
-
-    private function obtener_ventas($query_extra): array
-    {
-        $ventas = DB::select("SELECT 
-                                documento.id, 
-                                documento.id_fase,
-                                documento.id_periodo,
-                                documento.id_marketplace_area,
-                                documento.documento_extra,
-                                documento.no_venta,
-                                documento.pagado,
-                                documento.modificacion,
-                                documento.problema,
-                                documento.status,
-                                documento.fulfillment,
-                                documento.mkt_created_at,
-                                documento.mkt_publicacion,
-                                documento.created_at, 
-                                marketplace.marketplace, 
-                                marketplace_area.publico,
-                                area.area, 
-                                paqueteria.paqueteria, 
-                                usuario.nombre AS usuario,
-                                documento_entidad.razon_social AS cliente,
-                                documento_entidad.rfc,
-                                documento_entidad.correo,
-                                documento_fase.fase,
-                                almacen.almacen
-                            FROM documento
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                            INNER JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
-                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                            INNER JOIN usuario ON documento.id_usuario = usuario.id
-                            INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
-                            INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                            INNER JOIN area ON marketplace_area.id_area = area.id
-                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            LEFT JOIN documento_guia ON documento.id = documento_guia.id_documento
-                            WHERE documento.id_tipo = 2
-                            AND documento.status = 1
-                            " . $query_extra);
-
-        foreach ($ventas as $venta) {
-            $total = 0;
-            $tiene_publicacion = DB::select("SELECT tee FROM marketplace_publicacion WHERE publicacion_id = '" . $venta->mkt_publicacion . "'");
-            $venta->dias_restantes = 0;
-
-            if (!empty($tiene_publicacion)) {
-                $fecha_entrega = date('Y-m-d', strtotime($venta->mkt_created_at . ' + ' . $tiene_publicacion[0]->tee . ' days'));
-
-                $fecha_actual = time();
-                $fecha_entrega = strtotime($fecha_entrega);
-                $diferencia = $fecha_entrega - $fecha_actual;
-
-                $venta->dias_restantes = floor($diferencia / (60 * 60 * 24));
-            }
-
-            $direccion = DB::select("SELECT
-                                        *
-                                    FROM documento_direccion
-                                    WHERE id_documento = " . $venta->id);
-
-            $productos = DB::select("SELECT 
-                                    movimiento.id,
-                                    movimiento.cantidad, 
-                                    modelo.sku, 
-                                    modelo.descripcion, 
-                                    modelo.serie,
-                                    ROUND((movimiento.precio * 1.16), 2) AS precio
-                                FROM movimiento 
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
-                                WHERE id_documento = " . $venta->id);
-
-            foreach ($productos as $producto) {
-                $total += round((int)$producto->cantidad * (float)$producto->precio, 2);
-            }
-
-            $archivos = DB::select("SELECT
-                                        usuario.id,
-                                        usuario.nombre AS usuario,
-                                        documento_archivo.nombre AS archivo,
-                                        documento_archivo.dropbox
-                                    FROM documento_archivo
-                                    INNER JOIN usuario ON documento_archivo.id_usuario = usuario.id
-                                    WHERE documento_archivo.id_documento = " . $venta->id . " AND documento_archivo.status = 1");
-
-            $seguimiento = DB::select("SELECT seguimiento.*, usuario.nombre FROM seguimiento INNER JOIN usuario ON seguimiento.id_usuario = usuario.id WHERE id_documento = " . $venta->id);
-
-            $venta->seguimiento = $seguimiento;
-            $venta->productos = $productos;
-            $venta->direccion = (empty($direccion)) ? 0 : $direccion[0];
-            $venta->archivos = $archivos;
-            $venta->total = $total;
-        }
-
-        return $ventas;
-    }
-
-    /**
-     * @throws ConnectionErrorException
-     */
-    private function cotizar_paqueteria($paqueteria, $array): string
-    {
-        $cotizar = \Httpful\Request::post('http://apipaqueterias.crmomg.mx/api/' . $paqueteria . '/Cotizar')
-            ->addHeader('authorization', 'Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImp0aSI6IjA4Njk2YjQxODczZTM4YTRkM2E1NjBjNTI2YTY3NmRhZmQ0YWNmOWUzNTFmNTkxZWM2NTIyOGRiOTJmODBlMmE0ZjNhNWJlZjcyNjg1ODQ3In0.eyJhdWQiOiIxIiwianRpIjoiMDg2OTZiNDE4NzNlMzhhNGQzYTU2MGM1MjZhNjc2ZGFmZDRhY2Y5ZTM1MWY1OTFlYzY1MjI4ZGI5MmY4MGUyYTRmM2E1YmVmNzI2ODU4NDciLCJpYXQiOjE1NTIwNzEzNzksIm5iZiI6MTU1MjA3MTM3OSwiZXhwIjoxNTgzNjkzNzc5LCJzdWIiOiIxIiwic2NvcGVzIjpbXX0.h6nCD2mqyp-QkXBd73BEM3kiwzry9JZJ5I35VJAcYesJc_kup3zVKrRIKz0wSsFt5zIGzg91LCnxgyr78GyIBpBkH-TVzzGSjTVNf5uFZhWGUVINM7SsKtbCHHyrUhOdOI2zgfO4_BIvkafnw_mYIgULMcwQU1w5G7XXnWeYaIxIooLEkw0TmtT0pD4aAYh9J15ak5cvVhTcoe-UO6XF63CkbAQmmeYpAjkxyLG_y5WIZIBXe5lhMYABjnKiBDlM6Ig8tcjXQ8egaLrAAsrRzFDwwzn23O3qTUo7pwxyHNn5guBXfaLpG7Pr5an-GslArwHApA6Ipdg4n5Qt4M42EHfO0KwrwAFMFHo1yDr3vcK7S05K_p9d9cAuZTZyYGo-39PUXcWoluR9W6KVA3X7tlZr3R8d7XLjDJ3Gp--tTmZpDsXKGLCh_uiFIHdmBXuN-eKbvrsxMnbgyK9EPY4PNbG35Ii6O6vZDVvfKia0tkpXof03uAs2OIcmlc5belFSpl7OHEO6HDXKfCmPjOMQFyxyAPrdEsJNJgz55tbdFPNZzpQSsWILVUgDq3pjpy503uyTS0NCvicIByBVwmOOXLm8l40dKhX-aaFOMiTzqxO0m9NJjoBwRsscUUYSXFOexYXGSiHXT4dqq_E4dAhEewKLSo1-RwwUtP0VGgmkiUo')
-            ->body($array, Mime::FORM)
-            ->send();
-
-        $cotizar_res = @json_decode($cotizar->raw_body);
-
-        if (empty($cotizar_res)) {
-            return "No fue posible cotizar el envio, error desconocido.";
-        }
-
-        if ($cotizar_res->error == 1) {
-            return "Ocurrió un error, favor de contactar al adminsitrador. Mensaje de error: " . $cotizar_res->mensaje;
-        }
-
-        $costo_total = (float)$cotizar_res->base + (float)$cotizar_res->extra;
-
-        return "$ " . $costo_total;
-    }
-
-    /** @noinspection PhpUnusedLocalVariableInspection */
-    private function areas_marketplaces($usuario, $marketplace): array
-    {
-        $areas_cast = array();
-
-        $areas = DB::table("area")
-            ->where("status", 1)
-            ->where('area', '!=', 'N/A')
-            ->get()
-            ->toArray();
-
-        foreach ($areas as $i => $area) {
-            $area->marketplaces = DB::table("marketplace_area")
-                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo", "marketplace_api.token AS marketplace_token")
-                ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
-                ->join("usuario_marketplace_area", "marketplace_area.id", "=", "usuario_marketplace_area.id_marketplace_area")
-                ->leftJoin("marketplace_api", "marketplace_area.id", "=", "marketplace_api.id_marketplace_area")
-                ->where("marketplace_area.id_area", $area->id)
-                ->where("marketplace.marketplace", "LIKE", "%" . $marketplace . "%")
-                ->where("marketplace_area.status", 1)
-                ->where("usuario_marketplace_area.id_usuario", $usuario)
-                ->get()
-                ->toArray();
-
-            if (!empty($area->marketplaces)) {
-                $areas_cast[] = $area;
-            }
-        }
-
-        return $areas_cast;
     }
 
     public function venta_nota_autorizar_get_data(Request $request): JsonResponse
@@ -4519,16 +4564,6 @@ class VentaController extends Controller
         ]);
     }
 
-    public static function logVariableLocation(): string
-    {
-        // $log = self::logVariableLocation();
-        $sis = 'BE'; //Front o Back
-        $ini = 'VC'; //Primera letra del Controlador y Letra de la seguna Palabra: Controller, service
-        $fin = 'NTA'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
-    }
-
     public function venta_publicaciones_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
@@ -4539,6 +4574,45 @@ class VentaController extends Controller
     }
 
     /** @noinspection PhpUnusedLocalVariableInspection */
+
+    private function areas_publicaciones($usuario): array
+    {
+        $areas_cast = array();
+
+        /** @noinspection PhpParamsInspection */
+        $areas =
+            DB::table('marketplace_publicacion_marketplaces')
+                ->select('area.*')
+                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
+                ->join('area', 'area.id', 'marketplace_area.id_area')
+                ->groupBy('area.area')
+                ->where('marketplace_publicacion_marketplaces.estatus', 1)
+                ->where('area.area', '!=', 'N/A')
+                ->get()
+                ->toArray();
+
+        foreach ($areas as $i => $area) {
+            $area->marketplaces = DB::table('marketplace_publicacion_marketplaces')
+                ->select('marketplace_area.id', 'marketplace.marketplace', 'marketplace_api.extra_2')
+                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
+                ->join('marketplace', 'marketplace_area.id_marketplace', 'marketplace.id')
+                ->leftJoin('marketplace_api', 'marketplace_area.id', 'marketplace_api.id_marketplace_area')
+                ->join('usuario_marketplace_area', 'marketplace_area.id', 'usuario_marketplace_area.id_marketplace_area')
+                ->where('usuario_marketplace_area.id_usuario', $usuario)
+                ->where('marketplace_area.status', 1)
+                ->where('marketplace_area.id_area', $area->id)
+                ->where('marketplace_publicacion_marketplaces.estatus', 1)
+                ->get()
+                ->toArray();
+
+            if (!empty($area->marketplaces)) {
+                $areas_cast[] = $area;
+            }
+        }
+
+        return $areas_cast;
+    }
+
     public function venta_publicaciones_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
@@ -4581,6 +4655,7 @@ class VentaController extends Controller
                     ->first();
 
                 if (!$existe) {
+                    /** @noinspection PhpUnusedLocalVariableInspection */
                     $modelo = DB::table("modelo")->firstOrUpdate([
                         "sku" => mb_strtoupper(trim($producto->sku), 'UTF-8'),
                         "descripcion" => mb_strtoupper(trim($producto->description), 'UTF-8'),
@@ -4668,6 +4743,40 @@ class VentaController extends Controller
         ]);
     }
 
+    /** @noinspection PhpUnusedLocalVariableInspection */
+
+    private function areas_marketplaces_publicaciones($usuario): array
+    {
+        $areas_cast = array();
+
+        $areas = DB::table("area")
+            ->where("status", 1)
+            ->where('area', '!=', 'N/A')
+            ->get()
+            ->toArray();
+
+        foreach ($areas as $i => $area) {
+            $area->marketplaces = DB::table("marketplace_area")
+                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo")
+                ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
+                ->join("usuario_marketplace_area", "marketplace_area.id", "=", "usuario_marketplace_area.id_marketplace_area")
+                ->leftJoin("marketplace_api", "marketplace_area.id", "=", "marketplace_api.id_marketplace_area")
+                ->where("marketplace_area.id_area", $area->id)
+                ->where("marketplace_area.status", 1)
+                ->where("usuario_marketplace_area.id_usuario", $usuario)
+                ->get()
+                ->toArray();
+
+            if (!empty($area->marketplaces)) {
+                $areas_cast[] = $area;
+            }
+        }
+
+        return $areas_cast;
+    }
+
+    /** @noinspection PhpUnusedLocalVariableInspection */
+
     public function venta_marketplaces_autorizados_gestion(Request $request): JsonResponse
     {
         $data = json_decode($request->data);
@@ -4748,76 +4857,6 @@ class VentaController extends Controller
                     'message' => 'hubo un error al procesar ' . self::logVariableLocation()
                 ]);
         }
-    }
-
-    /** @noinspection PhpUnusedLocalVariableInspection */
-    private function areas_publicaciones($usuario): array
-    {
-        $areas_cast = array();
-
-        /** @noinspection PhpParamsInspection */
-        $areas =
-            DB::table('marketplace_publicacion_marketplaces')
-                ->select('area.*')
-                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
-                ->join('area', 'area.id', 'marketplace_area.id_area')
-                ->groupBy('area.area')
-                ->where('marketplace_publicacion_marketplaces.estatus', 1)
-                ->where('area.area', '!=', 'N/A')
-                ->get()
-                ->toArray();
-
-        foreach ($areas as $i => $area) {
-            $area->marketplaces = DB::table('marketplace_publicacion_marketplaces')
-                ->select('marketplace_area.id', 'marketplace.marketplace', 'marketplace_api.extra_2')
-                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
-                ->join('marketplace', 'marketplace_area.id_marketplace', 'marketplace.id')
-                ->leftJoin('marketplace_api', 'marketplace_area.id', 'marketplace_api.id_marketplace_area')
-                ->join('usuario_marketplace_area', 'marketplace_area.id', 'usuario_marketplace_area.id_marketplace_area')
-                ->where('usuario_marketplace_area.id_usuario', $usuario)
-                ->where('marketplace_area.status', 1)
-                ->where('marketplace_area.id_area', $area->id)
-                ->where('marketplace_publicacion_marketplaces.estatus', 1)
-                ->get()
-                ->toArray();
-
-            if (!empty($area->marketplaces)) {
-                $areas_cast[] = $area;
-            }
-        }
-
-        return $areas_cast;
-    }
-
-    /** @noinspection PhpUnusedLocalVariableInspection */
-    private function areas_marketplaces_publicaciones($usuario): array
-    {
-        $areas_cast = array();
-
-        $areas = DB::table("area")
-            ->where("status", 1)
-            ->where('area', '!=', 'N/A')
-            ->get()
-            ->toArray();
-
-        foreach ($areas as $i => $area) {
-            $area->marketplaces = DB::table("marketplace_area")
-                ->select("marketplace_area.id", "marketplace.marketplace", "marketplace_api.extra_2 AS pseudonimo")
-                ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
-                ->join("usuario_marketplace_area", "marketplace_area.id", "=", "usuario_marketplace_area.id_marketplace_area")
-                ->leftJoin("marketplace_api", "marketplace_area.id", "=", "marketplace_api.id_marketplace_area")
-                ->where("marketplace_area.id_area", $area->id)
-                ->where("marketplace_area.status", 1)
-                ->where("usuario_marketplace_area.id_usuario", $usuario)
-                ->get()
-                ->toArray();
-
-            if (!empty($area->marketplaces)) {
-                $areas_cast[] = $area;
-            }
-        }
-
-        return $areas_cast;
     }
 
     public function venta_amazon_publicaciones_data(Request $request): JsonResponse
@@ -4979,7 +5018,7 @@ class VentaController extends Controller
         $pdf->Cell(40, 5, "P.O #", 1, false, 'C');
         $pdf->Ln();
 
-        $pdf->Cell(110, 8, "");
+        $pdf->Cell(110, 8);
         $pdf->Cell(40, 8, date('d/m/Y', strtotime($informacion_documento->created_at)), 1, false, 'C');
         $pdf->Cell(40, 8, $informacion_documento->id, 1, false, 'C');
         $pdf->Ln(20);
@@ -5066,9 +5105,9 @@ class VentaController extends Controller
             $pdf->Cell($product_qty_height, 5, $producto->cantidad, 'LR', false, 'C');
             $pdf->Cell($product_code_height, 5, substr($producto->codigo, 0, 20), 'LR', false, 'C');
             $pdf->Cell($product_description_height, 5, substr($producto->descripcion, 0, 60), 'LR', false, 'C');
-            $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2, '.', ','), 'LR', false, 'C');
-            $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2, '.', ','), 'LR', false, 'C');
-            $pdf->Cell($product_total_height, 5, "$ " . number_format((float)$producto->cantidad * (float)$producto->costo, 2, '.', ','), 'LR', false, 'C');
+            $pdf->Cell($product_cost_height, 5, "$ " . number_format($producto->costo, 2), 'LR', false, 'C');
+            $pdf->Cell($product_discount_height, 5, "$ " . number_format($producto->descuento > 0 ? ($producto->descuento * $producto->costo) / 100 : 0, 2), 'LR', false, 'C');
+            $pdf->Cell($product_total_height, 5, "$ " . number_format((float)$producto->cantidad * (float)$producto->costo, 2), 'LR', false, 'C');
             $pdf->Ln();
 
             $current_height_product += 5;
@@ -5392,7 +5431,7 @@ class VentaController extends Controller
         $pdf->Cell(130, 7, "Thanks you for your business", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Subtotal", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total / (float)$impuesto, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total / (float)$impuesto, 2), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5400,7 +5439,7 @@ class VentaController extends Controller
         $pdf->Cell(130, 7, "Special Comments ", 1, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Tax", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float)$impuesto), 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total - ($total / (float)$impuesto), 2), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5409,7 +5448,7 @@ class VentaController extends Controller
         $pdf->Cell(130, 7, substr($informacion_documento->info_extra->comentarios, 0, 90), 0, false, 'L');
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Total", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total, 2), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5423,7 +5462,7 @@ class VentaController extends Controller
 
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Discount", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total_discount, 2), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
@@ -5437,7 +5476,7 @@ class VentaController extends Controller
 
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(30, 7, "Total w discount", "TLB", false, 'R');
-        $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2, '.', ','), "TRB", false, 'L');
+        $pdf->Cell(30, 7, "$ " . number_format($total - $total_discount, 2), "TRB", false, 'L');
         $pdf->SetFont('Arial', '', 10);
         $pdf->Ln();
         $current_height_product += 5;
