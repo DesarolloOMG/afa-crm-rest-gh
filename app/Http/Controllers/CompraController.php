@@ -93,11 +93,6 @@ class CompraController extends Controller
                 'expired_at' => $data->fecha
             ]);
 
-            DB::table('documento_entidad_re')->insert([
-                'id_documento' => $documento,
-                'id_entidad' => $entidad
-            ]);
-
             foreach ($data->productos as $producto) {
                 /** @noinspection PhpUnusedLocalVariableInspection */
                 $movimiento = DB::table('movimiento')->insertGetId([
@@ -1089,7 +1084,7 @@ class CompraController extends Controller
     {
         $data = json_decode($request->input('data'));
 
-        $consulta = empty($data->folio) ? "AND documento.expired_at BETWEEN '" . $data->inicial . " 00:00:00' AND '" . $data->final . " 23:59:59'" : "AND (documento.factura_folio = '" . trim($data->folio) . "' OR documento.documento_extra = '" . trim($data->folio) . "')";
+        $consulta = empty($data->folio) ? "AND documento.created_at BETWEEN '" . $data->inicial . " 00:00:00' AND '" . $data->final . " 23:59:59'" : "AND (documento.factura_folio = '" . trim($data->folio) . "' OR documento.id = '" . trim($data->folio) . "')";
 
         if (!empty($data->producto)) {
             $consulta .= " AND modelo.sku = '" . $data->producto . "'";
