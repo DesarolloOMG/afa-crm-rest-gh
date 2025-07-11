@@ -163,6 +163,13 @@ class AuthController extends Controller
         ]);
     }
 
+    public static function dropboxLinkToRaw($link): string
+    {
+        if (strpos($link, 'raw=1') !== false) return $link;
+        if (strpos($link, '?') !== false) return $link . '&raw=1';
+        return $link . '?raw=1';
+    }
+
     /**
      * @throws ConnectionErrorException
      */
@@ -226,12 +233,10 @@ class AuthController extends Controller
             }
 
             $object_data = new stdClass();
-
             $object_data->path = "/" . $data->imagen_data[0]->nombre;
 
             $object_data_settings = new stdClass();
             $object_data_settings->requested_visibility = "public";
-
             $object_data->settings = $object_data_settings;
 
             $get_url = \Httpful\Request::post(config("webservice.dropbox_api") . 'sharing/create_shared_link_with_settings')
@@ -245,7 +250,6 @@ class AuthController extends Controller
             if (property_exists($url_data, 'error')) {
                 if ($url_data->error_summary == 'shared_link_already_exists/') {
                     $object_data = new stdClass();
-
                     $object_data->path = "/" . $data->imagen_data[0]->nombre;
 
                     $get_url = \Httpful\Request::post(config("webservice.dropbox_api") . 'sharing/list_shared_links')
@@ -256,27 +260,25 @@ class AuthController extends Controller
 
                     $url_data = $get_url->body;
 
-                    if (property_exists($url_data, 'error')) {
+                    // Validación robusta aquí
+                    if (isset($url_data->links) && is_array($url_data->links) && count($url_data->links) > 0) {
+                        $usuario_data->imagen = self::dropboxLinkToRaw($url_data->links[0]->url);
+                        $usuario_data->save();
+                    } else {
                         return response()->json([
-                            "message" => "Se actualizó la información pero hubo un error al obtener el link de la imagen en Dropbox, mensaje de error: " . $url_data->error_summary
+                            "message" => "Se actualizó la información pero Dropbox no devolvió ningún shared link para el archivo. Intenta borrarlo y volverlo a subir."
                         ]);
                     }
-
-                    $imagen = substr($url_data->links[0]->url, 0, -4) . "raw=1";
-
-                    $usuario_data->imagen = substr($url_data->links[0]->url, 0, -4) . "raw=1";
-
-                    $usuario_data->save();
                 } else {
                     return response()->json([
                         "message" => "Se actualizó la información pero hubo un error al obtener el link de la imagen en Dropbox, mensaje de error: " . $url_data->error_summary
                     ]);
                 }
             } else {
-                $usuario_data->imagen = substr($url_data->url, 0, -4) . "raw=1";
+                $usuario_data->imagen = self::dropboxLinkToRaw($url_data->url);
+                $usuario_data->save();
             }
 
-            $usuario_data->save();
         }
 
         $usuario_data = self::usuario_data($data->id);
