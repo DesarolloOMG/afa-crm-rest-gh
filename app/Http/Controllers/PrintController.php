@@ -28,11 +28,17 @@ class PrintController extends Controller
             if (strtoupper($method) === 'GET') {
                 $httpful = HttpfulRequest::get($url);
             } elseif (strtoupper($method) === 'POST') {
+                $body = [
+                    'data' => $request->input('data')
+                ];
+
+                if ($request->has('tipo')) {
+                    $body['tipo'] = $request->input('tipo');
+                }
+
                 $httpful = HttpfulRequest::post($url)
                     ->sendsJson()
-                    ->body([
-                        'tipo' => $request->input('tipo'),
-                        'data' => $request->input('data')]);
+                    ->body($body);
             } else {
                 throw new InvalidArgumentException("Método HTTP no soportado: $method");
             }
