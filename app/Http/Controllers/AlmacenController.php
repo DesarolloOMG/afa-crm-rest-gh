@@ -1709,19 +1709,6 @@ class AlmacenController extends Controller
                 $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
             }
 
-            // Creación del documento
-            $documento = Documento::create([
-                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
-                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
-                'id_tipo' => $data->tipo,
-                'id_usuario' => $auth->id,
-                'id_fase' => 100,
-                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
-                'referencia' => 'N/A',
-                'info_extra' => 'N/A',
-                'observacion' => $data->observacion
-            ])->id;
-
             // Verificar existencia de la entidad; si no existe, crearla
             $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
             if (!$existe_entidad) {
@@ -1733,10 +1720,20 @@ class AlmacenController extends Controller
             } else {
                 $entidad_id = $existe_entidad->id;
             }
-            DocumentoEntidadRelacion::create([
-                'id_documento' => $documento,
-                'id_entidad' => $entidad_id
-            ]);
+
+            // Creación del documento
+            $documento = Documento::create([
+                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
+                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
+                'id_tipo' => $data->tipo,
+                'id_usuario' => $auth->id,
+                'id_fase' => 100,
+                'id_entidad' => $entidad_id,
+                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
+                'referencia' => 'N/A',
+                'info_extra' => 'N/A',
+                'observacion' => $data->observacion
+            ])->id;
 
             // Procesar cada producto contenido en el documento
             foreach ($data->productos as $producto) {
