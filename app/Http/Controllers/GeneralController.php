@@ -11,6 +11,7 @@ use App\Http\Services\MercadolibreService;
 use App\Http\Services\MovimientoContableService;
 use App\Http\Services\WhatsAppService;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
+use Carbon\Carbon;
 use Crabbly\Fpdf\Fpdf;
 use DateTime;
 use DB;
@@ -3647,39 +3648,44 @@ class GeneralController extends Controller
     /* General > Notificaciones */
     public function general_notificacion_data(Request $request)
     {
-        $notificaciones = DB::select("SELECT id, id_subnivel_nivel, data FROM notificacion WHERE dismissed = 0 ORDER BY date_added DESC");
         $auth = json_decode($request->auth);
-        $array = array();
 
+        $hoy = date('Y-m-d');
+        $dia_semana = date('N', strtotime($hoy)); // 1=lunes, 7=domingo
+
+        $lunes = date('Y-m-d', strtotime($hoy . ' -' . ($dia_semana - 1) . ' days'));
+        $domingo = date('Y-m-d', strtotime($lunes . ' +6 days'));
+
+        $notificaciones = DB::table('notificacion as n')
+            ->leftJoin('notificacion_usuario as nu', function($join) use ($auth) {
+                $join->on('nu.id_notificacion', '=', 'n.id')
+                    ->where('nu.id_usuario', '=', $auth->id);
+            })
+            ->leftJoin('usuario_subnivel_nivel as usn', function($join) use ($auth) {
+                $join->on('usn.id_subnivel_nivel', '=', 'n.id_subnivel_nivel')
+                    ->where('usn.id_usuario', '=', $auth->id);
+            })
+            ->where('n.dismissed', 0)
+            ->whereDate('n.date_added', '>=', $lunes)
+            ->whereDate('n.date_added', '<=', $domingo)
+            ->where(function($q) use ($auth) {
+                $q->whereNotNull('nu.id_usuario')
+                    ->orWhereNotNull('usn.id_usuario');
+            })
+            ->orderBy('n.date_added', 'desc')
+            ->select('n.id', 'n.id_subnivel_nivel', 'n.data', 'n.date_added')
+            ->get();
+
+        $array = [];
         foreach ($notificaciones as $notificacion) {
-            $usuarios = DB::select("SELECT id_usuario FROM notificacion_usuario WHERE id_notificacion = " . $notificacion->id . "");
-
-            if (!empty($usuarios)) {
-                foreach ($usuarios as $usuario) {
-                    if ($auth->id == $usuario->id_usuario) {
-                        $data = json_decode($notificacion->data);
-                        $data->id = $notificacion->id;
-
-                        array_push($array, $data);
-                    }
-                }
-            } else {
-                $usuarios_id = array();
-                $usuarios = DB::select("SELECT id_usuario FROM usuario_subnivel_nivel WHERE id_subnivel_nivel = " . $notificacion->id_subnivel_nivel . "");
-
-                foreach ($usuarios as $usuario) {
-                    if ($usuario->id_usuario == $auth->id) {
-                        $data = json_decode($notificacion->data);
-                        $data->id = $notificacion->id;
-
-                        array_push($array, $data);
-                    }
-                }
-            }
+            $data = json_decode($notificacion->data);
+            $data->id = $notificacion->id;
+            $data->fecha = Carbon::parse($notificacion->date_added)->format('d/m/Y H:i:s');
+            $array[] = $data;
         }
 
         return response()->json([
-            'code' => 200,
+            'code'  => 200,
             'notificaciones' => $array
         ]);
     }

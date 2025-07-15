@@ -9,44 +9,22 @@ use Illuminate\Support\Facades\DB;
 class DashboardController extends Controller
 {
     // OPT
-    public function dashboard_venta_marketplace(): JsonResponse
+    public function dashboard_venta_marketplace()
     {
+        // Ejecutar el SP y obtener resultado
+        $res = DB::select("CALL sp_dashboard_venta_metricas()")[0];
 
-        $inicio_mes_actual = Carbon::now()->startOfMonth();
-        $inicio_mes_siguiente = (clone $inicio_mes_actual)->addMonth();
-        $inicio_mes_anterior = (clone $inicio_mes_actual)->subMonth();
-
-        $baseQuery = DB::table('documento')
-            ->where('id_tipo', 2)
-            ->where('status', 1);
-
-        $ventas_mes_actual = (clone $baseQuery)
-            ->whereBetween('created_at', [$inicio_mes_actual, $inicio_mes_siguiente])
-            ->count();
-
-        $ventas_mes_anterior = (clone $baseQuery)
-            ->whereBetween('created_at', [$inicio_mes_anterior, $inicio_mes_actual])
-            ->count();
-
-        $diferencia_ventas_mes = $ventas_mes_actual - $ventas_mes_anterior;
-
-        $ventas_totales = (clone $baseQuery)->count();
-
-        $ventas_pendientes_finalizar = (clone $baseQuery)
-            ->where('id_fase', '<', 6)
-            ->count();
-
-        $porcentaje_cambio = $ventas_mes_anterior > 0
-            ? round(($diferencia_ventas_mes / $ventas_mes_anterior) * 100, 2)
-            : null;
+        // Calcular diferencia de ventas
+        $diferencia_ventas_mes = (date('Y-m') == date('Y-') . "01")
+            ? $res->ventas_mes_actual
+            : $res->ventas_mes_actual - $res->ventas_mes_anterior;
 
         return response()->json([
-            'code' => 200,
-            'ventas_totales' => $ventas_totales,
-            'ventas_pendientes_finalizar' => $ventas_pendientes_finalizar,
-            'ventas_mes_actual' => $ventas_mes_actual,
-            'diferencia_ventas_mes' => $diferencia_ventas_mes,
-            'porcentaje_cambio' => $porcentaje_cambio,
+            'code'  => 200,
+            'ventas_totales' => $res->ventas_totales,
+            'ventas_pendientes_finalizar' => $res->ventas_pendientes_finalizar,
+            'ventas_mes_actual' => $res->ventas_mes_actual,
+            'diferencia_ventas_mes' => $diferencia_ventas_mes
         ]);
     }
 
