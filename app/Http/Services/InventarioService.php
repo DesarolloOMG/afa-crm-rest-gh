@@ -88,7 +88,7 @@ class InventarioService
                 $hay_existencia = DB::table('modelo_existencias')->where('id_modelo', $mov->id_modelo)->where('id_almacen', $almacen)->first();
 
                 if(empty($hay_existencia)) {
-                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3) {
+                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->id == 0) {
                         DB::table('modelo_existencias')->insert([
                             'id_modelo' => $mov->id_modelo,
                             'id_almacen' => $almacen,
@@ -116,12 +116,12 @@ class InventarioService
                 $hay_costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
 
                 if(empty($hay_costo)) {
-                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->tipo == 'COMPRA' || $docTipo->id == 1) {
+                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->tipo == 'COMPRA' || $docTipo->id == 1 || $docTipo->id == 0) {
                         DB::table('modelo_costo')->insert([
                             'id_modelo' => $mov->id_modelo,
-                            'costo_inicial' => $mov->precio,
-                            'costo_promedio' => $mov->precio,
-                            'ultimo_costo' => $mov->precio
+                            'costo_inicial' => $mov->precio ?? 0,
+                            'costo_promedio' => $mov->precio ?? 0,
+                            'ultimo_costo' => $mov->precio ?? 0
                         ]);
 
                         $costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
