@@ -8,6 +8,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
+use App\Http\Services\CompraService;
 use App\Http\Services\DocumentoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
@@ -28,7 +29,6 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use stdClass;
 use Throwable;
-
 
 class CompraController extends Controller
 {
@@ -2009,9 +2009,9 @@ class CompraController extends Controller
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $documento,
-                        'id_usuario'   => $auth->id,
-                        'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response['id']
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -2753,9 +2753,9 @@ class CompraController extends Controller
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->id,
-                        'id_usuario'   => $auth->id,
-                        'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response['id']
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -3786,285 +3786,29 @@ class CompraController extends Controller
 
     public function compra_producto_gestion_crear(Request $request): JsonResponse
     {
+        set_time_limit(0);
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $empresa = $request->input('empresa');
+        $empresaId = $request->input('empresa');
 
-        $producto_data_anterior = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
-
-        $informacion_empresa = DB::table("empresa")->find($empresa);
-
-        if (!$informacion_empresa) {
-            return response()->json([
-                "message" => "No se encontró información de la empresa proporcionada"
-            ]);
+        $empresa = DB::table('empresa')->find($empresaId);
+        if (!$empresa) {
+            return response()->json(['message' => 'No se encontró información de la empresa proporcionada'], 404);
         }
 
-        if ($data->id != 0) { # Ya existe el producto en el crm
-            $modelo_id = $data->id;
+        DB::beginTransaction();
 
-            $existe_producto = DB::select("SELECT * FROM modelo WHERE sku = '" . TRIM($data->sku) . "' AND id != " . $data->id);
+        try {
+            $modeloId = CompraService::guardarModelo($data, $auth);
+            CompraService::sincronizarProveedores($data->proveedores, $modeloId);
+            CompraService::gestionarPrecios($data->precio, $data->sku, $modeloId, $auth);
 
-            if (!empty($existe_producto)) {
-                return response()->json([
-                    'code' => 200,
-                    'message' => "Producto actualizado correctamente."
-                ]);
-            }
-
-            DB::table('modelo')->where(['id' => $data->id])->update([
-                'id_tipo' => $data->tipo,
-                'sku' => $data->sku,
-                'descripcion' => $data->descripcion,
-                'costo' => $data->costo,
-                'alto' => $data->alto,
-                'ancho' => $data->ancho,
-                'largo' => $data->largo,
-                'peso' => $data->peso,
-                'serie' => $data->serie,
-                'clave_sat' => $data->clave_sat, // clave del sat
-                'unidad' => 'PIEZA',
-                'clave_unidad' => $data->clave_unidad,
-                'refurbished' => $data->refurbished,
-                'np' => $data->np,
-                'cat1' => $data->cat1,
-                'cat2' => $data->cat2,
-                'cat3' => $data->cat3,
-                'cat4' => $data->cat4,
-                'caducidad' => $data->caducidad,
-            ]);
-
-            $producto_data_actual = DB::select("SELECT * FROM modelo WHERE id = " . $data->id);
-
-            DB::table('modelo_edits')->insert([
-                'id_modelo' => $data->id,
-                'id_usuario' => $auth->id,
-                'informacion_antes' => json_encode($producto_data_anterior[0]),
-                'informacion_despues' => json_encode($producto_data_actual[0])
-            ]);
-
-            $existe_amazon = DB::select("SELECT id FROM modelo_amazon WHERE id_modelo = " . $data->id);
-
-            if (empty($existe_amazon)) {
-                DB::table("modelo_amazon")->insert([
-                    "id_modelo" => $data->id,
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-            } else {
-                DB::table("modelo_amazon")->where(["id_modelo" => $data->id])->update([
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-            }
-
-            try {
-                foreach ($data->imagenes as $archivo) {
-                    if ($archivo->nombre != "" && $archivo->data != "") {
-                        $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                        $dropboxService = new DropboxService();
-                        $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
-
-                        DB::table('modelo_imagen')->insert([
-                            'id_modelo' => $data->id,
-                            'nombre'    => $archivo->nombre,
-                            'dropbox'   => $response['id']
-                        ]);
-                    }
-                }
-
-            } catch (Exception $e) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-                ]);
-            }
-        } else {
-            $existe_producto = DB::select("SELECT id FROM modelo WHERE sku = '" . TRIM($data->sku) . "'");
-
-            if (empty($existe_producto)) {
-                $modelo_id = DB::table('modelo')->insertGetId([
-                    'id_tipo' => $data->tipo,
-                    'sku' => $data->sku,
-                    'descripcion' => $data->descripcion,
-                    'costo' => $data->costo,
-                    'alto' => $data->alto,
-                    'ancho' => $data->ancho,
-                    'largo' => $data->largo,
-                    'peso' => $data->peso,
-                    'serie' => $data->serie,
-                    'clave_sat' => $data->clave_sat, // clave del sat
-                    'unidad' => 'PIEZA',
-                    'clave_unidad' => $data->clave_unidad,
-                    'refurbished' => $data->refurbished,
-                    'np' => $data->np,
-                    'cat1' => $data->cat1,
-                    'cat2' => $data->cat2,
-                    'cat3' => $data->cat3,
-                    'cat4' => $data->cat4,
-                    'caducidad' => $data->caducidad,
-
-                ]);
-
-                DB::table("modelo_amazon")->insert([
-                    "id_modelo" => $modelo_id,
-                    "codigo" => $data->amazon->codigo,
-                    "descripcion" => $data->amazon->descripcion
-                ]);
-
-                try {
-                    foreach ($data->imagenes as $archivo) {
-                        if ($archivo->nombre != "" && $archivo->data != "") {
-                            $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
-
-                            $dropboxService = new DropboxService();
-                            $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
-
-                            DB::table('modelo_imagen')->insert([
-                                'id_modelo' => $modelo_id,
-                                'nombre'    => $archivo->nombre,
-                                'dropbox'   => $response['id']
-                            ]);
-                        }
-                    }
-                } catch (Exception $e) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No fue posible subir los archivos a dropbox, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage()
-                    ]);
-                }
-            } else {
-                $modelo_id = $existe_producto[0]->id;
-
-                DB::table('modelo')->where("id", $existe_producto[0]->id)->update([
-                    'id_tipo' => $data->tipo,
-                    'sku' => $data->sku,
-                    'descripcion' => $data->descripcion,
-                    'costo' => $data->costo,
-                    'alto' => $data->alto,
-                    'ancho' => $data->ancho,
-                    'largo' => $data->largo,
-                    'peso' => $data->peso,
-                    'serie' => $data->serie,
-                    'clave_sat' => $data->clave_sat, // clave del sat
-                    'unidad' => 'PIEZA',
-                    'clave_unidad' => $data->clave_unidad,
-                    'refurbished' => $data->refurbished,
-                    'np' => $data->np,
-                    'cat1' => $data->cat1,
-                    'cat2' => $data->cat2,
-                    'cat3' => $data->cat3,
-                    'cat4' => $data->cat4,
-                    'caducidad' => $data->caducidad,
-
-                ]);
-            }
+            DB::commit();
+            return response()->json(['code' => 200, 'message' => 'Producto actualizado / agregado correctamente']);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json(['code' => 500, 'message' => 'Error al procesar: ' . $e->getMessage()], 500);
         }
-
-        foreach ($data->proveedores as $proveedor) {
-            if (!empty($proveedor->producto)) {
-                DB::table("modelo_proveedor_producto")
-                    ->where("id", $proveedor->producto)
-                    ->update([
-                        "id_modelo" => $modelo_id
-                    ]);
-            } else {
-                DB::table("modelo_proveedor_producto")
-                    ->where("id_modelo_proveedor", $proveedor->id)
-                    ->where("id_modelo", $modelo_id)
-                    ->update([
-                        "id_modelo" => ""
-                    ]);
-            }
-        }
-
-        if (!empty($data->precio->empresa)) {
-            if (!empty($data->precio->productos)) {
-                foreach ($data->precio->productos as $producto) {
-                    $existe = DB::table("modelo")
-                        ->where("sku", $producto->codigo)
-                        ->select("id")
-                        ->first();
-
-                    if (!empty($existe)) {
-                        $existe_modelo_precio = DB::table("modelo_precio")
-                            ->where("id_modelo", $existe->id)
-                            ->where("id_empresa", $data->precio->empresa)
-                            ->select("id", "precio")
-                            ->first();
-
-                        if (empty($existe_modelo_precio)) {
-                            DB::table("modelo_precio")->insert([
-                                "id_usuario" => $auth->id,
-                                "id_modelo" => $existe->id,
-                                "id_empresa" => $data->precio->empresa,
-                                "precio" => $producto->precio
-                            ]);
-                        } else {
-                            DB::table("modelo_precio")->where("id", $existe->id)->update([
-                                "precio" => $producto->precio,
-                            ]);
-
-                            DB::table("modelo_precio_updates")->insert([
-                                "id_modelo_precio" => $existe_modelo_precio->id,
-                                "id_usuario" => $auth->id,
-                                "precio_anterior" => $existe_modelo_precio->precio,
-                                "precio_actualizado" => $producto->precio
-                            ]);
-                        }
-                    }
-                }
-            } else {
-                $modelo_id = 0;
-
-                if ($data->id == 0) {
-                    $existe = DB::table("modelo")
-                        ->where("sku", $data->sku)
-                        ->select("id", "costo")
-                        ->first();
-
-                    if (!empty($existe)) {
-                        $modelo_id = $existe->id;
-                    }
-                } else {
-                    $modelo_id = $data->id;
-                }
-
-                if ($modelo_id !== 0) {
-                    $existe_modelo_precio = DB::table("modelo_precio")
-                        ->where("id_modelo", $modelo_id)
-                        ->where("id_empresa", $data->precio->empresa)
-                        ->select("id", "precio")
-                        ->first();
-
-                    if (empty($existe_modelo_precio)) {
-                        DB::table("modelo_precio")->insert([
-                            "id_usuario" => $auth->id,
-                            "id_modelo" => $modelo_id,
-                            "id_empresa" => $data->precio->empresa,
-                            "precio" => $data->precio->precio
-                        ]);
-                    } else {
-                        DB::table("modelo_precio")->where("id_modelo", $modelo_id)->where("id_empresa", $data->precio->empresa)->update([
-                            "precio" => $data->precio->precio
-                        ]);
-
-                        DB::table("modelo_precio_updates")->insert([
-                            "id_modelo_precio" => $existe_modelo_precio->id,
-                            "id_usuario" => $auth->id,
-                            "precio_anterior" => $existe_modelo_precio->precio,
-                            "precio_actualizado" => $data->precio->precio
-                        ]);
-                    }
-                }
-            }
-        }
-
-        return response()->json([
-            'code' => 200,
-            'message' => "Producto actualizado / agregado correctamente"
-        ]);
     }
 
     public function compra_producto_gestion_imagen($dropbox): JsonResponse
