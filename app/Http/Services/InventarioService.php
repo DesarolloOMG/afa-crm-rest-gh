@@ -101,10 +101,11 @@ class InventarioService
 
                         $se_agrego_inventario = true;
                     } else {
+                        $modelo_info = DB::table('modelo')->where('id', $mov->id_modelo)->first();
                         $response->code = 404;
                         $response->error = 1;
-                        $response->message = "No existe registro de existencias en la base de datos.";
-                        $response->mensaje = "No existe registro de existencias en la base de datos.";
+                        $response->message = "No existe registro de existencias en la base de datos del producto: " . $modelo_info->descripcion;
+                        $response->mensaje = "No existe registro de existencias en la base de datos del producto: " . $modelo_info->descripcion;
                         return $response;
                     }
 
@@ -127,10 +128,11 @@ class InventarioService
 
                         $se_agrego_costo = true;
                     } else {
+                        $modelo_info = DB::table('modelo')->where('id', $mov->id_modelo)->first();
                         $response->code = 404;
                         $response->error = 1;
-                        $response->message = "No existe registro de costo en la base de datos.";
-                        $response->mensaje = "No existe registro de costo en la base de datos.";
+                        $response->message = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
+                        $response->mensaje = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
                         return $response;
                     }
                 } else {
