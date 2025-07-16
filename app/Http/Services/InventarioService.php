@@ -109,8 +109,6 @@ class InventarioService
                     }
 
                 } else {
-                    dump("Ya existe un registro de existencia: ");
-                    dump($hay_existencia);
                     $existencia = $hay_existencia;
                 }
 
@@ -163,7 +161,6 @@ class InventarioService
 
                 // Se actualiza el registro de existencia si hubo cambio.
                 if (!$se_agrego_inventario) {
-                    dump("Stock anterior: $stockAnterior, nuevo stock: $nuevoStock");
                     DB::table('modelo_existencias')
                         ->where('id', $existencia->id)
                         ->update([
