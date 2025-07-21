@@ -766,9 +766,12 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     # Menú contabilidad
     $router->group(['prefix' => 'contabilidad'], function () use ($router) {
         $router->post('cliente/buscar', 'ContabilidadController@cliente_buscar');
+        $router->post('proveedor/buscar', 'ContabilidadController@proveedor_buscar');
+
         $router->group(['prefix' => 'facturas'], function () use ($router) {
             $router->group(['prefix' => 'pendiente'], function () use ($router) {
                 $router->get('data', 'ContabilidadController@contabilidad_facturas_pendiente_data');
+                $router->post('guardar', 'ContabilidadController@contabilidad_facturas_pendiente_guardar');
             });
 
             $router->group(['prefix' => 'saldar'], function () use ($router) {
@@ -787,10 +790,11 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->group(['prefix' => 'compras-gastos'], function () use ($router) {
             $router->group(['prefix' => 'gasto'], function () use ($router) {
                 $router->post('proveedor/buscar', 'ContabilidadController@proveedor_buscar');
+                $router->get('data', 'ContabilidadController@compra_gasto_data');
                 $router->post('crear', 'ContabilidadController@compras_gasto_crear');
             });
             $router->group(['prefix' => 'compras'], function () use ($router) {
-                $router->post('data', 'ContabilidadController@compras_documentos_egresos');
+                $router->get('data/entidad/{entidad}', 'ContabilidadController@contabilidad_compras_saldar_data');
                 $router->post('aplicar', 'ContabilidadController@compras_aplicar_egreso');
             });
         });

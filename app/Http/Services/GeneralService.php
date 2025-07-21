@@ -2,6 +2,7 @@
 
 namespace App\Http\Services;
 
+use Exception;
 use Mailgun\Mailgun;
 use DB;
 
@@ -640,13 +641,6 @@ class GeneralService
 
                 return $response;
             }
-
-//            if ($cotizar_res->error == 1) {
-//                $response->error = 1;
-//                $response->mensaje = "No fue posible cotizar el envio, error " . $cotizar_res->mensaje;
-//
-//                return $response;
-//            }
 
             $response->error = 0;
             $response->total = (float) $cotizar_res->base + (float) $cotizar_res->extra;

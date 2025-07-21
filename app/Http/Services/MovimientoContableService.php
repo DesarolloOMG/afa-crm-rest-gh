@@ -22,7 +22,7 @@ class MovimientoContableService
                 'id_tipo_afectacion'   => $data['id_tipo_afectacion'],
                 'fecha_operacion'      => $data['fecha_operacion'],
                 'fecha_afectacion'     => $data['fecha_afectacion'] ?? null,
-                'moneda'               => $data['moneda'],
+                'id_moneda'               => $data['moneda'],
                 'tipo_cambio'          => $data['tipo_cambio'] ?? 1,
                 'monto'                => $data['monto'],
                 'origen_tipo'          => $data['origen_tipo'],

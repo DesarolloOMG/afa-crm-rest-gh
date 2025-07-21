@@ -125,49 +125,27 @@ class VentaController extends Controller
             }
         }
 
-        if (strpos(TRIM($data->cliente->rfc), 'XAXX010101000') === false && strpos(TRIM($data->cliente->rfc), 'XEXX010101000') === false) {
-            $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
+        $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
 
-            if (empty($existe_cliente)) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No hay un cliente que coincida con el rfc."
-                ]);
-            } else {
-                $cliente = $existe_cliente[0]->id;
-
-                DB::table('documento_entidad')->where(['id' => $cliente])->update([
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
-            }
-        } else {
-            $cliente = DB::table('documento_entidad')->insertGetId([
-                'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
+        if (empty($existe_cliente)) {
+            return response()->json([
+                'code' => 500,
+                'message' => "No hay un cliente que coincida con el rfc."
             ]);
         }
 
-//        $marketplace_name = DB::table("marketplace_area")
-//            ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
-//            ->where("marketplace_area.id", $data->documento->marketplace)
-//            ->first();
-//
-//        $mkp_area_name = DB::table("marketplace_area")
-//            ->join("area", "marketplace_area.id_area", "=", "area.id")
-//            ->where("marketplace_area.id", $data->documento->marketplace)->first();
+        $cliente = $existe_cliente[0]->id;
+
+        DB::table('documento_entidad')->where(['id' => $cliente])->update([
+            'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+            'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+            'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+            'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+            'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
+            'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+            'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
+            'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
+        ]);
 
         $documento = DB::table('documento')->insertGetId([
             'id_almacen_principal_empresa' => $data->documento->almacen,
@@ -189,6 +167,8 @@ class VentaController extends Controller
             'series_factura' => $data->documento->series_factura,
             'autorizado' => ($data->documento->baja_utilidad) ? 0 : 1,
             'anticipada' => $data->documento->anticipada,
+            'total' => $data->documento->total_user,
+            'saldo' => $data->documento->total_user,
             'addenda_orden_compra' => $data->addenda->orden_compra,
             'addenda_solicitud_pago' => $data->addenda->solicitud_pago,
             'addenda_tipo_documento' => $data->addenda->tipo_documento,
@@ -1304,6 +1284,16 @@ class VentaController extends Controller
                 }
             }
 
+            $movimientos_total = DB::table('movimiento')->where('id_documento', $data->documento->documento)->get();
+            $nuevoTotal = 0;
+            foreach ($movimientos_total as $movimiento) {
+                $nuevoTotal += $movimiento->cantidad * $movimiento->precio;
+            }
+
+            if($nuevoTotal != $documento->total){
+                DB::table('documento')->where(['id' => $data->documento->documento])->update(['total' => $nuevoTotal, 'saldo' => $nuevoTotal]);
+            }
+
 
             foreach ($data->documento->archivos as $archivo) {
                 if ($archivo->nombre != "" && $archivo->data != "") {
@@ -1344,19 +1334,6 @@ class VentaController extends Controller
                 'id_documento' => $data->documento->documento,
                 'id_usuario' => $auth->id
             ]);
-
-            $id_pago = DB::table('documento_pago_re')
-                ->where('id_documento', $data->documento->documento)
-                ->value('id_pago');
-
-            if ($id_pago) {
-                DB::table('documento_pago')
-                    ->where('id', $id_pago)
-                    ->update([
-                        'origen_entidad' => $data->cliente->rfc
-                    ]);
-            }
-
 
             if ($data->documento->id_fase != 2) {
                 $esta_importado = $documento->importado;

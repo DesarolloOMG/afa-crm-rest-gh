@@ -30,6 +30,28 @@ class ContabilidadController extends Controller
     public function contabilidad_facturas_pendiente_data(Request $request): JsonResponse
     {
         $auth = json_decode($request->auth);
+        $formas_pago = DB::table('cat_forma_pago')->get();
+        $monedas = DB::table('moneda')->get();
+        $entidades = DB::table('cat_entidad_financiera')
+            ->select(
+                'cat_entidad_financiera.id',
+                'cat_entidad_financiera.nombre',
+                'cat_entidades_financieras_tipo.tipo',
+                'cat_bancos.razon_social',
+                'cat_bancos.rfc',
+                'moneda.moneda',
+                'cat_entidad_financiera.no_cuenta',
+                'cat_entidad_financiera.sucursal',
+                'cat_entidad_financiera.convenio',
+                'cat_entidad_financiera.clabe',
+                'cat_entidad_financiera.swift',
+                'cat_entidad_financiera.plazo',
+                'cat_entidad_financiera.comentarios'
+            )
+            ->join('cat_bancos', 'cat_entidad_financiera.id_banco', '=', 'cat_bancos.id')
+            ->join('moneda', 'cat_entidad_financiera.id_moneda', '=', 'moneda.id')
+            ->join('cat_entidades_financieras_tipo', 'cat_entidad_financiera.id_tipo', '=', 'cat_entidades_financieras_tipo.id')
+            ->get();
 
         // Llama al SP y pasa el id de usuario autenticado
         $ventas = DB::select('CALL sp_ventas_raw_data(?)', [$auth->id]);
@@ -38,14 +60,75 @@ class ContabilidadController extends Controller
         foreach ($ventas as $venta) {
             $venta->productos = json_decode($venta->productos, true) ?? [];
             $venta->pagos = json_decode($venta->pagos, true) ?? [];
-            $venta->archivos = json_decode($venta->archivos, true) ?? [];
             $venta->seguimiento = json_decode($venta->seguimiento, true) ?? [];
         }
 
         return response()->json([
             'code' => 200,
-            'ventas' => $ventas
+            'ventas' => $ventas,
+            'formas_pago' => $formas_pago,
+            'monedas' => $monedas,
+            'entidades_financieras' => $entidades
         ]);
+    }
+
+    public function contabilidad_facturas_pendiente_guardar(Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+        $dataForm = json_decode($request->input('data'));
+        $user_id = $auth->id;
+
+        $documento = DB::table('documento')->where('id', $dataForm->documento)->first();
+        if (!$documento) {
+            return response()->json(['code' => 400, 'message' => 'Documento no encontrado.'], 400);
+        }
+        if ($dataForm->importe > $documento->saldo) {
+            return response()->json(['code' => 400, 'message' => 'El importe no puede ser mayor al saldo pendiente.'], 400);
+        }
+
+        $entidad = DB::table('documento_entidad')->where('id', $documento->id_entidad)->first();
+        $nombre_entidad_origen = $entidad ? $entidad->razon_social : '';
+
+        $cuenta = DB::table('cat_entidad_financiera')->where('id', $dataForm->entidad_destino)->first();
+        $nombre_entidad_destino = $cuenta ? $cuenta->nombre : '';
+
+        // Construir el array de datos para el servicio
+        $data = [
+            'id_tipo_afectacion'     => 1,
+            'fecha_operacion'        => $dataForm->fecha_cobro,
+            'fecha_afectacion'       => $dataForm->fecha_cobro,
+            'moneda'                 => $documento->id_moneda,
+            'tipo_cambio'            => 1,
+            'monto'                  => $dataForm->importe,
+            'origen_tipo'            => 1,
+            'entidad_origen'         => $documento->id_entidad,
+            'nombre_entidad_origen'  => $nombre_entidad_origen,
+            'destino_tipo'           => 2,
+            'entidad_destino'        => $dataForm->entidad_destino,
+            'nombre_entidad_destino' => $nombre_entidad_destino,
+            'id_forma_pago'          => $dataForm->metodo_pago,
+            'referencia_pago'        => $dataForm->referencia,
+            'descripcion_pago'       => '.',
+            'comentarios'            => $dataForm->seguimiento,
+            'creado_por'             => $user_id,
+            'documentos' => [
+                [
+                    'id_documento'     => $dataForm->documento,
+                    'monto_aplicado'   => $dataForm->importe,
+                    'moneda'           => $documento->id_moneda,
+                    'tipo_cambio_aplicado' => 1,
+                    'parcialidad'      => 1
+                ]
+            ]
+        ];
+
+        $resultado = MovimientoContableService::crearMovimiento($data);
+
+        if ($resultado['success']) {
+            return response()->json(['code' => 200, 'message' => 'Ingreso registrado correctamente.']);
+        } else {
+            return response()->json(['code' => 400, 'message' => $resultado['error'] ?? 'Ocurrió un error.'], 400);
+        }
     }
 
     public function contabilidad_facturas_saldar_data($id_entidad): JsonResponse
@@ -287,61 +370,53 @@ class ContabilidadController extends Controller
     }
 
 
-
-    public function compras_documentos_egresos(Request $request): JsonResponse
+    public function contabilidad_compras_saldar_data($idEntidad): JsonResponse
     {
-        $razon_social = $request->input('razon_social');
+        $egresos = DB::select('CALL sp_contabilidad_egresos_disponibles_por_entidad(?)', [$idEntidad]);
+        $documentos = DB::select('CALL sp_contabilidad_documentos_compras_con_saldo_por_entidad(?)', [$idEntidad]);
 
-        // Llama el SP; puede devolver varios resultsets
-        $pdo = DB::connection()->getPdo();
-        $stmt = $pdo->prepare('CALL sp_compras_documentos_egresos(?)');
-        $stmt->execute([$razon_social]);
-
-        // 1. Entidades encontradas
-        $proveedores = $stmt->fetchAll(PDO::FETCH_OBJ);
-        $stmt->nextRowset();
-
-        // 2. Documentos pendientes del proveedor
-        $documentos = $stmt->fetchAll(PDO::FETCH_OBJ);
-        $stmt->nextRowset();
-
-        // 3. Egresos creados
-        $egresos = $stmt->fetchAll(PDO::FETCH_OBJ);
+        $monedas = DB::table('moneda')->get();
 
         return response()->json([
             'code' => 200,
-            'proveedores' => $proveedores,
+            'egresos' => $egresos,
             'documentos' => $documentos,
-            'egresos' => $egresos
+            'monedas' => $monedas
         ]);
     }
 
     public function compras_aplicar_egreso(Request $request): JsonResponse
     {
+        $documentos = $request->input("documentos");
         $id_egreso = $request->input("id_egreso");
-        $id_documento = $request->input("id_documento");
-        $monto = $request->input("monto");
 
+        // Trae el egreso (movimiento contable)
         $egreso = DB::table('movimiento_contable')->where('id', $id_egreso)->first();
         if (!$egreso) {
             return response()->json(['code' => 404, 'msg' => 'Egreso no encontrado']);
         }
 
-        $documentos_formateados = [
-            [
-                'id_documento' => $id_documento,
-                'monto_aplicado' => $monto,
-                'moneda' => $egreso->id_moneda,
-                'tipo_cambio_aplicado' => $egreso->tipo_cambio
-            ]
-        ];
+        // Traduce id_moneda a código de moneda (por compatibilidad con el Service)
+        $codigoMonedaEgreso = DB::table('moneda')->where('id', $egreso->id_moneda)->value('moneda');
+
+        // Arma el array de documentos para el service
+        $documentos_formateados = [];
+        foreach ($documentos as $doc) {
+            $documentos_formateados[] = [
+                'id_documento'         => $doc['id_documento'],
+                'monto_aplicado'       => $doc['monto'],
+                'moneda'               => (int)$doc['moneda'],
+                'tipo_cambio_aplicado' => $doc['tipo_cambio_aplicado'] ?? $egreso->tipo_cambio,
+                'parcialidad'          => 1, // puedes calcularlo si necesitas
+            ];
+        }
 
         DB::beginTransaction();
         try {
             $resultados = MovimientoContableService::aplicarADocumentos(
                 $id_egreso,
                 $documentos_formateados,
-                $egreso->moneda,
+                $codigoMonedaEgreso,
                 $egreso->tipo_cambio
             );
 
@@ -353,7 +428,7 @@ class ContabilidadController extends Controller
                 DB::rollBack();
                 return response()->json([
                     'code' => 400,
-                    'msg' => 'No se pudo aplicar el egreso',
+                    'msg' => 'Algunos documentos no pudieron ser aplicados',
                     'resultados' => $resultados
                 ]);
             }
@@ -380,7 +455,7 @@ class ContabilidadController extends Controller
 
         // Busca por razón social o RFC
         $clientes = DB::table('documento_entidad')
-            ->where('tipo', 1)
+            ->whereIn('tipo', [1,3])
             ->where(function ($q) use ($query) {
                 $q->where('razon_social', 'like', "%$query%")
                     ->orWhere('rfc', 'like', "%$query%");
@@ -396,65 +471,155 @@ class ContabilidadController extends Controller
         ]);
     }
 
-    /* Contabilidad > Estado de cuenta */
+    public function proveedor_buscar(Request $request): JsonResponse
+    {
+        $query = trim($request->input('criterio'));
+
+        // Busca por razón social o RFC
+        $proveedores = DB::table('documento_entidad')
+            ->whereIn('tipo', [2,3])
+            ->where(function ($q) use ($query) {
+                $q->where('razon_social', 'like', "%$query%")
+                    ->orWhere('rfc', 'like', "%$query%");
+            })
+            ->select('id', 'razon_social', 'rfc', 'telefono', 'correo')
+            ->orderBy('razon_social')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'code' => 200,
+            'proveedores' => $proveedores
+        ]);
+    }
+
+    public function compra_gasto_data(Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+        $userId = $auth->id;
+
+        $empresas = DB::table('empresa')
+            ->where('status', 1)
+            ->where('id', '!=', 0)
+            ->select('id', 'empresa')
+            ->get();
+
+        $empresaIds = $empresas->pluck('id');
+        $almacenesPorEmpresa = DB::table('empresa_almacen')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('usuario_empresa_almacen', function ($join) use ($userId) {
+                $join->on('usuario_empresa_almacen.id_empresa_almacen', '=', 'empresa_almacen.id')
+                    ->where('usuario_empresa_almacen.id_usuario', '=', $userId);
+            })
+            ->whereIn('empresa_almacen.id_empresa', $empresaIds)
+            ->where('almacen.status', 1)
+            ->where('almacen.id', '!=', 0)
+            ->orderBy('almacen.almacen')
+            ->select(
+                'empresa_almacen.id_empresa',
+                'almacen.id as id_almacen',
+                'empresa_almacen.id',
+                'almacen.almacen'
+            )
+            ->get()
+            ->groupBy('id_empresa');
+
+        foreach ($empresas as $empresa) {
+            $empresa->almacenes = $almacenesPorEmpresa[$empresa->id] ?? collect();
+        }
+
+
+        $metodos = DB::table('metodo_pago')->get();
+        $monedas = DB::table('moneda')->get();
+        $periodos = DB::table('documento_periodo')->where('status', 1)->get();
+        $usos_venta = DB::table('documento_uso_cfdi')->get();
+        $regimenes = DB::table('cat_regimen')->get();
+
+        return response()->json([
+            'code' => 200,
+            'metodos' => $metodos,
+            'monedas' => $monedas,
+            'periodos' => $periodos,
+            'empresas' => $empresas,
+            'usos_venta' => $usos_venta,
+            'regimenes' => $regimenes
+        ]);
+    }
 
     public function compras_gasto_crear(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        if (empty($data->id_entidad)) {
+        // VALIDACIONES
+        if (empty($data->proveedor) || empty($data->proveedor->id)) {
             return response()->json([
                 'code' => 400,
                 'message' => "Selecciona un proveedor válido."
             ]);
         }
-
-        // El saldo inicial del documento debe ser igual al monto total
-        $monto = $data->monto ?? 0;
-
-        // Insertar documento
-        $documento_id = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa' => $data->id_almacen_principal_empresa,
-            'id_almacen_secundario_empresa' => $data->id_almacen_secundario_empresa ?? 0,
-            'id_tipo' => 12, // 12 = Gasto
-            'id_periodo' => $data->id_periodo ?? 1,
-            'id_cfdi' => $data->id_cfdi ?? 1,
-            'id_usuario' => $auth->id,
-            'id_moneda' => $data->id_moneda,
-            'tipo_cambio' => $data->tipo_cambio,
-            'referencia' => trim($data->referencia ?? ''),
-            'observacion' => trim($data->observacion ?? ''),
-            'info_extra' => trim($data->info_extra ?? ''),
-            'id_entidad' => $data->id_entidad,
-            'factura_serie' => $data->factura_serie ?? null,
-            'factura_folio' => $data->factura_folio ?? null,
-            'monto' => $monto,
-            'saldo' => $monto,
-            'status' => 1
-        ]);
-
-        // Insertar productos
-        foreach ($data->productos as $producto) {
-            DB::table('movimiento')->insert([
-                'id_documento' => $documento_id,
-                'id_modelo' => $producto->id_modelo,
-                'cantidad' => $producto->cantidad,
-                'precio' => $producto->precio,
-                'descuento' => $producto->descuento ?? 0,
-                'comentario' => $producto->comentario ?? '',
-                'addenda' => $producto->addenda ?? '',
-                'garantia' => $producto->garantia ?? 'N/A',
-                'regalo' => $producto->regalo ?? 0
+        if (empty($data->almacen)) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Selecciona un almacén válido."
+            ]);
+        }
+        if (empty($data->periodo)) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Selecciona un periodo de pago válido."
+            ]);
+        }
+        if (empty($data->moneda)) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Selecciona una moneda válida."
+            ]);
+        }
+        if (empty($data->tipo_cambio)) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Debes especificar el tipo de cambio."
+            ]);
+        }
+        if (empty($data->productos) || count($data->productos) == 0) {
+            return response()->json([
+                'code' => 400,
+                'message' => "Debes agregar al menos un producto."
             ]);
         }
 
-        // Insertar seguimiento si viene
-        if (!empty($data->seguimiento)) {
-            DB::table('seguimiento')->insert([
+        // Calcula el monto total de los productos
+        $monto = 0;
+        foreach ($data->productos as $producto) {
+            $subtotal = ($producto->costo * $producto->cantidad) * (1 - ($producto->descuento ?? 0) / 100);
+            $monto += $subtotal;
+        }
+
+        // Inserta el documento (tipo 12 = Gasto)
+        $documento_id = DB::table('documento')->insertGetId([
+            'id_almacen_principal_empresa' => $data->almacen,
+            'id_tipo'       => 12, // Gasto
+            'id_periodo'    => $data->periodo,
+            'id_usuario'    => $auth->id,
+            'id_moneda'     => $data->moneda,
+            'tipo_cambio'   => $data->tipo_cambio,
+            'observacion'   => trim($data->comentarios ?? ''),
+            'id_entidad'    => $data->proveedor->id,
+            'total'         => $monto,
+            'saldo'         => $monto,
+            'status'        => 1
+        ]);
+
+        // Inserta productos en tabla movimiento
+        foreach ($data->productos as $producto) {
+            DB::table('movimiento')->insert([
                 'id_documento' => $documento_id,
-                'id_usuario' => $auth->id,
-                'seguimiento' => $data->seguimiento,
+                'id_modelo'    => $producto->id, // O usa el campo correcto según tu modelo
+                'cantidad'     => $producto->cantidad,
+                'precio'       => $producto->costo,
+                'descuento'    => $producto->descuento ?? 0,
+                'comentario'   => $producto->comentario ?? '',
             ]);
         }
 
