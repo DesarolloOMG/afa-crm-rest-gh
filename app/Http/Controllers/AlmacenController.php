@@ -1928,9 +1928,9 @@ class AlmacenController extends Controller
             ->orWhere("nivel.nivel", "ADMINISTRADOR")
             ->first();
 
-        $query_filter = empty($data->document) ? " AND documento.id_tipo = " . $data->type . " AND documento.created_at BETWEEN '" . $data->initial_date . " 00:00:00' AND '" . $data->final_date . " 23:59:59'"
-            : ($data->su ? " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (3, 4, 5, 11)"
-                : " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (3, 4, 5, 11)");
+        $query_filter = empty($data->document)
+            ? " AND documento.id_tipo = " . $data->type . " AND documento.created_at BETWEEN '" . $data->initial_date . " 00:00:00' AND '" . $data->final_date . " 23:59:59'"
+            : " AND (documento.id = " . $data->document . " OR documento.documento_extra = " . $data->document . ") AND documento.id_tipo IN (3, 4, 5, 11)";
 
 
 
@@ -2033,7 +2033,6 @@ class AlmacenController extends Controller
         return response()->json([
             'code'  => 200,
             'documentos'    => $documentos,
-            'ss' => $data->su
         ]);
     }
 
