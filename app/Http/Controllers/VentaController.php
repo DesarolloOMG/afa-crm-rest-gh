@@ -735,7 +735,7 @@ class VentaController extends Controller
         if ($total->disponible < $cantidad) {
             return response()->json([
                 'code' => 500,
-                'message' => "Producto sin suficiente existencias.<br><br>Requerida: $cantidad<br>Disponible: $total->disponible"
+                'message' => "Producto $producto sin suficiente existencias.<br><br>Requerida: $cantidad<br>Disponible: $total->disponible"
             ]);
         }
 
