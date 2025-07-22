@@ -913,7 +913,7 @@ class MercadolibreService
             'id_usuario' => $usuario,
             'id_paqueteria' => $id_paqueteria,
             'id_fase' => self::faseDocumento($venta),
-            'id_entidad' => 68,
+            'id_entidad' => 3,
             'id_modelo_proveedor' => $venta->proveedor,
             'no_venta' => $venta->id,
             'referencia' => $referencia ?? '',
@@ -1007,7 +1007,7 @@ class MercadolibreService
                     'tipo_cambio'            => 1,                                     // Tipo de cambio (1 si es MXN)
                     'monto'                  => $monto_pagado,                         // Monto real pagado (paid_amount o total calculado)
                     'origen_tipo'            => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
-                    'entidad_origen'         => 68,                                    // ID de la entidad de ML o cliente (ajusta según tu config)
+                    'entidad_origen'         => 3,                                    // ID de la entidad de ML o cliente (ajusta según tu config)
                     'nombre_entidad_origen'  => 'MercadoLibre Publico General',        // Nombre del pagador (ajusta según tus catálogos)
                     'destino_tipo'           => 2,                                     // 2 = cuenta bancaria/financiera de tu empresa
                     'entidad_destino'        => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria
