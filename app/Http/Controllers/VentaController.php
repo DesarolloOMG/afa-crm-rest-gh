@@ -553,7 +553,7 @@ class VentaController extends Controller
             ->where("tipo", 1)
             ->where("rfc", $criterio)
             ->orWhere("razon_social", "like", "%" . $criterio . "%")
-            ->where('id_tipo', 1)
+            ->where('tipo', 1)
             ->get();
 
         return response()->json([
@@ -570,7 +570,7 @@ class VentaController extends Controller
             ->join('documento_direccion', 'documento.id', '=', 'documento_direccion.id_documento')
             ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
             ->where('documento_entidad.rfc', $rfc)
-            ->where('documento_entidad.id_tipo', 1)
+            ->where('documento_entidad.tipo', 1)
             ->where('marketplace.id', '!=', 15)
             ->orderByDesc('documento.created_at')
             ->select('documento_direccion.*')
@@ -579,7 +579,7 @@ class VentaController extends Controller
         $informacion = DB::table('documento')
             ->join('documento_entidad', 'documento.id_entidad', '=', 'documento_entidad.id')
             ->where('documento_entidad.rfc', $rfc)
-            ->where('documento_entidad.id_tipo', 1)
+            ->where('documento_entidad.tipo', 1)
             ->orderByDesc('documento.created_at')
             ->select('documento_entidad.*')
             ->first();
