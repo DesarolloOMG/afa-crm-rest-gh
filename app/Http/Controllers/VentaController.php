@@ -1234,7 +1234,10 @@ class VentaController extends Controller
                 ->keyBy('id_modelo')
                 ->toArray();
 
-            $skus = collect($data->documento->productos)->pluck('codigo')->map('trim')->toArray();
+            $skus = collect($data->documento->productos)
+                ->pluck('codigo')
+                ->map(function($sku) { return trim((string)$sku); })
+                ->toArray();
 
             $modelos = DB::table('modelo')
                 ->whereIn('sku', $skus)
