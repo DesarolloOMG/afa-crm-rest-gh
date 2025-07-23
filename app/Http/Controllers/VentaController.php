@@ -3610,7 +3610,8 @@ class VentaController extends Controller
 
         $data = json_decode($request->input("data"));
 
-        $ventas = DB::table("documento")
+        // 1. Consulta principal: ventas en fase 1, 2, 7
+        $ventas_fase = DB::table("documento")
             ->select(
                 "documento.id",
                 "documento.no_venta",
@@ -3626,11 +3627,59 @@ class VentaController extends Controller
             )
             ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
             ->join("documento_fase", "documento_fase.id", "=", "documento.id_fase")
+            ->where("documento.id_tipo", 2)
             ->whereIn("documento.id_fase", [1, 2, 7])
             ->where("documento.status", 1)
             ->where("documento.id_marketplace_area", $data->marketplace)
             ->get();
 
+        // Saca IDs de ventas ya incluidas
+        $ids_fase = $ventas_fase->pluck('id')->toArray();
+
+        // 2. Consulta adicional: ventas tipo 2, cualquier fase, sin productos y NO en la anterior
+        $ventas_tipo2_sin_productos = DB::table("documento")
+            ->select(
+                "documento.id",
+                "documento.no_venta",
+                "documento.no_venta_btob",
+                "documento_fase.fase",
+                "documento.id_modelo_proveedor",
+                "documento.fulfillment",
+                "documento.id_marketplace_area",
+                "documento_entidad.rfc",
+                "documento_entidad.razon_social",
+                "documento.mkt_publicacion",
+                "documento.created_at"
+            )
+            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
+            ->join("documento_fase", "documento_fase.id", "=", "documento.id_fase")
+            ->leftJoin("movimiento", "documento.id", "=", "movimiento.id_documento")
+            ->where("documento.id_tipo", 2)
+            ->where("documento.status", 1)
+            ->where("documento.id_marketplace_area", $data->marketplace)
+            ->when(!empty($ids_fase), function($query) use ($ids_fase) {
+                $query->whereNotIn("documento.id", $ids_fase);
+            })
+            ->groupBy(
+                "documento.id",
+                "documento.no_venta",
+                "documento.no_venta_btob",
+                "documento_fase.fase",
+                "documento.id_modelo_proveedor",
+                "documento.fulfillment",
+                "documento.id_marketplace_area",
+                "documento_entidad.rfc",
+                "documento_entidad.razon_social",
+                "documento.mkt_publicacion",
+                "documento.created_at"
+            )
+            ->havingRaw('COUNT(movimiento.id) = 0')
+            ->get();
+
+        // 3. Unir ambos arrays
+        $ventas = $ventas_fase->merge($ventas_tipo2_sin_productos);
+
+        // 4. Adjuntar productos (puede ser vacío)
         foreach ($ventas as $venta) {
             $productos = DB::table('movimiento')
                 ->select(
@@ -3649,10 +3698,11 @@ class VentaController extends Controller
         }
 
         return response()->json([
-            "message" => empty($ventas) ? "No se encontraron ventas pendientes" : "Ventas obtenidas correctamente",
+            "message" => $ventas->isEmpty() ? "No se encontraron ventas pendientes" : "Ventas obtenidas correctamente",
             "ventas" => $ventas
         ]);
     }
+
 
     /** @noinspection PhpUndefinedVariableInspection */
 
@@ -3802,7 +3852,6 @@ class VentaController extends Controller
 
         // 4. Si no existe ingreso registrado previamente...
         if (!$existeIngreso) {
-
             // 5. Buscamos la cuenta financiera destino asociada al marketplace/área de la venta
             $cuenta_destino = DB::table('marketplace_cuenta')
                 ->where('id_marketplace_area', $venta->id_marketplace_area)
@@ -3950,9 +3999,7 @@ class VentaController extends Controller
         }
 
         if ($venta->fulfillment) {
-            //Aqui ta
             if (!$hayError) {
-//                $factura = DocumentoService::crearFactura($venta->id, 0, 0);
                 $factura = InventarioService::aplicarMovimiento($venta->id);
                 if (!$factura->error) {
                     DB::table('documento')->where(['id' => $venta->id])->update([
@@ -3984,6 +4031,20 @@ class VentaController extends Controller
                     'code' => 500,
                     'mensaje' => "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
                 ]);
+            }
+        } else {
+            $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
+
+            if (empty($existe_en_inventario)) {
+                $aplicar = InventarioService::aplicarMovimiento($venta->id);
+
+                if($aplicar->error) {
+                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
+                    return response()->json([
+                        'code' => 500,
+                        'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
+                    ]);
+                }
             }
         }
 

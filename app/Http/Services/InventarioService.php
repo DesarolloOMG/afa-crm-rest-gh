@@ -113,35 +113,37 @@ class InventarioService
                     $existencia = $hay_existencia;
                 }
 
-                $hay_costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
+                if($docTipo->afectaCosto == 1) {
+                    $hay_costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
 
-                if(empty($hay_costo)) {
-                    if($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->tipo == 'COMPRA' || $docTipo->id == 1 || $docTipo->id == 0) {
-                        DB::table('modelo_costo')->insert([
-                            'id_modelo' => $mov->id_modelo,
-                            'costo_inicial' => $mov->precio ?? 0,
-                            'costo_promedio' => $mov->precio ?? 0,
-                            'ultimo_costo' => $mov->precio ?? 0
-                        ]);
+                    if (empty($hay_costo)) {
+                        if ($docTipo->tipo == 'ENTRADA' || $docTipo->id == 3 || $docTipo->tipo == 'COMPRA' || $docTipo->id == 1 || $docTipo->id == 0) {
+                            DB::table('modelo_costo')->insert([
+                                'id_modelo' => $mov->id_modelo,
+                                'costo_inicial' => $mov->precio ?? 0,
+                                'costo_promedio' => $mov->precio ?? 0,
+                                'ultimo_costo' => $mov->precio ?? 0
+                            ]);
 
-                        $costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
+                            $costo = DB::table('modelo_costo')->where('id_modelo', $mov->id_modelo)->first();
 
-                        $se_agrego_costo = true;
+                            $se_agrego_costo = true;
+                        } else {
+                            $modelo_info = DB::table('modelo')->where('id', $mov->id_modelo)->first();
+                            $response->code = 404;
+                            $response->error = 1;
+                            $response->message = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
+                            $response->mensaje = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
+                            return $response;
+                        }
                     } else {
-                        $modelo_info = DB::table('modelo')->where('id', $mov->id_modelo)->first();
-                        $response->code = 404;
-                        $response->error = 1;
-                        $response->message = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
-                        $response->mensaje = "No existe registro de costo en la base de datos del producto: " . $modelo_info->descripcion;
-                        return $response;
+                        $costo = $hay_costo;
                     }
-                } else {
-                    $costo = $hay_costo;
                 }
 
                 // Se guardan los valores actuales para poder registrar en el kardex posteriormente.
                 $stockAnterior = $se_agrego_inventario ? 0 : $existencia->stock;
-                $costoPromAnterior = $se_agrego_costo ? 0 : $costo->costo_promedio;
+                $costoPromAnterior = $se_agrego_costo ? 0 : $docTipo->afectaCosto ? $costo->costo_promedio : 0;
 
                 // Se calcula la cantidad, el precio unitario (considerando el tipo de cambio) y el total del movimiento.
                 $cantidad = $mov->cantidad;
