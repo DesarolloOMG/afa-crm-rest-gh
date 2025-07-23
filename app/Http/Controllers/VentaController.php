@@ -3938,6 +3938,20 @@ class VentaController extends Controller
                     'id_fase' => $venta->fulfillment ? $hayError ? 1 : 5 : 5
                 ]);
 
+                $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
+
+                if (empty($existe_en_inventario)) {
+                    $aplicar = InventarioService::aplicarMovimiento($venta->id);
+
+                    if($aplicar->error) {
+                        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
+                        ]);
+                    }
+                }
+
                 BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, $venta->fulfillment ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
                     : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA.");
 
@@ -4031,20 +4045,6 @@ class VentaController extends Controller
                     'code' => 500,
                     'mensaje' => "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
                 ]);
-            }
-        } else {
-            $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
-
-            if (empty($existe_en_inventario)) {
-                $aplicar = InventarioService::aplicarMovimiento($venta->id);
-
-                if($aplicar->error) {
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
-                    return response()->json([
-                        'code' => 500,
-                        'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
-                    ]);
-                }
             }
         }
 
