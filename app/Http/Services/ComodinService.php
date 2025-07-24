@@ -304,7 +304,7 @@ class ComodinService
                     // Si la serie existe en la base de datos...
                     if(!empty($existe_serie)) {
                         // Si coincide, marca la serie como válida.
-                        $object->status = 1;
+                        $object->status = 0;
                         $errores[] = "La serie {$serie} ya existe en la Base de Datos, en el SKU: {$sku}";
                         $id_producto = $existe_serie->id;
                     } else {

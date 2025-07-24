@@ -1003,7 +1003,7 @@ class AlmacenController extends Controller
             if (!empty($movimiento)) {
                 if ($movimiento[0]->serie) {
                     // Llamamos a la función de validación de series
-                    $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
+                    $validacion = ComodinService::validar_series($producto->series, trim($producto->sku), $info_documento->id_almacen);
 
                     // Si hay errores en la validación, se retorna la respuesta de error
                     if ($validacion->error == 1) {
