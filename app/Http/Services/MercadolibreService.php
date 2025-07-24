@@ -965,7 +965,7 @@ class MercadolibreService
                 'id_documento' => $documentoId,
                 'id_modelo' => $producto->id_modelo,
                 'cantidad' => $producto->cantidad,
-                'precio' => $producto->precio / 1.16,
+                'precio' => $producto->precio,
                 'garantia' => $producto->garantia,
                 'modificacion' => '',
                 'regalo' => $producto->regalo

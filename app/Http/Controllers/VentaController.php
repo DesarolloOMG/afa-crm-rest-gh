@@ -3820,7 +3820,7 @@ class VentaController extends Controller
                 'id_documento' => $venta->id,
                 'id_modelo' => $producto->id_modelo,
                 'cantidad' => $producto->cantidad,
-                'precio' => (float)($producto->precio) / 1.16,
+                'precio' => (float)($producto->precio),
                 'garantia' => $producto->garantia,
                 'modificacion' => '',
                 'regalo' => $producto->regalo
