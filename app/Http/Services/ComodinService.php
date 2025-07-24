@@ -213,7 +213,7 @@ class ComodinService
                                     if($existe_serie->id_almacen != $almacen) {
                                         $object->status = 0;
                                         $object->mensaje = "La serie " . $serie . " no pertenece al almacen " . $almacen;
-                                        array_push($errores, $msg);
+                                        array_push($errores, "La serie " . $serie . " no pertenece al almacen " . $almacen);
                                     }
                                 } else {
                                     $object->status = 1;
