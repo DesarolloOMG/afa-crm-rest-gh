@@ -773,8 +773,7 @@ class GeneralController extends Controller
                 ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
                 ->where('id_documento', $venta->id)
                 ->select('movimiento.id', 'movimiento.cantidad', 'movimiento.garantia',
-                    'modelo.sku', 'modelo.descripcion', 'modelo.serie',
-                    DB::raw('ROUND((movimiento.precio * 1.16), 2) AS precio'))
+                    'modelo.sku', 'modelo.descripcion', 'modelo.serie', 'movimiento.precio')
                 ->get();
 
             foreach ($venta->productos as $producto) {
