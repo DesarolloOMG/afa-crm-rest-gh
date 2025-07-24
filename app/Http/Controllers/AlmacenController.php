@@ -2073,16 +2073,13 @@ class AlmacenController extends Controller
         }
 
         try {
-            $tipo_documento = DB::select("SELECT id_tipo FROM documento WHERE id = " . $data->document)[0]->id_tipo;
+            $info_documento = DB::table('documento')->where('id', $data->document)->first();;
+            $tipo_documento = $info_documento->id_tipo;
+
+            $almacen = DB::table('empresa_almacen')->where('id', $info_documento->id_almacen_principal_empresa)->first();
 
             if ($tipo_documento == 4) {
                 $response = DocumentoService::crearMovimiento($data->document);
-
-                if ($response->error) {
-                    return response()->json([
-                        'message' => $response->mensaje . " " . self::logVariableLocation()
-                    ], 500);
-                }
 
                 $series = DB::select("SELECT
                                     producto.id
@@ -2093,7 +2090,8 @@ class AlmacenController extends Controller
 
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
-                        'status' => 0
+                        'status' => 0,
+                        'id_almacen' => $almacen->id_almacen
                     ]);
                 }
             } else {
