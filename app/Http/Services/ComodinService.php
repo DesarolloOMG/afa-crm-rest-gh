@@ -139,7 +139,7 @@ class ComodinService
      *                - errores: (opcional) JSON con los errores encontrados.
      *                - series: Array de objetos con la serie y su estado de validación.
      */
-    public static function validar_series(array $series, string $sku)
+    public static function validar_series(array $series, string $sku, int $almacen = 0)
     {
         // Inicializa un array para almacenar mensajes de error durante la validación.
         $errores = array();
@@ -196,7 +196,7 @@ class ComodinService
                                 ->where('movimiento_producto.id_producto', $existe_serie->id)
                                 ->where('documento.id_tipo', 2) // 2 = venta, cambia según tu catálogo
                                 ->where('documento.status', 1) // Venta activa
-                                ->select('documento.id', 'documento.no_venta', 'documento.factura_serie', 'documento.factura_folio') // agrega los campos que te interese mostrar
+                                ->select('documento.id', 'documento.no_venta') // agrega los campos que te interese mostrar
                                 ->first();
 
                             if ($serie_venta) {
@@ -209,8 +209,16 @@ class ComodinService
                                 $object->mensaje = $msg;
                                 array_push($errores, $msg);
                             } else {
-                                $object->status = 1;
-                                $id_producto = $existe_serie->id;
+                                if($almacen != 0) {
+                                    if($existe_serie->id_almacen != $almacen) {
+                                        $object->status = 0;
+                                        $object->mensaje = "La serie " . $serie . " no pertenece al almacen " . $almacen;
+                                        array_push($errores, $msg);
+                                    }
+                                } else {
+                                    $object->status = 1;
+                                    $id_producto = $existe_serie->id;
+                                }
                             }
                         }
                     } else {
