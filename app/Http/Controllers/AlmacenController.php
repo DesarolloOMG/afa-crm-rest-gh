@@ -2091,7 +2091,6 @@ class AlmacenController extends Controller
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
                         'status' => 0,
-                        'id_almacen' => $almacen->id_almacen
                     ]);
                 }
             } else {
@@ -2114,7 +2113,8 @@ class AlmacenController extends Controller
 
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
-                        'status' => 1
+                        'status' => 1,
+                        'id_almacen' => $almacen->id_almacen
                     ]);
                 }
             }
