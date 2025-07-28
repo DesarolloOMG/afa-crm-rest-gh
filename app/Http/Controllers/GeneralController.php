@@ -321,6 +321,7 @@ class GeneralController extends Controller
                 documento.observacion,
                 documento.created_at,
                 documento.status,
+                documento.autorizado,
                 documento.autorizado_by AS autorizado_por,
                 documento.id_almacen_principal_empresa AS id_almacen_principal,
                 documento.id_almacen_secundario_empresa AS id_almacen_secundario,
@@ -343,7 +344,10 @@ class GeneralController extends Controller
                 ) AS autorizador,
                 documento.id_tipo,
                 IF(documento_tipo.tipo = 'ORDEN DE COMPRA', 'RECEPCION', documento_tipo.tipo) AS tipo,
-                documento_fase.fase,
+                CASE
+                    WHEN documento.id_tipo = 5 AND documento.autorizado = 0 THEN 'PENDIENTE DE RECEPCION'
+                    ELSE documento_fase.fase
+                END AS fase,
                 documento_entidad.razon_social,
                 moneda.moneda,
                 movimiento.cantidad,
