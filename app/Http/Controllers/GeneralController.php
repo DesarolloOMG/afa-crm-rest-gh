@@ -108,47 +108,51 @@ class GeneralController extends Controller
             $sheet->setCellValue('A1', 'CÓDIGO');
             $sheet->setCellValue('B1', 'DESCRIPCIÓN');
             $sheet->setCellValue('C1', 'ÚLTIMO COSTO');
-            $sheet->setCellValue('D1', 'PRECIO');
-            $sheet->setCellValue('E1', 'ALMACÉN');
-            $sheet->setCellValue('F1', 'INVENTARIO');
-            $sheet->setCellValue('G1', 'PENDIENTES');
-            $sheet->setCellValue('H1', 'EN TRÁNSITO');
-            $sheet->setCellValue('I1', 'PRETRANSFERENCIA');
-            $sheet->setCellValue('J1', 'DISPONIBLE');
-            $sheet->setCellValue('K1', 'TIPO DE PRODUCTO');
-            $sheet->setCellValue('L1', 'MARCA');
-            $sheet->setCellValue('M1', 'SUBTIPO');
-            $sheet->setCellValue('N1', 'VERTICAL');
-            $sheet->setCellValue('O1', 'CÓDIGO SAT');
-            $sheet->setCellValue('P1', 'SERIE');
-            $sheet->setCellValue('Q1', 'NP');
+            $sheet->setCellValue('D1', 'COSTO PROMEDIO');
+            $sheet->setCellValue('E1', 'PRECIO');
+            $sheet->setCellValue('F1', 'COSTO_EXTRA');
+            $sheet->setCellValue('G1', 'ALMACÉN');
+            $sheet->setCellValue('H1', 'INVENTARIO');
+            $sheet->setCellValue('I1', 'PENDIENTES');
+            $sheet->setCellValue('J1', 'EN TRÁNSITO');
+            $sheet->setCellValue('K1', 'PRETRANSFERENCIA');
+            $sheet->setCellValue('L1', 'DISPONIBLE');
+            $sheet->setCellValue('M1', 'TIPO DE PRODUCTO');
+            $sheet->setCellValue('N1', 'MARCA');
+            $sheet->setCellValue('O1', 'SUBTIPO');
+            $sheet->setCellValue('P1', 'VERTICAL');
+            $sheet->setCellValue('Q1', 'CÓDIGO SAT');
+            $sheet->setCellValue('R1', 'SERIE');
+            $sheet->setCellValue('S1', 'NP');
 
             // Llenar filas del Excel
             $contador_fila = 2;
             foreach ($productos as $p) {
-                $sheet->setCellValue('A' . $contador_fila, $p->codigo);
+                $sheet->setCellValueExplicit('A' . $contador_fila, $p->codigo, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                 $sheet->setCellValue('B' . $contador_fila, $p->descripcion);
                 $sheet->setCellValue('C' . $contador_fila, $p->ultimo_costo);
-                $sheet->setCellValue('D' . $contador_fila, $p->precio);
-                $sheet->setCellValue('E' . $contador_fila, $p->almacen);
-                $sheet->setCellValue('F' . $contador_fila, $p->stock);
-                $sheet->setCellValue('G' . $contador_fila, $p->pendientes);
-                $sheet->setCellValue('H' . $contador_fila, $p->en_transito);
-                $sheet->setCellValue('I' . $contador_fila, $p->pretransferencia);
-                $sheet->setCellValue('J' . $contador_fila, $p->disponible);
-                $sheet->setCellValue('K' . $contador_fila, $p->tipo_producto);
-                $sheet->setCellValue('L' . $contador_fila, $p->marca);
-                $sheet->setCellValue('M' . $contador_fila, $p->subtipo);
-                $sheet->setCellValue('N' . $contador_fila, $p->vertical);
-                $sheet->setCellValue('O' . $contador_fila, $p->codigo_sat);
-                $sheet->setCellValue('P' . $contador_fila, $p->serie);
-                $sheet->setCellValue('Q' . $contador_fila, $p->np);
+                $sheet->setCellValue('D' . $contador_fila, $p->costo_promedio);
+                $sheet->setCellValue('E' . $contador_fila, $p->precio);
+                $sheet->setCellValue('F' . $contador_fila, $p->costo_extra);
+                $sheet->setCellValue('G' . $contador_fila, $p->almacen);
+                $sheet->setCellValue('H' . $contador_fila, $p->stock);
+                $sheet->setCellValue('I' . $contador_fila, $p->pendientes);
+                $sheet->setCellValue('J' . $contador_fila, $p->en_transito);
+                $sheet->setCellValue('K' . $contador_fila, $p->pretransferencia);
+                $sheet->setCellValue('L' . $contador_fila, $p->disponible);
+                $sheet->setCellValue('M' . $contador_fila, $p->tipo_producto);
+                $sheet->setCellValue('N' . $contador_fila, $p->marca);
+                $sheet->setCellValue('O' . $contador_fila, $p->subtipo);
+                $sheet->setCellValue('P' . $contador_fila, $p->vertical);
+                $sheet->setCellValue('Q' . $contador_fila, $p->codigo_sat);
+                $sheet->setCellValue('R' . $contador_fila, $p->serie);
+                $sheet->setCellValue('S' . $contador_fila, $p->np);
 
                 $contador_fila++;
             }
 
             // Ajustar ancho de columnas
-            foreach (range('A', 'Q') as $col) {
+            foreach (range('A', 'S') as $col) {
                 $sheet->getColumnDimension($col)->setAutoSize(true);
             }
 
