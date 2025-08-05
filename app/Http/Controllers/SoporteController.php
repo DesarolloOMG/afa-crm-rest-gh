@@ -244,6 +244,7 @@ class SoporteController extends Controller
         }
 
         return response()->json([
+            "code" => 200,
             "message" => "Documento creado correctamente con el siguiente número: " . $documento_garantia,
             "file" => $file_name,
             "name" => $file_name
