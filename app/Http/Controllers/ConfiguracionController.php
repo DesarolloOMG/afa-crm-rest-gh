@@ -613,33 +613,62 @@ class ConfiguracionController extends Controller
 
     public function guardar_almacen(Request $request)
     {
-        $data = json_decode($request->input('data'));
-        $json = array();
+        $almacen = $request->input('almacen');
 
-        if ($data->id == 0) {
-            $existe_almacen = Almacen::consulta(trim($data->almacen));
+        $existe_almacen = DB::table('almacen')->where('almacen', $almacen)->first();
 
-            if (empty($existe_almacen)) {
-                $id_almacen = Almacen::insertGetId(['almacen' => trim($data->almacen), 'codigo' => trim($data->codigo)]);
-            } else {
-                $id_almacen = $existe_almacen->id;
+        if($existe_almacen){
+            DB::table('almacen')->where('id', $existe_almacen->id)->update([
+                'status' => 1
+            ]);
 
-                Almacen::editar_datos_almacen($id_almacen, trim($data->almacen), trim($data->codigo));
-            }
+            $this->guardar_empresa_almacen($existe_almacen->id);
 
-            $json['message'] = "Almacén creado correctamente";
+            return response()->json([
+                'code' => 200,
+                'message' => "Almacen creado correctamente"
+            ]);
         } else {
-            $id_almacen = $data->id;
+            $id_almacen = DB::table('almacen')->insertGetId([
+                'almacen' => $almacen,
+                'status' => 1
+            ]);
 
-            Almacen::editar_datos_almacen($data->id, trim($data->almacen), trim($data->codigo));
+            $this->guardar_empresa_almacen($id_almacen);
 
-            $json['message'] = "Almacén actualizado correctamente";
+            return response()->json([
+                'code' => 200,
+                'message' => "Almacen creado correctamente",
+            ]);
         }
+    }
 
-        $json['code'] = 200;
-        $json['almacen'] = $id_almacen;
+    public function eliminar_almacen(Request $request)
+    {
+        $almacen = $request->input('id');
 
-        return $this->make_json($json);
+        DB::table('empresa_almacen')->where('id_almacen', $almacen)->where('id_empresa', 1)->delete();
+        DB::table('almacen')->where('id', $almacen)->delete();
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Almacen eliminado correctamente"
+        ]);
+    }
+
+    public function guardar_empresa_almacen($almacen){
+        $empresa_almacen = DB::table('empresa_almacen')->where('id_empresa', 1)->where('id_almacen', $almacen)->first();
+
+        if(!$empresa_almacen){
+            DB::table('empresa_almacen')->insert([
+                'id_empresa' => 1,
+                'id_almacen' => $almacen,
+                'id_impresora_picking' => 3,
+                'id_impresora_guia' => 4,
+                'id_impresora_etiqueta_envio' => 4,
+                'id_impresora_manifiesto' => 4,
+            ]);
+        }
     }
 
     public function paqueteria()
@@ -874,4 +903,5 @@ class ConfiguracionController extends Controller
         $trace = debug_backtrace()[0];
         return ('<br>' . $sis . $ini . $trace['line'] . $fin);
     }
+
 }

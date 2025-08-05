@@ -899,11 +899,10 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->delete('/{impresora_id}', 'ConfiguracionController@configuracion_sistema_impresora_delete');
             });
         });
-
-
         # Almacenes
         $router->get('almacen', 'ConfiguracionController@getAlmacenes');
         $router->post('almacen/guardar', 'ConfiguracionController@guardar_almacen');
+        $router->post('almacen/eliminar', 'ConfiguracionController@eliminar_almacen');
 
         # Paqueterias
         $router->get('paqueteria', 'ConfiguracionController@paqueteria');
