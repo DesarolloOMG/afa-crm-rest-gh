@@ -226,7 +226,7 @@ class SoporteController extends Controller
         $file_name = "";
         $file_data = "";
 
-        if ($data->tipo == DocumentoGarantiaTipo::DEVOLUCION_PARCIAL_GARANTIA) {
+        if ($data->tipo == 2 || $data->tipo == '2') {
             foreach ($data->productos as $producto) {
                 DB::table('documento_garantia_producto')->insert([
                     'id_garantia' => $documento_garantia,
@@ -264,7 +264,7 @@ class SoporteController extends Controller
         $paqueterias = Paqueteria::get();
         $causas = DocumentoGarantiaCausa::get();
 
-        $documentos = $this->garantia_devolucion_raw_data(DocumentoGarantiaFase::DEVOLUCION_PENDIENTE, DocumentoGarantiaTipo::DEVOLUCION);
+        $documentos = $this->garantia_devolucion_raw_data(11, DocumentoGarantiaTipo::DEVOLUCION);
 
         return response()->json([
             'causas' => $causas,
@@ -2730,13 +2730,10 @@ class SoporteController extends Controller
                                     INNER JOIN usuario ON documento_archivo.id_usuario = usuario.id
                                     WHERE documento_archivo.id_documento = " . $documento->id . " AND documento_archivo.status = 1");
 
-            $nota = DB::select("SELECT estado FROM garantia_nota_autorizacion WHERE documento = $documento->id ORDER BY created_at desc");
-
             $documento->seguimiento_venta = $seguimiento_venta;
             $documento->seguimiento_garantia = $seguimiento_garantia;
             $documento->productos = $productos;
             $documento->archivos = $archivos;
-            $documento->nota_pendiente = $nota ? $nota[0]->estado : 0;
         }
 
         return $documentos;

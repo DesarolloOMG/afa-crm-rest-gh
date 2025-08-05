@@ -988,35 +988,46 @@ class GeneralController extends Controller
 
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->input('usuario'));
-        $modulo = json_decode($request->input('modulo'));
 
-        $existe_pendiente = DB::table('garantia_nota_autorizacion')->where('documento', $data->documento)->where('estado', 1)->first();
+        $aplicar = DocumentoService::crearNotaCreditoConEgreso($data->documento, 0);
 
-        if ($existe_pendiente) {
+        if($aplicar->error){
             return response()->json([
-                "code" => 400,
-                "message" => "Autorizacion pendiente de esta Nota de Credito ya existe <br> Actualice la pestaña (F5)",
+                "code" => 500,
+                "message" => $aplicar->mensaje,
             ]);
         }
 
-        DB::table('garantia_nota_autorizacion')->insert([
-            'json' => $request->input('data'),
-            'usuario' => $auth,
-            'documento' => $data->documento,
-            'documento_garantia' => $data->documento_garantia,
-            'modulo' => $modulo,
-            'data' => $request->input('doc')
+        DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
+            'id_fase' => 100
         ]);
-
-        DB::table('seguimiento')->insert([
-            'id_documento' => $data->documento,
-            'id_usuario' => $auth,
-            'seguimiento' => "<p>Se envía la nota a autorización</p>"
-        ]);
+//        $existe_pendiente = DB::table('garantia_nota_autorizacion')->where('documento', $data->documento)->where('estado', 1)->first();
+//
+//        if ($existe_pendiente) {
+//            return response()->json([
+//                "code" => 400,
+//                "message" => "Autorizacion pendiente de esta Nota de Credito ya existe <br> Actualice la pestaña (F5)",
+//            ]);
+//        }
+//
+//        DB::table('garantia_nota_autorizacion')->insert([
+//            'json' => $request->input('data'),
+//            'usuario' => $auth,
+//            'documento' => $data->documento,
+//            'documento_garantia' => $data->documento_garantia,
+//            'modulo' => $modulo,
+//            'data' => $request->input('doc')
+//        ]);
+//
+//        DB::table('seguimiento')->insert([
+//            'id_documento' => $data->documento,
+//            'id_usuario' => $auth,
+//            'seguimiento' => "<p>Se envía la nota a autorización</p>"
+//        ]);
 
         return response()->json([
             "code" => 200,
-            "message" => "Nota de credito en autorización pendiente",
+            "message" => "Nota de credito creada: " . $aplicar->id_nota_credito,
         ]);
     }
 

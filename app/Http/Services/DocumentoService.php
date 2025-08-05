@@ -2595,7 +2595,7 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo_nota = 0): stdClass
+    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo = 0): stdClass
     {
         set_time_limit(0);
         $response = new stdClass();
@@ -2648,7 +2648,6 @@ class DocumentoService
                 'referencia' => 'Nota de crédito para el pedido ' . $documento_original_id,
                 'observacion' => $titulo_nota . $documento_original_id,
                 'status' => 1,
-                'fecha' => now(),
             ]);
 
             // 5. Por cada producto, crear movimiento de inventario y clonar series si aplica
@@ -2688,15 +2687,18 @@ class DocumentoService
                 'monto' => $total_nota,
                 'id_moneda' => $info_documento->id_moneda,
                 'tipo_cambio' => $info_documento->tipo_cambio,
-                'tipo_afectacion' => 2, // Egreso
+                'id_tipo_afectacion' => 2,
                 'monto' => $total_nota,
-                'fecha' => Carbon::now(),
-                'origen_tipo' => 1,
-                'entidad_origen' => $info_entidad->id,
-                'entidad_destino' => 5,
-                'destino_tipo' => 2,
-                'descripcion' => 'Egreso por nota de crédito ' . $documento_nota_id,
-                'referencia' => 'Documento original ' . $documento_original_id,
+                'fecha_operacion' => Carbon::now(),
+                'origen_tipo' => 2,
+                'entidad_origen' => 5,
+                'entidad_destino' => $info_entidad->id,
+                'destino_tipo' => 1,
+                'id_forma_pago' => 1,
+                'descripcion_pago' => 'Egreso por nota de crédito ' . $documento_nota_id,
+                'referencia_pago' => 'Documento original ' . $documento_original_id,
+                'comentarios' => 'Generado por devolución de pedido ' . $documento_original_id,
+                'creado_por' => $usuario ?? 1,
                 'status' => 1,
             ]);
 
@@ -2718,7 +2720,7 @@ class DocumentoService
                     'nota' => $documento_nota_id
                 ]);
 
-            $aplicar = InventarioService::aplicarInventario($documento_nota_id);
+            $aplicar = InventarioService::aplicarMovimiento($documento_nota_id);
 
             if($aplicar->error){
                 DB::rollBack();
