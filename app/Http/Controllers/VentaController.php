@@ -1485,6 +1485,7 @@ class VentaController extends Controller
                                 OR nivel.nivel = 'ADMINISTRADOR'
                                 AND usuario.id != 1
                                 GROUP BY usuario.id");
+
         return response()->json([
             'code' => 200,
             'usuarios' => $usuarios
@@ -1640,6 +1641,7 @@ class VentaController extends Controller
                     }
                 }
             }
+            InventarioService::aplicarMovimiento($documento_traspaso);
         } else {
             $productos = DB::select("SELECT
                                         movimiento.id,

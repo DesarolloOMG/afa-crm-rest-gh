@@ -139,7 +139,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('guardar', 'GeneralController@general_busqueda_venta_guardar');
                 $router->post('refacturacion', 'GeneralController@general_busqueda_venta_refacturacion');
                 $router->get('nota/{documento}', 'GeneralController@general_busqueda_venta_nota');
-                $router->post('autorizar-nota', 'GeneralController@general_busqueda_venta_autorizar_nota');
+                $router->post('nota-credito', 'GeneralController@general_busqueda_venta_crear_nota');
                 $router->post('autorizar-sin-venta', 'GeneralController@general_busqueda_sin_venta_autorizar_nota');
                 $router->post('autorizar-garantia', 'GeneralController@general_busqueda_venta_autorizar_nota_garantia');
             });

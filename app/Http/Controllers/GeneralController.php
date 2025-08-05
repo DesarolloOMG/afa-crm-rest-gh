@@ -926,69 +926,33 @@ class GeneralController extends Controller
         }
 
         // 3. Llamar al nuevo metodo de refacturación local (ajusta el nombre si es diferente)
-        $crear_refacturacion = MovimientoContableService::refacturar(
-            $data->documento,           // ID del documento a refacturar
-            $auth->id,                  // ID del usuario autenticado
-            $data->observacion ?? ''    // Observación opcional
-        );
+        $crear_refacturacion = DocumentoService::crearRefacturacion($data->documento);
 
         // 4. Si hay error en la refacturación, regresar respuesta de error
         if ($crear_refacturacion->error) {
             return response()->json([
                 'code'    => 500,
                 'message' => $crear_refacturacion->mensaje,
-                'raw'     => property_exists($crear_refacturacion, 'raw') ? $crear_refacturacion->raw : null,
-                'data'    => property_exists($crear_refacturacion, 'data') ? $crear_refacturacion->data : null
             ]);
         }
 
-        // 5. Si hay mensaje de seguimiento, lo guarda en la tabla seguimiento (opcional)
-        if (!empty($crear_refacturacion->seguimiento)) {
-            DB::table('seguimiento')->insert([
-                'id_documento' => $data->documento,
-                'id_usuario'   => $auth->id,
-                'seguimiento'  => $crear_refacturacion->seguimiento
-            ]);
-        }
-
-        // 6. Respuesta de éxito, mensaje y IDs relacionados
+        // 5. Respuesta de éxito, mensaje y IDs relacionados
         return response()->json([
-            'code'                  => 200,
-            'message'               => $crear_refacturacion->mensaje,
-            'documento_nuevo'       => $crear_refacturacion->documento_nuevo ?? null,
-            'documento_nota_credito'=> $crear_refacturacion->documento_nota_credito ?? null,
-            'movimiento_nc'         => $crear_refacturacion->movimiento_nc ?? null
+            'code'            => 200,
+            'message'         => $crear_refacturacion->mensaje,
+            'id_nota_credito' => $crear_refacturacion->id_nota_credito ?? null,
+            'id_nuevo_pedido' => $crear_refacturacion->id_nuevo_pedido ?? null,
+            'id_egreso'       => $crear_refacturacion->id_egreso ?? null,
         ]);
     }
 
-    public function general_busqueda_venta_autorizar_nota(Request $request)
+    public function general_busqueda_venta_crear_nota(Request $request)
     {
 
         $data = json_decode($request->input('data'));
-        $modulo = json_decode($request->input('modulo'));
         $auth = json_decode($request->auth);
 
-        $existe_pendiente = DB::table('documento_nota_autorizacion')->where('id_documento', $data)->where('estado', 1)->first();
-
-        if ($existe_pendiente) {
-            return response()->json([
-                "code" => 400,
-                "message" => "Autorizacion pendiente de esta Nota de Credito ya existe <br> Actualice la pestaña (F5)",
-            ]);
-        }
-
-        DB::table('documento_nota_autorizacion')->insert([
-            'id_documento' => $data,
-            'id_usuario' => $auth->id,
-            'modulo' => $modulo
-        ]);
-
-
-        DB::table('seguimiento')->insert([
-            'id_documento' => $data,
-            'id_usuario' => $auth->id,
-            'seguimiento' => "<p>Se envía la nota a autorización</p>"
-        ]);
+        $crear_nota = DocumentoService::crearNotaCreditoConEgreso($data);
 
         return response()->json([
             "code" => 200,
@@ -1158,7 +1122,7 @@ class GeneralController extends Controller
         }
 
         # Se crear el documento nota de credito en el CRM para hacer el movimiento de series
-        $crear_nota_credito = DocumentoService::crearNotaCredito($documento, 1);
+        $crear_nota_credito = DocumentoService::crearNotaCreditoConEgreso($documento, 1);
 
         if ($crear_nota_credito->error) {
             return response()->json([

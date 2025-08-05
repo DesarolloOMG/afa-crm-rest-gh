@@ -2,6 +2,7 @@
 
 namespace App\Http\Services;
 
+use Carbon\Carbon;
 use Exception;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -323,7 +324,7 @@ class MovimientoContableService
         // 16. Marca el documento original como refacturado
         DB::table('documento')->where('id', $documento)->update([
             'refacturado' => 1,
-            'refacturado_at' => now()
+            'refacturado_at' => Carbon::now()
         ]);
 
         // 17. Crea seguimientos (logs internos para auditoría)

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
+use App\Http\Services\DocumentoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\WhatsAppService;
@@ -122,7 +123,6 @@ class SoporteController extends Controller
                     "documento.id_fase",
                     "documento.factura_serie",
                     "documento.factura_folio",
-                    "empresa.bd"
                 )
                 ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
                 ->join("movimiento", "documento.id", "=", "movimiento.id_documento")
@@ -491,9 +491,13 @@ class SoporteController extends Controller
                     }
                 }
 
-                $seguimiento_traspaso .= "<p>Traspaso creado correctamente con el ID " . $crear_traspaso->id . ".</p>";
-
-                $seguimiento_traspaso .= "<p>Traspaso con el ID " . $crear_traspaso->id . " afectado correctamente.</p>";
+                $seguimiento_traspaso .= "<p>Traspaso creado correctamente con el ID " . $documento_traspaso . ".</p>";
+                $afectar = InventarioService::aplicarMovimiento($documento_traspaso);
+                if($afectar->error){
+                    $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . "no se pudo afectar correctamente.</p>";
+                } else {
+                    $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . " afectado correctamente.</p>";
+                }
 
                 DB::table('seguimiento')->insert([
                     'id_documento' => $data->documento,
@@ -1103,7 +1107,7 @@ class SoporteController extends Controller
                     'id_moneda' => 3,
                     'id_paqueteria' => 6,
                     'id_fase' => 100,
-                    'factura_folio' => $response_traspaso->id,
+                    'factura_folio' => '',
                     'tipo_cambio' => 1,
                     'referencia' => 'N/A',
                     'info_extra' => 'N/A',
@@ -1166,6 +1170,8 @@ class SoporteController extends Controller
                         }
                     }
                 }
+
+                InventarioService::aplicarMovimiento($documento_traspaso);
 
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
                     'id_fase'           => ($es_devolucion_parcial) ? 100 : 7
@@ -1426,6 +1432,8 @@ class SoporteController extends Controller
                         }
                     }
                 }
+
+                $aplicar = InventarioService::aplicarMovimiento($documento_traspaso);
 
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
                     'id_fase' => 99

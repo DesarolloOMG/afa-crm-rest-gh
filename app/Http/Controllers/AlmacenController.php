@@ -3724,7 +3724,7 @@ class AlmacenController extends Controller
             ]);
         }
 
-        $crear_nota_credito = DocumentoService::crearNotaCredito($existe_factura->factura_folio, 1);
+        $crear_nota_credito = DocumentoService::crearNotaCreditoConEgreso($existe_factura->factura_folio, 1);
 
         if ($crear_nota_credito->error) {
             return response()->json([

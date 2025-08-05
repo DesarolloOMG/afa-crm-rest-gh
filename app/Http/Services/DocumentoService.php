@@ -9,6 +9,7 @@ namespace App\Http\Services;
 
 use App\Models\Enums\DocumentoFase;
 use App\Models\Enums\DocumentoTipo;
+use Carbon\Carbon;
 use DOMDocument;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
@@ -1600,7 +1601,7 @@ class DocumentoService
     /**
      * @throws ConnectionErrorException
      */
-    public static function crearRefacturacion($documento, $option): ?stdClass
+    public static function crearRefacturacionAnterior($documento, $option): ?stdClass
     {
         set_time_limit(0);
         $response = new stdClass();
@@ -2088,6 +2089,197 @@ class DocumentoService
         return $response;
     }
 
+    public static function crearRefacturacion($documento_original_id): stdClass
+    {
+        set_time_limit(0);
+        $response = new stdClass();
+        DB::beginTransaction();
+
+        try {
+            // 1. Validar documento original
+            $documento = DB::table('documento')->where('id', $documento_original_id)->where('status', 1)->first();
+            if (!$documento) throw new Exception('Documento original no encontrado o cancelado');
+            if ($documento->refacturado) throw new Exception('El documento ya fue refacturado');
+
+            // 2. Obtener productos y entidad original
+            $productos = DB::table('movimiento')->where('id_documento', $documento_original_id)->get();
+            if ($productos->isEmpty()) throw new Exception('No se encontraron productos en el documento original');
+            $entidad_original = DB::table('documento_entidad')->where('id', $documento->id_entidad)->first();
+            if (!$entidad_original) throw new Exception('Entidad original no encontrada');
+
+            // 3. Buscar el id de "Público en General" por RFC
+            $id_publico_general = 3;
+
+            // --- 4. Crear la NOTA DE CRÉDITO ---
+            $nota_id = DB::table('documento')->insertGetId([
+                'id_almacen_principal_empresa' => $documento->id_almacen_principal_empresa,
+                'id_tipo' => 6, // Nota de crédito
+                'id_periodo' => $documento->id_periodo,
+                'id_cfdi' => $documento->id_cfdi,
+                'id_marketplace_area' => $documento->id_marketplace_area,
+                'id_usuario' => 1,
+                'id_moneda' => $documento->id_moneda,
+                'id_fase' => $documento->id_fase,
+                'tipo_cambio' => $documento->tipo_cambio,
+                'referencia' => 'Nota de crédito por refacturación de pedido ' . $documento_original_id,
+                'observacion' => 'Nota de crédito generada por refacturación',
+                'status' => 1
+            ]);
+
+            $total_nota = 0;
+            foreach ($productos as $producto) {
+                // Insertar movimiento en nota de crédito
+                $mov_nota_id = DB::table('movimiento')->insertGetId([
+                    'id_documento' => $nota_id,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio,
+                    'garantia' => $producto->garantia ?? 0,
+                    'modificacion' => $producto->modificacion ?? 'N/A',
+                    'regalo' => $producto->regalo ?? 0
+                ]);
+                $total_nota += ($producto->precio * $producto->cantidad);
+
+                // Clonar series y marcar disponibles
+                $series = DB::table('movimiento_producto')->where('id_movimiento', $producto->id)->get();
+                foreach ($series as $serie) {
+                    DB::table('producto')->where('id', $serie->id_producto)->update(['status' => 1]);
+                    DB::table('movimiento_producto')->insert([
+                        'id_movimiento' => $mov_nota_id,
+                        'id_producto' => $serie->id_producto
+                    ]);
+                }
+            }
+
+            // Afectar inventario para la nota de crédito
+            InventarioService::aplicarMovimiento($nota_id);
+
+            // --- 5. Crear egreso y saldar nota de crédito ---
+            $egreso_id = DB::table('movimiento_contable')->insertGetId([
+                'monto' => $total_nota,
+                'id_moneda' => $documento->id_moneda,
+                'tipo_afectacion' => 2, // Egreso
+                'id_entidad' => $entidad_original->id,
+                'origen_tipo' => 1,
+                'destino_tipo' => 2,
+                'descripcion' => 'Egreso por nota de crédito refacturación ' . $nota_id,
+                'referencia' => 'Refacturación de documento ' . $documento_original_id,
+                'status' => 1,
+            ]);
+            DB::table('movimiento_contable_documento')->insert([
+                'id_movimiento_contable' => $egreso_id,
+                'id_documento' => $nota_id,
+                'monto_aplicado' => $total_nota,
+                'moneda' => $documento->id_moneda,
+                'tipo_cambio' => $documento->tipo_cambio,
+                'parcialidad' => 1,
+                'saldo_documento' => 0,
+                'id_nota' => $nota_id
+            ]);
+
+            // Saldar el pedido original con la nota de crédito
+            DB::table('movimiento_contable_documento')->insert([
+                'id_movimiento_contable' => $egreso_id,
+                'id_documento' => $documento_original_id,
+                'monto_aplicado' => $total_nota,
+                'moneda' => $documento->id_moneda,
+                'tipo_cambio' => $documento->tipo_cambio,
+                'parcialidad' => 1,
+                'saldo_documento' => 0,
+                'id_nota' => $nota_id
+            ]);
+
+            // --- 6. Crear el nuevo pedido con la entidad ORIGINAL ---
+            $nuevo_pedido_id = DB::table('documento')->insertGetId([
+                'id_almacen_principal_empresa' => $documento->id_almacen_principal_empresa,
+                'id_tipo' => $documento->id_tipo,
+                'id_periodo' => $documento->id_periodo,
+                'id_cfdi' => $documento->id_cfdi,
+                'id_marketplace_area' => $documento->id_marketplace_area,
+                'id_usuario' => $documento->id_usuario,
+                'id_moneda' => $documento->id_moneda,
+                'id_fase' => $documento->id_fase,
+                'id_entidad' => $documento->id_entidad, // Se asigna la entidad ORIGINAL
+                'tipo_cambio' => $documento->tipo_cambio,
+                'referencia' => $documento->referencia,
+                'observacion' => 'Documento generado por refacturación',
+                'status' => 1,
+            ]);
+
+            $total_nuevo = 0;
+            foreach ($productos as $producto) {
+                $mov_nuevo_id = DB::table('movimiento')->insertGetId([
+                    'id_documento' => $nuevo_pedido_id,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio,
+                    'garantia' => $producto->garantia ?? 0,
+                    'modificacion' => $producto->modificacion ?? 'N/A',
+                    'regalo' => $producto->regalo ?? 0
+                ]);
+                $total_nuevo += ($producto->precio * $producto->cantidad);
+
+                // Clonar series y marcar como ocupadas/salidas
+                $series = DB::table('movimiento_producto')->where('id_movimiento', $producto->id)->get();
+                foreach ($series as $serie) {
+                    DB::table('producto')->where('id', $serie->id_producto)->update(['status' => 2]); // Status de vendido/salida
+                    DB::table('movimiento_producto')->insert([
+                        'id_movimiento' => $mov_nuevo_id,
+                        'id_producto' => $serie->id_producto
+                    ]);
+                }
+            }
+
+            // Afectar inventario para el nuevo pedido
+            InventarioService::aplicarMovimiento($nuevo_pedido_id);
+
+            // --- 7. Saldar el nuevo pedido con el ingreso original ---
+            $ingreso_original = DB::table('movimiento_contable_documento')
+                ->where('id_documento', $documento_original_id)
+                ->whereNull('id_nota') // Solo ingresos, no notas
+                ->orderBy('id', 'asc')
+                ->first();
+
+            if (!$ingreso_original) throw new Exception('No se encontró ingreso original para saldar el nuevo pedido');
+
+            DB::table('movimiento_contable_documento')->insert([
+                'id_movimiento_contable' => $ingreso_original->id_movimiento_contable,
+                'id_documento' => $nuevo_pedido_id,
+                'monto_aplicado' => $total_nuevo,
+                'moneda' => $documento->id_moneda,
+                'tipo_cambio' => $documento->tipo_cambio,
+                'parcialidad' => 1,
+                'saldo_documento' => 0,
+                'id_nota' => null // El saldo es por ingreso original
+            ]);
+
+            // --- 8. Cambiar la entidad del pedido original a "Público en General" y marcar refacturado ---
+            DB::table('documento')->where('id', $documento_original_id)->update([
+                'id_entidad' => $id_publico_general,
+                'refacturado' => 1,
+                'refacturado_at' => Carbon::now(),
+                'nota' => $nota_id,
+                'status' => 0 // Si quieres que siga visible, podrías solo marcar refacturado y dejar status=1
+            ]);
+
+            DB::commit();
+
+            $response->error = 0;
+            $response->mensaje = 'Refacturación exitosa';
+            $response->id_nota_credito = $nota_id;
+            $response->id_nuevo_pedido = $nuevo_pedido_id;
+            $response->id_egreso = $egreso_id;
+            return $response;
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $response->error = 1;
+            $response->mensaje = $e->getMessage();
+            return $response;
+        }
+    }
+
+
     public static function crearMovimiento($documento): stdClass
     {
         set_time_limit(0);
@@ -2099,38 +2291,6 @@ class DocumentoService
 
         return $response;
     }
-
-//    public static function crearMovimientoFlujo($pago, $bd)
-//    {
-//        set_time_limit(0);
-//        $response = new stdClass();
-//
-//        $tiene_documento = DB::select("SELECT id_documento FROM documento_pago_re WHERE id_pago = " . $pago->id);
-//
-//        if ($pago->tipo == 1 || $pago->tipo == 0) {
-//            # Se busca al cliente por RFC para verificar que exista
-//            $entidad = $pago->tipo == 1 ? $pago->origen_entidad : $pago->destino_entidad;
-//            $entidad_tipo = $pago->tipo == 1 ? $pago->entidad_origen : $pago->entidad_destino;
-//
-//            $existe_entidad = new stdClass();
-//            $existe_entidad->razon = "";
-//            $existe_entidad->nombre_oficial = "";
-//
-//            if (!is_numeric($entidad) && ($entidad_tipo == 1 || $entidad_tipo == 2)) {
-//                $tipo_consulta = $pago->tipo == 1 ? 'Clientes' : (!empty($tiene_documento)) ? 'Clientes' : 'Proveedores';
-//                $existe_entidad = @json_decode(file_get_contents(config('webservice.url') . 'Consultas/' . $tipo_consulta . '/' . $bd . '/RFC/' . $entidad));
-//
-//                if (empty($existe_entidad)) {
-//                    $response->error = 1;
-//                    $response->mensaje = "No se encontró la entidad con el RFC " . $entidad . " para generar el movimiento." . self::logVariableLocation();
-//
-//                    return $response;
-//                }
-//
-//                $existe_entidad = $existe_entidad[0];
-//            }
-//        }
-//    }
 
     public static function crearNotaCredito($documento, $tipo = 0): stdClass
     {
@@ -2277,13 +2437,6 @@ class DocumentoService
 
         $response->error = 0;
         $response->data = $info_documento;
-
-        //Fix Entidades
-//        $crear_entidad = self::crearEntidad($info_entidad, $empresa_movimiento);
-//
-//        if ($crear_entidad->error) {
-//            return $crear_entidad;
-//        }
 
         $folio_factura = ($info_documento->factura_serie == 'N/A') ? $info_documento->id : $info_documento->factura_folio;
 
@@ -2441,6 +2594,153 @@ class DocumentoService
 
         return $response;
     }
+
+    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo_nota = 0): stdClass
+    {
+        set_time_limit(0);
+        $response = new stdClass();
+        $titulo_nota = $tipo == 0 ? "Nota de credito por devolucion del pedido " : ($tipo == 1 ? "Nota de credito para el pedido "
+            : ($tipo == 2 ? "Nota de credito por refacturacion del pedido " : "Nota de credito por cancelacion del pedido "));
+
+        DB::beginTransaction();
+
+        try {
+            // 1. Obtener info del documento original (venta o pedido)
+            $info_documento = DB::table('documento')
+                ->where('id', $documento_original_id)
+                ->where('status', 1)
+                ->first();
+
+            if (!$info_documento) {
+                throw new Exception("Documento original no encontrado o cancelado.");
+            }
+
+            // 2. Consultar info de la entidad/cliente
+            $info_entidad = DB::table('documento_entidad')
+                ->where('id', $info_documento->id_entidad)
+                ->first();
+
+            if (!$info_entidad) {
+                throw new Exception("Información de entidad no encontrada.");
+            }
+
+            // 3. Consultar productos originales
+            $productos = DB::table('movimiento')
+                ->where('id_documento', $documento_original_id)
+                ->get();
+
+            if ($productos->isEmpty()) {
+                throw new Exception("No se encontraron productos en el documento original.");
+            }
+
+            // 4. Crear documento tipo NOTA DE CRÉDITO (id_tipo = 6)
+            $documento_nota_id = DB::table('documento')->insertGetId([
+                'id_almacen_principal_empresa' => $info_documento->id_almacen_principal_empresa,
+                'id_tipo' => 6, // Nota de crédito
+                'id_periodo' => $info_documento->id_periodo,
+                'id_cfdi' => $info_documento->id_cfdi,
+                'id_marketplace_area' => $info_documento->id_marketplace_area,
+                'id_usuario' => 1,
+                'id_entidad' => $info_entidad->id,
+                'id_moneda' => $info_documento->id_moneda,
+                'id_fase' => $info_documento->id_fase, // Puedes ajustar esto
+                'tipo_cambio' => $info_documento->tipo_cambio,
+                'referencia' => 'Nota de crédito para el pedido ' . $documento_original_id,
+                'observacion' => $titulo_nota . $documento_original_id,
+                'status' => 1,
+                'fecha' => now(),
+            ]);
+
+            // 5. Por cada producto, crear movimiento de inventario y clonar series si aplica
+            $total_nota = 0;
+            foreach ($productos as $producto) {
+                // Insertar movimiento de inventario (puede ser entrada/salida según tipo_nota)
+                $movimiento_id = DB::table('movimiento')->insertGetId([
+                    'id_documento' => $documento_nota_id,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio,
+                    'garantia' => $producto->garantia ?? 0,
+                    'modificacion' => $producto->modificacion ?? 'N/A',
+                    'regalo' => $producto->regalo ?? 0
+                ]);
+                $total_nota += ($producto->precio * $producto->cantidad);
+
+                // Series/lotes: clonar y/o actualizar status según tipo
+                $series = DB::table('movimiento_producto')
+                    ->where('id_movimiento', $producto->id)
+                    ->get();
+
+                foreach ($series as $serie) {
+                    DB::table('producto')->where('id', $serie->id_producto)->update([
+                        'status' => 1
+                    ]);
+                    // Relacionar la serie con el nuevo movimiento de la nota de crédito
+                    DB::table('movimiento_producto')->insert([
+                        'id_movimiento' => $movimiento_id,
+                        'id_producto' => $serie->id_producto
+                    ]);
+                }
+            }
+
+            // 6. Crear egreso en movimiento_contable (tipo_egreso = 2)
+            $egreso_id = DB::table('movimiento_contable')->insertGetId([
+                'monto' => $total_nota,
+                'id_moneda' => $info_documento->id_moneda,
+                'tipo_cambio' => $info_documento->tipo_cambio,
+                'tipo_afectacion' => 2, // Egreso
+                'monto' => $total_nota,
+                'fecha' => Carbon::now(),
+                'origen_tipo' => 1,
+                'entidad_origen' => $info_entidad->id,
+                'entidad_destino' => 5,
+                'destino_tipo' => 2,
+                'descripcion' => 'Egreso por nota de crédito ' . $documento_nota_id,
+                'referencia' => 'Documento original ' . $documento_original_id,
+                'status' => 1,
+            ]);
+
+            // 7. Relacionar el egreso con la nota de crédito (saldar documento)
+            DB::table('movimiento_contable_documento')->insert([
+                'id_movimiento_contable' => $egreso_id,
+                'id_documento' => $documento_nota_id,
+                'monto_aplicado' => $total_nota,
+                'moneda' => $info_documento->id_moneda,
+                'tipo_cambio' => $info_documento->tipo_cambio,
+                'parcialidad' => 1,
+                'saldo_documento' => 0 // Documento saldado al 100%
+            ]);
+
+            // 8. Actualizar documento original: guardar el id de la nota de crédito
+            DB::table('documento')
+                ->where('id', $documento_original_id)
+                ->update([
+                    'nota' => $documento_nota_id
+                ]);
+
+            $aplicar = InventarioService::aplicarInventario($documento_nota_id);
+
+            if($aplicar->error){
+                DB::rollBack();
+                return $aplicar;
+            }
+
+            DB::commit();
+
+            $response->error = 0;
+            $response->id_nota_credito = $documento_nota_id;
+            $response->id_egreso = $egreso_id;
+            $response->mensaje = 'Nota de crédito y egreso creados correctamente';
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            $response->error = 1;
+            $response->mensaje = $e->getMessage();
+        }
+
+        return $response;
+    }
+
 
     public static function crearEntidad($entidad, $bd, $tipo = 1): stdClass
     { # Tipo 1 es clientes, 2 proveedores
