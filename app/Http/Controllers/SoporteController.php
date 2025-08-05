@@ -2896,6 +2896,7 @@ class SoporteController extends Controller
                                                 documento_entidad.correo
                                             FROM documento_garantia
                                             INNER JOIN documento_garantia_re ON documento_garantia.id = documento_garantia_re.id_garantia
+                                            INNER JOIN documento ON documento_garantia_re.id_documento = documento.id
                                             INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                             WHERE documento_garantia.id = " . $documento . "");
 
