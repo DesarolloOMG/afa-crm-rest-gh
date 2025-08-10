@@ -194,7 +194,7 @@ class DeveloperController extends Controller
             ->whereIn('id_tipo', [0, 2, 3, 4, 5, 11])
             ->whereIn('id_fase', [5, 6, 100, 607])
             ->where('status', 1)
-            ->orderBy('created_at', 'asc')
+            ->orderBy('id', 'asc')
             ->get();
 
         foreach ($documentos as $documento) {
