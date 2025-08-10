@@ -191,8 +191,8 @@ class DeveloperController extends Controller
 
         $documentos = DB::table('documento')
             ->select('id', 'id_tipo', 'autorizado')
-            ->whereIn('id_tipo', [2, 4, 11, 6])
-            ->whereIn('id_fase', [5, 6, 100, 607])
+            ->whereIn('id_tipo', [0, 2, 3, 4, 5, 6, 11])
+            ->whereIn('id_fase', [5, 6, 100, 606, 607])
             ->where('status', 1)
             ->orderBy('id', 'asc')
             ->get();
@@ -202,13 +202,24 @@ class DeveloperController extends Controller
                 if ($documento->id_tipo == 5) {
                     if ((int) $documento->autorizado === 1) {
                         $aplicar = InventarioService::aplicarMovimiento($documento->id);
-                        if (!empty($aplicar->error)) {
+                        if ($aplicar->error) {
                             $errores[] =  "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
                         }
                     }
+                } else if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
+                    $movimiento = DB::table('movimiento')->where('id_documento', $documento->id)->first();
+                     if ($movimiento) {
+                         $recepcion = DB::table('documento_recepcion')->where('id_movimiento', $movimiento->id)->first();
+                         if ($recepcion) {
+                             $aplicar = InventarioService::procesarRecepcion($recepcion->id_movimiento, $recepcion->cantidad);
+                             if ($aplicar->error) {
+                                 $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
+                             }
+                         }
+                     }
                 } else {
                     $aplicar = InventarioService::aplicarMovimiento($documento->id);
-                    if (!empty($aplicar->error)) {
+                    if ($aplicar->error) {
                         $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
                     }
                 }
