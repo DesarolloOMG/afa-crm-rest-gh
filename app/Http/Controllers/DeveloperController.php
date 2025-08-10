@@ -203,13 +203,13 @@ class DeveloperController extends Controller
                     if ((int) $documento->autorizado === 1) {
                         $aplicar = InventarioService::aplicarMovimiento($documento->id);
                         if (!empty($aplicar->error)) {
-                            $errores[] = $aplicar->mensaje ?? "Error en documento {$documento->id}";
+                            $errores[] =  "Error en documento {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
                         }
                     }
                 } else {
                     $aplicar = InventarioService::aplicarMovimiento($documento->id);
                     if (!empty($aplicar->error)) {
-                        $errores[] = $aplicar->mensaje ?? "Error en documento {$documento->id}";
+                        $errores[] = "Error en documento {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
                     }
                 }
             } catch (\Throwable $e) {
