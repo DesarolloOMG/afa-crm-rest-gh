@@ -191,7 +191,7 @@ class DeveloperController extends Controller
 
         $documentos = DB::table('documento')
             ->select('id', 'id_tipo', 'autorizado')
-            ->whereIn('id_tipo', [0, 3])
+            ->whereIn('id_tipo', [0, 3, 5])
             ->whereIn('id_fase', [5, 6, 100, 607])
             ->where('status', 1)
             ->orderBy('id', 'asc')
