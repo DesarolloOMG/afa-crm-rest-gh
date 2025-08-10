@@ -181,38 +181,66 @@ class DeveloperController extends Controller
 
         $documentos = DB::table('documento')
             ->select('id', 'id_tipo', 'autorizado', 'id_fase')
-            ->whereIn('id_tipo', [0,2,3,4,5,6,11])
+            ->whereIn('id_tipo', [0, 2, 3, 4, 5, 6, 11])
             ->whereIn('id_fase', [5, 6, 100, 606, 607])
             ->where('status', 1)
             ->orderBy('created_at', 'asc')
             ->get();
 
         foreach ($documentos as $documento) {
+            // 1. Inicia una transacción dedicada para CADA documento.
+            DB::beginTransaction();
+
             try {
+                // 2. Se aplica la lógica condicional que tenías originalmente.
                 if ((int)$documento->id_tipo === 0 && (int)$documento->id_fase === 606) {
+                    // CASO ESPECIAL: Documento de Recepción
                     $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
-                     if ($movimientos) {
-                         foreach ($movimientos as $mov) {
-                             $recepcion = DB::table('documento_recepcion')->where('id_movimiento', $mov->id)->first();
-                             if ($recepcion) {
-                                 $aplicar = InventarioService::procesarRecepcion($recepcion->id_movimiento, $recepcion->cantidad);
-                                 if ($aplicar->error) {
-                                     $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
-                                 } else {
-                                     $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
-                                 }
-                             }
-                         }
-                     }
-                } else {
-                    $aplicar = InventarioService::aplicarMovimiento($documento->id);
-                    if ($aplicar->error) {
-                        $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
+                    $todoOk = true;
+                    $mensajes = [];
+
+                    if ($movimientos->isNotEmpty()) {
+                        foreach ($movimientos as $mov) {
+                            $recepcion = DB::table('documento_recepcion')->where('id_movimiento', $mov->id)->first();
+                            if ($recepcion) {
+                                // Se llama al servicio para procesar la recepción.
+                                $aplicar = InventarioService::procesarRecepcion($recepcion->id_movimiento, $recepcion->cantidad);
+                                $mensajes[] = $aplicar->mensaje;
+
+                                if ($aplicar->error) {
+                                    $todoOk = false;
+                                    break; // Si una recepción falla, no continuamos con las demás de este documento.
+                                }
+                            }
+                        }
+                    }
+
+                    if ($todoOk) {
+                        DB::commit(); // Confirma la transacción si todas las recepciones del documento fueron exitosas.
+                        $aplicados[] = "Documento: {$documento->id} - " . implode(', ', $mensajes);
                     } else {
-                        $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
+                        DB::rollBack(); // Revierte todo si al menos una recepción falló.
+                        $errores[] = "Error en documento: {$documento->id} - " . implode(', ', $mensajes);
+                    }
+
+                } else {
+                    // CASO GENERAL: El resto de los documentos.
+                    // Se llama a tu función original sin ninguna modificación.
+                    $aplicar = InventarioService::aplicarMovimiento($documento->id);
+
+                    if ($aplicar->error) {
+                        // Si el servicio reporta un error, revertimos la transacción.
+                        DB::rollBack();
+                        $errores[] = "Error en documento: {$documento->id} - {$aplicar->message}";
+                    } else {
+                        // Si reporta éxito, confirmamos la transacción.
+                        DB::commit();
+                        $aplicados[] = "Documento: {$documento->id} - {$aplicar->message}";
                     }
                 }
             } catch (\Throwable $e) {
+                // 3. Si ocurre una excepción inesperada, siempre se revierte la transacción.
+                DB::rollBack();
                 $errores[] = "Excepción en documento {$documento->id}: " . $e->getMessage();
             }
         }
@@ -220,13 +248,12 @@ class DeveloperController extends Controller
         $hayErrores = !empty($errores);
 
         return response()->json([
-            'code'        => $hayErrores ? 207 : 200, // 207 Multi-Status si hubo errores
-            'message'     => $hayErrores ? 'Procesado con errores' : 'Ya quedó',
+            'code'        => $hayErrores ? 207 : 200,
+            'message'     => $hayErrores ? 'Procesado con errores' : 'Proceso de recálculo masivo completado.',
             'errors'      => $errores,
             'aplicados'   => $aplicados,
-            'aplicados_count'=> count($aplicados),
-            'errors_count'=> count($errores),
-            'documentos' => $documentos,
+            'aplicados_count' => count($aplicados),
+            'errors_count' => count($errores),
         ], $hayErrores ? 207 : 200);
     }
 }
