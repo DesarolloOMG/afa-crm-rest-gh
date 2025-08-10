@@ -178,82 +178,133 @@ class DeveloperController extends Controller
 
         $errores = [];
         $aplicados = [];
+        $log_preparacion = [];
 
-        $documentos = DB::table('documento')
+        // --- FASE 1: PREPARACIÓN DEL TERRENO ---
+        $log_preparacion[] = "Iniciando Fase 1: Preparación de existencias y costos...";
+        DB::beginTransaction();
+        try {
+            // Obtenemos todos los documentos que se van a procesar.
+            $documentos = DB::table('documento')
+                ->whereIn('id_tipo', [0, 2, 3, 4, 5, 6, 11])
+                ->whereIn('id_fase', [5, 6, 100, 606, 607])
+                ->where('status', 1)
+                ->select('id', 'id_almacen_principal_empresa')
+                ->orderBy('created_at', 'asc')
+                ->get();
+
+            $idsDocumentos = $documentos->pluck('id');
+
+            // Obtenemos una lista única de todos los productos (modelos) que serán afectados.
+            $modelosAfectados = DB::table('movimiento')
+                ->whereIn('id_documento', $idsDocumentos)
+                ->select('id_modelo')
+                ->distinct()
+                ->get();
+
+            $almacenesAfectados = $documentos->pluck('id_almacen_principal_empresa')->unique()->filter();
+
+            // Para cada producto y almacén, nos aseguramos de que exista su registro.
+            foreach ($modelosAfectados as $modelo) {
+                // Asegurar registro de costo
+                $costoExistente = DB::table('modelo_costo')->where('id_modelo', $modelo->id_modelo)->first();
+                if (!$costoExistente) {
+                    DB::table('modelo_costo')->insert([
+                        'id_modelo'      => $modelo->id_modelo,
+                        'costo_inicial'  => 0,
+                        'costo_promedio' => 0,
+                        'ultimo_costo'   => 0
+                    ]);
+                    $log_preparacion[] = "Creado registro de costo para modelo: {$modelo->id_modelo}";
+                }
+
+                // Asegurar registro de existencia en cada almacén
+                foreach ($almacenesAfectados as $almacenId) {
+                    $existenciaExistente = DB::table('modelo_existencias')
+                        ->where('id_modelo', $modelo->id_modelo)
+                        ->where('id_almacen', $almacenId)
+                        ->first();
+
+                    if (!$existenciaExistente) {
+                        DB::table('modelo_existencias')->insert([
+                            'id_modelo'      => $modelo->id_modelo,
+                            'id_almacen'     => $almacenId,
+                            'stock_inicial'  => 0,
+                            'stock'          => 0,
+                            'stock_anterior' => 0
+                        ]);
+                        $log_preparacion[] = "Creado registro de existencia para modelo {$modelo->id_modelo} en almacén {$almacenId}";
+                    }
+                }
+            }
+
+            DB::commit();
+            $log_preparacion[] = "Fase 1 completada exitosamente.";
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'code' => 500,
+                'message' => 'Error crítico durante la fase de preparación.',
+                'error_details' => $e->getMessage()
+            ], 500);
+        }
+
+        // --- FASE 2: PROCESAMIENTO DE DOCUMENTOS (El código que ya teníamos) ---
+        // Obtenemos los documentos de nuevo con todos sus campos necesarios.
+        $documentosParaProcesar = DB::table('documento')
             ->select('id', 'id_tipo', 'autorizado', 'id_fase')
-            ->whereIn('id_tipo', [0, 2, 3, 4, 5, 6, 11])
-            ->whereIn('id_fase', [5, 6, 100, 606, 607])
-            ->where('status', 1)
+            ->whereIn('id', $idsDocumentos)
             ->orderBy('created_at', 'asc')
             ->get();
 
-        foreach ($documentos as $documento) {
-            // 1. Inicia una transacción dedicada para CADA documento.
+        foreach ($documentosParaProcesar as $documento) {
             DB::beginTransaction();
-
             try {
-                // 2. Se aplica la lógica condicional que tenías originalmente.
+                // Se aplica la lógica condicional original
                 if ((int)$documento->id_tipo === 0 && (int)$documento->id_fase === 606) {
-                    // CASO ESPECIAL: Documento de Recepción
+                    // Lógica de Recepción...
                     $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
                     $todoOk = true;
-                    $mensajes = [];
+                    $mensajes = ['Recepción procesada'];
 
                     if ($movimientos->isNotEmpty()) {
                         foreach ($movimientos as $mov) {
                             $recepcion = DB::table('documento_recepcion')->where('id_movimiento', $mov->id)->first();
                             if ($recepcion) {
-                                // Se llama al servicio para procesar la recepción.
                                 $aplicar = InventarioService::procesarRecepcion($recepcion->id_movimiento, $recepcion->cantidad);
-                                $mensajes[] = $aplicar->mensaje;
-
                                 if ($aplicar->error) {
                                     $todoOk = false;
-                                    break; // Si una recepción falla, no continuamos con las demás de este documento.
+                                    $mensajes = [$aplicar->mensaje];
+                                    break;
                                 }
                             }
                         }
                     }
 
-                    if ($todoOk) {
-                        DB::commit(); // Confirma la transacción si todas las recepciones del documento fueron exitosas.
-                        $aplicados[] = "Documento: {$documento->id} - " . implode(', ', $mensajes);
-                    } else {
-                        DB::rollBack(); // Revierte todo si al menos una recepción falló.
-                        $errores[] = "Error en documento: {$documento->id} - " . implode(', ', $mensajes);
-                    }
+                    if ($todoOk) { DB::commit(); $aplicados[] = "Documento: {$documento->id} - " . implode(', ', $mensajes); }
+                    else { DB::rollBack(); $errores[] = "Error en documento: {$documento->id} - " . implode(', ', $mensajes); }
 
                 } else {
-                    // CASO GENERAL: El resto de los documentos.
-                    // Se llama a tu función original sin ninguna modificación.
+                    // Lógica General...
                     $aplicar = InventarioService::aplicarMovimiento($documento->id);
-
-                    if ($aplicar->error) {
-                        // Si el servicio reporta un error, revertimos la transacción.
-                        DB::rollBack();
-                        $errores[] = "Error en documento: {$documento->id} - {$aplicar->message}";
-                    } else {
-                        // Si reporta éxito, confirmamos la transacción.
-                        DB::commit();
-                        $aplicados[] = "Documento: {$documento->id} - {$aplicar->message}";
-                    }
+                    if ($aplicar->error) { DB::rollBack(); $errores[] = "Error en documento: {$documento->id} - {$aplicar->message}"; }
+                    else { DB::commit(); $aplicados[] = "Documento: {$documento->id} - {$aplicar->message}"; }
                 }
             } catch (\Throwable $e) {
-                // 3. Si ocurre una excepción inesperada, siempre se revierte la transacción.
                 DB::rollBack();
                 $errores[] = "Excepción en documento {$documento->id}: " . $e->getMessage();
             }
         }
 
-        $hayErrores = !empty($errores);
-
         return response()->json([
-            'code'        => $hayErrores ? 207 : 200,
-            'message'     => $hayErrores ? 'Procesado con errores' : 'Proceso de recálculo masivo completado.',
+            'code'        => !empty($errores) ? 207 : 200,
+            'message'     => !empty($errores) ? 'Procesado con errores' : 'Proceso de recálculo definitivo completado.',
+            'log_preparacion' => $log_preparacion,
             'errors'      => $errores,
             'aplicados'   => $aplicados,
             'aplicados_count' => count($aplicados),
             'errors_count' => count($errores),
-        ], $hayErrores ? 207 : 200);
+        ], !empty($errores) ? 207 : 200);
     }
 }
