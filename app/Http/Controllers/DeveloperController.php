@@ -186,23 +186,44 @@ class DeveloperController extends Controller
     public function recalcularInventario()
     {
         set_time_limit(0);
-        $documentos = DB::table("documento")->where('status', 1)->get();
+
+        $errores = [];
+
+        $documentos = DB::table('documento')
+            ->select('id', 'id_tipo', 'autorizado')
+            ->whereIn('id_tipo', [0, 2, 3, 4, 5, 11])
+            ->whereIn('id_fase', [5, 6, 100, 607])
+            ->where('status', 1)
+            ->orderBy('created_at', 'asc')
+            ->get();
 
         foreach ($documentos as $documento) {
-            $aplicar = InventarioService::aplicarMovimiento($documento->id);
-
-            if($aplicar->error) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => $aplicar->mensaje
-                ]);
+            try {
+                if ($documento->id_tipo == 5) {
+                    if ((int) $documento->autorizado === 1) {
+                        $aplicar = InventarioService::aplicarMovimiento($documento->id);
+                        if (!empty($aplicar->error)) {
+                            $errores[] = $aplicar->mensaje ?? "Error en documento {$documento->id}";
+                        }
+                    }
+                } else {
+                    $aplicar = InventarioService::aplicarMovimiento($documento->id);
+                    if (!empty($aplicar->error)) {
+                        $errores[] = $aplicar->mensaje ?? "Error en documento {$documento->id}";
+                    }
+                }
+            } catch (\Throwable $e) {
+                $errores[] = "Excepción en documento {$documento->id}: " . $e->getMessage();
             }
         }
 
-        return response()->json([
-            'code' => 200,
-            'message' => "Ya quedo"
-        ]);
-    }
+        $hayErrores = !empty($errores);
 
+        return response()->json([
+            'code'        => $hayErrores ? 207 : 200, // 207 Multi-Status si hubo errores
+            'message'     => $hayErrores ? 'Procesado con errores' : 'Ya quedó',
+            'errors'      => $errores,
+            'errors_count'=> count($errores),
+        ], $hayErrores ? 207 : 200);
+    }
 }
