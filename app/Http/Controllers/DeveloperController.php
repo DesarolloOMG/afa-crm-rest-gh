@@ -37,19 +37,8 @@ class DeveloperController extends Controller
 
     public function test(Request $request)
     {
-        $url = 'https://api.dropboxapi.com/2/files/get_temporary_link';
-        $body = ['path' => 'id:uO766e59Np0AAAAAAAAACQ'];
-        $headers = [
-            'Authorization' => 'Bearer ' . env('DROPBOX_TOKEN'),
-            'Content-Type' => 'application/json'
-        ];
-        $client = new \GuzzleHttp\Client();
-        $response = $client->post($url, [
-            'headers' => $headers,
-            'body' => json_encode($body),
-        ]);
-        $data = json_decode($response->getBody()->getContents(), true);
-        dd($data);
+        $aplicar = InventarioService::aplicarMovimiento(94);
+        dd($aplicar);
     }
 
     public static function log_meli_error(string $mensaje, string $publicacion_id)
@@ -188,6 +177,7 @@ class DeveloperController extends Controller
         set_time_limit(0);
 
         $errores = [];
+        $aplicados = [];
 
         $documentos = DB::table('documento')
             ->select('id', 'id_tipo', 'autorizado', 'id_fase')
@@ -204,6 +194,8 @@ class DeveloperController extends Controller
                         $aplicar = InventarioService::aplicarMovimiento($documento->id);
                         if ($aplicar->error) {
                             $errores[] =  "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
+                        } else {
+                            $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
                         }
                     }
                 } else if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
@@ -215,6 +207,8 @@ class DeveloperController extends Controller
                                  $aplicar = InventarioService::procesarRecepcion($recepcion->id_movimiento, $recepcion->cantidad);
                                  if ($aplicar->error) {
                                      $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
+                                 } else {
+                                     $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
                                  }
                              }
                          }
@@ -223,6 +217,8 @@ class DeveloperController extends Controller
                     $aplicar = InventarioService::aplicarMovimiento($documento->id);
                     if ($aplicar->error) {
                         $errores[] = "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
+                    } else {
+                        $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
                     }
                 }
             } catch (\Throwable $e) {
@@ -236,6 +232,8 @@ class DeveloperController extends Controller
             'code'        => $hayErrores ? 207 : 200, // 207 Multi-Status si hubo errores
             'message'     => $hayErrores ? 'Procesado con errores' : 'Ya quedó',
             'errors'      => $errores,
+            'aplicados'   => $aplicados,
+            'aplicados_count'=> count($aplicados),
             'errors_count'=> count($errores),
             'documentos' => $documentos,
         ], $hayErrores ? 207 : 200);
