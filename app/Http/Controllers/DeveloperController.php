@@ -189,7 +189,7 @@ class DeveloperController extends Controller
 
         foreach ($documentos as $documento) {
             try {
-                if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
+                if ((int)$documento->id_tipo === 0 && (int)$documento->id_fase === 606) {
                     $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
                      if ($movimientos) {
                          foreach ($movimientos as $mov) {
