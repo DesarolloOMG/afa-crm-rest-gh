@@ -37,7 +37,7 @@ class DeveloperController extends Controller
 
     public function test(Request $request)
     {
-        $aplicar = InventarioService::aplicarMovimiento(94);
+        $aplicar = InventarioService::aplicarMovimiento(366);
         dd($aplicar);
     }
 
@@ -189,16 +189,7 @@ class DeveloperController extends Controller
 
         foreach ($documentos as $documento) {
             try {
-                if ($documento->id_tipo == 5) {
-                    if ((int) $documento->autorizado === 1) {
-                        $aplicar = InventarioService::aplicarMovimiento($documento->id);
-                        if ($aplicar->error) {
-                            $errores[] =  "Error en documento: {$documento->id} - {$aplicar->mensaje}" ?? "Error en documento {$documento->id}";
-                        } else {
-                            $aplicados[] =  "Documento: {$documento->id} - {$aplicar->mensaje}";
-                        }
-                    }
-                } else if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
+                if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
                     $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
                      if ($movimientos) {
                          foreach ($movimientos as $mov) {

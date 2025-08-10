@@ -31,6 +31,7 @@ class InventarioService
      */
     public static function aplicarMovimiento(int $idDocumento): \stdClass
     {
+        set_time_limit(0);
         // Creamos el objeto de respuesta
         $response = new \stdClass();
         $response->code = 0;
@@ -413,6 +414,7 @@ class InventarioService
 
     public static function procesarRecepcion($idMov,$cantidad)
     {
+        set_time_limit(0);
         $response = new \stdClass();
         $response->error = 0;
         $response->mensaje = '';
