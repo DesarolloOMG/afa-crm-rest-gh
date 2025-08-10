@@ -190,7 +190,7 @@ class DeveloperController extends Controller
         $errores = [];
 
         $documentos = DB::table('documento')
-            ->select('id', 'id_tipo', 'autorizado')
+            ->select('id', 'id_tipo', 'autorizado', 'id_fase')
             ->whereIn('id_tipo', [0, 2, 3, 4, 5, 6, 11])
             ->whereIn('id_fase', [5, 6, 100, 606, 607])
             ->where('status', 1)
@@ -235,6 +235,7 @@ class DeveloperController extends Controller
             'message'     => $hayErrores ? 'Procesado con errores' : 'Ya quedó',
             'errors'      => $errores,
             'errors_count'=> count($errores),
+            'documentos' => $documentos,
         ], $hayErrores ? 207 : 200);
     }
 }
