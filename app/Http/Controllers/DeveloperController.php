@@ -194,7 +194,7 @@ class DeveloperController extends Controller
             ->whereIn('id_tipo', [0,2,3,4,5,6,11])
             ->whereIn('id_fase', [5, 6, 100, 606, 607])
             ->where('status', 1)
-            ->orderBy('id', 'asc')
+            ->orderBy('created_at', 'asc')
             ->get();
 
         foreach ($documentos as $documento) {
@@ -207,7 +207,7 @@ class DeveloperController extends Controller
                         }
                     }
                 } else if ($documento->id_tipo == 0 && $documento->id_fase == 606) {
-                    $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->first();
+                    $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
                      if ($movimientos) {
                          foreach ($movimientos as $mov) {
                              $recepcion = DB::table('documento_recepcion')->where('id_movimiento', $mov->id)->first();
