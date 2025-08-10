@@ -188,7 +188,7 @@ class DeveloperController extends Controller
         $documentos = DB::table("documento")->get();
 
         foreach ($documentos as $documento) {
-            InventarioService::aplicarMovimiento($documento->documento_id);
+            InventarioService::aplicarMovimiento($documento->id);
         }
 
         return response()->json([
