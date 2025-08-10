@@ -183,5 +183,18 @@ class DeveloperController extends Controller
         return $existe[0]->token;
     }
 
+    public function recalcularInventario()
+    {
+        $documentos = DB::table("documentos")->get();
+
+        foreach ($documentos as $documento) {
+            InventarioService::aplicarMovimiento($documento->documento_id);
+        }
+
+        return response()->json([
+            'code' => 200,
+            'message' => "Ya quedo"
+        ]);
+    }
 
 }

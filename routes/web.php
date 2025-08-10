@@ -1050,6 +1050,7 @@ $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('busquedaSerieVsSku', 'AlmacenController@almacen_busqueda_serie_vs_sku');
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
     $router->get('test', 'DeveloperController@test');
+    $router->get('recalcularInventario', 'DeveloperController@recalcularInventario');
 });
 
 $router->get('getToken', 'DropboxController@getDropboxToken');
