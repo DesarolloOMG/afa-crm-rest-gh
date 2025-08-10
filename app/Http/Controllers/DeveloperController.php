@@ -185,10 +185,18 @@ class DeveloperController extends Controller
 
     public function recalcularInventario()
     {
+        set_time_limit(0);
         $documentos = DB::table("documento")->where('status', 1)->get();
 
         foreach ($documentos as $documento) {
-            InventarioService::aplicarMovimiento($documento->id);
+            $aplicar = InventarioService::aplicarMovimiento($documento->id);
+
+            if($aplicar->error) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $aplicar->mensaje
+                ]);
+            }
         }
 
         return response()->json([
