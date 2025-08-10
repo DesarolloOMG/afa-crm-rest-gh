@@ -357,7 +357,7 @@ class GeneralController extends Controller
                 movimiento.cantidad,
                 documento_recepcion.cantidad AS cantidad_recepcion,
                 documento_recepcion.documento_erp AS recepcion_erp,
-                ROUND(IF (documento_tipo.tipo = 'COMPRA', movimiento.precio, movimiento.precio * 1.16), 2) AS precio,
+                ROUND(IF (documento_tipo.tipo = 'COMPRA', movimiento.precio, movimiento.precio), 2) AS precio,
                 marketplace_area.serie AS serie_factura,
                 marketplace.marketplace,
                 area.area
