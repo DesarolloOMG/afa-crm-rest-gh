@@ -172,6 +172,8 @@ class GeneralController extends Controller
                     $agrupados[$codigo] = [
                         'codigo' => $p->codigo,
                         'descripcion' => $p->descripcion,
+                        'costo_promedio' => $p->costo_promedio,
+                        'costo_extra' => $p->costo_extra,
                         'ultimo_costo' => $p->ultimo_costo,
                         'precio' => $p->precio,
                         'tipo_producto' => $p->tipo_producto,
