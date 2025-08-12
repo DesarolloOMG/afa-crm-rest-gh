@@ -319,7 +319,7 @@ class DeveloperController extends Controller
             DB::beginTransaction();
             try {
                 // Se aplica la lógica condicional original
-                if ((int)$documento->id_tipo === 0 && (int)$documento->id_fase === 606) {
+                if ((int)$documento->id_tipo === 0) {
                     // Lógica de Recepción...
                     $movimientos = DB::table('movimiento')->where('id_documento', $documento->id)->get();
                     $todoOk = true;
