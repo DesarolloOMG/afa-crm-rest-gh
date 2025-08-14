@@ -32,48 +32,88 @@ class SoporteController extends Controller
         $causas_documento = DB::select("SELECT * FROM documento_garantia_causa WHERE id != 0");
 
         return response()->json([
-            'tipos'     => $tipos_documento,
-            'causas'    => $causas_documento
+            'tipos' => $tipos_documento,
+            'causas' => $causas_documento
         ]);
     }
 
     public function soporte_garantia_devolucion_venta($venta)
     {
-        $existe_venta = DB::select("SELECT id FROM documento WHERE id = '" . TRIM($venta) . "' AND id_tipo = 2 AND documento.status = 1");
+        // 1) Intentar interpretar $venta como ID de documento (venta)
+        $documento = DB::table('documento')
+            ->where('id', trim($venta))
+            ->where('id_tipo', 2)   // 2 = Venta (ajusta si tu catálogo difiere)
+            ->where('status', 1)
+            ->first();
+
         $venta_id = 0;
 
-        if (empty($existe_venta)) {
-            $existe_venta_serie = DB::select("SELECT
-                                                documento.id
-                                            FROM documento
-                                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                            INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                            INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                            WHERE producto.serie = '" . $venta . "'
-                                            AND documento.status = 1");
+        // 2) Si NO hay documento por ID, buscar por serie de producto
+        if (!$documento) {
+            $docPorSerie = DB::table('documento')
+                ->select('documento.id')
+                ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
+                ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+                ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
+                ->where('producto.serie', trim($venta))
+                ->where('documento.id_tipo', 2)
+                ->where('documento.status', 1)
+                ->first();
 
-            if (empty($existe_venta_serie)) {
+            if (!$docPorSerie) {
                 return response()->json([
-                    'code'  => 404,
-                    'message'   => "No se encontróm la venta."
-                ]);
+                    'code' => 404,
+                    'message' => 'No se encontró la venta.'
+                ], 404);
             }
 
-            $venta_id = $existe_venta_serie[0]->id;
+            $venta_id = (int)$docPorSerie->id;
         } else {
-            $venta_id = $existe_venta[0]->id;
+            $venta_id = (int)$documento->id;
         }
 
-        $productos = DB::select("SELECT
-                                        modelo.sku,
-                                        modelo.descripcion,
-                                        '' as series
-                                    FROM movimiento
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $venta_id . "");
+        // 3) Encabezado: almacén y marketplace del documento
+        $header = DB::table('documento')
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->leftJoin('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->where('documento.id', $venta_id)
+            ->select(
+                'documento.id as venta_id',
+                'almacen.id as id_almacen',
+                'almacen.almacen',
+                'marketplace.id as id_marketplace',
+                'marketplace.marketplace',
+            )
+            ->first();
+
+        if (!$header) {
+            // Caso raro: el documento existe pero no pudo resolver joins
+            return response()->json([
+                'code' => 404,
+                'message' => 'No se encontró información de encabezado para la venta.'
+            ], 404);
+        }
+
+        // 4) Productos y cantidades de la venta
+        $productos = DB::table('movimiento')
+            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+            ->where('movimiento.id_documento', $venta_id)
+            ->select(
+                'modelo.sku',
+                'modelo.descripcion',
+                'movimiento.cantidad'
+            )
+            ->get();
+
         return response()->json([
-            'code'  => 200,
-            'productos' => $productos
+            'code' => 200,
+            'venta_id' => $venta_id,
+            'almacen' => $header->almacen,
+            'marketplace' => $header->marketplace,
+            'productos' => $productos,
         ]);
     }
 
@@ -105,38 +145,17 @@ class SoporteController extends Controller
 
         $informacion_documento = Documento::select(
             "documento.id",
-            "documento.id_fase",
-            "documento.factura_serie",
-            "documento.factura_folio"
+            "documento.id_fase"
         )
-            ->join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
-            ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
+            ->where("documento.id", $data->venta_id)
             ->where("documento.id_tipo", DocumentoTipo::VENTA)
             ->where("documento.status", DocumentoStatus::ACTIVO)
-            ->where("documento.id", $data->venta)
             ->first();
 
         if (!$informacion_documento) {
-            $informacion_documento = Documento::join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
-                ->select(
-                    "documento.id",
-                    "documento.id_fase",
-                    "documento.factura_serie",
-                    "documento.factura_folio",
-                )
-                ->join("empresa", "empresa_almacen.id_empresa", "=", "empresa.id")
-                ->join("movimiento", "documento.id", "=", "movimiento.id_documento")
-                ->join("movimiento_producto", "movimiento.id", "=", "movimiento_producto.id_movimiento")
-                ->join("producto", "movimiento_producto.id_producto", "=", "producto.id")
-                ->where("producto.serie", trim($data->venta))
-                ->where("documento.status", DocumentoStatus::ACTIVO)
-                ->first();
-
-            if (!$informacion_documento) {
-                return response()->json([
-                    'message' => "No se encontró la venta."
-                ]);
-            }
+            return response()->json([
+                'message' => "No se encontró la venta con el ID proporcionado."
+            ], HttpStatusCode::NOT_FOUND);
         }
 
         if ($informacion_documento->id_fase < DocumentoFase::PENDIENTE_FACTURA) {
@@ -183,8 +202,7 @@ class SoporteController extends Controller
             'id_causa' => $data->causa,
             'id_fase' => $data->tipo == DocumentoGarantiaTipo::DEVOLUCION ? DocumentoGarantiaFase::DEVOLUCION_PENDIENTE : DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA,
             'no_reclamo' => $data->reclamo,
-            'created_by' => $auth->id,
-            'parcial' => $data->parcial
+            'created_by' => $auth->id
         ]);
 
         DB::table('documento_garantia_re')->insertGetId([
@@ -226,29 +244,32 @@ class SoporteController extends Controller
         $file_name = "";
         $file_data = "";
 
-        if ($data->tipo == 2 || $data->tipo == '2') {
-            foreach ($data->productos as $producto) {
-                DB::table('documento_garantia_producto')->insert([
-                    'id_garantia' => $documento_garantia,
-                    'producto' => $producto->series,
-                    'cantidad' => 0
-                ]);
-            }
-
-            $response = self::documento_garantia($documento_garantia);
-
-            if (!$response->error) {
-                $file_data = base64_encode($response->file);
-                $file_name = $response->name;
-            }
+        foreach ($data->productos as $producto) {
+            DB::table('documento_garantia_producto')->insert([
+                'id_garantia' => $documento_garantia,
+                'producto' => $producto->sku,
+                'cantidad' => $producto->cantidad
+            ]);
         }
 
-        return response()->json([
+        $response = self::documento_garantia($documento_garantia);
+
+        if (!$response->error) {
+            $file_data = base64_encode($response->file);
+            $file_name = $response->name;
+        }
+
+        $jsonResponse = [
             "code" => 200,
             "message" => "Documento creado correctamente con el siguiente número: " . $documento_garantia,
-            "file" => $file_name,
-            "name" => $file_name
-        ]);
+        ];
+
+        if (!empty($file_name)) {
+            $jsonResponse['file'] = $file_data; // OJO: debe ser $file_data, que contiene el base64
+            $jsonResponse['name'] = $file_name;
+        }
+
+        return response()->json($jsonResponse);
     }
 
     public function soporte_garantia_devolucion_devolucion_data()
@@ -282,10 +303,10 @@ class SoporteController extends Controller
         if ($data->terminar) {
             foreach ($data->productos as $producto) {
                 if (COUNT($producto->series) > 0) {
-                    if (COUNT($producto->series) != (int) $producto->cantidad) {
+                    if (COUNT($producto->series) != (int)$producto->cantidad) {
                         return response()->json([
-                            'code'  => 500,
-                            'message'   => "La cantidad de series agregadas no concuerda con la cantidad del producto, favor de revisar en intentar de nuevo."
+                            'code' => 500,
+                            'message' => "La cantidad de series agregadas no concuerda con la cantidad del producto, favor de revisar en intentar de nuevo."
                         ]);
                     }
 
@@ -302,8 +323,8 @@ class SoporteController extends Controller
 
                         if (empty($existe_serie)) {
                             return response()->json([
-                                'code'  => 500,
-                                'message'   => "La serie " . $serie . " no corresponde a su producto asignado, favor de verificar e intentar de nuevo."
+                                'code' => 500,
+                                'message' => "La serie " . $serie . " no corresponde a su producto asignado, favor de verificar e intentar de nuevo."
                             ]);
                         }
 
@@ -316,8 +337,8 @@ class SoporteController extends Controller
 
                         if (empty($existe_movimiento_producto)) {
                             return response()->json([
-                                'code'  => 500,
-                                'message'   => "El documento no cuenta con ningun movimiento que contenga el sku " . trim($producto->sku) . ""
+                                'code' => 500,
+                                'message' => "El documento no cuenta con ningun movimiento que contenga el sku " . trim($producto->sku) . ""
                             ]);
                         }
                     }
@@ -376,15 +397,15 @@ class SoporteController extends Controller
 
             if (empty($info_entidad)) {
                 return response()->json([
-                    'code'  => 501,
-                    'message'   => "No se encontró la información del cliente, favor de contactar al administrador."
+                    'code' => 501,
+                    'message' => "No se encontró la información del cliente, favor de contactar al administrador."
                 ]);
             }
 
             if (empty($productos)) {
                 return response()->json([
-                    'code'  => 404,
-                    'message'   => "No se encontraron productos del documento, favor de contactar al administrador."
+                    'code' => 404,
+                    'message' => "No se encontraron productos del documento, favor de contactar al administrador."
                 ]);
             }
 
@@ -404,11 +425,11 @@ class SoporteController extends Controller
 
                     DB::table('movimiento_producto')->insert([
                         'id_movimiento' => $id_movimiento,
-                        'id_producto'   => $id_serie
+                        'id_producto' => $id_serie
                     ]);
 
                     DB::table('producto')->where(['id' => $id_serie])->update([
-                        'status'    => 0
+                        'status' => 0
                     ]);
                 }
             }
@@ -430,7 +451,7 @@ class SoporteController extends Controller
                 $seguimiento_traspaso = "";
 
                 $documento_traspaso = DB::table('documento')->insertGetId([
-                    'id_almacen_principal_empresa'  => !empty($empresa_externa) ? $info_documento_almacenes[0]->almacen_devolucion_garantia_sistema : $info_documento->almacen_devolucion_garantia_sistema,
+                    'id_almacen_principal_empresa' => !empty($empresa_externa) ? $info_documento_almacenes[0]->almacen_devolucion_garantia_sistema : $info_documento->almacen_devolucion_garantia_sistema,
                     'id_almacen_secundario_empresa' => !empty($empresa_externa) ? $almacen_secundario_empresa[0]->id : $info_documento->id_almacen_principal_empresa,
                     'id_tipo' => 5,
                     'id_periodo' => 1,
@@ -494,7 +515,7 @@ class SoporteController extends Controller
 
                 $seguimiento_traspaso .= "<p>Traspaso creado correctamente con el ID " . $documento_traspaso . ".</p>";
                 $afectar = InventarioService::aplicarMovimiento($documento_traspaso);
-                if($afectar->error){
+                if ($afectar->error) {
                     $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . "no se pudo afectar correctamente.</p>";
                 } else {
                     $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . " afectado correctamente.</p>";
@@ -551,9 +572,9 @@ class SoporteController extends Controller
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->documento,
-                        'id_usuario'   => $auth->id,
-                        'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response['id']
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -574,12 +595,12 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_devolucion_revision_data(Request $request)
     {
-        $auth       = json_decode($request->auth);
+        $auth = json_decode($request->auth);
         $documentos = $this->garantia_devolucion_raw_data(3, 1, $auth->id);
 
         return response()->json([
-            'code'      => 200,
-            'ventas'    => $documentos,
+            'code' => 200,
+            'ventas' => $documentos,
         ]);
     }
 
@@ -609,7 +630,7 @@ class SoporteController extends Controller
         ]);
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'message' => "Documento guardado correctamente."
         ]);
     }
@@ -619,8 +640,8 @@ class SoporteController extends Controller
         $documentos = $this->garantia_devolucion_raw_data(4, 1); # Fase del documento y tipo de documento
 
         return response()->json([
-            'code'      => 200,
-            'ventas'    => $documentos,
+            'code' => 200,
+            'ventas' => $documentos,
         ]);
     }
 
@@ -658,8 +679,8 @@ class SoporteController extends Controller
         $documentos = $this->garantia_devolucion_raw_data(5, 1);
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
@@ -745,28 +766,28 @@ class SoporteController extends Controller
             if (!empty($data->notificados)) {
                 $usuarios = array();
 
-                $notificacion['titulo']     = "¡Llegó un paquete para ti!";
-                $notificacion['message']    = "El área de logistica ha indicado que ha llegado un paquete para tí.";
-                $notificacion['tipo']       = "success"; // success, warning, danger
-                $notificacion['link']       = "/soporte/garantia-devolucion/garantia/historial/" . $data->documento;
+                $notificacion['titulo'] = "¡Llegó un paquete para ti!";
+                $notificacion['message'] = "El área de logistica ha indicado que ha llegado un paquete para tí.";
+                $notificacion['tipo'] = "success"; // success, warning, danger
+                $notificacion['link'] = "/soporte/garantia-devolucion/garantia/historial/" . $data->documento;
 
                 $notificacion_id = DB::table('notificacion')->insertGetId([
-                    'data'  => json_encode($notificacion)
+                    'data' => json_encode($notificacion)
                 ]);
 
-                $notificacion['id']         = $notificacion_id;
+                $notificacion['id'] = $notificacion_id;
 
                 foreach ($data->notificados as $usuario) {
                     DB::table('notificacion_usuario')->insert([
-                        'id_usuario'        => $usuario->id,
-                        'id_notificacion'   => $notificacion_id
+                        'id_usuario' => $usuario->id,
+                        'id_notificacion' => $notificacion_id
                     ]);
 
                     array_push($usuarios, $usuario->id);
                 }
 
                 if (!empty($usuarios)) {
-                    $notificacion['usuario']    = $usuarios;
+                    $notificacion['usuario'] = $usuarios;
 
                     event(new PusherEvent(json_encode($notificacion)));
                 }
@@ -800,8 +821,8 @@ class SoporteController extends Controller
         $documentos = $this->garantia_devolucion_raw_data(3, 2, $auth->id);
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
@@ -825,9 +846,9 @@ class SoporteController extends Controller
         }
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento_garantia,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
@@ -853,8 +874,8 @@ class SoporteController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos
+            'code' => 200,
+            'ventas' => $documentos
         ]);
     }
 
@@ -918,8 +939,8 @@ class SoporteController extends Controller
 
 
                 if (empty($info_entidad)) {
-                    $json['code']   = 500;
-                    $json['message']    = "No se encontró la información del cliente, favor de contactar al administrador.";
+                    $json['code'] = 500;
+                    $json['message'] = "No se encontró la información del cliente, favor de contactar al administrador.";
 
                     return $this->make_json($json);
                 }
@@ -937,7 +958,7 @@ class SoporteController extends Controller
                             'destino_importe' => 0,
                             'folio' => "",
                             'entidad_origen' => 1,
-                            'origen_entidad' =>  $info_entidad[0]->rfc,
+                            'origen_entidad' => $info_entidad[0]->rfc,
                             'entidad_destino' => '',
                             'destino_entidad' => '',
                             'referencia' => '',
@@ -1029,10 +1050,10 @@ class SoporteController extends Controller
                             ]);
                         }
 
-                        if (((int) $existencia_codigo->disponible + (int) $producto->cantidad) < $producto->cantidad) {
+                        if (((int)$existencia_codigo->disponible + (int)$producto->cantidad) < $producto->cantidad) {
                             return response()->json([
                                 "code" => 500,
-                                "message" => "No hay suficiente existencia para procesar la solicitud<br><br>Cantidad con nota: " . ((int) $existencia_codigo->existencia + (int) $producto->cantidad) . "<br>Cantidad solicitada: " . $producto->cantidad . "<br><br>Favor de revisiar el inventario con el encargado"
+                                "message" => "No hay suficiente existencia para procesar la solicitud<br><br>Cantidad con nota: " . ((int)$existencia_codigo->existencia + (int)$producto->cantidad) . "<br>Cantidad solicitada: " . $producto->cantidad . "<br><br>Favor de revisiar el inventario con el encargado"
                             ]);
                         }
                     }
@@ -1128,13 +1149,13 @@ class SoporteController extends Controller
                         }
                         # Se crear el movimiento para el traspaso si el producto se va a cambiar
                         $movimiento = DB::table('movimiento')->insertGetId([
-                            'id_documento'          => $documento_traspaso,
-                            'id_modelo'             => $producto->id_modelo,
-                            'cantidad'              => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
-                            'precio'                => $producto->precio,
-                            'garantia'              => 0,
-                            'modificacion'          => 'N/A',
-                            'regalo'                => 0
+                            'id_documento' => $documento_traspaso,
+                            'id_modelo' => $producto->id_modelo,
+                            'cantidad' => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
+                            'precio' => $producto->precio,
+                            'garantia' => 0,
+                            'modificacion' => 'N/A',
+                            'regalo' => 0
                         ]);
 
                         if ($producto->serie) {
@@ -1147,8 +1168,8 @@ class SoporteController extends Controller
                                     if (empty($existe_serie)) {
                                         $serie_id = DB::table('producto')->insertGetId([
                                             'id_modelo' => $producto->id_modelo,
-                                            'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
-                                            'serie'         => $serie->serie
+                                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                            'serie' => $serie->serie
                                         ]);
                                     } else {
                                         $serie_id = $existe_serie[0]->id;
@@ -1156,15 +1177,15 @@ class SoporteController extends Controller
                                         # La serie anterior se cambia al almacén de refacciones (13) y se deja un comentario del movimiento
                                         DB::table('producto')->where(['id' => $serie_id])->update([
                                             'id_modelo' => $producto->id_modelo,
-                                            'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
-                                            'status'        => 1
+                                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                            'status' => 1
                                         ]);
                                     }
 
                                     # Se crea la relación de la serie anterior con el traspaso
                                     DB::table('movimiento_producto')->insert([
                                         'id_movimiento' => $movimiento,
-                                        'id_producto'   => $serie_id
+                                        'id_producto' => $serie_id
                                     ]);
                                 }
                             }
@@ -1175,7 +1196,7 @@ class SoporteController extends Controller
                 InventarioService::aplicarMovimiento($documento_traspaso);
 
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase'           => ($es_devolucion_parcial) ? 100 : 7
+                    'id_fase' => ($es_devolucion_parcial) ? 100 : 7
                 ]);
             } else {
                 $productos_traspaso = array();
@@ -1186,8 +1207,8 @@ class SoporteController extends Controller
 
                 if (empty($almacen_id)) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "No se encontró el almacén especificado. Favor de contactar a un administrador."
+                        'code' => 500,
+                        'message' => "No se encontró el almacén especificado. Favor de contactar a un administrador."
                     ]);
                 }
 
@@ -1221,8 +1242,8 @@ class SoporteController extends Controller
 
                 if (empty($info_documento)) {
                     return response()->json([
-                        'code'  => 404,
-                        'message'   => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
+                        'code' => 404,
+                        'message' => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
                     ]);
                 }
 
@@ -1254,8 +1275,8 @@ class SoporteController extends Controller
 
                                     if (empty($existe_serie)) {
                                         return response()->json([
-                                            'code'  => 404,
-                                            'message'   => "La serie " . $serie->serie_nueva . " no se encuentra registrada como disponible en el sistema, favor de contactar a un adminstrador."
+                                            'code' => 404,
+                                            'message' => "La serie " . $serie->serie_nueva . " no se encuentra registrada como disponible en el sistema, favor de contactar a un adminstrador."
                                         ]);
                                     }
 
@@ -1263,15 +1284,15 @@ class SoporteController extends Controller
 
                                     if ($existe_serie->modelo_id != $producto->id_modelo) {
                                         return response()->json([
-                                            'code'  => 404,
-                                            'message'   => "La serie " . $serie->serie_nueva . " no pertenece al producto el cual ha sido ingresada."
+                                            'code' => 404,
+                                            'message' => "La serie " . $serie->serie_nueva . " no pertenece al producto el cual ha sido ingresada."
                                         ]);
                                     }
 
                                     if ($existe_serie->id_almacen != $almacen_id) {
                                         return response()->json([
-                                            'code'  => 404,
-                                            'message'   => "La serie " . $serie->serie_nueva . " no se encuentra en el almacén seleccionado."
+                                            'code' => 404,
+                                            'message' => "La serie " . $serie->serie_nueva . " no se encuentra en el almacén seleccionado."
                                         ]);
                                     }
 
@@ -1292,8 +1313,8 @@ class SoporteController extends Controller
 
                                     if (empty($existe_serie_anterior)) {
                                         return response()->json([
-                                            'code'  => 404,
-                                            'message'   => "La serie " . $serie->serie . " no se encontró en el sistema, favor de verificar que la serie esté registrada en el producto correcto."
+                                            'code' => 404,
+                                            'message' => "La serie " . $serie->serie . " no se encontró en el sistema, favor de verificar que la serie esté registrada en el producto correcto."
                                         ]);
                                     }
 
@@ -1301,8 +1322,8 @@ class SoporteController extends Controller
 
                                     if ($existe_serie_anterior->id_modelo != $producto->id_modelo) {
                                         return response()->json([
-                                            'code'  => 404,
-                                            'message'   => "La serie " . $serie->serie . " no pertenece al producto el cual ha sido ingresada."
+                                            'code' => 404,
+                                            'message' => "La serie " . $serie->serie . " no pertenece al producto el cual ha sido ingresada."
                                         ]);
                                     }
 
@@ -1312,24 +1333,24 @@ class SoporteController extends Controller
 
                             if ($cantidad_cambio == 0) {
                                 return response()->json([
-                                    'code'  => 500,
-                                    'message'   => "No se encontraron series para el producto " . $producto->sku . ""
+                                    'code' => 500,
+                                    'message' => "No se encontraron series para el producto " . $producto->sku . ""
                                 ]);
                             }
 
-                            $producto_object                = new \stdClass();
-                            $producto_object->cantidad      = $cantidad_cambio;
-                            $producto_object->sku           = $producto->sku;
-                            $producto_object->costo         = $producto->costo;
-                            $producto_object->comentarios   = "";
+                            $producto_object = new \stdClass();
+                            $producto_object->cantidad = $cantidad_cambio;
+                            $producto_object->sku = $producto->sku;
+                            $producto_object->costo = $producto->costo;
+                            $producto_object->comentarios = "";
 
                             array_push($productos_traspaso, $producto_object);
                         } else {
-                            $producto_object                = new \stdClass();
-                            $producto_object->cantidad      = $producto->cantidad;
-                            $producto_object->sku           = $producto->sku;
-                            $producto_object->costo         = $producto->costo;
-                            $producto_object->comentarios   = "";
+                            $producto_object = new \stdClass();
+                            $producto_object->cantidad = $producto->cantidad;
+                            $producto_object->sku = $producto->sku;
+                            $producto_object->costo = $producto->costo;
+                            $producto_object->comentarios = "";
 
                             array_push($productos_traspaso, $producto_object);
                         }
@@ -1338,27 +1359,27 @@ class SoporteController extends Controller
 
                 if (COUNT($productos_traspaso) == 0) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "No se encontraron productos a cambiar, favor de contactar con el administrador."
+                        'code' => 500,
+                        'message' => "No se encontraron productos a cambiar, favor de contactar con el administrador."
                     ]);
                 }
 
                 # Se crear el documento de traspaso en el CRM para hacer el movimiento de series
                 $documento_traspaso = DB::table('documento')->insertGetId([
-                    'id_almacen_principal_empresa'  => $info_documento->almacen_devolucion_garantia_sistema,
+                    'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
                     'id_almacen_secundario_empresa' => $data->almacen,
-                    'id_tipo'                       => 5,
-                    'id_periodo'                    => 1,
-                    'id_cfdi'                       => 1,
-                    'id_marketplace_area'           => 1,
-                    'id_usuario'                    => $auth->id,
-                    'id_moneda'                     => 3,
-                    'id_paqueteria'                 => 6,
-                    'id_fase'                       => 100,
-                    'tipo_cambio'                   => 1,
-                    'referencia'                    => 'N/A',
-                    'info_extra'                    => 'N/A',
-                    'observacion'                   => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia,
+                    'id_tipo' => 5,
+                    'id_periodo' => 1,
+                    'id_cfdi' => 1,
+                    'id_marketplace_area' => 1,
+                    'id_usuario' => $auth->id,
+                    'id_moneda' => 3,
+                    'id_paqueteria' => 6,
+                    'id_fase' => 100,
+                    'tipo_cambio' => 1,
+                    'referencia' => 'N/A',
+                    'info_extra' => 'N/A',
+                    'observacion' => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia,
                 ]);
 
                 foreach ($data->productos_anteriores as $producto) {
@@ -1374,13 +1395,13 @@ class SoporteController extends Controller
                         }
                         # Se crear el movimiento para el traspaso si el producto se va a cambiar
                         $movimiento = DB::table('movimiento')->insertGetId([
-                            'id_documento'          => $documento_traspaso,
-                            'id_modelo'             => $producto->id_modelo,
-                            'cantidad'              => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
-                            'precio'                => $producto->precio,
-                            'garantia'              => 0,
-                            'modificacion'          => 'N/A',
-                            'regalo'                => 0
+                            'id_documento' => $documento_traspaso,
+                            'id_modelo' => $producto->id_modelo,
+                            'cantidad' => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
+                            'precio' => $producto->precio,
+                            'garantia' => 0,
+                            'modificacion' => 'N/A',
+                            'regalo' => 0
                         ]);
 
                         if ($producto->serie) {
@@ -1396,7 +1417,7 @@ class SoporteController extends Controller
                                     # Se crea la relación de la serie anterior con el traspaso
                                     DB::table('movimiento_producto')->insert([
                                         'id_movimiento' => $movimiento,
-                                        'id_producto'   => $serie_anterior->id
+                                        'id_producto' => $serie_anterior->id
                                     ]);
                                     $apos = `'`;
                                     //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
@@ -1410,20 +1431,20 @@ class SoporteController extends Controller
                                     # Se crea la relación de la serie nueva con el movimiento de la serie anterior
                                     DB::table('movimiento_producto')->insert([
                                         'id_movimiento' => $producto->id,
-                                        'id_producto'   => $serie_nueva->id
+                                        'id_producto' => $serie_nueva->id
                                     ]);
 
                                     # La serie anterior se cambia al almacén de refacciones (13) y se deja un comentario del movimiento
                                     DB::table('producto')->where(['id' => $serie_anterior->id])->update([
-                                        'id_almacen'    => $info_documento->almacen_devolucion_garantia_serie,
-                                        'status'        => 1,
-                                        'extra'         => 'Se cambió por la serie ' . $serie->serie_nueva . ' por garantía, y esta se traspasa a garantías.'
+                                        'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                        'status' => 1,
+                                        'extra' => 'Se cambió por la serie ' . $serie->serie_nueva . ' por garantía, y esta se traspasa a garantías.'
                                     ]);
 
                                     # La serie nueva se queda no disponible por que ya está relacionada a la venta y se deja un comentario del movimiento
                                     DB::table('producto')->where(['id' => $serie_nueva->id])->update([
-                                        'status'    => 0,
-                                        'extra'     => 'Se cambió por la serie ' . $serie->serie . ' por garantía, la otra fue enviada a garantías.'
+                                        'status' => 0,
+                                        'extra' => 'Se cambió por la serie ' . $serie->serie . ' por garantía, la otra fue enviada a garantías.'
                                     ]);
 
                                     array_push($series_cambiadas, $serie_anterior);
@@ -1443,15 +1464,15 @@ class SoporteController extends Controller
         }
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento_garantia,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento_garantia,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => "Documento guardado correctamente. <br/>Se crea la nota de credito número: " . $notaresponse[0]
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => "Documento guardado correctamente. <br/>Se crea la nota de credito número: " . $notaresponse[0]
         ]);
 
         return response()->json([
@@ -1469,8 +1490,8 @@ class SoporteController extends Controller
 
         if (empty($usuario_info)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre el usuario, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró información sobre el usuario, favor de contactar a un administrador."
             ]);
         }
 
@@ -1547,27 +1568,27 @@ class SoporteController extends Controller
             }
         }
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "SOLICITUD_PRODUCTO_GARANTIA_" . $data->documento . ".pdf";
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
+        $file_name = "SOLICITUD_PRODUCTO_GARANTIA_" . $data->documento . ".pdf";
 
         return response()->json([
-            'code'  => 200,
-            'file'  => base64_encode($pdf_data),
-            'name'  => $file_name
+            'code' => 200,
+            'file' => base64_encode($pdf_data),
+            'name' => $file_name
         ]);
     }
 
     public function soporte_garantia_devolucion_garantia_pedido_data(Request $request)
     {
-        $garantias_pendientes   = DB::select("SELECT id FROM documento_garantia WHERE id_fase = 7 AND id_tipo = 2");
-        $periodos               = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
-        $paqueterias            = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1");
-        $empresas               = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
-        $usos_venta             = DB::select("SELECT * FROM documento_uso_cfdi");
-        $metodos                = DB::select("SELECT * FROM metodo_pago");
-        $marketplaces_publico   = DB::select("SELECT marketplace.marketplace FROM marketplace_area INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id WHERE marketplace_area.publico = 1 GROUP BY marketplace.marketplace");
-        $monedas                = DB::select("SELECT * FROM moneda");
+        $garantias_pendientes = DB::select("SELECT id FROM documento_garantia WHERE id_fase = 7 AND id_tipo = 2");
+        $periodos = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
+        $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1");
+        $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
+        $usos_venta = DB::select("SELECT * FROM documento_uso_cfdi");
+        $metodos = DB::select("SELECT * FROM metodo_pago");
+        $marketplaces_publico = DB::select("SELECT marketplace.marketplace FROM marketplace_area INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id WHERE marketplace_area.publico = 1 GROUP BY marketplace.marketplace");
+        $monedas = DB::select("SELECT * FROM moneda");
 
         $documentos = $this->garantia_devolucion_raw_data(7, 2);
 
@@ -1600,7 +1621,7 @@ class SoporteController extends Controller
                                 WHERE documento_garantia.id_fase = 7 AND documento_garantia.id_tipo = 2");
 
         foreach ($documentos as $documento) {
-            $seguimiento_garantia   = DB::select("SELECT
+            $seguimiento_garantia = DB::select("SELECT
                                                     documento_garantia_seguimiento.seguimiento, 
                                                     documento_garantia_seguimiento.created_at, 
                                                     usuario.nombre 
@@ -1627,15 +1648,15 @@ class SoporteController extends Controller
         }
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos,
-            'metodos'   => $metodos,
-            'monedas'   => $monedas,
-            'periodos'  => $periodos,
-            'empresas'  => $empresas,
+            'code' => 200,
+            'ventas' => $documentos,
+            'metodos' => $metodos,
+            'monedas' => $monedas,
+            'periodos' => $periodos,
+            'empresas' => $empresas,
             'almacenes' => $almacenes,
-            'usos_venta'    => $usos_venta,
-            'paqueterias'   => $paqueterias
+            'usos_venta' => $usos_venta,
+            'paqueterias' => $paqueterias
         ]);
     }
 
@@ -1645,31 +1666,31 @@ class SoporteController extends Controller
         $auth = json_decode($request->auth);
 
         $documento = DB::table('documento')->insertGetId([
-            'documento_extra'               => "",
-            'id_almacen_principal_empresa'  => $data->documento->almacen,
-            'id_periodo'                    => $data->documento->periodo,
-            'id_cfdi'                       => $data->documento->uso_venta,
-            'id_marketplace_area'           => 15,
-            'id_usuario'                    => $auth->id,
-            'id_moneda'                     => $data->documento->moneda,
-            'id_paqueteria'                 => $data->documento->paqueteria,
-            'id_fase'                       => 3,
-            'no_venta'                      => $data->documento->venta,
-            'tipo_cambio'                   => $data->documento->tipo_cambio,
-            'referencia'                    => $data->documento->referencia,
-            'observacion'                   => $data->documento->observacion,
-            'info_extra'                    => $data->documento->info_extra,
-            'fulfillment'                   => 0,
-            'pagado'                        => ($data->documento->precio_cambiado) ? 0 : 1,
-            'series_factura'                => $data->documento->series_factura,
-            'mkt_fee'                       => $data->documento->mkt_fee,
-            'mkt_shipping_total'            => $data->documento->costo_envio,
-            'mkt_shipping_total_cost'       => $data->documento->costo_envio_total,
-            'mkt_shipping_id'               => $data->documento->mkt_shipping,
-            'mkt_user_total'                => $data->documento->total_user,
-            'mkt_total'                     => $data->documento->total,
-            'mkt_created_at'                => $data->documento->mkt_created_at,
-            'started_at'                    => $data->documento->fecha_inicio
+            'documento_extra' => "",
+            'id_almacen_principal_empresa' => $data->documento->almacen,
+            'id_periodo' => $data->documento->periodo,
+            'id_cfdi' => $data->documento->uso_venta,
+            'id_marketplace_area' => 15,
+            'id_usuario' => $auth->id,
+            'id_moneda' => $data->documento->moneda,
+            'id_paqueteria' => $data->documento->paqueteria,
+            'id_fase' => 3,
+            'no_venta' => $data->documento->venta,
+            'tipo_cambio' => $data->documento->tipo_cambio,
+            'referencia' => $data->documento->referencia,
+            'observacion' => $data->documento->observacion,
+            'info_extra' => $data->documento->info_extra,
+            'fulfillment' => 0,
+            'pagado' => ($data->documento->precio_cambiado) ? 0 : 1,
+            'series_factura' => $data->documento->series_factura,
+            'mkt_fee' => $data->documento->mkt_fee,
+            'mkt_shipping_total' => $data->documento->costo_envio,
+            'mkt_shipping_total_cost' => $data->documento->costo_envio_total,
+            'mkt_shipping_id' => $data->documento->mkt_shipping,
+            'mkt_user_total' => $data->documento->total_user,
+            'mkt_total' => $data->documento->total,
+            'mkt_created_at' => $data->documento->mkt_created_at,
+            'started_at' => $data->documento->fecha_inicio
         ]);
 
         $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE RFC = '" . TRIM($data->cliente->rfc) . "'");
@@ -1677,54 +1698,54 @@ class SoporteController extends Controller
         if ($data->cliente->rfc != 'XAXX010101000') {
             if (empty($existe_cliente)) {
                 DB::table('documento_entidad')->where(['id' => $data->cliente->id])->update([
-                    'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                    'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
+                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                    'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
                 ]);
 
                 DB::table('documento')->where(['id' => $documento])->update([
-                    'id_entidad'    => $data->cliente->id
+                    'id_entidad' => $data->cliente->id
                 ]);
             } else {
                 # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
                 DB::table('documento_entidad')->where(['id' => $existe_cliente[0]->id])->update([
-                    'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
+                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
                 ]);
 
                 DB::table('documento')->where(['id' => $documento])->update([
-                    'id_entidad'    => $existe_cliente[0]->id
+                    'id_entidad' => $existe_cliente[0]->id
                 ]);
             }
         } else {
             DB::table('documento_entidad')->where(['id' => $data->cliente->id])->update([
-                'razon_social'  => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc'           => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono'      => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt'  => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                'correo'        => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
+                'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+                'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8'))
             ]);
 
             DB::table('documento')->where(['id' => $documento])->update([
-                'id_entidad'    => $data->cliente->id
+                'id_entidad' => $data->cliente->id
             ]);
         }
 
         DB::table('documento_direccion')->insert([
-            'id_documento'      => $documento,
-            'id_direccion_pro'  => $data->documento->direccion_envio->colonia,
-            'calle'             => $data->documento->direccion_envio->calle,
-            'numero'            => $data->documento->direccion_envio->numero,
-            'numero_int'        => $data->documento->direccion_envio->numero_int,
-            'colonia'           => $data->documento->direccion_envio->colonia_text,
-            'ciudad'            => $data->documento->direccion_envio->ciudad,
-            'estado'            => $data->documento->direccion_envio->estado,
-            'codigo_postal'     => $data->documento->direccion_envio->codigo_postal,
-            'referencia'        => ''
+            'id_documento' => $documento,
+            'id_direccion_pro' => $data->documento->direccion_envio->colonia,
+            'calle' => $data->documento->direccion_envio->calle,
+            'numero' => $data->documento->direccion_envio->numero,
+            'numero_int' => $data->documento->direccion_envio->numero_int,
+            'colonia' => $data->documento->direccion_envio->colonia_text,
+            'ciudad' => $data->documento->direccion_envio->ciudad,
+            'estado' => $data->documento->direccion_envio->estado,
+            'codigo_postal' => $data->documento->direccion_envio->codigo_postal,
+            'referencia' => ''
         ]);
 
         foreach ($data->documento->productos as $producto) {
@@ -1732,33 +1753,33 @@ class SoporteController extends Controller
 
             if (empty($existe_modelo)) {
                 $modelo = DB::table('modelo')->insertGetId([
-                    'sku'           => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
-                    'descripcion'   => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
-                    'costo'         => mb_strtoupper(trim($producto->costo), 'UTF-8'),
-                    'alto'          => mb_strtoupper(trim($producto->alto), 'UTF-8'),
-                    'ancho'         => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
-                    'largo'         => mb_strtoupper(trim($producto->largo), 'UTF-8'),
-                    'peso'          => mb_strtoupper(trim($producto->peso), 'UTF-8'),
-                    'tipo'          => ($producto->servicio) ? 2 : 1
+                    'sku' => mb_strtoupper(trim($producto->codigo), 'UTF-8'),
+                    'descripcion' => mb_strtoupper(trim($producto->descripcion), 'UTF-8'),
+                    'costo' => mb_strtoupper(trim($producto->costo), 'UTF-8'),
+                    'alto' => mb_strtoupper(trim($producto->alto), 'UTF-8'),
+                    'ancho' => mb_strtoupper(trim($producto->ancho), 'UTF-8'),
+                    'largo' => mb_strtoupper(trim($producto->largo), 'UTF-8'),
+                    'peso' => mb_strtoupper(trim($producto->peso), 'UTF-8'),
+                    'tipo' => ($producto->servicio) ? 2 : 1
                 ]);
             } else {
                 $modelo = $existe_modelo[0]->id;
             }
 
             $movimiento = DB::table('movimiento')->insertGetId([
-                'id_documento'  => $documento,
-                'id_modelo'     => $modelo,
-                'cantidad'      => $producto->cantidad,
-                'precio'        => $producto->precio,
-                'garantia'      => $producto->garantia,
-                'modificacion'  => $producto->modificacion,
-                'regalo'        => $producto->regalo
+                'id_documento' => $documento,
+                'id_modelo' => $modelo,
+                'cantidad' => $producto->cantidad,
+                'precio' => $producto->precio,
+                'garantia' => $producto->garantia,
+                'modificacion' => $producto->modificacion,
+                'regalo' => $producto->regalo
             ]);
 
             if (TRIM($producto->modificacion) != "") {
                 DB::table('documento')->where(['id' => $documento])->update([
-                    'modificacion'  => 1,
-                    'id_fase'       => 2
+                    'modificacion' => 1,
+                    'id_fase' => 2
                 ]);
 
                 $modificacion = 1;
@@ -1774,18 +1795,18 @@ class SoporteController extends Controller
 
                 DB::table('documento_archivo')->insert([
                     'id_documento' => $documento,
-                    'id_usuario'   => $auth->id,
-                    'nombre'       => $archivo->nombre,
-                    'dropbox'      => $response['id']
+                    'id_usuario' => $auth->id,
+                    'nombre' => $archivo->nombre,
+                    'dropbox' => $response['id']
                 ]);
             }
         }
 
 
         DB::table('seguimiento')->insert([
-            'id_documento'  => $documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->documento->seguimiento
+            'id_documento' => $documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->documento->seguimiento
         ]);
 
         DB::table('documento_garantia')->where(['id' => $data->documento->documento_garantia])->update([
@@ -1793,21 +1814,21 @@ class SoporteController extends Controller
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento " . $documento . " creado correctamente.",
-            'tipo'  => "success"
+            'code' => 200,
+            'message' => "Documento " . $documento . " creado correctamente.",
+            'tipo' => "success"
         ]);
     }
 
     public function soporte_garantia_devolucion_garantia_envio_data()
     {
-        $paqueterias            = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1 AND id != 9");
-        $documentos             = $this->garantia_devolucion_raw_data(99, 2);
+        $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1 AND id != 9");
+        $documentos = $this->garantia_devolucion_raw_data(99, 2);
 
         return response()->json([
-            'code'  => 200,
-            'ventas'    => $documentos,
-            'paqueterias'   => $paqueterias
+            'code' => 200,
+            'ventas' => $documentos,
+            'paqueterias' => $paqueterias
         ]);
     }
 
@@ -1818,21 +1839,21 @@ class SoporteController extends Controller
 
         if ($data->terminar) {
             DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                'id_fase'               => 100,
-                'id_paqueteria_envio'   => $data->paqueteria,
-                'guia_envio'            => $data->guia
+                'id_fase' => 100,
+                'id_paqueteria_envio' => $data->paqueteria,
+                'guia_envio' => $data->guia
             ]);
         }
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento_garantia,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento guardado correctamente."
+            'code' => 200,
+            'message' => "Documento guardado correctamente."
         ]);
     }
 
@@ -1853,15 +1874,15 @@ class SoporteController extends Controller
 
         if ($response->error) {
             return response()->json([
-                'code'  => 500,
-                'message'   => $response->mensaje
+                'code' => 500,
+                'message' => $response->mensaje
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'name'  => $response->name,
-            'file'  => base64_encode($response->file)
+            'code' => 200,
+            'name' => $response->name,
+            'file' => base64_encode($response->file)
         ]);
     }
 
@@ -1871,14 +1892,14 @@ class SoporteController extends Controller
         $auth = json_decode($request->auth);
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento_garantia,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Seguimiento guardado correctamente."
+            'code' => 200,
+            'message' => "Seguimiento guardado correctamente."
         ]);
     }
 
@@ -1891,7 +1912,7 @@ class SoporteController extends Controller
             ->get();
 
         return response()->json([
-            'tecnicos'  => $tecnicos
+            'tecnicos' => $tecnicos
         ]);
     }
 
@@ -1905,14 +1926,14 @@ class SoporteController extends Controller
 
         if (empty($usuario_info)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre el usuario, favor de contactar a un administrador."
+                'code' => 500,
+                'message' => "No se encontró información sobre el usuario, favor de contactar a un administrador."
             ]);
         }
 
         if (empty($tecnico_info)) {
             return response()->json([
-                'code'  => 500,
+                'code' => 500,
                 'message' => "No se encontró información sobre el tecnico, favor de contactar a un administrador."
             ]);
         }
@@ -1953,22 +1974,22 @@ class SoporteController extends Controller
 
         if ($response->error) {
             return response()->json([
-                'code'  => 200,
-                'message'   => "Servicio creado correctamente " . $servicio . ", no pudo ser generado el PDF, favor de descargar en el historial, error: " . $response->mensaje
+                'code' => 200,
+                'message' => "Servicio creado correctamente " . $servicio . ", no pudo ser generado el PDF, favor de descargar en el historial, error: " . $response->mensaje
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'file'  => base64_encode($response->file),
-            'name'  => $response->name,
-            'message'   => "Servicio guardado correctamente con el número: " . $servicio . ""
+            'code' => 200,
+            'file' => base64_encode($response->file),
+            'name' => $response->name,
+            'message' => "Servicio guardado correctamente con el número: " . $servicio . ""
         ]);
     }
 
     public function soporte_garantia_devolucion_servicio_revision_data(Request $request)
     {
-        $servicios   = DB::select("SELECT 
+        $servicios = DB::select("SELECT 
                                         documento_garantia.id, 
                                         documento_garantia.created_at,
                                         usuario.nombre
@@ -1980,7 +2001,7 @@ class SoporteController extends Controller
             $contacto = DB::select("SELECT * FROM documento_garantia_contacto WHERE id_garantia = " . $servicio->id . "");
             $productos = DB::select("SELECT * FROM documento_garantia_producto WHERE id_garantia = " . $servicio->id . "");
 
-            $seguimiento    = DB::select("SELECT 
+            $seguimiento = DB::select("SELECT 
                                                 documento_garantia_seguimiento.seguimiento, 
                                                 documento_garantia_seguimiento.created_at, 
                                                 usuario.nombre 
@@ -1988,13 +2009,13 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia_seguimiento.id_usuario = usuario.id 
                                             WHERE id_documento = " . $servicio->id . "");
 
-            $servicio->contacto     = $contacto[0];
-            $servicio->productos    = $productos;
-            $servicio->seguimiento  = $seguimiento;
+            $servicio->contacto = $contacto[0];
+            $servicio->productos = $productos;
+            $servicio->seguimiento = $seguimiento;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'garantias' => $servicios
         ]);
     }
@@ -2004,8 +2025,8 @@ class SoporteController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        $json['message']    = "Seguimiento guardado correctamente.";
-        $seguimiento_extra  = "";
+        $json['message'] = "Seguimiento guardado correctamente.";
+        $seguimiento_extra = "";
 
         if ($data->terminar) {
             if (!$data->tiene_reparacion) {
@@ -2021,8 +2042,8 @@ class SoporteController extends Controller
 
                     if (empty($existe_codigo_servicio)) {
                         return response()->json([
-                            'code'  => 500,
-                            'message'   => "No éxiste el servicio 'Servicio a laptop' en el CRM, favor de contactar a un administrador."
+                            'code' => 500,
+                            'message' => "No éxiste el servicio 'Servicio a laptop' en el CRM, favor de contactar a un administrador."
                         ]);
                     }
 
@@ -2062,37 +2083,37 @@ class SoporteController extends Controller
                     ]);
 
                     DB::table('documento_direccion')->insert([
-                        'id_documento'  => $documento_pedido,
-                        'id_direccion_pro'  => '0',
-                        'contacto'          => 'N/A',
-                        'calle'             => '',
-                        'numero'            => '',
-                        'numero_int'        => '',
-                        'colonia'           => '',
-                        'ciudad'            => '',
-                        'estado'            => '',
-                        'codigo_postal'     => '',
-                        'referencia'        => 'N/A'
+                        'id_documento' => $documento_pedido,
+                        'id_direccion_pro' => '0',
+                        'contacto' => 'N/A',
+                        'calle' => '',
+                        'numero' => '',
+                        'numero_int' => '',
+                        'colonia' => '',
+                        'ciudad' => '',
+                        'estado' => '',
+                        'codigo_postal' => '',
+                        'referencia' => 'N/A'
                     ]);
 
                     DB::table('documento')->where(['id' => $documento_pedido])->update([
-                        'id_entidad'    => $entidad_pedido
+                        'id_entidad' => $entidad_pedido
                     ]);
 
                     DB::table('movimiento')->insertGetId([
-                        'id_documento'  => $documento_pedido,
-                        'id_modelo'     => $existe_codigo_servicio[0]->id,
-                        'cantidad'      => 1,
-                        'precio'        => $data->costo_total / 1.16,
-                        'garantia'      => 0,
-                        'modificacion'  => 'N/A',
-                        'regalo'        => 0
+                        'id_documento' => $documento_pedido,
+                        'id_modelo' => $existe_codigo_servicio[0]->id,
+                        'cantidad' => 1,
+                        'precio' => $data->costo_total / 1.16,
+                        'garantia' => 0,
+                        'modificacion' => 'N/A',
+                        'regalo' => 0
                     ]);
 
                     DB::table('seguimiento')->insert([
-                        'id_documento'  => $documento_pedido,
-                        'id_usuario'    => $auth->id,
-                        'seguimiento'   => "Este pedido fue generado para pagar el servicio " . $data->documento . ""
+                        'id_documento' => $documento_pedido,
+                        'id_usuario' => $auth->id,
+                        'seguimiento' => "Este pedido fue generado para pagar el servicio " . $data->documento . ""
                     ]);
 
                     DB::table('documento_garantia')->where(['id' => $data->documento])->update([
@@ -2105,7 +2126,7 @@ class SoporteController extends Controller
                     $seguimiento_extra .= "<p>Este documento generó un pedido para cobrar el servicio, número de pedido: " . $documento_pedido . " </p><br>" .
                         "<p>Nota: Sí el cliente necesita factura, puedes editar el pedido en la secciona de ventas.</p>";
 
-                    $json['message']    = "Documento guardado correctamente. Un nuevo pedido fue generado para cubrir los costos del servicio, número de pedido: " . $documento_pedido . "";
+                    $json['message'] = "Documento guardado correctamente. Un nuevo pedido fue generado para cubrir los costos del servicio, número de pedido: " . $documento_pedido . "";
                 }
             } else {
                 DB::table('documento_garantia')->where(['id' => $data->documento])->update([
@@ -2115,24 +2136,24 @@ class SoporteController extends Controller
                     'costo_total' => 0,
                 ]);
 
-                $json['message']    = "Documento guardado correctamente.";
+                $json['message'] = "Documento guardado correctamente.";
             }
         }
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento . $seguimiento_extra
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento . $seguimiento_extra
         ]);
 
-        $json['code']   = 200;
+        $json['code'] = 200;
 
         return response()->json($json);
     }
 
     public function soporte_garantia_devolucion_servicio_envio_data()
     {
-        $garantias_pendientes   = DB::select("SELECT 
+        $garantias_pendientes = DB::select("SELECT 
                                                 documento_garantia.id, 
                                                 documento_garantia.created_at,
                                                 usuario.nombre
@@ -2140,14 +2161,14 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia.created_by = usuario.id
                                             WHERE id_fase = 99 AND id_tipo = 3");
 
-        $paqueterias            = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1 AND id != 9");
-        $documentos             = array();
+        $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1 AND id != 9");
+        $documentos = array();
 
         foreach ($garantias_pendientes as $garantia) {
             $contacto = DB::select("SELECT * FROM documento_garantia_contacto WHERE id_garantia = " . $garantia->id . "");
             $productos = DB::select("SELECT * FROM documento_garantia_producto WHERE id_garantia = " . $garantia->id . "");
 
-            $seguimiento    = DB::select("SELECT 
+            $seguimiento = DB::select("SELECT 
                                                 documento_garantia_seguimiento.seguimiento, 
                                                 documento_garantia_seguimiento.created_at, 
                                                 usuario.nombre 
@@ -2155,15 +2176,15 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia_seguimiento.id_usuario = usuario.id 
                                             WHERE id_documento = " . $garantia->id . "");
 
-            $garantia->contacto     = $contacto[0];
-            $garantia->productos    = $productos;
-            $garantia->seguimiento  = $seguimiento;
+            $garantia->contacto = $contacto[0];
+            $garantia->productos = $productos;
+            $garantia->seguimiento = $seguimiento;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'garantias' => $garantias_pendientes,
-            'paqueterias'   => $paqueterias
+            'paqueterias' => $paqueterias
         ]);
     }
 
@@ -2194,7 +2215,7 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_servicio_historial_data(Request $request, $fecha_inicial, $fecha_final)
     {
-        $garantias_pendientes   = DB::select("SELECT
+        $garantias_pendientes = DB::select("SELECT
                                                 documento_garantia.id,
                                                 documento_garantia_causa.causa,
                                                 documento_garantia_fase.fase,
@@ -2220,7 +2241,7 @@ class SoporteController extends Controller
 
             $productos = DB::select("SELECT * FROM documento_garantia_producto WHERE id_garantia = " . $garantia->id . "");
 
-            $seguimiento    = DB::select("SELECT 
+            $seguimiento = DB::select("SELECT 
                                                 documento_garantia_seguimiento.seguimiento, 
                                                 documento_garantia_seguimiento.created_at, 
                                                 usuario.nombre 
@@ -2228,13 +2249,13 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia_seguimiento.id_usuario = usuario.id 
                                             WHERE id_documento = " . $garantia->id . "");
 
-            $garantia->contacto     = $contacto[0];
-            $garantia->productos    = $productos;
-            $garantia->seguimiento  = $seguimiento;
+            $garantia->contacto = $contacto[0];
+            $garantia->productos = $productos;
+            $garantia->seguimiento = $seguimiento;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'garantias' => $garantias_pendientes
         ]);
     }
@@ -2245,15 +2266,15 @@ class SoporteController extends Controller
 
         if ($response->error) {
             return response()->json([
-                'code'  => 500,
-                'message'   => $response->mensaje
+                'code' => 500,
+                'message' => $response->mensaje
             ]);
         }
 
         return response()->json([
-            'code'  => 200,
-            'name'  => $response->name,
-            'file'  => base64_encode($response->file)
+            'code' => 200,
+            'name' => $response->name,
+            'file' => base64_encode($response->file)
         ]);
     }
 
@@ -2263,20 +2284,20 @@ class SoporteController extends Controller
         $auth = json_decode($request->auth);
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Segumiento guardado correctamente."
+            'code' => 200,
+            'message' => "Segumiento guardado correctamente."
         ]);
     }
 
     public function soporte_garantia_devolucion_servicio_cotizacion_data(Request $request)
     {
-        $garantias_pendientes   = DB::select("SELECT 
+        $garantias_pendientes = DB::select("SELECT 
                                                 documento_garantia.id, 
                                                 documento_garantia.created_at,
                                                 usuario.nombre
@@ -2288,7 +2309,7 @@ class SoporteController extends Controller
             $contacto = DB::select("SELECT * FROM documento_garantia_contacto WHERE id_garantia = " . $garantia->id . "");
             $productos = DB::select("SELECT * FROM documento_garantia_producto WHERE id_garantia = " . $garantia->id . "");
 
-            $seguimiento    = DB::select("SELECT 
+            $seguimiento = DB::select("SELECT 
                                                 documento_garantia_seguimiento.seguimiento, 
                                                 documento_garantia_seguimiento.created_at, 
                                                 usuario.nombre 
@@ -2296,13 +2317,13 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia_seguimiento.id_usuario = usuario.id 
                                             WHERE id_documento = " . $garantia->id . "");
 
-            $garantia->contacto     = $contacto[0];
-            $garantia->productos    = $productos;
-            $garantia->seguimiento  = $seguimiento;
+            $garantia->contacto = $contacto[0];
+            $garantia->productos = $productos;
+            $garantia->seguimiento = $seguimiento;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'garantias' => $garantias_pendientes
         ]);
     }
@@ -2311,15 +2332,15 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $seguimiento_extra  = "";
+        $seguimiento_extra = "";
 
-        $json['message']    = "Seguimiento guardado correctamente.";
+        $json['message'] = "Seguimiento guardado correctamente.";
 
         if ($data->terminar) {
             if ($data->cotizacion_aceptada && $data->costo_total < 1) {
                 return response()->json([
-                    'code'  => 500,
-                    'message'   => "El costo total para el cliente debe de ser mayor a 0."
+                    'code' => 500,
+                    'message' => "El costo total para el cliente debe de ser mayor a 0."
                 ]);
             }
 
@@ -2328,8 +2349,8 @@ class SoporteController extends Controller
 
                 if (empty($existe_codigo_servicio)) {
                     return response()->json([
-                        'code'  => 500,
-                        'message'   => "No éxiste el servicio 'Servicio a laptop' en el CRM, favor de contactar a un administrador."
+                        'code' => 500,
+                        'message' => "No éxiste el servicio 'Servicio a laptop' en el CRM, favor de contactar a un administrador."
                     ]);
                 }
 
@@ -2422,23 +2443,23 @@ class SoporteController extends Controller
             'seguimiento' => $data->seguimiento . $seguimiento_extra
         ]);
 
-        $json['code']   = 200;
+        $json['code'] = 200;
 
         return response()->json($json);
     }
 
     public function soporte_garantia_devolucion_servicio_cotizacion_crear(Request $request)
     {
-        $productos  = json_decode($request->input('productos'));
-        $documento  = $request->input('documento');
+        $productos = json_decode($request->input('productos'));
+        $documento = $request->input('documento');
         $auth = json_decode($request->auth);
 
         $existe_usuario = DB::select("SELECT nombre, email FROM usuario WHERE id = " . $auth->id . " AND status = 1");
 
         if (empty($existe_usuario)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información del usuario."
+                'code' => 500,
+                'message' => "No se encontró información del usuario."
             ]);
         }
 
@@ -2448,8 +2469,8 @@ class SoporteController extends Controller
 
         if (empty($info_cliente)) {
             return response()->json([
-                'code'  => 500,
-                'message'   => "No se encontró información sobre el cliente."
+                'code' => 500,
+                'message' => "No se encontró información sobre el cliente."
             ]);
         }
 
@@ -2499,8 +2520,8 @@ class SoporteController extends Controller
             $pdf->Cell(25, 40, '');
             $pdf->Cell(71, 10, (strlen($producto->producto) > 40) ? substr($producto->producto, 0, 40) : $producto->producto, "1", 0, 'C');
             $pdf->Cell(25, 10, $producto->cantidad, "1", 0, 'C');
-            $pdf->Cell(20, 10, '$ ' . (float) $producto->precio, "1", 0, 'C');
-            $pdf->Cell(30, 10, '$ ' . (float) round($producto->cantidad * $producto->precio, 2), "1", 0, 'C');
+            $pdf->Cell(20, 10, '$ ' . (float)$producto->precio, "1", 0, 'C');
+            $pdf->Cell(30, 10, '$ ' . (float)round($producto->cantidad * $producto->precio, 2), "1", 0, 'C');
             $pdf->Ln();
 
             $total += $producto->cantidad * $producto->precio / 1.16;
@@ -2554,19 +2575,19 @@ class SoporteController extends Controller
         $pdf->Cell(10, 10, iconv('UTF-8', 'windows-1252', $existe_usuario->nombre));
 
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->output($pdf_name, 'S');
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->output($pdf_name, 'S');
 
         return response()->json([
-            'code'  => 200,
-            'file'  => base64_encode($pdf_data),
-            'name'  => "COTIZACION_" . $info_cliente->nombre . "_" . $documento . ".pdf"
+            'code' => 200,
+            'file' => base64_encode($pdf_data),
+            'name' => "COTIZACION_" . $info_cliente->nombre . "_" . $documento . ".pdf"
         ]);
     }
 
     public function soporte_garantia_devolucion_servicio_reparacion_data(Request $request)
     {
-        $garantias_pendientes   = DB::select("SELECT 
+        $garantias_pendientes = DB::select("SELECT 
                                                 documento_garantia.id, 
                                                 documento_garantia.created_at,
                                                 usuario.nombre
@@ -2579,7 +2600,7 @@ class SoporteController extends Controller
 
             $productos = DB::select("SELECT * FROM documento_garantia_producto WHERE id_garantia = " . $garantia->id . "");
 
-            $seguimiento    = DB::select("SELECT 
+            $seguimiento = DB::select("SELECT 
                                                 documento_garantia_seguimiento.seguimiento, 
                                                 documento_garantia_seguimiento.created_at, 
                                                 usuario.nombre 
@@ -2587,13 +2608,13 @@ class SoporteController extends Controller
                                             INNER JOIN usuario ON documento_garantia_seguimiento.id_usuario = usuario.id 
                                             WHERE id_documento = " . $garantia->id . "");
 
-            $garantia->contacto     = $contacto[0];
-            $garantia->productos    = $productos;
-            $garantia->seguimiento  = $seguimiento;
+            $garantia->contacto = $contacto[0];
+            $garantia->productos = $productos;
+            $garantia->seguimiento = $seguimiento;
         }
 
         return response()->json([
-            'code'  => 200,
+            'code' => 200,
             'garantias' => $garantias_pendientes
         ]);
     }
@@ -2610,14 +2631,14 @@ class SoporteController extends Controller
         }
 
         DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento'  => $data->documento,
-            'id_usuario'    => $auth->id,
-            'seguimiento'   => $data->seguimiento
+            'id_documento' => $data->documento,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
         ]);
 
         return response()->json([
-            'code'  => 200,
-            'message'   => "Documento guardado correctamente:"
+            'code' => 200,
+            'message' => "Documento guardado correctamente:"
         ]);
     }
 
@@ -2868,9 +2889,9 @@ class SoporteController extends Controller
         $pdf->Ln(20);
         $pdf->Cell(190, 10, "", "B", 0, "C");
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "SERVICIO_" . $informacion_servicio->cliente . "_" . $informacion_servicio->id . ".pdf";
+        $pdf_name = uniqid() . ".pdf";
+        $pdf_data = $pdf->Output($pdf_name, 'S');
+        $file_name = "SERVICIO_" . $informacion_servicio->cliente . "_" . $informacion_servicio->id . ".pdf";
 
         $response->error = 0;
         $response->name = $file_name;
@@ -2883,149 +2904,206 @@ class SoporteController extends Controller
     {
         $response = new \stdClass();
 
-        $informacion_garantia = DB::select("SELECT
-                                                documento_garantia.id,
-                                                documento_garantia.asigned_to,
-                                                documento_garantia.created_by,
-                                                (SELECT nombre FROM usuario WHERE id = asigned_to) AS tecnico,
-                                                (SELECT nombre FROM usuario WHERE id = created_by) AS creador,
-                                                documento_entidad.razon_social AS cliente,
-                                                documento_entidad.telefono,
-                                                documento_entidad.correo
-                                            FROM documento_garantia
-                                            INNER JOIN documento_garantia_re ON documento_garantia.id = documento_garantia_re.id_garantia
-                                            INNER JOIN documento ON documento_garantia_re.id_documento = documento.id
-                                            INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
-                                            WHERE documento_garantia.id = " . $documento . "");
+        $informacion_garantia = DB::table('documento_garantia as dg')
+            ->join('documento_garantia_re as dgr', 'dg.id', '=', 'dgr.id_garantia')
+            ->join('documento as d', 'dgr.id_documento', '=', 'd.id')
+            ->join('documento_entidad as de', 'd.id_entidad', '=', 'de.id')
+            ->leftJoin('usuario as tecnico', 'dg.asigned_to', '=', 'tecnico.id')
+            ->join('usuario as creador', 'dg.created_by', '=', 'creador.id')
+            ->leftJoin('documento_garantia_causa as dgc', 'dg.id_causa', '=', 'dgc.id')
+            ->select(
+                'dg.id',
+                'dg.id_tipo',
+                'd.id as numero_pedido',
+                'tecnico.nombre as tecnico',
+                'creador.nombre as creador',
+                'de.razon_social as cliente',
+                'de.telefono',
+                'de.correo',
+                'dgc.causa as motivo'
+            )
+            ->where('dg.id', $documento)->first();
 
-        if (empty($informacion_garantia)) {
+        if (!$informacion_garantia) {
             $response->error = 1;
-            $response->mensaje = "No se encontró información de la garantía, favor de verificar e intentar de nuevo.";
-
+            $response->mensaje = "No se encontró información de la garantía.";
             return $response;
         }
 
-        $informacion_garantia = $informacion_garantia[0];
+        $esDevolucion = ($informacion_garantia->id_tipo == 1);
+        $tipo_texto_titulo = $esDevolucion ? 'REPORTE DE DEVOLUCION' : 'REPORTE DE GARANTIA';
+        $tipo_texto_detalles = $esDevolucion ? 'DETALLES DE LA DEVOLUCION' : 'DETALLES DE LA GARANTIA';
+        $tipo_texto_numero = $esDevolucion ? 'No. Devolucion' : 'No. Garantia';
+        $tipo_texto_productos = $esDevolucion ? 'PRODUCTOS EN DEVOLUCION' : 'PRODUCTOS EN GARANTIA';
 
-        $productos = DB::select("SELECT
-                                    modelo.sku,
-                                    modelo.descripcion
-                                FROM documento_garantia
-                                INNER JOIN documento_garantia_re ON documento_garantia.id = documento_garantia_re.id_garantia
-                                INNER JOIN movimiento ON documento_garantia_re.id_documento = movimiento.id_documento
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE documento_garantia.id = " . $documento . "");
+        $productos_garantia = DB::table('documento_garantia_producto as dgp')
+            ->leftJoin('modelo as m', 'dgp.producto', '=', 'm.sku')
+            ->select('dgp.producto as sku', 'dgp.cantidad', 'm.descripcion')
+            ->where('dgp.id_garantia', $documento)->get();
 
-        $productos_garantia = DB::select("SELECT producto, cantidad FROM documento_garantia_producto WHERE id_garantia = " . $documento . "");
-
-        if (empty($productos)) {
-            $response->error = 1;
-            $response->mensaje = "No se encontró información de los productos de la garantía, favor de verificar e intentar de nuevo.";
-
-            return $response;
-        }
-
-        foreach ($productos as $index => $producto) {
-            $producto->descripcion .= " - " . (array_key_exists($index, $productos_garantia) ? $productos_garantia[$index]->producto : "");
-        }
-
-        $seguimientos = DB::select("SELECT * FROM documento_garantia_seguimiento WHERE id_documento = " . $documento . "");
+        $seguimientos = DB::table('documento_garantia_seguimiento')
+            ->where('id_documento', $documento)->get();
 
         $pdf = new Fpdf();
-
-        $x = $pdf->GetX();
-        $y = $pdf->GetY();
-
         $pdf->AddPage();
         $pdf->SetFont('Arial', '', 10);
-        $pdf->SetTextColor(69, 90, 100);
+        $pdf->SetTextColor(0, 0, 0);
 
-        # Informacion de la empresa
-        # OMG Logo
-        $pdf->Image("img/omg.png", 5, 10, 60, 20, 'png');
+        $pdf->Image(base_path('public/img/omg.png'), 10, 8, 50);
+        $pdf->SetFont('Arial', 'B', 28);
+        $pdf->SetTextColor(220, 53, 69);
+        $pdf->Cell(80);
+        $pdf->Cell(100, 10, $tipo_texto_titulo, 0, 0, 'C');
+        $pdf->Ln(25);
+        $pdf->SetTextColor(0, 0, 0);
 
-        $pdf->SetFont('Arial', 'B', 25);
+        $pdf->SetY(40);
 
-        $pdf->Cell(100, 10, "");
-        $pdf->Cell(40, 10, "NO. GARANTIA: " . $informacion_garantia->id);
-
-        $pdf->SetFont('Arial', '', 10);
-
-        $pdf->Ln(30);
-        $pdf->Cell(100, 10, 'OMG INTERNATIONAL SA DE CV');
-        $pdf->Cell(25, 10, 'TECNICO: ');
-        $pdf->Cell(10, 10, $informacion_garantia->tecnico);
-        $pdf->Ln(5);
-        $pdf->Cell(20, 10, 'Industria Vidriera #105, Fracc. Industrial Zapopan Norte');
-        $pdf->Ln(5);
-        $pdf->Cell(20, 10, $informacion_garantia->creador);
-        $pdf->Ln(5);
-        $pdf->Cell(20, 10, 'soporte@omg.com.mx');
-
-        # Información del cliente
-        $pdf->Ln(20);
-        $pdf->Cell(100, 10, 'INFORMACION DEL CLIENTE');
-        $pdf->Cell(10, 10, 'INFORMACION DE LA GARANTIA');
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(95, 8, 'INFORMACION DEL CLIENTE', 0, 1, 'L', true);
+        $pdf->Ln(4);
 
         $pdf->SetFont('Arial', 'B', 10);
-
-        setlocale(LC_ALL, "es_MX");
-
-        $pdf->Ln(5);
-        $pdf->Cell(100, 10, iconv('UTF-8', 'windows-1252', mb_strtoupper($informacion_garantia->cliente, 'UTF-8')));
-        $pdf->Cell(30, 10, 'Fecha: ');
-
+        $pdf->Cell(25, 6, 'Cliente:');
         $pdf->SetFont('Arial', '', 10);
-        $pdf->Cell(10, 10, strftime("%A %d de %B del %Y"));
-
-        $pdf->Ln(5);
-        $pdf->Cell(100, 10, iconv('UTF-8', 'windows-1252', mb_strtoupper($informacion_garantia->correo, 'UTF-8')));
-
+        $pdf->MultiCell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->cliente));
         $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Cell(30, 10, 'No. Garantia: ');
-
+        $pdf->Cell(25, 6, 'Correo:');
         $pdf->SetFont('Arial', '', 10);
-        $pdf->Cell(10, 10, $informacion_garantia->id);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->correo));
+        $pdf->Ln();
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, iconv('UTF-8', 'windows-1252', 'Teléfono:'));
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->telefono));
 
-        $pdf->Ln(5);
-        $pdf->Cell(100, 10, iconv('UTF-8', 'windows-1252', mb_strtoupper($informacion_garantia->telefono, 'UTF-8')));
+        $pdf->SetY(40);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(90, 8, $tipo_texto_detalles, 0, 1, 'L', true);
+        $pdf->Ln(2);
 
-        $pdf->Ln(20);
+        $y_datos_importantes = $pdf->GetY();
+        $pdf->SetFillColor(248, 249, 250);
+        $pdf->SetDrawColor(222, 226, 230);
 
-        $pdf->Cell(40, 10, "Codigo", "T");
-        $pdf->Cell(150, 10, "Descripcion", "T");
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(44, 7, $tipo_texto_numero, 0, 1, 'C');
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(44, 10, $informacion_garantia->id, 1, 0, 'C', true);
+
+        $pdf->SetY($y_datos_importantes);
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(45, 7, 'Pedido Original', 0, 1, 'C');
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(45, 10, $informacion_garantia->numero_pedido, 1, 1, 'C', true);
+
+        $pdf->Ln(4);
+
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Fecha:');
+        $pdf->SetFont('Arial', '', 10);
+        setlocale(LC_ALL, "es_MX.UTF-8");
+        $pdf->Cell(65, 6, strftime("%d de %B del %Y"));
         $pdf->Ln();
 
-        foreach ($productos as $producto) {
-            $pdf->Cell(40, 10, $producto->sku, "T");
-            $pdf->Cell(150, 10, $producto->descripcion, "T");
-            $pdf->Ln();
-        }
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Creado por:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->creador));
+        $pdf->Ln();
 
-        if (!empty($seguimientos)) {
-            $pdf->ln();
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(100, 40, "OBSERVACIONES");
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Motivo:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->motivo));
 
-            $pdf->Ln(25);
-            $pdf->SetFont('Arial', '', 10);
+        $pdf->SetY(105);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(0, 8, $tipo_texto_productos, 0, 1, 'L', true);
+        $pdf->Ln(4);
 
-            foreach ($seguimientos as $seguimiento) {
-                $seguimiento->seguimiento = str_replace("&nbsp;", " ", $seguimiento->seguimiento);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->SetFillColor(230, 230, 230);
+        $pdf->SetTextColor(0);
+        $pdf->SetDrawColor(200, 200, 200);
+        $pdf->Cell(40, 8, 'SKU / Codigo', 1, 0, 'C', true);
+        $pdf->Cell(120, 8, iconv('UTF-8', 'windows-1252', 'Descripción'), 1, 0, 'C', true);
+        $pdf->Cell(30, 8, 'Cantidad', 1, 1, 'C', true);
 
-                $pdf->MultiCell(190, 5, "> " . strip_tags($seguimiento->seguimiento));
+        $pdf->SetFont('Arial', '', 10);
+        if (!$productos_garantia->isEmpty()) {
+            foreach ($productos_garantia as $producto) {
+                $y_before_text = $pdf->GetY();
+                $pdf->SetX(300);
+                $pdf->MultiCell(120, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $row_height = $pdf->GetY() - $y_before_text;
+                $pdf->SetXY(10, $y_before_text);
+
+                $pdf->MultiCell(40, 7, $producto->sku);
+                $pdf->SetXY(50, $y_before_text);
+                $pdf->MultiCell(120, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $pdf->SetXY(170, $y_before_text);
+                $pdf->MultiCell(30, 7, $producto->cantidad, 0, 'C');
+
+                $pdf->Line(10, $y_before_text, 10, $y_before_text + $row_height);
+                $pdf->Line(50, $y_before_text, 50, $y_before_text + $row_height);
+                $pdf->Line(170, $y_before_text, 170, $y_before_text + $row_height);
+                $pdf->Line(200, $y_before_text, 200, $y_before_text + $row_height);
+                $pdf->Line(10, $y_before_text + $row_height, 200, $y_before_text + $row_height);
+
+                $pdf->SetY($y_before_text + $row_height);
             }
         }
 
-        $pdf->Ln(50);
-        $pdf->Cell(190, 10, "Firma de recibido", 0, 0, "C");
+        if (!$seguimientos->isEmpty()) {
+            $pdf->Ln(10);
+            $pdf->SetFont('Arial', 'B', 12);
+            $pdf->SetFillColor(240, 240, 240);
+            $pdf->Cell(0, 8, 'OBSERVACIONES', 0, 1, 'L', true);
+            $pdf->Ln(4);
+            $pdf->SetFont('Arial', '', 10);
+            foreach ($seguimientos as $seguimiento) {
+                $texto_limpio = "> " . strip_tags(str_replace("&nbsp;", " ", $seguimiento->seguimiento));
+                $pdf->MultiCell(190, 5, iconv('UTF-8', 'windows-1252', $texto_limpio));
+                $pdf->Ln(2);
+            }
+        }
 
-        $pdf->Ln(20);
-        $pdf->Cell(190, 10, "", "B", 0, "C");
+        $pdf->SetAutoPageBreak(false);
 
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-        $file_name  = "GARANTIA_" . $informacion_garantia->cliente . "_" . $informacion_garantia->id . ".pdf";
+        if ($pdf->GetY() > 240) {
+            $pdf->AddPage();
+        }
+        $pdf->SetY(-45);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(0, 10, 'Firma de Recibido', 0, 1, 'C');
+        $pdf->SetX(60);
+        $pdf->Cell(90, 10, '', 'T', 0, 'C');
+
+        $pdf->SetY(-15);
+        $pdf->SetFont('Arial', 'I', 8);
+        $pdf->SetTextColor(128);
+        $pdf->Cell(0, 10, 'Pagina ' . $pdf->PageNo(), 0, 0, 'C');
+
+        $pdf->SetAutoPageBreak(true, 15);
+
+        $file_name  = ($esDevolucion ? "DEVOLUCION_" : "GARANTIA_") . $informacion_garantia->id . "_" . time() . ".pdf";
+        $pdf_data   = $pdf->Output($file_name, 'S');
 
         $response->error = 0;
         $response->name = $file_name;
