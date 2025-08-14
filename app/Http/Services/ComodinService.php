@@ -190,35 +190,15 @@ class ComodinService
                             $object->mensaje = "La serie " . $serie . " no está disponible para venta.";
                             array_push($errores, $object->mensaje);
                         } else {
-                            $serie_venta = DB::table('movimiento_producto')
-                                ->join('movimiento', 'movimiento_producto.id_movimiento', '=', 'movimiento.id')
-                                ->join('documento', 'movimiento.id_documento', '=', 'documento.id')
-                                ->where('movimiento_producto.id_producto', $existe_serie->id)
-                                ->where('documento.id_tipo', 2) // 2 = venta, cambia según tu catálogo
-                                ->where('documento.status', 1) // Venta activa
-                                ->select('documento.id', 'documento.no_venta') // agrega los campos que te interese mostrar
-                                ->first();
-
-                            if ($serie_venta) {
-                                $msg = "La serie " . $serie . " ya fue utilizada en la venta/documento ID: " . $serie_venta->id;
-                                if (!empty($serie_venta->no_venta)) {
-                                    $msg .= " (No. venta: " . $serie_venta->no_venta . ")";
+                            if($almacen != 0) {
+                                if($existe_serie->id_almacen != $almacen) {
+                                    $object->status = 0;
+                                    $object->mensaje = "La serie " . $serie . " no pertenece al almacen " . $almacen;
+                                    array_push($errores, "La serie " . $serie . " no pertenece al almacen " . $almacen);
                                 }
-
-                                $object->status = 0;
-                                $object->mensaje = $msg;
-                                array_push($errores, $msg);
                             } else {
-                                if($almacen != 0) {
-                                    if($existe_serie->id_almacen != $almacen) {
-                                        $object->status = 0;
-                                        $object->mensaje = "La serie " . $serie . " no pertenece al almacen " . $almacen;
-                                        array_push($errores, "La serie " . $serie . " no pertenece al almacen " . $almacen);
-                                    }
-                                } else {
-                                    $object->status = 1;
-                                    $id_producto = $existe_serie->id;
-                                }
+                                $object->status = 1;
+                                $id_producto = $existe_serie->id;
                             }
                         }
                     } else {
