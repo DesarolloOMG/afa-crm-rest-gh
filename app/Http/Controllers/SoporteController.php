@@ -295,7 +295,7 @@ class SoporteController extends Controller
         ]);
     }
 
-    public function soporte_garantia_devolucion_devolucion_guardar(Request $request)
+    /*public function soporte_garantia_devolucion_devolucion_guardar(Request $request)
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
@@ -591,8 +591,357 @@ class SoporteController extends Controller
             'code' => 200,
             'message' => "Documento guardado correctamente."
         ]);
+    }*/
+
+    public function soporte_garantia_devolucion_devolucion_guardar(Request $request)
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+
+        // --- 1. VALIDAR SERIES INGRESADAS VS. VENTA ORIGINAL ---
+
+        $series_originales_raw = DB::select('CALL sp_obtenerSeriesPorDocumento(?)', [$data->documento]);
+
+        $series_originales = [];
+        foreach ($series_originales_raw as $serie_db) {
+            $sku = DB::table('modelo')->where('id', $serie_db->id_modelo)->value('sku');
+            if (!isset($series_originales[$sku])) {
+                $series_originales[$sku] = [];
+            }
+            $series_originales[$sku][] = $serie_db->serie;
+        }
+
+        foreach ($data->productos as $producto) {
+            foreach ($producto->series as $serie_ingresada) {
+                $serie_limpia = trim($serie_ingresada);
+
+                if (!isset($series_originales[trim($producto->sku)])) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "El producto con SKU " . $producto->sku . " no pertenece a la venta original."
+                    ]);
+                }
+
+                if (!in_array($serie_limpia, $series_originales[trim($producto->sku)])) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => "La serie '" . $serie_limpia . "' no corresponde al producto " . $producto->sku . " en la venta original."
+                    ]);
+                }
+            }
+        }
+
+        // --- 2. ACTUALIZAR DATOS DE LA GARANTÍA (GARANTIA, ARCHIVOS, SEGUIMIENTOS, SERIES) ---
+
+        DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
+            'id_fase' => DocumentoGarantiaFase::DEVOLUCION_REVISION,
+            'asigned_to' => $data->tecnico,
+            'guia_llegada' => $data->guia,
+            'id_paqueteria_llegada' => $data->paqueteria,
+        ]);
+
+        $productos_garantia = DB::table('documento_garantia_producto')
+            ->where('id_garantia', $data->documento_garantia)
+            ->get()->keyBy('producto');
+
+        foreach ($data->productos as $producto) {
+            if (isset($productos_garantia[trim($producto->sku)])) {
+                $id_documento_garantia_producto = $productos_garantia[trim($producto->sku)]->id;
+
+                foreach ($producto->series as $serie_ingresada) {
+                    DB::table('documento_garantia_producto_series')->insert([
+                        'id_documento_garantia_producto' => $id_documento_garantia_producto,
+                        'serie' => trim($serie_ingresada)
+                    ]);
+                }
+            }
+        }
+
+        if (!empty($data->archivos)) {
+            foreach ($data->archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
+                    DB::table('documento_archivo')->insert([
+                        'id_documento' => $data->documento,
+                        'id_usuario' => $auth->id,
+                        'nombre' => $archivo->nombre,
+                        'dropbox' => $response['id']
+                    ]);
+                }
+            }
+        }
+
+        DB::table('documento_garantia_seguimiento')->insert([
+            'id_documento' => $data->documento_garantia,
+            'id_usuario' => $auth->id,
+            'seguimiento' => $data->seguimiento
+        ]);
+
+        // --- 3. GENERAR PDF ---
+        $pdf_response = self::generar_pdf_devolucion($data->documento_garantia);
+        $file_data = "";
+        $file_name = "";
+
+        if (!$pdf_response->error) {
+            $file_data = base64_encode($pdf_response->file);
+            $file_name = $pdf_response->name;
+        }
+
+        // --- 4. SE TERMINA LA FUNCIÓN Y SE DEVUELVE LA RESPUESTA ---
+        return response()->json([
+            'code' => 200,
+            'message' => "Documento guardado y validado correctamente.",
+            'file' => $file_data,
+            'name' => $file_name
+        ]);
     }
 
+    private function generar_pdf_devolucion($id_garantia)
+    {
+        $response = new \stdClass();
+
+        $informacion_garantia = DB::table('documento_garantia as dg')
+            ->join('documento_garantia_re as dgr', 'dg.id', '=', 'dgr.id_garantia')
+            ->join('documento as d', 'dgr.id_documento', '=', 'd.id')
+            ->join('documento_entidad as de', 'd.id_entidad', '=', 'de.id')
+            ->leftJoin('usuario as tecnico', 'dg.asigned_to', '=', 'tecnico.id')
+            ->join('usuario as creador', 'dg.created_by', '=', 'creador.id')
+            ->leftJoin('documento_garantia_causa as dgc', 'dg.id_causa', '=', 'dgc.id')
+            ->leftJoin('paqueteria as p', 'dg.id_paqueteria_llegada', '=', 'p.id')
+            ->select(
+                'dg.id', 'dg.id_tipo', 'd.id as numero_pedido', 'tecnico.nombre as tecnico',
+                'creador.nombre as creador', 'de.razon_social as cliente', 'de.telefono',
+                'de.correo', 'dgc.causa as motivo', 'dg.guia_llegada', 'p.paqueteria as paqueteria_llegada'
+            )
+            ->where('dg.id', $id_garantia)->first();
+
+        if (!$informacion_garantia) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró información del documento.";
+            return $response;
+        }
+
+        $esDevolucion = ($informacion_garantia->id_tipo == 1);
+        $tipo_texto_titulo = $esDevolucion ? 'REPORTE DE DEVOLUCION' : 'REPORTE DE GARANTIA';
+        $tipo_texto_detalles = $esDevolucion ? 'DETALLES DE LA DEVOLUCION' : 'DETALLES DE LA GARANTIA';
+        $tipo_texto_numero = $esDevolucion ? 'No. Devolucion' : 'No. Garantia';
+        $tipo_texto_productos = $esDevolucion ? 'PRODUCTOS EN DEVOLUCION' : 'PRODUCTOS EN GARANTIA';
+
+        $productos = DB::table('documento_garantia_producto as dgp')
+            ->join('modelo as m', 'dgp.producto', '=', 'm.sku')
+            ->select('dgp.id', 'm.sku', 'm.descripcion')
+            ->where('dgp.id_garantia', $id_garantia)->get();
+
+        foreach ($productos as $producto) {
+            $producto->series = DB::table('documento_garantia_producto_series')
+                ->where('id_documento_garantia_producto', $producto->id)
+                ->pluck('serie')->toArray();
+        }
+
+        $seguimientos = DB::table('documento_garantia_seguimiento')
+            ->where('id_documento', $id_garantia)->get();
+
+        $pdf = new Fpdf();
+        $pdf->AddPage();
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $pdf->Image(base_path('public/img/omg.png'), 10, 8, 50);
+        $pdf->SetFont('Arial', 'B', 28);
+        $pdf->SetTextColor(220, 53, 69);
+        $pdf->Cell(80);
+        $pdf->Cell(100, 10, $tipo_texto_titulo, 0, 0, 'C');
+        $pdf->Ln(25);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $pdf->SetY(40);
+
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(95, 8, 'INFORMACION DEL CLIENTE', 0, 1, 'L', true);
+        $pdf->Ln(4);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Cliente:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->MultiCell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->cliente));
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Correo:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->correo));
+        $pdf->Ln();
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, iconv('UTF-8', 'windows-1252', 'Teléfono:'));
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->telefono));
+        $pdf->Ln(10);
+        $pdf->SetFillColor(248, 249, 250);
+        $pdf->SetDrawColor(222, 226, 230);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(95, 7, 'INFORMACION DE SEGUIMIENTO', 1, 1, 'C', true);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(25, 7, 'Tecnico:', 'L');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->tecnico), 'R', 1);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(25, 7, 'Paqueteria:', 'L');
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->paqueteria_llegada), 'R', 1);
+        $pdf->Cell(25, 7, 'Guia:', 'LB');
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->guia_llegada), 'RB', 1);
+        $y_fin_col_izquierda = $pdf->GetY();
+
+        $pdf->SetY(40);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(90, 8, $tipo_texto_detalles, 0, 1, 'L', true);
+        $pdf->Ln(2);
+        $y_datos_importantes = $pdf->GetY();
+        $pdf->SetFillColor(248, 249, 250);
+        $pdf->SetDrawColor(222, 226, 230);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(44, 7, $tipo_texto_numero, 0, 1, 'C');
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(44, 10, $informacion_garantia->id, 1, 0, 'C', true);
+        $pdf->SetY($y_datos_importantes);
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(45, 7, 'Pedido Original', 0, 1, 'C');
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(45, 10, $informacion_garantia->numero_pedido, 1, 1, 'C', true);
+        $pdf->Ln(4);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Fecha:');
+        $pdf->SetFont('Arial', '', 10);
+        $meses = ["January"=>"Enero", "February"=>"Febrero", "March"=>"Marzo", "April"=>"Abril", "May"=>"Mayo", "June"=>"Junio", "July"=>"Julio", "August"=>"Agosto", "September"=>"Septiembre", "October"=>"Octubre", "November"=>"Noviembre", "December"=>"Diciembre"];
+        $fecha_actual = date("d") . " de " . $meses[date("F")] . " del " . date("Y");
+        $pdf->Cell(65, 6, $fecha_actual);
+        $pdf->Ln();
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Creado por:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->creador));
+        $pdf->Ln();
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Motivo:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->motivo));
+        $y_fin_col_derecha = $pdf->GetY();
+
+        $pdf->SetY(max($y_fin_col_izquierda, $y_fin_col_derecha) + 5);
+
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(0, 8, $tipo_texto_productos, 0, 1, 'L', true);
+        $pdf->Ln(4);
+
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->SetFillColor(230, 230, 230);
+        $pdf->SetTextColor(0);
+        $pdf->SetDrawColor(200, 200, 200);
+        $pdf->Cell(60, 8, 'SKU / Codigo', 1, 0, 'C', true);
+        $pdf->Cell(70, 8, iconv('UTF-8', 'windows-1252', 'Descripción'), 1, 0, 'C', true);
+        $pdf->Cell(60, 8, 'No. de Serie', 1, 1, 'C', true);
+
+        $pdf->SetFont('Arial', '', 9);
+        if (!$productos->isEmpty()) {
+            foreach ($productos as $producto) {
+                if (empty($producto->series)) {
+                    $producto->series[] = 'N/A';
+                }
+
+                $series_string = implode("\n", $producto->series);
+
+                $y_before_text = $pdf->GetY();
+                $pdf->SetX(300);
+                $pdf->MultiCell(70, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $height_desc = $pdf->GetY() - $y_before_text;
+
+                $pdf->SetXY(300, $y_before_text);
+                $pdf->MultiCell(60, 7, $series_string);
+                $height_series = $pdf->GetY() - $y_before_text;
+
+                $row_height = max($height_desc, $height_series);
+                $pdf->SetXY(10, $y_before_text);
+
+                $pdf->MultiCell(60, 7, $producto->sku);
+                $pdf->SetXY(70, $y_before_text);
+                $pdf->MultiCell(70, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $pdf->SetXY(140, $y_before_text);
+                $pdf->MultiCell(60, 7, $series_string, 0, 'C');
+
+                $pdf->Line(10, $y_before_text, 10, $y_before_text + $row_height);
+                $pdf->Line(70, $y_before_text, 70, $y_before_text + $row_height);
+                $pdf->Line(140, $y_before_text, 140, $y_before_text + $row_height);
+                $pdf->Line(200, $y_before_text, 200, $y_before_text + $row_height);
+                $pdf->Line(10, $y_before_text + $row_height, 200, $y_before_text + $row_height);
+
+                $pdf->SetY($y_before_text + $row_height);
+            }
+        }
+
+        if (!$seguimientos->isEmpty()) {
+            $pdf->Ln(5);
+            $pdf->SetFont('Arial', 'B', 12);
+            $pdf->SetFillColor(240, 240, 240);
+            $pdf->Cell(0, 8, 'OBSERVACIONES', 0, 1, 'L', true);
+            $pdf->Ln(4);
+            $pdf->SetFont('Arial', '', 10);
+            foreach ($seguimientos as $seguimiento) {
+                $texto_limpio = "> " . strip_tags(str_replace("&nbsp;", " ", $seguimiento->seguimiento));
+                $pdf->MultiCell(190, 5, iconv('UTF-8', 'windows-1252', $texto_limpio));
+                $pdf->Ln(2);
+            }
+        }
+
+        $pdf->SetAutoPageBreak(false);
+
+        $pdf->SetY(-60);
+
+        $pdf->SetX(20);
+        $pdf->Cell(80, 5, '', 'T', 0, 'C');
+        $pdf->SetX(110);
+        $pdf->Cell(80, 5, '', 'T', 1, 'C');
+
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetX(20);
+        $pdf->Cell(80, 6, 'Firma del Supervisor', 0, 0, 'C');
+        $pdf->SetX(110);
+        $pdf->Cell(80, 6, 'Firma del Tecnico', 0, 1, 'C');
+
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(80, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->tecnico), 0, 1, 'C');
+
+        $pdf->SetY(-15);
+        $pdf->SetFont('Arial', 'I', 8);
+        $pdf->SetTextColor(128);
+        $pdf->Cell(0, 10, 'Pagina ' . $pdf->PageNo(), 0, 0, 'C');
+
+        $pdf->SetAutoPageBreak(true, 15);
+
+        $file_name  = ($esDevolucion ? "DEVOLUCION_" : "GARANTIA_") . $informacion_garantia->id . "_" . time() . ".pdf";
+        $pdf_data   = $pdf->Output($file_name, 'S');
+
+        $response->error = 0;
+        $response->name = $file_name;
+        $response->file = $pdf_data;
+
+        return $response;
+    }
     public function soporte_garantia_devolucion_devolucion_revision_data(Request $request)
     {
         $auth = json_decode($request->auth);
@@ -2706,21 +3055,27 @@ class SoporteController extends Controller
                             " . $query);
 
         foreach ($documentos as $documento) {
-            $productos = DB::select("SELECT
-                                        modelo.id AS id_modelo,
-                                        modelo.sku,
-                                        modelo.serie,
-                                        modelo.costo,
-                                        movimiento.id,
-                                        modelo.descripcion,
-                                        movimiento.cantidad,
-                                        movimiento.precio,
-                                        movimiento.garantia,
-                                        movimiento.regalo,
-                                        0 AS cambio
-                                    FROM movimiento
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $documento->id . "");
+            $productos = DB::table('documento_garantia_producto as dgp')
+                ->join('modelo', 'dgp.producto', '=', 'modelo.sku')
+                ->join('movimiento', 'modelo.id', '=', 'movimiento.id_modelo')
+                ->select(
+                    'modelo.id AS id_modelo',
+                    'modelo.sku',
+                    'modelo.serie',
+                    'modelo.costo',
+                    'movimiento.id',
+                    'modelo.descripcion',
+                    'dgp.cantidad', // Se usa la cantidad de la tabla de devolución, no la original
+                    'movimiento.precio',
+                    'movimiento.garantia',
+                    'movimiento.regalo',
+                    DB::raw('0 AS cambio')
+                )
+                // Asegura que los productos pertenezcan a la garantía/devolución correcta
+                ->where('dgp.id_garantia', $documento->documento_garantia)
+                // Asegura que los datos de movimiento (precio, etc.) correspondan a la venta original
+                ->where('movimiento.id_documento', $documento->id)
+                ->get();
 
             foreach ($productos as $producto) {
                 $producto->series = array();
@@ -3014,8 +3369,9 @@ class SoporteController extends Controller
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(25, 6, 'Fecha:');
         $pdf->SetFont('Arial', '', 10);
-        setlocale(LC_ALL, "es_MX.UTF-8");
-        $pdf->Cell(65, 6, strftime("%d de %B del %Y"));
+        $meses = ["January"=>"Enero", "February"=>"Febrero", "March"=>"Marzo", "April"=>"Abril", "May"=>"Mayo", "June"=>"Junio", "July"=>"Julio", "August"=>"Agosto", "September"=>"Septiembre", "October"=>"Octubre", "November"=>"Noviembre", "December"=>"Diciembre"];
+        $fecha_actual = date("d") . " de " . $meses[date("F")] . " del " . date("Y");
+        $pdf->Cell(65, 6, $fecha_actual);
         $pdf->Ln();
 
         $pdf->SetX(110);
@@ -3117,6 +3473,57 @@ class SoporteController extends Controller
         header('Content-Type: application/json');
 
         return json_encode($json);
+    }
+
+    /**
+     * Finaliza un proceso de devolución/garantía, creando la NC y actualizando el estado.
+     * Es una función interna para ser llamada por otros métodos del controlador.
+     *
+     * @param int $id_documento_original
+     * @param int $id_garantia
+     * @return \stdClass
+     */
+    public function terminar_devolucion(int $id_documento_original, int $id_garantia): \stdClass
+    {
+        $response = new \stdClass();
+
+        // 1. Se crea la Nota de Crédito (como ya la teníamos)
+        $response_nc = DocumentoService::crearNotaCreditoConEgreso($id_documento_original, 0, $id_garantia);
+
+        if ($response_nc->error) {
+            $response->error = 1;
+            $response->message = "Error al crear la nota de crédito: " . $response_nc->mensaje;
+            return $response;
+        }
+
+        // 2. Se crea el Traspaso llamando a nuestra nueva función
+        $response_traspaso = InventarioService::crear_traspaso_devolucion($id_documento_original, $id_garantia);
+        $seguimiento_adicional = "";
+
+        if ($response_traspaso->error) {
+            // Si el traspaso falla, lo registramos pero no detenemos el proceso,
+            // ya que la NC ya se hizo. Esto es una decisión de negocio, se puede cambiar.
+            $seguimiento_adicional = " ADVERTENCIA: " . $response_traspaso->message;
+        } else {
+            $seguimiento_adicional = " " . $response_traspaso->message;
+        }
+
+        // 3. Actualizamos la fase del documento de garantía a "Finalizado"
+        DB::table('documento_garantia')
+            ->where('id', $id_garantia)
+            ->update(['id_fase' => 100]);
+
+        // 4. Se agrega un seguimiento final con el resultado de ambas operaciones
+        DB::table('documento_garantia_seguimiento')->insert([
+            'id_documento' => $id_garantia,
+            'id_usuario' => 1,
+            'seguimiento' => "Proceso finalizado. Se generó la Nota de Crédito ID: " . $response_nc->id_nota_credito . "." . $seguimiento_adicional
+        ]);
+
+        $response->error = 0;
+        $response->message = "Proceso de devolución finalizado." . $seguimiento_adicional;
+
+        return $response;
     }
 
     public static function logVariableLocation(): string

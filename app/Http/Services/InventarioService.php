@@ -604,4 +604,113 @@ class InventarioService
 
         return $response;
     }
+
+    /**
+     * Crea un documento de traspaso para los productos de una devolución.
+     * Mueve el inventario desde el almacén de la venta original al almacén de garantías.
+     *
+     * @param int $id_documento_original
+     * @param int $id_garantia
+     * @return \stdClass
+     */
+    public function crear_traspaso_devolucion(int $id_documento_original, int $id_garantia): \stdClass
+    {
+        $response = new \stdClass();
+
+        DB::beginTransaction();
+        try {
+            // 1. Obtenemos la información necesaria del documento de venta original
+            $info_documento_original = DB::table('documento')
+                ->select('id_almacen_principal_empresa', 'id_periodo', 'id_cfdi', 'id_marketplace_area', 'id_moneda')
+                ->where('id', $id_documento_original)
+                ->first();
+
+            if (!$info_documento_original) {
+                throw new \Exception("No se encontró el documento de venta original para el traspaso.");
+            }
+
+            // 2. Obtenemos los productos y series de la garantía (los que se van a traspasar)
+            $productos_a_traspasar = DB::table('documento_garantia_producto as dgp')
+                ->join('modelo', 'dgp.producto', '=', 'modelo.sku')
+                ->join('movimiento', 'modelo.id', '=', 'movimiento.id_modelo')
+                ->select(
+                    'modelo.id as id_modelo',
+                    'dgp.cantidad',
+                    'movimiento.precio as precio_unitario', // Tomamos el precio del movimiento original
+                    'dgp.id as id_documento_garantia_producto'
+                )
+                ->where('dgp.id_garantia', $id_garantia)
+                ->where('movimiento.id_documento', $id_documento_original)
+                ->get();
+
+            // 3. Creamos el encabezado del documento de traspaso
+            $documento_traspaso_id = DB::table('documento')->insertGetId([
+                'id_almacen_principal_empresa' => 2, // Destino: Almacén de Garantías (ID 2)
+                'id_almacen_secundario_empresa' => $info_documento_original->id_almacen_principal_empresa, // Origen: Almacén de la venta
+                'id_tipo' => 5, // Tipo: Traspaso
+                'id_fase' => 100, // Fase: Terminado
+                'observacion' => 'Traspaso por devolucion de venta ' . $id_documento_original,
+                'id_usuario' => 1,
+                'id_periodo' => $info_documento_original->id_periodo,
+                'id_cfdi' => $info_documento_original->id_cfdi,
+                'id_marketplace_area' => $info_documento_original->id_marketplace_area,
+                'id_moneda' => $info_documento_original->id_moneda,
+                'id_paqueteria' => 6, // Default o según se necesite
+                'tipo_cambio' => 1,
+            ]);
+
+            // 4. Creamos los movimientos para cada producto y serie
+            foreach ($productos_a_traspasar as $producto) {
+                $movimiento_traspaso_id = DB::table('movimiento')->insertGetId([
+                    'id_documento' => $documento_traspaso_id,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => $producto->precio_unitario,
+                    'garantia' => 0,
+                    'regalo' => 0,
+                ]);
+
+                $series = DB::table('garantia_producto_series')
+                    ->where('id_documento_garantia_producto', $producto->id_documento_garantia_producto)
+                    ->pluck('serie');
+
+                foreach ($series as $serie) {
+                    // Actualizamos el almacén de la serie física al de garantías
+                    // Se asume que el almacén de garantías para series es el 2
+                    DB::table('producto')->where('serie', $serie)->update(['id_almacen' => 2]);
+
+                    // Obtenemos el ID del producto (la instancia con serie)
+                    $producto_id = DB::table('producto')->where('serie', $serie)->value('id');
+
+                    // Relacionamos la serie con el nuevo movimiento de traspaso
+                    if ($producto_id) {
+                        DB::table('movimiento_producto')->insert([
+                            'id_movimiento' => $movimiento_traspaso_id,
+                            'id_producto' => $producto_id
+                        ]);
+                    }
+                }
+            }
+
+            // 5. Afectamos el inventario
+            $afectar = InventarioService::aplicarMovimiento($documento_traspaso_id);
+            if ($afectar->error) {
+                throw new \Exception("El traspaso con ID " . $documento_traspaso_id . " no se pudo afectar correctamente.");
+            }
+
+            // 6. Si todo sale bien, confirmamos la transacción
+            DB::commit();
+            $response->error = 0;
+            $response->message = "Traspaso creado y afectado correctamente con el ID " . $documento_traspaso_id . ".";
+            $response->id_traspaso = $documento_traspaso_id;
+
+        } catch (\Exception $e) {
+            // Si algo falla, revertimos todos los cambios
+            DB::rollBack();
+            $response->error = 1;
+            $response->message = "Error al crear el traspaso: " . $e->getMessage();
+        }
+
+        return $response;
+    }
 }

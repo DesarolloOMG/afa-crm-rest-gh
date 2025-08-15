@@ -2595,7 +2595,7 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo = 0): stdClass
+    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo = 0, $id_garantia = null): stdClass
     {
         set_time_limit(0);
         $response = new stdClass();
@@ -2605,7 +2605,6 @@ class DocumentoService
         DB::beginTransaction();
 
         try {
-            // 1. Obtener info del documento original (venta o pedido)
             $info_documento = DB::table('documento')
                 ->where('id', $documento_original_id)
                 ->where('status', 1)
@@ -2615,7 +2614,6 @@ class DocumentoService
                 throw new Exception("Documento original no encontrado o cancelado.");
             }
 
-            // 2. Consultar info de la entidad/cliente
             $info_entidad = DB::table('documento_entidad')
                 ->where('id', $info_documento->id_entidad)
                 ->first();
@@ -2624,16 +2622,33 @@ class DocumentoService
                 throw new Exception("Información de entidad no encontrada.");
             }
 
-            // 3. Consultar productos originales
-            $productos = DB::table('movimiento')
-                ->where('id_documento', $documento_original_id)
-                ->get();
-
-            if ($productos->isEmpty()) {
-                throw new Exception("No se encontraron productos en el documento original.");
+            $productos = collect();
+            if ($id_garantia) {
+                $productos = DB::table('documento_garantia_producto as dgp')
+                    ->join('modelo', 'dgp.producto', '=', 'modelo.sku')
+                    ->join('movimiento', 'modelo.id', '=', 'movimiento.id_modelo')
+                    ->select(
+                        'modelo.id as id_modelo',
+                        'dgp.cantidad',
+                        'movimiento.precio',
+                        'movimiento.garantia',
+                        'movimiento.modificacion',
+                        'movimiento.regalo',
+                        'dgp.id as id_documento_garantia_producto'
+                    )
+                    ->where('dgp.id_garantia', $id_garantia)
+                    ->where('movimiento.id_documento', $documento_original_id)
+                    ->get();
+            } else {
+                $productos = DB::table('movimiento')
+                    ->where('id_documento', $documento_original_id)
+                    ->get();
             }
 
-            // 4. Crear documento tipo NOTA DE CRÉDITO (id_tipo = 6)
+            if ($productos->isEmpty()) {
+                throw new Exception("No se encontraron productos para la nota de crédito.");
+            }
+
             $documento_nota_id = DB::table('documento')->insertGetId([
                 'id_almacen_principal_empresa' => $info_documento->id_almacen_principal_empresa,
                 'id_tipo' => 6, // Nota de crédito
@@ -2643,17 +2658,15 @@ class DocumentoService
                 'id_usuario' => 1,
                 'id_entidad' => $info_entidad->id,
                 'id_moneda' => $info_documento->id_moneda,
-                'id_fase' => $info_documento->id_fase, // Puedes ajustar esto
+                'id_fase' => $info_documento->id_fase,
                 'tipo_cambio' => $info_documento->tipo_cambio,
                 'referencia' => 'Nota de crédito para el pedido ' . $documento_original_id,
                 'observacion' => $titulo_nota . $documento_original_id,
                 'status' => 1,
             ]);
 
-            // 5. Por cada producto, crear movimiento de inventario y clonar series si aplica
             $total_nota = 0;
             foreach ($productos as $producto) {
-                // Insertar movimiento de inventario (puede ser entrada/salida según tipo_nota)
                 $movimiento_id = DB::table('movimiento')->insertGetId([
                     'id_documento' => $documento_nota_id,
                     'id_modelo' => $producto->id_modelo,
@@ -2665,16 +2678,21 @@ class DocumentoService
                 ]);
                 $total_nota += ($producto->precio * $producto->cantidad);
 
-                // Series/lotes: clonar y/o actualizar status según tipo
-                $series = DB::table('movimiento_producto')
-                    ->where('id_movimiento', $producto->id)
-                    ->get();
+                $series = collect();
+                if ($id_garantia) {
+                    $series = DB::table('garantia_producto_series as gps')
+                        ->join('producto', 'gps.serie', '=', 'producto.serie')
+                        ->where('id_documento_garantia_producto', $producto->id_documento_garantia_producto)
+                        ->select('producto.id as id_producto')
+                        ->get();
+                } else {
+                    $series = DB::table('movimiento_producto')
+                        ->where('id_movimiento', $producto->id)
+                        ->get();
+                }
 
                 foreach ($series as $serie) {
-                    DB::table('producto')->where('id', $serie->id_producto)->update([
-                        'status' => 1
-                    ]);
-                    // Relacionar la serie con el nuevo movimiento de la nota de crédito
+                    DB::table('producto')->where('id', $serie->id_producto)->update(['status' => 1]);
                     DB::table('movimiento_producto')->insert([
                         'id_movimiento' => $movimiento_id,
                         'id_producto' => $serie->id_producto
@@ -2682,13 +2700,11 @@ class DocumentoService
                 }
             }
 
-            // 6. Crear egreso en movimiento_contable (tipo_egreso = 2)
             $egreso_id = DB::table('movimiento_contable')->insertGetId([
                 'monto' => $total_nota,
                 'id_moneda' => $info_documento->id_moneda,
                 'tipo_cambio' => $info_documento->tipo_cambio,
                 'id_tipo_afectacion' => 2,
-                'monto' => $total_nota,
                 'fecha_operacion' => Carbon::now(),
                 'origen_tipo' => 2,
                 'entidad_origen' => 5,
@@ -2702,7 +2718,6 @@ class DocumentoService
                 'status' => 1,
             ]);
 
-            // 7. Relacionar el egreso con la nota de crédito (saldar documento)
             DB::table('movimiento_contable_documento')->insert([
                 'id_movimiento_contable' => $egreso_id,
                 'id_documento' => $documento_nota_id,
@@ -2710,10 +2725,9 @@ class DocumentoService
                 'moneda' => $info_documento->id_moneda,
                 'tipo_cambio' => $info_documento->tipo_cambio,
                 'parcialidad' => 1,
-                'saldo_documento' => 0 // Documento saldado al 100%
+                'saldo_documento' => 0
             ]);
 
-            // 8. Actualizar documento original: guardar el id de la nota de crédito
             DB::table('documento')
                 ->where('id', $documento_original_id)
                 ->update([
@@ -2742,7 +2756,6 @@ class DocumentoService
 
         return $response;
     }
-
 
     public static function crearEntidad($entidad, $bd, $tipo = 1): stdClass
     { # Tipo 1 es clientes, 2 proveedores
