@@ -960,10 +960,25 @@ class SoporteController extends Controller
 
         if ($data->terminar) {
             if ($data->disponible) {
-                DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase' => 100,
+                $resultado = self::terminar_devolucion($data->documento, $data->documento_garantia);
+
+                // Si la función interna devuelve un error (ej. al crear la NC),
+                // lo retornamos al frontend y detenemos el proceso.
+                if ($resultado->error) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $resultado->message
+                    ]);
+                }
+
+                // La función 'terminar_devolucion' ya actualiza la fase a 100 (Finalizado).
+                // Aquí solo actualizamos el campo 'disponible_venta'.
+                DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
                     'disponible_venta' => $data->disponible
                 ]);
+
+                // Opcional: Añadimos el mensaje del resultado al seguimiento para más detalle.
+                $data->seguimiento .= " " . $resultado->message;
             } else {
                 DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
                     'id_fase' => 4,

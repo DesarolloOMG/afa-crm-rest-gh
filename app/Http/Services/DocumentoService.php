@@ -2680,7 +2680,7 @@ class DocumentoService
 
                 $series = collect();
                 if ($id_garantia) {
-                    $series = DB::table('garantia_producto_series as gps')
+                    $series = DB::table('documento_garantia_producto_series as gps')
                         ->join('producto', 'gps.serie', '=', 'producto.serie')
                         ->where('id_documento_garantia_producto', $producto->id_documento_garantia_producto)
                         ->select('producto.id as id_producto')

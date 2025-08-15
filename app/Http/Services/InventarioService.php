@@ -613,7 +613,7 @@ class InventarioService
      * @param int $id_garantia
      * @return \stdClass
      */
-    public function crear_traspaso_devolucion(int $id_documento_original, int $id_garantia): \stdClass
+    public static function crear_traspaso_devolucion(int $id_documento_original, int $id_garantia): \stdClass
     {
         $response = new \stdClass();
 
@@ -670,7 +670,7 @@ class InventarioService
                     'regalo' => 0,
                 ]);
 
-                $series = DB::table('garantia_producto_series')
+                $series = DB::table('documento_garantia_producto_series')
                     ->where('id_documento_garantia_producto', $producto->id_documento_garantia_producto)
                     ->pluck('serie');
 
