@@ -200,7 +200,7 @@ class SoporteController extends Controller
         $documento_garantia = DB::table('documento_garantia')->insertGetId([
             'id_tipo' => $data->tipo,
             'id_causa' => $data->causa,
-            'id_fase' => $data->tipo == DocumentoGarantiaTipo::DEVOLUCION ? DocumentoGarantiaFase::DEVOLUCION_PENDIENTE : DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA,
+            'id_fase' => $data->tipo == DocumentoGarantiaTipo::GARANTIA ? DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA : DocumentoGarantiaFase::DEVOLUCION_PENDIENTE,
             'no_reclamo' => $data->reclamo,
             'created_by' => $auth->id
         ]);
@@ -1013,19 +1013,34 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
+        $finalMessage = "Documento guardado correctamente.";
 
         if ($data->terminar) {
             if ($data->indemnizacion) {
-                DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase' => 5
+                // Si se termina como 'indemnización', solo se cambia la fase.
+                DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
+                    'id_fase' => 5 // Se asume Fase de Indemnización
                 ]);
             } else {
-                DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase' => 100
-                ]);
+                // Si se termina de forma normal (no es indemnización), se crea la NC y el Traspaso.
+                $resultado = self::terminar_devolucion(
+                    $data->documento,
+                    $data->documento_garantia
+                );
+
+                // Si la función interna devuelve un error, lo retornamos al frontend.
+                if ($resultado->error) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $resultado->message
+                    ]);
+                }
+
+                $finalMessage = $resultado->message;
             }
         }
 
+        // El seguimiento se inserta en todos los casos para registrar la acción.
         DB::table('documento_garantia_seguimiento')->insert([
             'id_documento' => $data->documento_garantia,
             'id_usuario' => $auth->id,
@@ -1034,7 +1049,7 @@ class SoporteController extends Controller
 
         return response()->json([
             'code' => 200,
-            'message' => "Documento guardado correctamente."
+            'message' => $finalMessage
         ]);
     }
 
@@ -1052,13 +1067,28 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
+        $finalMessage = "Documento guardado correctamente.";
 
         if ($data->terminar) {
-            DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                'id_fase' => 100
-            ]);
+            // Se llama a la función interna que se encarga de todo el proceso final
+            $resultado = self::terminar_devolucion(
+                $data->documento,
+                $data->documento_garantia
+            );
+
+            // Si la función interna devuelve un error, se retorna al frontend
+            if ($resultado->error) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $resultado->message
+                ]);
+            }
+
+            // Si fue exitoso, se usa el mensaje de la función interna
+            $finalMessage = $resultado->message;
         }
 
+        // El seguimiento se inserta siempre para registrar la acción
         DB::table('documento_garantia_seguimiento')->insert([
             'id_documento' => $data->documento_garantia,
             'id_usuario' => $auth->id,
@@ -1067,7 +1097,7 @@ class SoporteController extends Controller
 
         return response()->json([
             'code' => 200,
-            'message' => "Documento guardado correctamente."
+            'message' => $finalMessage
         ]);
     }
 
@@ -3300,7 +3330,7 @@ class SoporteController extends Controller
             return $response;
         }
 
-        $esDevolucion = ($informacion_garantia->id_tipo == 1);
+        $esDevolucion = in_array($informacion_garantia->id_tipo, [1, 2]);
         $tipo_texto_titulo = $esDevolucion ? 'REPORTE DE DEVOLUCION' : 'REPORTE DE GARANTIA';
         $tipo_texto_detalles = $esDevolucion ? 'DETALLES DE LA DEVOLUCION' : 'DETALLES DE LA GARANTIA';
         $tipo_texto_numero = $esDevolucion ? 'No. Devolucion' : 'No. Garantia';
