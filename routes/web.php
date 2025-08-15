@@ -132,6 +132,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
             $router->group(['prefix' => 'venta'], function () use ($router) {
                 $router->post('informacion', 'GeneralController@general_busqueda_venta_informacion');
+                $router->get('descargarNota/{nota}', 'GeneralController@general_busqueda_venta_informacion_descargar_nota');
+                $router->get('descargarGarantia/{id}', 'GeneralController@general_busqueda_venta_informacion_descargar_garantia');
                 $router->post('nota/informacion', 'GeneralController@general_busqueda_venta_nota_informacion');
                 $router->post('nota/informacion/pendientes', 'GeneralController@general_busqueda_venta_nota_informacion_pendientes');
                 $router->post('nota/informacion/canceladas', 'GeneralController@general_busqueda_venta_nota_informacion_canceladas');

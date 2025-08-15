@@ -674,6 +674,456 @@ class GeneralController extends Controller
         $data = json_decode($request->input("data"));
     }
 
+    public function general_busqueda_venta_informacion_descargar_nota($nota) {
+        $id_nota_credito = $nota;
+
+        // --- Obtención de datos de la base de datos ---
+        $nota_credito = DB::table('documento as nc')
+            ->join('documento_entidad as de', 'nc.id_entidad', '=', 'de.id')
+            ->select('nc.*', 'de.razon_social as cliente', 'de.rfc', 'de.correo', 'de.telefono')
+            ->where('nc.id', $id_nota_credito)
+            ->where('nc.id_tipo', 6)
+            ->first();
+
+        if (!$nota_credito) {
+            return response("Nota de crédito no encontrada.", 404);
+        }
+
+        $venta_original = DB::table('documento')
+            ->select('id as numero_pedido')
+            ->where('nota', $id_nota_credito)
+            ->first();
+
+        $productos = DB::table('movimiento as m')
+            ->join('modelo', 'm.id_modelo', '=', 'modelo.id')
+            ->where('m.id_documento', $id_nota_credito)
+            ->select('m.cantidad', 'm.precio', 'modelo.sku', 'modelo.descripcion')
+            ->get();
+
+        // --- Inicio de la Creación del PDF ---
+        $pdf = new Fpdf('P', 'mm', 'Letter');
+        $pdf->AddPage();
+        $pdf->SetAutoPageBreak(true, 30);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
+
+        // --- Encabezado ---
+        $pdf->Image(base_path('public/img/omg.png'), 10, 8, 50);
+        $pdf->SetFont('Arial', 'B', 28);
+        $pdf->SetTextColor(220, 53, 69);
+        $pdf->Cell(80);
+        $pdf->Cell(100, 10, 'NOTA DE CREDITO', 0, 0, 'C');
+        $pdf->Ln(25);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $y_inicio_columnas = 40;
+        $pdf->SetY($y_inicio_columnas);
+
+        // --- Columna Izquierda: Información del Cliente ---
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(95, 8, 'INFORMACION DEL CLIENTE', 0, 1, 'L', true);
+        $pdf->Ln(3);
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(25, 6, 'Cliente:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->MultiCell(70, 6, iconv('UTF-8', 'windows-1252', $nota_credito->cliente));
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(25, 6, 'RFC:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $nota_credito->rfc), 0, 1);
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(25, 6, 'Correo:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $nota_credito->correo), 0, 1);
+
+        $y_fin_col_izquierda = $pdf->GetY();
+
+        // --- Columna Derecha: Detalles del Documento ---
+        $pdf->SetY($y_inicio_columnas);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(95, 8, 'DETALLES DEL DOCUMENTO', 0, 1, 'L', true);
+        $pdf->Ln(3);
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(40, 6, 'Folio Nota de Credito:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(55, 6, $nota_credito->id, 0, 1);
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(40, 6, 'Fecha de Emision:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(55, 6, date('d/m/Y', strtotime($nota_credito->created_at)), 0, 1);
+
+        // Novedad: Etiqueta en fuente normal, dato en negrita
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(40, 6, 'Venta Original No.:');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(55, 6, $venta_original->numero_pedido ?? 'N/A', 0, 1);
+        $y_fin_col_derecha = $pdf->GetY();
+
+        $pdf->SetY(max($y_fin_col_izquierda, $y_fin_col_derecha) + 8);
+
+        // --- Título de la Tabla de Productos ---
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(0, 8, 'PRODUCTOS INCLUIDOS', 0, 1, 'L', true);
+        $pdf->Ln(1);
+
+        // --- Encabezado de la Tabla de Productos ---
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->SetFillColor(230, 230, 230);
+        $pdf->SetDrawColor(200, 200, 200);
+        $pdf->Cell(35, 8, 'SKU', 1, 0, 'C', true);
+        $pdf->Cell(85, 8, iconv('UTF-8', 'windows-1252', 'Descripción'), 1, 0, 'C', true);
+        $pdf->Cell(35, 8, 'Precio Unitario', 1, 0, 'C', true);
+        $pdf->Cell(35, 8, 'Importe', 1, 1, 'C', true);
+
+        // Restauramos la fuente a normal para el contenido de la tabla
+        $pdf->SetFont('Arial', '', 9);
+        $subtotal_sin_iva = 0;
+
+        if (!$productos->isEmpty()) {
+            foreach ($productos as $producto) {
+                $precio_con_iva = $producto->precio;
+                $precio_sin_iva = $precio_con_iva / 1.16;
+                $importe_sin_iva = $producto->cantidad * $precio_sin_iva;
+                $subtotal_sin_iva += $importe_sin_iva;
+
+                $descripcion_completa = $producto->descripcion . ' (Cant: ' . (int)$producto->cantidad . ')';
+
+                $line_height = 5;
+                $y_before = $pdf->GetY();
+
+                $pdf->SetXY(300, $y_before);
+                $pdf->MultiCell(85, $line_height, iconv('UTF-8', 'windows-1252', $descripcion_completa));
+                $desc_height = $pdf->GetY() - $y_before;
+
+                $row_height = max($desc_height, 10);
+
+                $pdf->SetXY(10, $y_before);
+
+                $pdf->Cell(35, $row_height, $producto->sku, 1, 0, 'L');
+
+                $pdf->SetXY(45, $y_before);
+                $pdf->MultiCell(85, $line_height, iconv('UTF-8', 'windows-1252', $descripcion_completa), 1, 'L');
+
+                $pdf->SetXY(130, $y_before);
+                $pdf->Cell(35, $row_height, '$' . number_format($precio_sin_iva, 2), 1, 0, 'R');
+                $pdf->Cell(35, $row_height, '$' . number_format($importe_sin_iva, 2), 1, 1, 'R');
+            }
+        }
+
+        // --- Totales ---
+        $iva = $subtotal_sin_iva * 0.16;
+        $total = $subtotal_sin_iva + $iva;
+
+        $pdf->Ln(2);
+        // Novedad: Etiqueta en fuente normal, valor en negrita
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetX(130);
+        $pdf->Cell(35, 7, 'Subtotal:', 0, 0, 'R');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(35, 7, '$' . number_format($subtotal_sin_iva, 2), 0, 1, 'R');
+
+        // Novedad: Etiqueta en fuente normal, valor en negrita
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetX(130);
+        $pdf->Cell(35, 7, 'IVA (16%):', 0, 0, 'R');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(35, 7, '$' . number_format($iva, 2), 0, 1, 'R');
+
+        // Novedad: Etiqueta en negrita (para destacarse)
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->SetFillColor(230, 230, 230);
+        $pdf->SetX(130);
+        $pdf->Cell(35, 8, 'Total:', 1, 0, 'R', true);
+        $pdf->Cell(35, 8, '$' . number_format($total, 2), 1, 1, 'R', true);
+
+        // --- Footer ---
+        $pdf->SetAutoPageBreak(false);
+        $pdf->SetY(-45);
+        $pdf->SetX(65);
+        $pdf->Cell(80, 5, '', 'T', 1, 'C');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetX(65);
+        $pdf->Cell(80, 6, 'Recibi de conformidad', 0, 1, 'C');
+
+        $pdf->SetY(-15);
+        $pdf->SetFont('Arial', 'I', 8);
+        $pdf->SetTextColor(128);
+        $pdf->Cell(0, 10, 'Pagina ' . $pdf->PageNo(), 0, 0, 'C');
+        $pdf->SetAutoPageBreak(true, 30);
+
+        // --- Generación y retorno del archivo ---
+        $file_name = "NOTA_CREDITO_" . $id_nota_credito . ".pdf";
+        $file_data = base64_encode($pdf->Output('S'));
+
+        return response()->json([
+            'code' => 200,
+            'file' => $file_data,
+            'name' => $file_name
+        ]);
+    }
+
+    public function general_busqueda_venta_informacion_descargar_garantia($id) {
+        $id_garantia = $id;
+
+        $informacion_garantia = DB::table('documento_garantia as dg')
+            ->join('documento_garantia_re as dgr', 'dg.id', '=', 'dgr.id_garantia')
+            ->join('documento as d', 'dgr.id_documento', '=', 'd.id')
+            ->join('documento_entidad as de', 'd.id_entidad', '=', 'de.id')
+            ->leftJoin('usuario as tecnico', 'dg.asigned_to', '=', 'tecnico.id')
+            ->join('usuario as creador', 'dg.created_by', '=', 'creador.id')
+            ->leftJoin('documento_garantia_causa as dgc', 'dg.id_causa', '=', 'dgc.id')
+            ->leftJoin('paqueteria as p', 'dg.id_paqueteria_llegada', '=', 'p.id')
+            ->select(
+                'dg.id', 'dg.id_tipo', 'd.id as numero_pedido', 'tecnico.nombre as tecnico',
+                'creador.nombre as creador', 'de.razon_social as cliente', 'de.telefono',
+                'de.correo', 'dgc.causa as motivo', 'dg.guia_llegada', 'p.paqueteria as paqueteria_llegada'
+            )
+            ->where('dg.id', $id_garantia)->first();
+
+        if (!$informacion_garantia) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró información del documento.";
+            return $response;
+        }
+
+        $esDevolucion = ($informacion_garantia->id_tipo == 1);
+        $tipo_texto_titulo = $esDevolucion ? 'REPORTE DE DEVOLUCION' : 'REPORTE DE GARANTIA';
+        $tipo_texto_detalles = $esDevolucion ? 'DETALLES DE LA DEVOLUCION' : 'DETALLES DE LA GARANTIA';
+        $tipo_texto_numero = $esDevolucion ? 'No. Devolucion' : 'No. Garantia';
+        $tipo_texto_productos = $esDevolucion ? 'PRODUCTOS EN DEVOLUCION' : 'PRODUCTOS EN GARANTIA';
+
+        $productos = DB::table('documento_garantia_producto as dgp')
+            ->join('modelo as m', 'dgp.producto', '=', 'm.sku')
+            ->select('dgp.id', 'm.sku', 'm.descripcion')
+            ->where('dgp.id_garantia', $id_garantia)->get();
+
+        foreach ($productos as $producto) {
+            $producto->series = DB::table('documento_garantia_producto_series')
+                ->where('id_documento_garantia_producto', $producto->id)
+                ->pluck('serie')->toArray();
+        }
+
+        $seguimientos = DB::table('documento_garantia_seguimiento')
+            ->where('id_documento', $id_garantia)->get();
+
+        $pdf = new Fpdf();
+        $pdf->AddPage();
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $pdf->Image(base_path('public/img/omg.png'), 10, 8, 50);
+        $pdf->SetFont('Arial', 'B', 28);
+        $pdf->SetTextColor(220, 53, 69);
+        $pdf->Cell(80);
+        $pdf->Cell(100, 10, $tipo_texto_titulo, 0, 0, 'C');
+        $pdf->Ln(25);
+        $pdf->SetTextColor(0, 0, 0);
+
+        $pdf->SetY(40);
+
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(95, 8, 'INFORMACION DEL CLIENTE', 0, 1, 'L', true);
+        $pdf->Ln(4);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Cliente:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->MultiCell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->cliente));
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Correo:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->correo));
+        $pdf->Ln();
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, iconv('UTF-8', 'windows-1252', 'Teléfono:'));
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(70, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->telefono));
+        $pdf->Ln(10);
+        $pdf->SetFillColor(248, 249, 250);
+        $pdf->SetDrawColor(222, 226, 230);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(95, 7, 'INFORMACION DE SEGUIMIENTO', 1, 1, 'C', true);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(25, 7, 'Tecnico:', 'L');
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->tecnico), 'R', 1);
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(25, 7, 'Paqueteria:', 'L');
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->paqueteria_llegada), 'R', 1);
+        $pdf->Cell(25, 7, 'Guia:', 'LB');
+        $pdf->Cell(70, 7, iconv('UTF-8', 'windows-1252', $informacion_garantia->guia_llegada), 'RB', 1);
+        $y_fin_col_izquierda = $pdf->GetY();
+
+        $pdf->SetY(40);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(90, 8, $tipo_texto_detalles, 0, 1, 'L', true);
+        $pdf->Ln(2);
+        $y_datos_importantes = $pdf->GetY();
+        $pdf->SetFillColor(248, 249, 250);
+        $pdf->SetDrawColor(222, 226, 230);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(44, 7, $tipo_texto_numero, 0, 1, 'C');
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 14);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(44, 10, $informacion_garantia->id, 1, 0, 'C', true);
+        $pdf->SetY($y_datos_importantes);
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 9);
+        $pdf->SetTextColor(108, 117, 125);
+        $pdf->Cell(45, 7, 'Pedido Original', 0, 1, 'C');
+        $pdf->SetX(155);
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->Cell(45, 10, $informacion_garantia->numero_pedido, 1, 1, 'C', true);
+        $pdf->Ln(4);
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Fecha:');
+        $pdf->SetFont('Arial', '', 10);
+        $meses = ["January"=>"Enero", "February"=>"Febrero", "March"=>"Marzo", "April"=>"Abril", "May"=>"Mayo", "June"=>"Junio", "July"=>"Julio", "August"=>"Agosto", "September"=>"Septiembre", "October"=>"Octubre", "November"=>"Noviembre", "December"=>"Diciembre"];
+        $fecha_actual = date("d") . " de " . $meses[date("F")] . " del " . date("Y");
+        $pdf->Cell(65, 6, $fecha_actual);
+        $pdf->Ln();
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Creado por:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->creador));
+        $pdf->Ln();
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(25, 6, 'Motivo:');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(65, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->motivo));
+        $y_fin_col_derecha = $pdf->GetY();
+
+        $pdf->SetY(max($y_fin_col_izquierda, $y_fin_col_derecha) + 5);
+
+        $pdf->SetFont('Arial', 'B', 12);
+        $pdf->SetFillColor(240, 240, 240);
+        $pdf->Cell(0, 8, $tipo_texto_productos, 0, 1, 'L', true);
+        $pdf->Ln(4);
+
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->SetFillColor(230, 230, 230);
+        $pdf->SetTextColor(0);
+        $pdf->SetDrawColor(200, 200, 200);
+        $pdf->Cell(60, 8, 'SKU / Codigo', 1, 0, 'C', true);
+        $pdf->Cell(70, 8, iconv('UTF-8', 'windows-1252', 'Descripción'), 1, 0, 'C', true);
+        $pdf->Cell(60, 8, 'No. de Serie', 1, 1, 'C', true);
+
+        $pdf->SetFont('Arial', '', 9);
+        if (!$productos->isEmpty()) {
+            foreach ($productos as $producto) {
+                if (empty($producto->series)) {
+                    $producto->series[] = 'N/A';
+                }
+
+                $series_string = implode("\n", $producto->series);
+
+                $y_before_text = $pdf->GetY();
+                $pdf->SetX(300);
+                $pdf->MultiCell(70, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $height_desc = $pdf->GetY() - $y_before_text;
+
+                $pdf->SetXY(300, $y_before_text);
+                $pdf->MultiCell(60, 7, $series_string);
+                $height_series = $pdf->GetY() - $y_before_text;
+
+                $row_height = max($height_desc, $height_series);
+                $pdf->SetXY(10, $y_before_text);
+
+                $pdf->MultiCell(60, 7, $producto->sku);
+                $pdf->SetXY(70, $y_before_text);
+                $pdf->MultiCell(70, 7, iconv('UTF-8', 'windows-1252', $producto->descripcion));
+                $pdf->SetXY(140, $y_before_text);
+                $pdf->MultiCell(60, 7, $series_string, 0, 'C');
+
+                $pdf->Line(10, $y_before_text, 10, $y_before_text + $row_height);
+                $pdf->Line(70, $y_before_text, 70, $y_before_text + $row_height);
+                $pdf->Line(140, $y_before_text, 140, $y_before_text + $row_height);
+                $pdf->Line(200, $y_before_text, 200, $y_before_text + $row_height);
+                $pdf->Line(10, $y_before_text + $row_height, 200, $y_before_text + $row_height);
+
+                $pdf->SetY($y_before_text + $row_height);
+            }
+        }
+
+        if (!$seguimientos->isEmpty()) {
+            $pdf->Ln(5);
+            $pdf->SetFont('Arial', 'B', 12);
+            $pdf->SetFillColor(240, 240, 240);
+            $pdf->Cell(0, 8, 'OBSERVACIONES', 0, 1, 'L', true);
+            $pdf->Ln(4);
+            $pdf->SetFont('Arial', '', 10);
+            foreach ($seguimientos as $seguimiento) {
+                $texto_limpio = "> " . strip_tags(str_replace("&nbsp;", " ", $seguimiento->seguimiento));
+                $pdf->MultiCell(190, 5, iconv('UTF-8', 'windows-1252', $texto_limpio));
+                $pdf->Ln(2);
+            }
+        }
+
+        $pdf->SetAutoPageBreak(false);
+
+        $pdf->SetY(-60);
+
+        $pdf->SetX(20);
+        $pdf->Cell(80, 5, '', 'T', 0, 'C');
+        $pdf->SetX(110);
+        $pdf->Cell(80, 5, '', 'T', 1, 'C');
+
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->SetX(20);
+        $pdf->Cell(80, 6, 'Firma del Supervisor', 0, 0, 'C');
+        $pdf->SetX(110);
+        $pdf->Cell(80, 6, 'Firma del Tecnico', 0, 1, 'C');
+
+        $pdf->SetX(110);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(80, 6, iconv('UTF-8', 'windows-1252', $informacion_garantia->tecnico), 0, 1, 'C');
+
+        $pdf->SetY(-15);
+        $pdf->SetFont('Arial', 'I', 8);
+        $pdf->SetTextColor(128);
+        $pdf->Cell(0, 10, 'Pagina ' . $pdf->PageNo(), 0, 0, 'C');
+
+        $pdf->SetAutoPageBreak(true, 15);
+
+        $file_name  = ($esDevolucion ? "DEVOLUCION_" : "GARANTIA_") . $informacion_garantia->id . "_" . time() . ".pdf";
+        $pdf_data   = base64_encode($pdf->Output($file_name, 'S'));
+
+        // Devuelve la respuesta en formato JSON
+        return response()->json([
+            'code' => 200,
+            'file' => $pdf_data,
+            'name' => $file_name
+        ]);
+    }
+
     public function general_busqueda_venta_informacion(Request $request)
     {
         $data = json_decode($request->input("data"));
@@ -770,6 +1220,26 @@ class GeneralController extends Controller
         foreach ($ventas as $venta) {
             $venta->fase = $this->determinarFase($venta);
             $venta->direccion = DB::table('documento_direccion')->where('id_documento', $venta->id)->first() ?? 0;
+
+            // 1. Buscamos si existe una garantía o devolución asociada
+            $venta->garantia_devolucion = DB::table('documento_garantia_re as dgr')
+                ->join('documento_garantia as dg', 'dgr.id_garantia', '=', 'dg.id')
+                ->join('documento_garantia_tipo as dgt', 'dg.id_tipo', '=', 'dgt.id')
+                ->join('usuario as u', 'dg.created_by', '=', 'u.id')
+                ->where('dgr.id_documento', $venta->id)
+                ->select('dg.id', 'dgt.tipo', 'u.nombre as creador') // Se añade el creador al select
+                ->first();
+
+            // 2. Buscamos los datos de la nota de crédito con la validación corregida
+            $venta->nota_de_credito = null;
+            // FIX: Se añade la condición para ignorar explícitamente el texto 'N/A'
+            if (!empty($venta->nota) && $venta->nota !== 'N/A' && is_numeric($venta->nota)) {
+                $venta->nota_de_credito = DB::table('documento')
+                    ->where('id', $venta->nota)
+                    ->select('id', 'created_at', 'observacion')
+                    ->first();
+            }
+
 
             $venta->guias = DB::table('documento_guia')->where('id_documento', $venta->id)->get();
             foreach ($venta->guias as $guia) {
@@ -991,41 +1461,7 @@ class GeneralController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->input('usuario'));
 
-        $aplicar = DocumentoService::crearNotaCreditoConEgreso($data->documento, 0);
-
-        if($aplicar->error){
-            return response()->json([
-                "code" => 500,
-                "message" => $aplicar->mensaje,
-            ]);
-        }
-
-        DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
-            'id_fase' => 100
-        ]);
-//        $existe_pendiente = DB::table('garantia_nota_autorizacion')->where('documento', $data->documento)->where('estado', 1)->first();
-//
-//        if ($existe_pendiente) {
-//            return response()->json([
-//                "code" => 400,
-//                "message" => "Autorizacion pendiente de esta Nota de Credito ya existe <br> Actualice la pestaña (F5)",
-//            ]);
-//        }
-//
-//        DB::table('garantia_nota_autorizacion')->insert([
-//            'json' => $request->input('data'),
-//            'usuario' => $auth,
-//            'documento' => $data->documento,
-//            'documento_garantia' => $data->documento_garantia,
-//            'modulo' => $modulo,
-//            'data' => $request->input('doc')
-//        ]);
-//
-//        DB::table('seguimiento')->insert([
-//            'id_documento' => $data->documento,
-//            'id_usuario' => $auth,
-//            'seguimiento' => "<p>Se envía la nota a autorización</p>"
-//        ]);
+//        3
 
         return response()->json([
             "code" => 200,
