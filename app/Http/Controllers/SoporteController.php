@@ -3096,7 +3096,7 @@ class SoporteController extends Controller
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            WHERE documento_garantia.id_tipo = " . $tipo . "
+                            WHERE documento_garantia.id_tipo IN (" . $tipo . ")
                             " . $query);
 
         foreach ($documentos as $documento) {
