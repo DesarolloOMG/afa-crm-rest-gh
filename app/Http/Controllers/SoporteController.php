@@ -3040,6 +3040,11 @@ class SoporteController extends Controller
     {
         $query = "";
 
+        if (is_string($tipo)) {
+            // Convierte "1,2" en [1,2]
+            $tipo = explode(',', $tipo);
+        }
+
         if (!empty($garantia_pedido)) {
             $query = " AND (documento_garantia.id = " . $garantia_pedido . " OR documento.id = " . $garantia_pedido . ")";
         } else {
@@ -3096,8 +3101,7 @@ class SoporteController extends Controller
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            WHERE documento_garantia.id_tipo IN (" . $tipo . ")
-                            " . $query);
+                            WHERE documento_garantia.id_tipo IN (" . implode(',', $tipo) . ") " . $query);
 
         foreach ($documentos as $documento) {
             $productos = DB::table('documento_garantia_producto as dgp')
