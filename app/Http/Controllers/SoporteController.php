@@ -285,7 +285,7 @@ class SoporteController extends Controller
         $paqueterias = Paqueteria::get();
         $causas = DocumentoGarantiaCausa::get();
 
-        $documentos = $this->garantia_devolucion_raw_data(11, DocumentoGarantiaTipo::DEVOLUCION);
+        $documentos = $this->garantia_devolucion_raw_data(11, "1,2");
 
         return response()->json([
             'causas' => $causas,
@@ -945,7 +945,7 @@ class SoporteController extends Controller
     public function soporte_garantia_devolucion_devolucion_revision_data(Request $request)
     {
         $auth = json_decode($request->auth);
-        $documentos = $this->garantia_devolucion_raw_data(3, 1, $auth->id);
+        $documentos = $this->garantia_devolucion_raw_data(3, "1,2", $auth->id);
 
         return response()->json([
             'code' => 200,
@@ -1001,7 +1001,7 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_devolucion_indemnizacion_data()
     {
-        $documentos = $this->garantia_devolucion_raw_data(4, 1); # Fase del documento y tipo de documento
+        $documentos = $this->garantia_devolucion_raw_data(4, "1,2"); # Fase del documento y tipo de documento
 
         return response()->json([
             'code' => 200,
@@ -1055,7 +1055,7 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_devolucion_reclamo_data()
     {
-        $documentos = $this->garantia_devolucion_raw_data(5, 1);
+        $documentos = $this->garantia_devolucion_raw_data(5, "1,2");
 
         return response()->json([
             'code' => 200,
@@ -1105,7 +1105,7 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $documentos = $this->garantia_devolucion_raw_data(0, 1, 0, $data->fecha_inicial, $data->fecha_final, $data->documento);
+        $documentos = $this->garantia_devolucion_raw_data(0, "1,2", 0, $data->fecha_inicial, $data->fecha_final, $data->documento);
 
         return response()->json([
             'documentos' => $documentos
