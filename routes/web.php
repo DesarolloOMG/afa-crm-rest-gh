@@ -674,6 +674,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('', 'AlmacenController@almacen_etiqueta');
             $router->get('data', 'AlmacenController@almacen_etiqueta_get_data');
             $router->post('raw', 'AlmacenController@almacen_etiqueta_raw');
+            $router->post('serie', 'AlmacenController@almacen_etiqueta_serie');
             $router->post('serie-qr', 'AlmacenController@almacen_etiqueta_serie_qr');
         });
     });
