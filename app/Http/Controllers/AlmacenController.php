@@ -1093,22 +1093,6 @@ class AlmacenController extends Controller
                     ->where("id", $data->documento)
                     ->first();
 
-                //PREGUNTAR
-//                if (in_array($marketplace_area->id_marketplace_area, [14, 53, 4, 5])) {
-//                    if ($fase_documento->id_fase < 3) {
-//                        $this->eliminarSeries($data->documento);
-//                        DB::table('seguimiento')->insert([
-//                            'id_documento' => $data->documento,
-//                            'id_usuario' => 1,
-//                            'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
-//                        ]);
-//                        return response()->json([
-//                            "code" => 500,
-//                            "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
-//                            "color" => "red-border-top"
-//                        ]);
-//                    }
-//                } else {
                 if ($fase_documento->id_fase < 3) {
                     $this->eliminarSeries($data->documento);
                     DB::table('seguimiento')->insert([
@@ -1201,52 +1185,52 @@ class AlmacenController extends Controller
                 $file = "";
                 $pdf = "";
 
-                if($auth->id != 9999) {
-                    $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
-                    $impresion = @$impresion_raw;
-
-                    if (empty($impresion)) {
-                        $this->eliminarSeries($data->documento);
-                        DB::table('seguimiento')->insert([
-                            'id_documento' => $data->documento,
-                            'id_usuario' => $auth->id,
-                            'seguimiento' => "Hubo un problema al imprimir la guia, se eliminaron la series y se regreso a pendiente de remisión.."
-                        ]);
-
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "No fue posible imprimir la guía de embarque, No se encontro la guia, error desconocido." . self::logVariableLocation(),
-                            "color" => property_exists($impresion, "key") ? "orange-border-top" : "blue-border-top",
-                            "raw" => $impresion_raw
-                        ]);
-                    }
-
-                    if (property_exists($impresion, 'code') && $impresion->code != 200) {
-                        $this->eliminarSeries($data->documento);
-                        DB::table('seguimiento')->insert([
-                            'id_documento' => $data->documento,
-                            'id_usuario' => $auth->id,
-                            'seguimiento' => "Hubo un problema al imprimir la guia, la series se eliminaron y se regresa a pendiente de remisión. " . $impresion->message
-                        ]);
-
-                        return response()->json([
-                            "code" => 500,
-                            "message" => "Hubo un problema al imprimir la guia, la series se eliminaron y se regresa a pendiente de remisión, error: " . $impresion->message . "." . self::logVariableLocation(),
-                            "color" => property_exists($impresion, "key") ? "orange-border-top" : "blue-border-top",
-                            "raw" => property_exists($impresion, "raw") ? $impresion->raw : 0
-                        ]);
-                    }
-                }
-                else {
-                    $archivo_guia = ComodinService::logistica_envio_pendiente_documento($data->documento,$marketplace_area->id_marketplace_area);
-                    $respuesta = json_decode($archivo_guia->getContent());
-
-                    if($respuesta->code == 200){
-                        $file = $respuesta->file;
-                        $pdf = $respuesta->pdf;
-                        $backup = 1;
-                    }
-                }
+//                if($auth->id != 9999) {
+//                    $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
+//                    $impresion = @$impresion_raw;
+//
+//                    if (empty($impresion)) {
+//                        $this->eliminarSeries($data->documento);
+//                        DB::table('seguimiento')->insert([
+//                            'id_documento' => $data->documento,
+//                            'id_usuario' => $auth->id,
+//                            'seguimiento' => "Hubo un problema al imprimir la guia, se eliminaron la series y se regreso a pendiente de remisión.."
+//                        ]);
+//
+//                        return response()->json([
+//                            "code" => 500,
+//                            "message" => "No fue posible imprimir la guía de embarque, No se encontro la guia, error desconocido." . self::logVariableLocation(),
+//                            "color" => property_exists($impresion, "key") ? "orange-border-top" : "blue-border-top",
+//                            "raw" => $impresion_raw
+//                        ]);
+//                    }
+//
+//                    if (property_exists($impresion, 'code') && $impresion->code != 200) {
+//                        $this->eliminarSeries($data->documento);
+//                        DB::table('seguimiento')->insert([
+//                            'id_documento' => $data->documento,
+//                            'id_usuario' => $auth->id,
+//                            'seguimiento' => "Hubo un problema al imprimir la guia, la series se eliminaron y se regresa a pendiente de remisión. " . $impresion->message
+//                        ]);
+//
+//                        return response()->json([
+//                            "code" => 500,
+//                            "message" => "Hubo un problema al imprimir la guia, la series se eliminaron y se regresa a pendiente de remisión, error: " . $impresion->message . "." . self::logVariableLocation(),
+//                            "color" => property_exists($impresion, "key") ? "orange-border-top" : "blue-border-top",
+//                            "raw" => property_exists($impresion, "raw") ? $impresion->raw : 0
+//                        ]);
+//                    }
+//                }
+//                else {
+//                    $archivo_guia = ComodinService::logistica_envio_pendiente_documento($data->documento,$marketplace_area->id_marketplace_area);
+//                    $respuesta = json_decode($archivo_guia->getContent());
+//
+//                    if($respuesta->code == 200){
+//                        $file = $respuesta->file;
+//                        $pdf = $respuesta->pdf;
+//                        $backup = 1;
+//                    }
+//                }
 
                 DB::table("documento")->where(["id" => $data->documento])->update([
                     "guia_impresa" => 1
