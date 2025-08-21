@@ -424,9 +424,9 @@ class AlmacenController extends Controller
         if ($documento_info->packing_by != 0) {
             //El pedido ya fue surtido y tiene series asignadas
             if ($tiene_series->isNotEmpty()) {
+                $afecta_inventario = DB::table('modelo_kardex')->where('id_documento', $documento)->first();
                 //El pedido ya tiene documento en comercial
-                if ($documento_info->documento_extra == "N/A") {
-                    //Se manda el pedido a fase factura para solo crear la factura
+                if (!$afecta_inventario) {
                     DB::table('documento')->where('id', $documento)->update(['id_fase' => 5]);
 
                     DB::table('seguimiento')->insert([
