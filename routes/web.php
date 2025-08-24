@@ -615,6 +615,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
     # Menú soporte
     $router->group(['prefix' => 'soporte'], function () use ($router) {
+        $router->post('buscar/usuario', 'SoporteController@buscarUsuario');
         $router->group(['prefix' => 'garantia-devolucion'], function () use ($router) {
             $router->get('data', 'SoporteController@soporte_garantia_devolucion_data');
             $router->get('venta/{venta}', 'SoporteController@soporte_garantia_devolucion_venta');

@@ -28,7 +28,7 @@ class SoporteController extends Controller
     /*  Soporte > garantías y devoluciones */
     public function soporte_garantia_devolucion_data()
     {
-        $tipos_documento = DB::select("SELECT * FROM documento_garantia_tipo WHERE id != 3");
+        $tipos_documento = DB::select("SELECT * FROM documento_garantia_tipo WHERE id != 4");
         $causas_documento = DB::select("SELECT * FROM documento_garantia_causa WHERE id != 0");
 
         return response()->json([
@@ -98,14 +98,45 @@ class SoporteController extends Controller
         }
 
         // 4) Productos y cantidades de la venta
-        $productos = DB::table('movimiento')
-            ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
-            ->where('movimiento.id_documento', $venta_id)
-            ->select(
-                'modelo.sku',
-                'modelo.descripcion',
-                'movimiento.cantidad'
-            )
+        // 4) Productos disponibles de la venta (restando devoluciones/garantías parciales)
+        $vendidosQ = DB::table('movimiento as mv')
+            ->join('modelo as mo', 'mo.id', '=', 'mv.id_modelo')
+            ->select([
+                'mv.id_modelo',
+                'mo.sku',
+                'mo.descripcion',
+                DB::raw('SUM(mv.cantidad) AS vendidos'),
+            ])
+            ->where('mv.id_documento', $venta_id)
+            ->groupBy('mv.id_modelo', 'mo.sku', 'mo.descripcion');
+
+        // Nota: documento_garantia_producto.producto guarda el identificador del producto devuelto.
+        // En la mayoría de implementaciones es el SKU. Si en tu data es así, podemos mapear por SKU.
+        $devueltosQ = DB::table('documento_garantia_re as dgr')
+            ->join('documento_garantia as dg', 'dg.id', '=', 'dgr.id_garantia')
+            ->join('documento_garantia_producto as dgp', 'dgp.id_garantia', '=', 'dg.id')
+            ->join('modelo as mo', 'mo.sku', '=', 'dgp.producto') // <-- mapeo por SKU
+            ->select([
+                'mo.id as id_modelo',
+                DB::raw('SUM(dgp.cantidad) AS devueltos'),
+            ])
+            ->where('dgr.id_documento', $venta_id)
+            ->where('dg.status', 1)          // solo garantías activas
+            ->whereIn('dg.id_tipo', [2, 3])// solo parciales (si tu lógica así lo requiere)
+            ->groupBy('mo.id');
+
+        $productos = DB::query()
+            ->fromSub($vendidosQ, 'v')
+            ->leftJoinSub($devueltosQ, 'r', 'r.id_modelo', '=', 'v.id_modelo')
+            ->select([
+                'v.sku',
+                'v.descripcion',
+                DB::raw('v.vendidos AS cantidad_vendida'),
+                DB::raw('IFNULL(r.devueltos, 0) AS cantidad_devueltos'),
+                DB::raw('(v.vendidos - IFNULL(r.devueltos, 0)) AS cantidad_disponible'),
+            ])
+            ->having('cantidad_disponible', '>', 0)
+            ->orderBy('v.sku')
             ->get();
 
         return response()->json([
@@ -1133,7 +1164,7 @@ class SoporteController extends Controller
     {
         set_time_limit(0);
 
-        $documentos = $this->garantia_devolucion_raw_data(1, 2);
+        $documentos = $this->garantia_devolucion_raw_data(1, 3);
 
         $tecnicos = Usuario::whereHas("subnivelesbynivel", function ($query) {
             return $query->where("id_nivel", UsuarioNivel::SOPORTE);
@@ -1160,10 +1191,9 @@ class SoporteController extends Controller
             if (!empty($data->notificados)) {
                 $usuarios = array();
 
-                $notificacion['titulo'] = "¡Llegó un paquete para ti!";
-                $notificacion['message'] = "El área de logistica ha indicado que ha llegado un paquete para tí.";
+                $notificacion['titulo'] = "Garantia del documento " . $data->documento_garantia;
+                $notificacion['message'] = "Se ha asignado un paquete para ti para que lo revises.";
                 $notificacion['tipo'] = "success"; // success, warning, danger
-                $notificacion['link'] = "/soporte/garantia-devolucion/garantia/historial/" . $data->documento;
 
                 $notificacion_id = DB::table('notificacion')->insertGetId([
                     'data' => json_encode($notificacion)
@@ -1187,8 +1217,6 @@ class SoporteController extends Controller
                 }
             }
 
-            $es_devolucion_parcial = DB::select("SELECT parcial FROM documento_garantia WHERE id = " . $data->documento_garantia . "")[0]->parcial;
-
             DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
                 'id_fase' => 3,
                 'guia_llegada' => $data->guia,
@@ -1209,10 +1237,43 @@ class SoporteController extends Controller
         ]);
     }
 
+    public function buscarUsuario(Request $request)
+    {
+        $criterio = trim((string) $request->input('criterio', ''));
+
+        // Si viene vacío, regresa lista vacía (tu front revisa length)
+        if ($criterio === '') {
+            return response()->json([
+                'code' => 200,
+                'usuarios' => [],
+            ]);
+        }
+
+        // Normaliza para búsqueda LIKE
+        $like = '%' . str_replace('%', '\%', $criterio) . '%';
+
+        // Búsqueda en USUARIOS de SOPORTE o SISTEMAS por NOMBRE (y opcionalmente CORREO)
+        $usuarios = DB::table('usuario')
+            ->select('id', 'nombre')
+            ->whereIn('area', ['SOPORTE', 'SISTEMAS'])
+            ->where(function ($q) use ($like) {
+                $q->where('nombre', 'LIKE', $like)
+                    ->orWhere('email', 'LIKE', $like); // opcional: quita si no lo quieres
+            })
+            ->where('status', 1)                 // opcional: sólo activos
+            ->orderBy('nombre', 'asc')                   // evita traer demasiados
+            ->get();
+
+        return response()->json([
+            'code' => 200,
+            'usuarios' => $usuarios,
+        ]);
+    }
+
     public function soporte_garantia_devolucion_garantia_revision_data(Request $request)
     {
         $auth = json_decode($request->auth);
-        $documentos = $this->garantia_devolucion_raw_data(3, 2, $auth->id);
+        $documentos = $this->garantia_devolucion_raw_data(3, 3, $auth->id);
 
         return response()->json([
             'code' => 200,
@@ -1253,7 +1314,7 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_garantia_cambio_data(Request $request)
     {
-        $documentos = $this->garantia_devolucion_raw_data(6, 2);
+        $documentos = $this->garantia_devolucion_raw_data(6, 3);
 
         foreach ($documentos as $documento) {
             $documento->almacenes = DB::select("SELECT
@@ -1277,602 +1338,594 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
-        $series_cambiadas = array();
-        $notaresponse = array();
 
-        if ($data->terminar) {
-            if ($data->nota) {
-                $es_devolucion_parcial = DB::select("SELECT parcial FROM documento_garantia WHERE id = " . $data->documento_garantia . "")[0]->parcial;
+        $series_cambiadas = [];
+        $id_nota_credito = null;
 
-                $productos_nota = array();
+        DB::beginTransaction();
+        try {
+            if (!isset($data->documento) || !isset($data->documento_garantia)) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'Faltan parámetros obligatorios (documento / documento_garantia).'
+                ]);
+            }
 
-                $info_documento = DB::select("SELECT
-                                    documento.id_almacen_principal_empresa,
-                                    documento.tipo_cambio,
-                                    documento.referencia,
-                                    documento_periodo.id AS id_periodo,
-                                    documento_uso_cfdi.codigo AS uso_cfdi,
-                                    documento_uso_cfdi.id AS id_cfdi,
-                                    documento.series_factura,
-                                    empresa.bd,
-                                    empresa.almacen_devolucion_garantia_erp,
-                                    empresa.almacen_devolucion_garantia_sistema,
-                                    empresa.almacen_devolucion_garantia_serie,
-                                    empresa_almacen.id_erp AS id_almacen,
-                                    marketplace_area.id AS id_marketplacea_area,
-                                    marketplace_area.serie AS serie_factura,
-                                    marketplace_area.publico,
-                                    moneda.id AS id_moneda
-                                FROM documento
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                INNER JOIN documento_periodo ON documento.id_periodo
-                                INNER JOIN documento_uso_cfdi ON documento.id_cfdi
-                                INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                WHERE documento.id = " . $data->documento . "");
+            if (!isset($data->productos_anteriores) || !is_array($data->productos_anteriores)) {
+                return response()->json([
+                    'code' => 400,
+                    'message' => 'No hay productos para procesar.'
+                ]);
+            }
 
-                $forma_pago = DB::select("SELECT
-                                        id_metodopago
-                                    FROM documento_pago 
-                                    INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                    WHERE id_documento = " . $data->documento . "");
+            // INFO del documento de venta y de la empresa/almacenes involucrados
+            $info_documento = DB::select("
+            SELECT
+                documento.id_almacen_principal_empresa,
+                documento.id_entidad,
+                documento.id_moneda,
+                documento.id_periodo,
+                documento.id_cfdi,
+                documento.id_marketplace_area AS id_marketplacea_area,
+                documento.id_fase,
+                documento.tipo_cambio,
+                documento.series_factura,
+                empresa.bd,
+                empresa.almacen_devolucion_garantia_erp,
+                empresa.almacen_devolucion_garantia_sistema,
+                empresa.almacen_devolucion_garantia_serie,
+                empresa_almacen.id_erp AS id_almacen,
+                marketplace_area.serie AS serie_factura,
+                marketplace_area.publico
+            FROM documento
+            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
+            INNER JOIN empresa        ON empresa_almacen.id_empresa = empresa.id
+            INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
+            WHERE documento.id = {$data->documento}
+            LIMIT 1
+        ");
 
-                $info_entidad = DB::table('documento')
-                    ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
-                    ->where('documento.id', $data->documento)
-                    ->whereIn('documento_entidad.tipo', [1, 3])
-                    ->select('documento_entidad.*')
-                    ->first();
+            if (empty($info_documento)) {
+                return response()->json([
+                    'code' => 404,
+                    'message' => 'No se encontró el detalle del documento (puede estar cancelado).'
+                ]);
+            }
 
-                if (empty($info_entidad)) {
-                    $json['code'] = 501;
-                    $json['message'] = "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador.";
-                    return $this->make_json($json);
-                }
+            $info_documento = $info_documento[0];
 
+            // Entidad del documento (cliente/pagador)
+            $info_entidad = DB::table('documento')
+                ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+                ->where('documento.id', $data->documento)
+                ->whereIn('documento_entidad.tipo', [1, 3])
+                ->select('documento_entidad.*')
+                ->first();
 
-                if (empty($info_entidad)) {
-                    $json['code'] = 500;
-                    $json['message'] = "No se encontró la información del cliente, favor de contactar al administrador.";
+            if (!$info_entidad) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => 'No se encontró la información del cliente.'
+                ]);
+            }
 
-                    return $this->make_json($json);
-                }
+            // ------------------------------------------------------------------
+            // RAMA A: Termina y genera NOTA DE CRÉDITO + TRASPASO A GARANTÍAS
+            // ------------------------------------------------------------------
+            if (!empty($data->terminar) && !empty($data->nota)) {
 
-                if ($info_documento[0]->publico == 0) {
-                    if (empty($forma_pago)) {
-                        $pago = DB::table('documento_pago')->insertGetId([
-                            'id_usuario' => $auth->id,
-                            'id_metodopago' => 99,
-                            'id_vertical' => 0,
-                            'id_categoria' => 0,
-                            'id_clasificacion' => 1,
-                            'tipo' => 1,
-                            'origen_importe' => 0,
-                            'destino_importe' => 0,
-                            'folio' => "",
-                            'entidad_origen' => 1,
-                            'origen_entidad' => $info_entidad[0]->rfc,
-                            'entidad_destino' => '',
-                            'destino_entidad' => '',
-                            'referencia' => '',
-                            'clave_rastreo' => '',
-                            'autorizacion' => '',
-                            'destino_fecha_operacion' => date('Y-m-d'),
-                            'destino_fecha_afectacion' => '',
-                            'cuenta_cliente' => ''
-                        ]);
+                // ¿Devolución parcial? (para fase al final)
+                $es_devolucion_parcial = (int) DB::table('documento_garantia')
+                    ->where('id', $data->documento_garantia)
+                    ->value('parcial');
 
-                        DB::table('documento_pago_re')->insert([
-                            'id_documento' => $data->documento,
-                            'id_pago' => $pago
-                        ]);
-
-                        $forma_pago = DB::select("SELECT
-                                                id_metodopago
-                                            FROM documento_pago 
-                                            INNER JOIN documento_pago_re ON documento_pago.id = documento_pago_re.id_pago
-                                            WHERE id_documento = " . $data->documento . "");
-                    }
-
-                    $forma_pago = $forma_pago[0];
-                } else {
-                    $forma_pago = new \stdClass();
-
-                    $forma_pago->id_metodopago = 31;
-                }
-
-                $info_documento = $info_documento[0];
-                $info_entidad = $info_entidad[0];
-
-                foreach ($data->productos_anteriores as $producto) {
-                    if ($producto->cambio) {
-                        if ($producto->serie) {
-                            $cantidad_cambio = 0;
-
-                            foreach ($producto->series as $serie) {
-                                if ($serie->cambio) {
-                                    $cantidad_cambio++;
-                                }
-                            }
-
-                            if ($cantidad_cambio == 0) {
-                                $json['code'] = 500;
-                                $json['message'] = "No se encontraron series para el producto " . $producto->sku . "";
-
-                                return $this->make_json($json);
-                            }
-
-                            $producto_object = new \stdClass();
-                            $producto_object->cantidad = $cantidad_cambio;
-                            $producto_object->sku = $producto->sku;
-                            $producto_object->precio_unitario = $producto->precio;
-                            $producto_object->costo = $producto->precio;
-                            $producto_object->descuento = 0;
-                            $producto_object->impuesto = 16;
-                            $producto_object->comentarios = "";
-
-                            array_push($productos_nota, $producto_object);
-                        } else {
-                            if ($producto->cantidad < 1) {
-                                $json['code'] = 500;
-                                $json['message'] = "La cantidad es incorrecta para el producto " . $producto->sku . "";
-
-                                return $this->make_json($json);
-                            }
-
-                            $producto_object = new \stdClass();
-                            $producto_object->cantidad = $producto->cantidad;
-                            $producto_object->sku = $producto->sku;
-                            $producto_object->precio_unitario = $producto->precio / 1.16;
-                            $producto_object->costo = $producto->precio / 1.16;
-                            $producto_object->descuento = 0;
-                            $producto_object->impuesto = 16;
-                            $producto_object->comentarios = "";
-
-                            array_push($productos_nota, $producto_object);
-                        }
-
-                        # Verificar que exista la cantidad necesaria para hacer el traspaso despues de crear la nota
-
-                        $existencia_codigo = InventarioService::existenciaProducto($producto->sku, $info_documento->id_almacen_principal_empresa);
-
-                        if ($existencia_codigo->error) {
-                            return response()->json([
-                                "code" => 500,
-                                "message" => "Error al consultar la existencia del código " . $producto->sku . ", mensaje de error: " . $existencia_codigo->mensaje . ""
-                            ]);
-                        }
-
-                        if (((int)$existencia_codigo->disponible + (int)$producto->cantidad) < $producto->cantidad) {
-                            return response()->json([
-                                "code" => 500,
-                                "message" => "No hay suficiente existencia para procesar la solicitud<br><br>Cantidad con nota: " . ((int)$existencia_codigo->existencia + (int)$producto->cantidad) . "<br>Cantidad solicitada: " . $producto->cantidad . "<br><br>Favor de revisiar el inventario con el encargado"
-                            ]);
-                        }
-                    }
-                }
-
-                # Se crear el documento nota de credito en el CRM para hacer el movimiento de series
-                $documento_nota = DB::table('documento')->insertGetId([
+                // 1) Construir Nota de Crédito (documento tipo 6)
+                $id_documento_nc = DB::table('documento')->insertGetId([
                     'id_almacen_principal_empresa' => $info_documento->id_almacen_principal_empresa,
-                    'id_tipo' => 6,
-                    'id_periodo' => $info_documento->id_periodo,
-                    'id_cfdi' => $info_documento->id_cfdi,
-                    'id_marketplace_area' => $info_documento->id_marketplacea_area,
-                    'id_usuario' => $auth->id,
-                    'id_moneda' => $info_documento->id_moneda,
-                    'id_paqueteria' => 6,
-                    'id_fase' => 100,
-                    'factura_folio' => $response_nota->id,
-                    'tipo_cambio' => $info_documento->tipo_cambio,
-                    'referencia' => 'N/A',
-                    'info_extra' => 'N/A',
-                    'observacion' => 'Nota de credito para el pedido ' . $data->documento . '', // Status de la compra
+                    'id_tipo'            => 6, // Nota de crédito
+                    'id_periodo'         => $info_documento->id_periodo,
+                    'id_cfdi'            => $info_documento->id_cfdi,
+                    'id_marketplace_area'=> $info_documento->id_marketplacea_area,
+                    'id_usuario'         => $auth->id ?? 1,
+                    'id_entidad'         => $info_entidad->id ?? null,
+                    'id_moneda'          => $info_documento->id_moneda,
+                    'id_paqueteria'      => 6,
+                    'id_fase'            => $info_documento->id_fase ?? 100,
+                    'factura_folio'      => 'N/A',
+                    'tipo_cambio'        => $info_documento->tipo_cambio ?? 1,
+                    'referencia'         => 'N/A',
+                    'info_extra'         => 'N/A',
+                    'observacion'        => 'Nota de crédito para el pedido ' . $data->documento,
+                    'status'             => 1,
                 ]);
 
+                $total_nc = 0.0;
+
+                // 2) Movimientos de la NC
                 foreach ($data->productos_anteriores as $producto) {
-                    if ($producto->cambio) {
-                        # Se crear el movimiento para el la nota de credito si el producto se va a cambiar
-                        $movimiento = DB::table('movimiento')->insertGetId([
-                            'id_documento' => $documento_nota,
-                            'id_modelo' => $producto->id_modelo,
-                            'cantidad' => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
-                            'precio' => $producto->precio,
-                            'garantia' => 0,
-                            'modificacion' => 'N/A',
-                            'regalo' => 0
-                        ]);
-
-                        if ($producto->serie) {
-                            foreach ($producto->series as $serie) {
-                                $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
-                                if ($serie->cambio) {
-                                    # Se crea la relación de la serie anterior con la nota de credito
-                                    $existe_serie = DB::select("SELECT id FROM producto WHERE serie = '" . $serie->serie . "'");
-
-                                    if (empty($existe_serie)) {
-                                        $serie_id = DB::table('producto')->insertGetId([
-                                            'id_modelo' => $producto->id_modelo,
-                                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
-                                            'serie' => $serie->serie
-                                        ]);
-                                    } else {
-                                        $serie_id = $existe_serie[0]->id;
-                                    }
-
-                                    DB::table('movimiento_producto')->insert([
-                                        'id_movimiento' => $movimiento,
-                                        'id_producto' => $serie_id
-                                    ]);
-                                }
-                            }
-                        }
+                    if (empty($producto->cambio)) {
+                        continue;
                     }
-                }
 
-                # Se crear el documento de traspaso en el CRM para hacer el movimiento de series
-                $documento_traspaso = DB::table('documento')->insertGetId([
-                    'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
-                    'id_almacen_secundario_empresa' => $info_documento->id_almacen_principal_empresa,
-                    'id_tipo' => 5,
-                    'id_periodo' => 1,
-                    'id_cfdi' => 1,
-                    'id_marketplace_area' => 1,
-                    'id_usuario' => $auth->id,
-                    'id_moneda' => 3,
-                    'id_paqueteria' => 6,
-                    'id_fase' => 100,
-                    'factura_folio' => '',
-                    'tipo_cambio' => 1,
-                    'referencia' => 'N/A',
-                    'info_extra' => 'N/A',
-                    'observacion' => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia, // Status de la compra
-                ]);
+                    // Cantidad a cambiar
+                    $cantidad_cambio = (int) ($producto->cantidad ?? 0);
 
-                foreach ($data->productos_anteriores as $producto) {
-                    if ($producto->cambio) {
+                    if (!empty($producto->serie)) {
+                        // Cuando el producto lleva series, contamos únicamente las que marcaron como "cambio"
                         $cantidad_cambio = 0;
-                        # Si el producto lleva series, se cuenta cuantas series se cambiaran para declararlo en el movimiento
-                        if ($producto->serie) {
-                            foreach ($producto->series as $serie) {
-                                if ($serie->cambio) {
-                                    $cantidad_cambio++;
-                                }
+                        foreach ($producto->series as $serie) {
+                            if (!empty($serie->cambio)) {
+                                $cantidad_cambio++;
                             }
                         }
-                        # Se crear el movimiento para el traspaso si el producto se va a cambiar
-                        $movimiento = DB::table('movimiento')->insertGetId([
-                            'id_documento' => $documento_traspaso,
-                            'id_modelo' => $producto->id_modelo,
-                            'cantidad' => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
-                            'precio' => $producto->precio,
-                            'garantia' => 0,
-                            'modificacion' => 'N/A',
-                            'regalo' => 0
-                        ]);
+                        if ($cantidad_cambio === 0) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 500,
+                                'message' => "No se encontraron series para el producto {$producto->sku}."
+                            ]);
+                        }
+                    } else {
+                        if ($cantidad_cambio < 1) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 500,
+                                'message' => "La cantidad es incorrecta para el producto {$producto->sku}."
+                            ]);
+                        }
+                    }
 
-                        if ($producto->serie) {
-                            foreach ($producto->series as $serie) {
-                                $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
-                                if ($serie->cambio) {
-                                    # Se crea la relación de la serie anterior con la nota de credito
-                                    $existe_serie = DB::select("SELECT id FROM producto WHERE serie = '" . $serie->serie . "'");
+                    $precio_unit = (float) ($producto->precio ?? 0); // si ya viene con IVA/quita IVA, respeta tu front
 
-                                    if (empty($existe_serie)) {
-                                        $serie_id = DB::table('producto')->insertGetId([
-                                            'id_modelo' => $producto->id_modelo,
-                                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
-                                            'serie' => $serie->serie
-                                        ]);
-                                    } else {
-                                        $serie_id = $existe_serie[0]->id;
+                    // Crear movimiento de la NC
+                    $mov_nc_id = DB::table('movimiento')->insertGetId([
+                        'id_documento' => $id_documento_nc,
+                        'id_modelo'    => $producto->id_modelo,
+                        'cantidad'     => $cantidad_cambio,
+                        'precio'       => $precio_unit,
+                        'garantia'     => 0,
+                        'modificacion' => 'N/A',
+                        'regalo'       => 0
+                    ]);
 
-                                        # La serie anterior se cambia al almacén de refacciones (13) y se deja un comentario del movimiento
-                                        DB::table('producto')->where(['id' => $serie_id])->update([
-                                            'id_modelo' => $producto->id_modelo,
-                                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
-                                            'status' => 1
-                                        ]);
-                                    }
+                    $total_nc += ($precio_unit * $cantidad_cambio);
 
-                                    # Se crea la relación de la serie anterior con el traspaso
-                                    DB::table('movimiento_producto')->insert([
-                                        'id_movimiento' => $movimiento,
-                                        'id_producto' => $serie_id
-                                    ]);
-                                }
+                    // Vincular series (si aplica) y regresar disponibilidad
+                    if (!empty($producto->serie)) {
+                        foreach ($producto->series as $serie) {
+                            if (empty($serie->cambio)) continue;
+
+                            $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
+
+                            $existe_serie = DB::table('producto')->where('serie', $serie->serie)->first();
+                            if (!$existe_serie) {
+                                // si no existía, la creamos en el almacén de series de garantía
+                                $serie_id = DB::table('producto')->insertGetId([
+                                    'id_modelo' => $producto->id_modelo,
+                                    'id_almacen'=> $info_documento->almacen_devolucion_garantia_serie,
+                                    'serie'     => $serie->serie,
+                                    'status'    => 1
+                                ]);
+                            } else {
+                                $serie_id = $existe_serie->id;
+                                // al regresar por NC, la pieza queda disponible
+                                DB::table('producto')->where('id', $serie_id)->update(['status' => 1]);
                             }
+
+                            DB::table('movimiento_producto')->insert([
+                                'id_movimiento' => $mov_nc_id,
+                                'id_producto'   => $serie_id
+                            ]);
                         }
                     }
                 }
 
-                InventarioService::aplicarMovimiento($documento_traspaso);
+                // 3) Afectar inventario de la Nota de Crédito
+                $aplicar_nc = InventarioService::aplicarMovimiento($id_documento_nc);
+                if (!empty($aplicar_nc->error)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'code'    => 500,
+                        'message' => 'Error al afectar inventario de la Nota de Crédito: ' . ($aplicar_nc->mensaje ?? 'desconocido')
+                    ]);
+                }
 
-                DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase' => ($es_devolucion_parcial) ? 100 : 7
+                // 4) Movimiento Contable (EGRESO) de la Nota de Crédito
+                // Ajusta id_tipo_afectacion / origen/destino según tu catálogo contable.
+                $egreso_id = DB::table('movimiento_contable')->insertGetId([
+                    'monto'              => $total_nc,
+                    'id_moneda'          => $info_documento->id_moneda,
+                    'tipo_cambio'        => $info_documento->tipo_cambio ?? 1,
+                    'id_tipo_afectacion' => 2, // 2 = Egreso (ajusta a tu catálogo)
+                    'fecha_operacion'    => \Carbon\Carbon::now(),
+                    'origen_tipo'        => 2, // (empresa)
+                    'entidad_origen'     => 5, // (ID de tu empresa/razón contable si aplica)
+                    'entidad_destino'    => $info_entidad->id,
+                    'destino_tipo'       => 1, // 1 = cliente
+                    'id_forma_pago'      => 1, // define tu default si no hay uno específico
+                    'descripcion_pago'   => 'Egreso por nota de crédito ' . $id_documento_nc,
+                    'referencia_pago'    => 'Documento original ' . $data->documento,
+                    'comentarios'        => 'Generado por devolución de pedido ' . $data->documento,
+                    'creado_por'         => $auth->id ?? 1,
+                    'status'             => 1,
                 ]);
-            } else {
-                $productos_traspaso = array();
 
-                $puede_continuar = 0;
+                DB::table('movimiento_contable_documento')->insert([
+                    'id_movimiento_contable' => $egreso_id,
+                    'id_documento'           => $id_documento_nc,
+                    'monto_aplicado'         => $total_nc,
+                    'moneda'                 => $info_documento->id_moneda,
+                    'tipo_cambio'            => $info_documento->tipo_cambio ?? 1,
+                    'parcialidad'            => 1,
+                    'saldo_documento'        => 0
+                ]);
 
-                $almacen_id = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->almacen . "");
+                // Guardar relación NC en el documento original
+                DB::table('documento')
+                    ->where('id', $data->documento)
+                    ->update(['nota' => (string)$id_documento_nc]);
 
-                if (empty($almacen_id)) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "No se encontró el almacén especificado. Favor de contactar a un administrador."
-                    ]);
-                }
+                $id_nota_credito = $id_documento_nc;
 
-                $almacen_id = $almacen_id[0]->id_almacen;
+                // 5) TRASPASO a almacén de garantías (series devueltas)
+                $id_documento_traspaso = DB::table('documento')->insertGetId([
+                    'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,            // destino (garantías)
+                    'id_almacen_secundario_empresa'=> $info_documento->id_almacen_principal_empresa,                  // origen (venta)
+                    'id_tipo'        => 5,   // Traspaso
+                    'id_periodo'     => $info_documento->id_periodo,
+                    'id_cfdi'        => $info_documento->id_cfdi,
+                    'id_marketplace_area' => $info_documento->id_marketplacea_area,
+                    'id_usuario'     => $auth->id ?? 1,
+                    'id_moneda'      => $info_documento->id_moneda,
+                    'id_paqueteria'  => 6,
+                    'id_fase'        => 100,
+                    'tipo_cambio'    => 1,
+                    'referencia'     => 'N/A',
+                    'info_extra'     => 'N/A',
+                    'observacion'    => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia,
+                ]);
 
-                $info_documento = DB::select("SELECT
-                                    documento.id_almacen_principal_empresa,
-                                    documento.tipo_cambio,
-                                    documento.referencia,
-                                    documento_periodo.id AS id_periodo,
-                                    documento_uso_cfdi.codigo AS uso_cfdi,
-                                    documento_uso_cfdi.id AS id_cfdi,
-                                    documento.series_factura,
-                                    empresa.bd,
-                                    empresa.almacen_devolucion_garantia_erp,
-                                    empresa.almacen_devolucion_garantia_sistema,
-                                    empresa.almacen_devolucion_garantia_serie,
-                                    empresa_almacen.id_erp AS id_almacen,
-                                    marketplace_area.id AS id_marketplacea_area,
-                                    marketplace_area.serie AS serie_factura,
-                                    marketplace_area.publico,
-                                    moneda.id AS id_moneda
-                                FROM documento
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN moneda ON documento.id_moneda = moneda.id
-                                INNER JOIN documento_periodo ON documento.id_periodo
-                                INNER JOIN documento_uso_cfdi ON documento.id_cfdi
-                                INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                WHERE documento.id = " . $data->documento . "");
-
-                if (empty($info_documento)) {
-                    return response()->json([
-                        'code' => 404,
-                        'message' => "No se encontró el detalle del documento, favor de verificar que no haya sido cancelado, de no estar cancelado, contacte al administrador."
-                    ]);
-                }
-
-                $info_documento = $info_documento[0];
-
-                # Validación que existan las series.
                 foreach ($data->productos_anteriores as $producto) {
-                    if ($producto->cambio) {
-                        if ($producto->serie) {
-                            $cantidad_cambio = 0;
+                    if (empty($producto->cambio)) continue;
 
-                            foreach ($producto->series as $serie) {
-                                $apos = `'`;
-                                //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                                if (str_contains($serie->serie_nueva, $apos)) {
-                                    $serie->serie_nueva = addslashes($serie->serie_nueva);
-                                }
-                                if ($serie->cambio) {
-                                    $existe_serie = DB::select("SELECT
-                                                                    producto.id,
-                                                                    modelo.id AS modelo_id,
-                                                                    producto.id_almacen,
-                                                                    producto.status
-                                                                FROM producto
-                                                                INNER JOIN movimiento_producto ON producto.id = movimiento_producto.id_producto
-                                                                INNER JOIN movimiento ON movimiento_producto.id_movimiento = movimiento.id
-                                                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                                WHERE producto.serie = '" . $serie->serie_nueva . "'");
+                    $cantidad_cambio = (int) ($producto->cantidad ?? 0);
+                    if (!empty($producto->serie)) {
+                        $cantidad_cambio = 0;
+                        foreach ($producto->series as $serie) {
+                            if (!empty($serie->cambio)) $cantidad_cambio++;
+                        }
+                        if ($cantidad_cambio === 0) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 500,
+                                'message' => "No se encontraron series para el producto {$producto->sku}."
+                            ]);
+                        }
+                    }
 
-                                    if (empty($existe_serie)) {
-                                        return response()->json([
-                                            'code' => 404,
-                                            'message' => "La serie " . $serie->serie_nueva . " no se encuentra registrada como disponible en el sistema, favor de contactar a un adminstrador."
-                                        ]);
-                                    }
+                    $mov_traspaso_id = DB::table('movimiento')->insertGetId([
+                        'id_documento' => $id_documento_traspaso,
+                        'id_modelo'    => $producto->id_modelo,
+                        'cantidad'     => $cantidad_cambio,
+                        'precio'       => $producto->precio ?? 0,
+                        'garantia'     => 0,
+                        'modificacion' => 'N/A',
+                        'regalo'       => 0
+                    ]);
 
-                                    $existe_serie = $existe_serie[0];
+                    if (!empty($producto->serie)) {
+                        foreach ($producto->series as $serie) {
+                            if (empty($serie->cambio)) continue;
 
-                                    if ($existe_serie->modelo_id != $producto->id_modelo) {
-                                        return response()->json([
-                                            'code' => 404,
-                                            'message' => "La serie " . $serie->serie_nueva . " no pertenece al producto el cual ha sido ingresada."
-                                        ]);
-                                    }
+                            $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
+                            // Serie anterior (la que regresa)
+                            $serie_anterior = DB::table('producto')
+                                ->where('serie', $serie->serie)
+                                ->first();
 
-                                    if ($existe_serie->id_almacen != $almacen_id) {
-                                        return response()->json([
-                                            'code' => 404,
-                                            'message' => "La serie " . $serie->serie_nueva . " no se encuentra en el almacén seleccionado."
-                                        ]);
-                                    }
-
-                                    $apos = `'`;
-                                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                                    if (str_contains($serie->serie, $apos)) {
-                                        $serie->serie = addslashes($serie->serie);
-                                    }
-
-                                    $existe_serie_anterior = DB::select("SELECT
-                                                                            producto.id,
-                                                                            modelo.id AS id_modelo
-                                                                        FROM producto
-                                                                        INNER JOIN movimiento_producto ON producto.id = movimiento_producto.id_producto
-                                                                        INNER JOIN movimiento ON movimiento_producto.id_movimiento = movimiento.id
-                                                                        INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                                                        WHERE producto.serie = '" . $serie->serie . "'");
-
-                                    if (empty($existe_serie_anterior)) {
-                                        return response()->json([
-                                            'code' => 404,
-                                            'message' => "La serie " . $serie->serie . " no se encontró en el sistema, favor de verificar que la serie esté registrada en el producto correcto."
-                                        ]);
-                                    }
-
-                                    $existe_serie_anterior = $existe_serie_anterior[0];
-
-                                    if ($existe_serie_anterior->id_modelo != $producto->id_modelo) {
-                                        return response()->json([
-                                            'code' => 404,
-                                            'message' => "La serie " . $serie->serie . " no pertenece al producto el cual ha sido ingresada."
-                                        ]);
-                                    }
-
-                                    $cantidad_cambio++;
-                                }
-                            }
-
-                            if ($cantidad_cambio == 0) {
-                                return response()->json([
-                                    'code' => 500,
-                                    'message' => "No se encontraron series para el producto " . $producto->sku . ""
+                            if (!$serie_anterior) {
+                                // Si no existe en tabla producto, créala y mándala al almacén de garantías (series)
+                                $serie_id = DB::table('producto')->insertGetId([
+                                    'id_modelo' => $producto->id_modelo,
+                                    'id_almacen'=> $info_documento->almacen_devolucion_garantia_serie,
+                                    'serie'     => $serie->serie,
+                                    'status'    => 1,
+                                    'extra'     => 'Alta por devolución/garantía'
+                                ]);
+                                $serie_anterior = (object)['id' => $serie_id];
+                            } else {
+                                // mover al almacén de garantías (series) y dejar disponible
+                                DB::table('producto')->where('id', $serie_anterior->id)->update([
+                                    'id_modelo' => $producto->id_modelo,
+                                    'id_almacen'=> $info_documento->almacen_devolucion_garantia_serie,
+                                    'status'    => 1,
+                                    'extra'     => 'Traspaso a garantías por devolución'
                                 ]);
                             }
 
-                            $producto_object = new \stdClass();
-                            $producto_object->cantidad = $cantidad_cambio;
-                            $producto_object->sku = $producto->sku;
-                            $producto_object->costo = $producto->costo;
-                            $producto_object->comentarios = "";
+                            // Vincular la serie anterior al movimiento de traspaso
+                            DB::table('movimiento_producto')->insert([
+                                'id_movimiento' => $mov_traspaso_id,
+                                'id_producto'   => $serie_anterior->id
+                            ]);
 
-                            array_push($productos_traspaso, $producto_object);
-                        } else {
-                            $producto_object = new \stdClass();
-                            $producto_object->cantidad = $producto->cantidad;
-                            $producto_object->sku = $producto->sku;
-                            $producto_object->costo = $producto->costo;
-                            $producto_object->comentarios = "";
+                            // Si hay una serie nueva (reposición), se liga al movimiento de venta original para dejarla no disponible
+                            if (!empty($serie->serie_nueva)) {
+                                $serie_nueva_txt = addslashes($serie->serie_nueva);
+                                $serie_nueva = DB::table('producto')->where('serie', $serie_nueva_txt)->first();
+                                if ($serie_nueva) {
+                                    DB::table('movimiento_producto')->insert([
+                                        'id_movimiento' => $producto->id, // id del movimiento de la venta original
+                                        'id_producto'   => $serie_nueva->id
+                                    ]);
+                                    DB::table('producto')->where('id', $serie_nueva->id)->update([
+                                        'status' => 0,
+                                        'extra'  => 'Reemplazo por garantía de la serie ' . $serie->serie
+                                    ]);
+                                    $series_cambiadas[] = $serie_nueva;
+                                }
+                            }
 
-                            array_push($productos_traspaso, $producto_object);
+                            $series_cambiadas[] = $serie_anterior;
                         }
                     }
                 }
 
-                if (COUNT($productos_traspaso) == 0) {
+                $aplicar_traspaso = InventarioService::aplicarMovimiento($id_documento_traspaso);
+                if (!empty($aplicar_traspaso->error)) {
+                    DB::rollBack();
                     return response()->json([
-                        'code' => 500,
-                        'message' => "No se encontraron productos a cambiar, favor de contactar con el administrador."
+                        'code'    => 500,
+                        'message' => 'Error al afectar inventario del traspaso: ' . ($aplicar_traspaso->mensaje ?? 'desconocido')
                     ]);
                 }
 
-                # Se crear el documento de traspaso en el CRM para hacer el movimiento de series
-                $documento_traspaso = DB::table('documento')->insertGetId([
-                    'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
-                    'id_almacen_secundario_empresa' => $data->almacen,
-                    'id_tipo' => 5,
-                    'id_periodo' => 1,
-                    'id_cfdi' => 1,
-                    'id_marketplace_area' => 1,
-                    'id_usuario' => $auth->id,
-                    'id_moneda' => 3,
-                    'id_paqueteria' => 6,
-                    'id_fase' => 100,
-                    'tipo_cambio' => 1,
-                    'referencia' => 'N/A',
-                    'info_extra' => 'N/A',
-                    'observacion' => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia,
-                ]);
+                // Actualizar fase de la garantía
+                DB::table('documento_garantia')
+                    ->where('id', $data->documento_garantia)
+                    ->update([
+                        'id_fase' => $es_devolucion_parcial ? 100 : 7,
+                        'nota'    => (string) $id_documento_nc
+                    ]);
+            }
 
+            // ------------------------------------------------------------------
+            // RAMA B: Solo TRASPASO (no genera Nota)
+            // ------------------------------------------------------------------
+            if (!empty($data->terminar) && empty($data->nota)) {
+                if (empty($data->almacen)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'code' => 400,
+                        'message' => 'Debes seleccionar un almacén para el traspaso.'
+                    ]);
+                }
+
+                $almacen_id = DB::table('empresa_almacen')
+                    ->where('id', $data->almacen)
+                    ->value('id_almacen');
+
+                if (!$almacen_id) {
+                    DB::rollBack();
+                    return response()->json([
+                        'code' => 500,
+                        'message' => 'No se encontró el almacén especificado.'
+                    ]);
+                }
+
+                // Validaciones de series nuevas contra el almacén seleccionado
                 foreach ($data->productos_anteriores as $producto) {
-                    if ($producto->cambio) {
-                        $cantidad_cambio = 0;
-                        # Si el producto lleva series, se cuenta cuantas series se cambiaran para declararlo en el movimiento
-                        if ($producto->serie) {
-                            foreach ($producto->series as $serie) {
-                                if ($serie->cambio) {
-                                    $cantidad_cambio++;
-                                }
-                            }
+                    if (empty($producto->cambio)) continue;
+                    if (empty($producto->serie)) continue;
+
+                    foreach ($producto->series as $serie) {
+                        if (empty($serie->cambio)) continue;
+
+                        // serie nueva debe existir, pertenecer al mismo modelo y estar en el almacén destino
+                        $sn = addslashes($serie->serie_nueva);
+                        $existe_serie = DB::select("
+                        SELECT
+                            producto.id,
+                            modelo.id AS modelo_id,
+                            producto.id_almacen,
+                            producto.status
+                        FROM producto
+                        INNER JOIN movimiento_producto ON producto.id = movimiento_producto.id_producto
+                        INNER JOIN movimiento ON movimiento_producto.id_movimiento = movimiento.id
+                        INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                        WHERE producto.serie = '{$sn}'
+                        LIMIT 1
+                    ");
+
+                        if (empty($existe_serie)) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 404,
+                                'message' => "La serie {$serie->serie_nueva} no está registrada como disponible."
+                            ]);
                         }
-                        # Se crear el movimiento para el traspaso si el producto se va a cambiar
-                        $movimiento = DB::table('movimiento')->insertGetId([
-                            'id_documento' => $documento_traspaso,
-                            'id_modelo' => $producto->id_modelo,
-                            'cantidad' => ($producto->serie) ? $cantidad_cambio : $producto->cantidad,
-                            'precio' => $producto->precio,
-                            'garantia' => 0,
-                            'modificacion' => 'N/A',
-                            'regalo' => 0
-                        ]);
 
-                        if ($producto->serie) {
-                            foreach ($producto->series as $serie) {
-                                $apos = `'`;
-                                //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                                if (str_contains($serie->serie, $apos)) {
-                                    $serie->serie = addslashes($serie->serie);
-                                }
-                                if ($serie->cambio) {
-                                    $serie_anterior = DB::select("SELECT id, id_almacen, extra, status FROM producto WHERE serie = '" . $serie->serie . "'")[0];
+                        $existe_serie = $existe_serie[0];
+                        if ((int)$existe_serie->modelo_id !== (int)$producto->id_modelo) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 404,
+                                'message' => "La serie {$serie->serie_nueva} no pertenece al producto ingresado."
+                            ]);
+                        }
+                        if ((int)$existe_serie->id_almacen !== (int)$almacen_id) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 404,
+                                'message' => "La serie {$serie->serie_nueva} no se encuentra en el almacén seleccionado."
+                            ]);
+                        }
 
-                                    # Se crea la relación de la serie anterior con el traspaso
-                                    DB::table('movimiento_producto')->insert([
-                                        'id_movimiento' => $movimiento,
-                                        'id_producto' => $serie_anterior->id
-                                    ]);
-                                    $apos = `'`;
-                                    //Checa si tiene ' , entonces la escapa para que acepte la consulta con '
-                                    if (str_contains($serie->serie_nueva, $apos)) {
-                                        $serie->serie_nueva = addslashes($serie->serie_nueva);
-                                    }
-                                    # Se obtiene el ID de la nueva serie
-                                    $serie_nueva = DB::select("SELECT id, id_almacen, status, extra FROM producto WHERE serie = '" . $serie->serie_nueva . "'")[0];
-                                    $serie_nueva->movimiento_venta = $producto->id;
-
-                                    # Se crea la relación de la serie nueva con el movimiento de la serie anterior
-                                    DB::table('movimiento_producto')->insert([
-                                        'id_movimiento' => $producto->id,
-                                        'id_producto' => $serie_nueva->id
-                                    ]);
-
-                                    # La serie anterior se cambia al almacén de refacciones (13) y se deja un comentario del movimiento
-                                    DB::table('producto')->where(['id' => $serie_anterior->id])->update([
-                                        'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
-                                        'status' => 1,
-                                        'extra' => 'Se cambió por la serie ' . $serie->serie_nueva . ' por garantía, y esta se traspasa a garantías.'
-                                    ]);
-
-                                    # La serie nueva se queda no disponible por que ya está relacionada a la venta y se deja un comentario del movimiento
-                                    DB::table('producto')->where(['id' => $serie_nueva->id])->update([
-                                        'status' => 0,
-                                        'extra' => 'Se cambió por la serie ' . $serie->serie . ' por garantía, la otra fue enviada a garantías.'
-                                    ]);
-
-                                    array_push($series_cambiadas, $serie_anterior);
-                                    array_push($series_cambiadas, $serie_nueva);
-                                }
-                            }
+                        // Validación de la serie anterior
+                        $sa = addslashes($serie->serie);
+                        $existe_serie_anterior = DB::select("
+                        SELECT producto.id, modelo.id AS id_modelo
+                        FROM producto
+                        INNER JOIN movimiento_producto ON producto.id = movimiento_producto.id_producto
+                        INNER JOIN movimiento ON movimiento_producto.id_movimiento = movimiento.id
+                        INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                        WHERE producto.serie = '{$sa}'
+                        LIMIT 1
+                    ");
+                        if (empty($existe_serie_anterior)) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 404,
+                                'message' => "La serie {$serie->serie} no se encontró en el sistema."
+                            ]);
+                        }
+                        if ((int)$existe_serie_anterior[0]->id_modelo !== (int)$producto->id_modelo) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 404,
+                                'message' => "La serie {$serie->serie} no pertenece al producto ingresado."
+                            ]);
                         }
                     }
                 }
 
-                $aplicar = InventarioService::aplicarMovimiento($documento_traspaso);
+                // Crear TRASPASO
+                $id_documento_traspaso = DB::table('documento')->insertGetId([
+                    'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
+                    'id_almacen_secundario_empresa'=> $data->almacen,
+                    'id_tipo'        => 5,
+                    'id_periodo'     => 1,
+                    'id_cfdi'        => 1,
+                    'id_marketplace_area' => 1,
+                    'id_usuario'     => $auth->id ?? 1,
+                    'id_moneda'      => 3,
+                    'id_paqueteria'  => 6,
+                    'id_fase'        => 100,
+                    'tipo_cambio'    => 1,
+                    'referencia'     => 'N/A',
+                    'info_extra'     => 'N/A',
+                    'observacion'    => 'Traspaso entre almacenes por garantía ' . $data->documento_garantia
+                ]);
 
-                DB::table('documento_garantia')->where(['id' => $data->documento_garantia])->update([
-                    'id_fase' => 99
+                foreach ($data->productos_anteriores as $producto) {
+                    if (empty($producto->cambio)) continue;
+
+                    $cantidad_cambio = (int) ($producto->cantidad ?? 0);
+                    if (!empty($producto->serie)) {
+                        $cantidad_cambio = 0;
+                        foreach ($producto->series as $serie) {
+                            if (!empty($serie->cambio)) $cantidad_cambio++;
+                        }
+                        if ($cantidad_cambio === 0) {
+                            DB::rollBack();
+                            return response()->json([
+                                'code' => 500,
+                                'message' => "No se encontraron series para el producto {$producto->sku}."
+                            ]);
+                        }
+                    }
+
+                    $mov_traspaso_id = DB::table('movimiento')->insertGetId([
+                        'id_documento' => $id_documento_traspaso,
+                        'id_modelo'    => $producto->id_modelo,
+                        'cantidad'     => $cantidad_cambio,
+                        'precio'       => $producto->precio ?? 0,
+                        'garantia'     => 0,
+                        'modificacion' => 'N/A',
+                        'regalo'       => 0
+                    ]);
+
+                    if (!empty($producto->serie)) {
+                        foreach ($producto->series as $serie) {
+                            if (empty($serie->cambio)) continue;
+
+                            $sa = addslashes($serie->serie);
+                            $serie_anterior = DB::table('producto')->where('serie', $sa)->first();
+                            if (!$serie_anterior) {
+                                DB::rollBack();
+                                return response()->json([
+                                    'code' => 404,
+                                    'message' => "La serie {$serie->serie} no se encontró en el sistema."
+                                ]);
+                            }
+
+                            DB::table('movimiento_producto')->insert([
+                                'id_movimiento' => $mov_traspaso_id,
+                                'id_producto'   => $serie_anterior->id
+                            ]);
+
+                            $sn = addslashes($serie->serie_nueva);
+                            $serie_nueva = DB::table('producto')->where('serie', $sn)->first();
+                            if ($serie_nueva) {
+                                // relacionamos la nueva serie a la venta original para dejarla ocupada
+                                DB::table('movimiento_producto')->insert([
+                                    'id_movimiento' => $producto->id, // movimiento venta original
+                                    'id_producto'   => $serie_nueva->id
+                                ]);
+                                DB::table('producto')->where('id', $serie_nueva->id)->update([
+                                    'status' => 0,
+                                    'extra'  => 'Se cambió por la serie ' . $serie->serie . ' por garantía, la otra fue enviada a garantías.'
+                                ]);
+                                $series_cambiadas[] = $serie_nueva;
+                            }
+
+                            // Mandar la serie anterior al almacén de garantías (series)
+                            DB::table('producto')->where('id', $serie_anterior->id)->update([
+                                'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
+                                'status'     => 1,
+                                'extra'      => 'Se cambió por la serie ' . $serie->serie_nueva . ' por garantía, y esta se traspasa a garantías.'
+                            ]);
+
+                            $series_cambiadas[] = $serie_anterior;
+                        }
+                    }
+                }
+
+                $aplicar_traspaso = InventarioService::aplicarMovimiento($id_documento_traspaso);
+                if (!empty($aplicar_traspaso->error)) {
+                    DB::rollBack();
+                    return response()->json([
+                        'code'    => 500,
+                        'message' => 'Error al afectar inventario del traspaso: ' . ($aplicar_traspaso->mensaje ?? 'desconocido')
+                    ]);
+                }
+
+                DB::table('documento_garantia')
+                    ->where('id', $data->documento_garantia)
+                    ->update(['id_fase' => 99]);
+            }
+
+            // ------------------------------------------------------------------
+            // SEGUIMIENTOS
+            // ------------------------------------------------------------------
+            if (!empty($data->seguimiento)) {
+                DB::table('documento_garantia_seguimiento')->insert([
+                    'id_documento' => $data->documento_garantia,
+                    'id_usuario'   => $auth->id ?? 1,
+                    'seguimiento'  => $data->seguimiento
                 ]);
             }
+
+            DB::table('documento_garantia_seguimiento')->insert([
+                'id_documento' => $data->documento_garantia,
+                'id_usuario'   => $auth->id ?? 1,
+                'seguimiento'  => "Documento guardado correctamente." . ($id_nota_credito ? ("<br/>Se crea la nota de crédito número: " . $id_nota_credito) : "")
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'code'    => 200,
+                'message' => "Documento guardado correctamente." . ($id_nota_credito ? ("<br/>Se crea la nota de crédito número: " . $id_nota_credito) : "")
+            ]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'code'    => 500,
+                'message' => 'Error al procesar la solicitud: ' . $e->getMessage()
+            ]);
         }
-
-        DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento' => $data->documento_garantia,
-            'id_usuario' => $auth->id,
-            'seguimiento' => $data->seguimiento
-        ]);
-
-        DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento' => $data->documento_garantia,
-            'id_usuario' => $auth->id,
-            'seguimiento' => "Documento guardado correctamente. <br/>Se crea la nota de credito número: " . $notaresponse[0]
-        ]);
-
-        return response()->json([
-            'code' => 200,
-            'message' => "Documento guardado correctamente. <br/>Se crea la nota de credito número: " . $notaresponse[0]
-        ]);
     }
 
     public function soporte_garantia_devolucion_garantia_cambio_documento(Request $request)
@@ -1975,7 +2028,7 @@ class SoporteController extends Controller
 
     public function soporte_garantia_devolucion_garantia_pedido_data(Request $request)
     {
-        $garantias_pendientes = DB::select("SELECT id FROM documento_garantia WHERE id_fase = 7 AND id_tipo = 2");
+        $garantias_pendientes = DB::select("SELECT id FROM documento_garantia WHERE id_fase = 7 AND id_tipo = 3");
         $periodos = DB::select("SELECT id, periodo FROM documento_periodo WHERE status = 1");
         $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1");
         $empresas = DB::select("SELECT id, bd, empresa FROM empresa WHERE status = 1 AND id != 0");
@@ -1984,7 +2037,7 @@ class SoporteController extends Controller
         $marketplaces_publico = DB::select("SELECT marketplace.marketplace FROM marketplace_area INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id WHERE marketplace_area.publico = 1 GROUP BY marketplace.marketplace");
         $monedas = DB::select("SELECT * FROM moneda");
 
-        $documentos = $this->garantia_devolucion_raw_data(7, 2);
+        $documentos = $this->garantia_devolucion_raw_data(7, 3);
 
         $documentos = DB::select("SELECT
                                     documento.*,
@@ -2217,7 +2270,7 @@ class SoporteController extends Controller
     public function soporte_garantia_devolucion_garantia_envio_data()
     {
         $paqueterias = DB::select("SELECT id, paqueteria FROM paqueteria WHERE status = 1 AND id != 9");
-        $documentos = $this->garantia_devolucion_raw_data(99, 2);
+        $documentos = $this->garantia_devolucion_raw_data(99, 3);
 
         return response()->json([
             'code' => 200,
@@ -2255,7 +2308,7 @@ class SoporteController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $documentos = $this->garantia_devolucion_raw_data(0, 2, 0, $data->fecha_inicial, $data->fecha_final, $data->documento);
+        $documentos = $this->garantia_devolucion_raw_data(0, 3, 0, $data->fecha_inicial, $data->fecha_final, $data->documento);
 
         return response()->json([
             'documentos' => $documentos
@@ -3040,13 +3093,16 @@ class SoporteController extends Controller
     {
         $query = "";
 
-        if (is_string($tipo)) {
-            // Convierte "1,2" en [1,2]
-            $tipo = explode(',', $tipo);
+        if (is_string($tipo) && strpos($tipo, ',') !== false) {
+            // Caso: "2,3" → lista IN (2,3)
+            $query = "documento_garantia.id_tipo IN (" . $tipo . ")";
+        } else {
+            // Caso: un número (int o string simple)
+            $query = "documento_garantia.id_tipo IN (" . (int)$tipo . ")";
         }
 
         if (!empty($garantia_pedido)) {
-            $query = " AND (documento_garantia.id = " . $garantia_pedido . " OR documento.id = " . $garantia_pedido . ")";
+            $query .= " AND (documento_garantia.id = " . $garantia_pedido . " OR documento.id = " . $garantia_pedido . ")";
         } else {
             if ($usuario != 0) {
                 $query .= " AND documento_garantia.asigned_to = " . $usuario;
@@ -3101,7 +3157,7 @@ class SoporteController extends Controller
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            WHERE documento_garantia.id_tipo IN (" . implode(',', $tipo) . ") " . $query);
+                            WHERE " . $query);
 
         foreach ($documentos as $documento) {
             $productos = DB::table('documento_garantia_producto as dgp')
