@@ -1581,87 +1581,25 @@ class VentaController extends Controller
                                 WHERE id_documento = " . $documento);
 
         $info_documento = $info_documento[0];
-        /* Si no es venta de FBA, se hace un traspaso a garantias */
-        $venta_fba = (strtolower($info_documento->marketplace) == "amazon") && $info_documento->fulfillment;
 
-        if (!$venta_fba && $garantia && $info_documento->id_fase > 3) {
+        $productos = DB::select("SELECT
+                                    movimiento.id,
+                                    modelo.serie
+                                FROM movimiento
+                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                                WHERE movimiento.id_documento = " . $documento);
 
-            $documento_traspaso = DB::table('documento')->insertGetId([
-                'id_almacen_principal_empresa' => $info_documento->almacen_devolucion_garantia_sistema,
-                'id_almacen_secundario_empresa' => $info_documento->id_almacen_principal_empresa,
-                'id_tipo' => 5,
-                'id_periodo' => 1,
-                'id_cfdi' => 1,
-                'id_marketplace_area' => $info_documento->id_marketplacea_area,
-                'id_usuario' => $auth->id,
-                'id_moneda' => 3,
-                'id_paqueteria' => 6,
-                'id_fase' => 100,
-                'autorizado_by' => 1,
-                'autorizado' => 1,
-                'factura_folio' => 'N/A',
-                'tipo_cambio' => 1,
-                'referencia' => 'N/A',
-                'info_extra' => 'N/A',
-                'observacion' => 'Traspaso entre almacenes por cancelacion de venta ' . $documento, // Status de la compra
-            ]);
-
-            /** @noinspection PhpUnusedLocalVariableInspection */
-            foreach ($productos as $index => $producto) {
-                $movimiento = DB::table('movimiento')->insertGetId([
-                    'id_documento' => $documento_traspaso,
-                    'id_modelo' => $producto->id_modelo,
-                    'cantidad' => $producto->cantidad,
-                    'precio' => $producto->precio_unitario,
-                    'garantia' => 0,
-                    'modificacion' => 'N/A',
-                    'regalo' => 0
-                ]);
-
-                if ($producto->serie) {
-                    $series = DB::select("SELECT
-                                        producto.id,
-                                        producto.status,
-                                        producto.id_almacen
+        foreach ($productos as $producto) {
+            if ($producto->serie) {
+                $series = DB::select("SELECT
+                                        producto.id
                                     FROM movimiento
                                     INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
                                     INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                    WHERE movimiento.id = " . $producto->id_movimiento);
+                                    WHERE movimiento.id = " . $producto->id);
 
-                    foreach ($series as $serie) {
-                        DB::table('producto')->where(['id' => $serie->id])->update([
-                            'id_almacen' => $info_documento->almacen_devolucion_garantia_serie,
-                            'status' => 1
-                        ]);
-
-                        DB::table('movimiento_producto')->insert([
-                            'id_movimiento' => $movimiento,
-                            'id_producto' => $serie->id
-                        ]);
-                    }
-                }
-            }
-            InventarioService::aplicarMovimiento($documento_traspaso);
-        } else {
-            $productos = DB::select("SELECT
-                                        movimiento.id,
-                                        modelo.serie
-                                    FROM movimiento
-                                    INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                    WHERE movimiento.id_documento = " . $documento);
-
-            foreach ($productos as $producto) {
-                if ($producto->serie) {
-                    $series = DB::select("SELECT
-                                            producto.id
-                                        FROM movimiento
-                                        INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                        INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                        WHERE movimiento.id = " . $producto->id);
-
-                    foreach ($series as $serie) {
-                        DB::table('producto')->where(['id' => $serie->id])->update(['status' => 1]);
-                    }
+                foreach ($series as $serie) {
+                    DB::table('producto')->where(['id' => $serie->id])->update(['status' => 1]);
                 }
             }
         }
