@@ -786,7 +786,7 @@ class LogisticaController extends Controller
     {
         $printers = DB::table("impresora")
             ->select("id", "nombre", "servidor", "ip")
-            ->where("tamanio", "Continuo")
+            ->where("tamanio", "continua")
             ->get()
             ->toArray();
 
