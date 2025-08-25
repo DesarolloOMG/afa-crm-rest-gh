@@ -152,12 +152,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
 
         $router->group(['prefix' => 'reporte'], function () use ($router) {
-            #Reportes HP
-            $router->group(['prefix' => 'hp'], function () use ($router) {
-                $router->post('ventasReporteHp', 'GeneralController@ventasReporteHp');
-                $router->post('comprasReporteHp', 'GeneralController@comprasReporteHp');
-            });
-
             #Reportes NDC
             $router->post('notas-autorizadas', 'GeneralController@general_reporte_notas_autorizadas');
 
@@ -218,12 +212,18 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 });
 
                 $router->group(['prefix' => 'manifiesto'], function () use ($router) {
+                    $router->get('data', 'GeneralController@general_reporte_logistica_manifiesto_data');
                     $router->get('generar/{paqueteria}/{fecha}', 'GeneralController@general_reporte_logistica_manifiesto_generar');
                 });
 
                 $router->group(['prefix' => 'marketplace'], function () use ($router) {
                     $router->get('{fecha_inicial}/{fecha_final}', 'GeneralController@general_reporte_logistica_marketplace');
                 });
+            });
+
+            #Reporte de procesos en logistica
+            $router->group(['prefix' => 'pendientes'], function () use ($router) {
+                $router->get('ingresos-egresos', 'GeneralController@general_reporte_pendientes_ingresosegresos');
             });
 
             #Reporte de procesos en logistica
@@ -237,23 +237,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
             $router->get('ventas_canceladas', 'ReporteController@ventas_canceladas');
 
-            #Reporte para subir archivos a FTP
-            $router->group(['prefix' => 'administracion'], function () use ($router) {
-                $router->group(['prefix' => 'margen'], function () use ($router) {
-                    $router->get('data', 'GeneralController@general_reporte_administracion_margen_data');
-                    $router->get('cliente/{criterio}', 'GeneralController@general_reporte_administracion_margen_cliente');
-                    $router->get('cliente-productos/{cliente_id}', 'GeneralController@general_reporte_adminsitracion_cliente_productos');
-                    $router->post('guardar', 'GeneralController@general_reporte_administracion_margen_guardar');
-
-                    $router->group(['prefix' => 'producto'], function () use ($router) {
-                        $router->get('data/{criterio}', 'GeneralController@general_reporte_administracion_margen_producto_data');
-                        $router->get('borrar/{producto}', 'GeneralController@general_reporte_administracion_margen_producto_borrar');
-                        $router->post('cambiar', 'GeneralController@general_reporte_administracion_margen_producto_cambiar');
-                        $router->post('guardar', 'GeneralController@general_reporte_administracion_margen_producto_guardar');
-                    });
-                });
-            });
-
             # Reportes relacionados a la compra
             $router->group(['prefix' => 'compra'], function () use ($router) {
                 $router->post('producto', 'GeneralController@general_reporte_compra_producto');
@@ -265,6 +248,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
 
             $router->group(['prefix' => 'producto'], function () use ($router) {
+                $router->get('antiguedad/data', 'GeneralController@general_reporte_producto_antiguedad_data');
                 $router->get('antiguedad/{almacen}', 'GeneralController@general_reporte_producto_antiguedad');
                 $router->post('top-venta', 'GeneralController@general_reporte_producto_top_venta');
                 $router->post('costo-precio-promedio', 'GeneralController@general_reporte_producto_costo_precio_promedio');

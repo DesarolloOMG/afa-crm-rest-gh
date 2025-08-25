@@ -26,6 +26,7 @@ use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Validator;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 
 class GeneralController extends Controller
 {
@@ -1760,26 +1761,36 @@ class GeneralController extends Controller
         ]);
     }
 
-    # Tipo es compra o venta
-    public function rawinfo_precio_cantidad_mes($mes, $producto, $empresa, $anio)
+    /**
+     * Calcula TOTAL y CANTIDAD de un producto en un mes/año para la empresa dada.
+     * $idTipoDocumento: 2 = venta, 6 = nota de crédito
+     */
+    public function rawinfo_precio_cantidad_mes(int $mes, int $idModelo, int $idEmpresa, int $anio, int $idTipoDocumento = 2): array
     {
-        $data = DB::select("SELECT
-                                IFNULL(SUM((movimiento.precio * movimiento.cantidad * documento.tipo_cambio) * 1.16), 0) AS total,
-                                IFNULL(SUM(movimiento.cantidad), 0) AS productos
-                            FROM documento
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                            WHERE documento.id_tipo = 2
-                            AND documento.status = 1
-                            AND documento.created_at BETWEEN '" . date("" . $anio . "-m-01", strtotime(date("Y-" . $mes))) . " 00:00:00' AND '" . date("" . $anio . "-m-t", strtotime(date("Y-" . $mes))) . " 23:59:59'
-                            AND movimiento.id_modelo = " . $producto . "
-                            AND empresa_almacen.id_empresa = " . $empresa . "")[0];
+        // Inicio y fin de mes (YYYY-mm-dd HH:ii:ss)
+        $ini = new \DateTimeImmutable(sprintf('%04d-%02d-01 00:00:00', $anio, $mes));
+        $fin = $ini->modify('last day of this month')->setTime(23, 59, 59);
+
+        $row = DB::table('documento as d')
+            ->join('empresa_almacen as ea', 'ea.id', '=', 'd.id_almacen_principal_empresa')
+            ->join('movimiento as mv', 'mv.id_documento', '=', 'd.id')
+            ->where('d.id_tipo', $idTipoDocumento)
+            ->where('d.status', 1)
+            ->where('ea.id_empresa', $idEmpresa)
+            ->where('mv.id_modelo', $idModelo)
+            ->whereBetween('d.created_at', [$ini->format('Y-m-d H:i:s'), $fin->format('Y-m-d H:i:s')])
+            ->selectRaw('
+            COALESCE(SUM((mv.precio * mv.cantidad * d.tipo_cambio) * 1.16), 0) AS total,
+            COALESCE(SUM(mv.cantidad), 0) AS productos
+        ')
+            ->first();
 
         return [
-            "total" => $data->total,
-            "productos" => $data->productos
+            'total'     => (float)($row->total ?? 0),
+            'productos' => (int)  ($row->productos ?? 0),
         ];
     }
+
 
     public function general_reporte_venta_data(Request $request)
     {
@@ -3208,34 +3219,38 @@ class GeneralController extends Controller
         ]);
     }
 
+    public function general_reporte_producto_antiguedad_data() {
+        $almacenes = DB::table("almacen")->where("status", "1")->where('id', '!=', 0)->get();
+
+        return response()->json([
+            'code' => 200,
+            'almacenes' => $almacenes,
+            'mensaje' => 'Correcto'
+        ]);
+    }
+
     public function general_reporte_producto_antiguedad($almacen)
     {
         set_time_limit(0);
 
-        $empresa = DB::select("SELECT
-                                    empresa.bd,
-                                    empresa_almacen.id_erp
-                                FROM empresa_almacen
-                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                WHERE empresa_almacen.id = " . $almacen . "");
+        // 1) Traer datos desde el SP
+        //    El SP debe devolver: id, codigo, descripcion, marca, vertical, existencia, costo,
+        //    fecha_ultima_compra, cantidad_ultima_compra, dias_transcurridos
+        $productos = DB::select('CALL sp_reporte_antiguedad_inventario(?)', [$almacen]);
 
-        if (empty($empresa)) {
+        if (empty($productos)) {
             return response()->json([
-                "code" => 500,
-                "message" => "No se encontró la empresa del almacén seleccionado, favor de contactar a un administrador."
-            ]);
+                'code'    => 404,
+                'message' => 'No hay información para el almacén seleccionado.'
+            ], 404);
         }
 
-        $empresa = $empresa[0];
-
+        // 2) Armar Excel
         $spreadsheet = new Spreadsheet();
-        $sheet = $spreadsheet->getActiveSheet()->setTitle("ANTIGUEDAD DE INVENTARIO");
+        $sheet = $spreadsheet->getActiveSheet()->setTitle('ANTIGÜEDAD DE INVENTARIO');
         $fila = 2;
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:I1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:I1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
-
-        # Cabecera
+        // Estilos cabecera
         $sheet->setCellValue('A1', 'CODIGO');
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
         $sheet->setCellValue('C1', 'MARCA');
@@ -3246,41 +3261,35 @@ class GeneralController extends Controller
         $sheet->setCellValue('H1', 'CANTIDAD ULTIMA COMPRA');
         $sheet->setCellValue('I1', 'TIEMPO TRANSCURRIDO');
 
-        $url = config('webservice.url') . "Utilidad/Reporte/ProductosExistenciaUltimaCompra/" . $empresa->bd . "/Almacen/" . $empresa->id_erp . "";
+        $spreadsheet->getActiveSheet()->getStyle('A1:I1')->getFont()->setBold(true)->getColor()->setARGB('000000');
+        $spreadsheet->getActiveSheet()->getStyle('A1:I1')
+            ->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('4CB9CD');
 
-        $curl_handle = curl_init();
-        curl_setopt($curl_handle, CURLOPT_URL, $url);
-        curl_setopt($curl_handle, CURLOPT_CONNECTTIMEOUT, 2);
-        curl_setopt($curl_handle, CURLOPT_RETURNTRANSFER, 1);
-        $query = curl_exec($curl_handle);
-        curl_close($curl_handle);
+        foreach ($productos as $p) {
+            // Normalizaciones
+            $fechaUC = !empty($p->fecha_ultima_compra) ? date('Y-m-d', strtotime($p->fecha_ultima_compra)) : '';
+            $diasTxt = isset($p->dias_transcurridos) && $p->dias_transcurridos !== null
+                ? ((int)$p->dias_transcurridos) . ' días'
+                : '';
 
-        $productos = json_decode($query);
+            // Filas
+            $sheet->setCellValue('A' . $fila, $p->codigo);
+            $sheet->setCellValue('B' . $fila, $p->descripcion);
+            $sheet->setCellValue('C' . $fila, $p->marca);
+            $sheet->setCellValue('D' . $fila, $p->vertical);
+            $sheet->setCellValue('E' . $fila, (float)($p->costo ?? 0));
+            $sheet->setCellValue('F' . $fila, (int)($p->existencia ?? 0));
+            $sheet->setCellValue('G' . $fila, $fechaUC);
+            $sheet->setCellValue('H' . $fila, (int)($p->cantidad_ultima_compra ?? 0));
+            $sheet->setCellValue('I' . $fila, $diasTxt);
 
-        foreach ($productos as $producto) {
-            if (!empty($producto->fecha_ultimacompra)) {
-                $fecha_actual = time();
-                $fecha_final = strtotime($producto->fecha_ultimacompra);
-                $diferencia = $fecha_actual - $fecha_final;
+            // Formato moneda y SKU como texto
+            $spreadsheet->getActiveSheet()->getStyle("E{$fila}")
+                ->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
 
-                $dias_transcurridos = floor($diferencia / (60 * 60 * 24));
-            }
-
-            $producto->dias = empty($producto->fecha_ultimacompra) ? "" : $dias_transcurridos . " días";
-            $producto->fecha_ultimacompra = empty($producto->fecha_ultimacompra) ? "" : date("Y-m-d", strtotime($producto->fecha_ultimacompra));
-
-            $sheet->setCellValue('A' . $fila, $producto->sku);
-            $sheet->setCellValue('B' . $fila, $producto->producto);
-            $sheet->setCellValue('C' . $fila, $producto->cat2);
-            $sheet->setCellValue('D' . $fila, $producto->cat4);
-            $sheet->setCellValue('E' . $fila, $producto->precio);
-            $sheet->setCellValue('F' . $fila, $producto->existencia);
-            $sheet->setCellValue('G' . $fila, $producto->fecha_ultimacompra);
-            $sheet->setCellValue('H' . $fila, $producto->cantidad_ultimacompra);
-            $sheet->setCellValue('I' . $fila, $producto->dias);
-
-            $spreadsheet->getActiveSheet()->getStyle("E" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
-            $sheet->getCellByColumnAndRow(1, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getCellByColumnAndRow(1, $fila) // Columna A
+            ->setValueExplicit((string)$p->codigo, DataType::TYPE_STRING);
 
             $fila++;
         }
@@ -3290,13 +3299,14 @@ class GeneralController extends Controller
         }
 
         $writer = new Xlsx($spreadsheet);
-        $writer->save('reporte_antiguedad_producto.xlsx');
+        $file = 'reporte_antiguedad_producto.xlsx';
+        $writer->save($file);
 
-        $json['code'] = 200;
-        $json['excel'] = base64_encode(file_get_contents('reporte_antiguedad_producto.xlsx'));
-        $json['data'] = $productos;
+        $json['code']  = 200;
+        $json['excel'] = base64_encode(file_get_contents($file));
+        $json['data']  = $productos;
 
-        unlink('reporte_antiguedad_producto.xlsx');
+        @unlink($file);
 
         return response()->json($json);
     }
@@ -3307,8 +3317,9 @@ class GeneralController extends Controller
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('REPORTE DE VENTAS');
-        $contador_fila = 2;
+        $fila = 2;
 
+        // Cabeceras
         $sheet->setCellValue('A1', 'CÓDIGO');
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
         $sheet->setCellValue('C1', 'CANTIDAD');
@@ -3317,95 +3328,141 @@ class GeneralController extends Controller
         $sheet->setCellValue('F1', 'ALMACENES');
         $sheet->setCellValue('G1', 'EXISTENCIAS');
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:G1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:G1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $sheet->getStyle('A1:G1')->getFont()->setBold(true)->getColor()->setARGB('000000');
+        $sheet->getStyle('A1:G1')->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('4CB9CD');
 
-        $productos = DB::select("SELECT
-                                    modelo.sku,
-                                    modelo.descripcion,
-                                    SUM(movimiento.cantidad) AS cantidad,
-                                    SUM(ROUND(movimiento.cantidad * movimiento.precio * 1.16 * documento.tipo_cambio, 2)) AS total
-                                FROM documento
-                                INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                                INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                                INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                                WHERE documento.id_tipo = 2
-                                AND modelo.id_tipo = 1
-                                AND documento.status = 1
-                                AND empresa_almacen.id_empresa = " . $data->empresa . "
-                                AND documento.created_at BETWEEN '" . $data->fecha_inicial . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'
-                                GROUP BY modelo.sku
-                                ORDER BY cantidad DESC
-                                LIMIT 20");
+        // 1) Top 20 productos por ventas en el rango
+        $productos = DB::table('documento as d')
+            ->join('empresa_almacen as ea', 'ea.id', '=', 'd.id_almacen_principal_empresa')
+            ->join('movimiento as mv', 'mv.id_documento', '=', 'd.id')
+            ->join('modelo as mo', 'mo.id', '=', 'mv.id_modelo')
+            ->where('d.id_tipo', 2)                // venta
+            ->where('mo.id_tipo', 1)               // productos
+            ->where('d.status', 1)
+            ->where('ea.id_empresa', $data->empresa)
+            ->whereBetween('d.created_at', [
+                $data->fecha_inicial . ' 00:00:00',
+                $data->fecha_final   . ' 23:59:59'
+            ])
+            ->groupBy('mo.id', 'mo.sku', 'mo.descripcion')
+            ->select([
+                'mo.id as id_modelo',
+                'mo.sku',
+                'mo.descripcion',
+                DB::raw('SUM(mv.cantidad) AS cantidad'),
+                DB::raw('SUM(ROUND(mv.cantidad * mv.precio * d.tipo_cambio, 2)) AS total'),
+            ])
+            ->orderByDesc('cantidad')
+            ->limit(20)
+            ->get();
 
-        $empresa = DB::select("SELECT bd FROM empresa WHERE id = " . $data->empresa . "")[0]->bd;
-
-        foreach ($productos as $producto) {
-            $almacenes = "";
-            $existencias = "";
-
-            $producto_data = json_decode(file_get_contents($url = config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $empresa . '/' . rawurlencode($producto->sku)));
-
-            $producto->ultimo_costo = number_format(round(empty($producto_data) ? 0 : $producto_data[0]->ultimo_costo, 2), 2);
-
-            if (!empty($producto_data)) {
-                foreach ($producto_data[0]->existencias->almacenes as $almacen) {
-                    $id_almacen_crm = DB::select("SELECT id FROM empresa_almacen WHERE id_empresa = " . $data->empresa . " AND id_erp = " . $almacen->almacenid . "");
-
-                    if (!empty($id_almacen_crm)) {
-                        $existencia = DocumentoService::existenciaProducto($producto->sku, $id_almacen_crm[0]->id);
-
-                        if (!$existencia->error) {
-                            $almacen->disponible = $existencia->existencia;
-                        } else {
-                            $almacen->disponible = 0;
-                        }
-                    } else {
-                        $almacen->disponible = $almacen->fisico;
-                    }
-                }
-
-                $producto->almacenes = $producto_data[0]->existencias->almacenes;
-            } else {
-                $producto->almacenes = [];
-            }
-
-            foreach ($producto->almacenes as $almacen) {
-                $almacenes .= $almacen->almacen . "\n";
-                $existencias .= $almacen->disponible . "\n";
-            }
-
-            $almacenes = substr($almacenes, 0, -1);
-            $existencias = substr($existencias, 0, -1);
-
-            $sheet->setCellValue('A' . $contador_fila, $producto->sku);
-            $sheet->setCellValue('B' . $contador_fila, $producto->descripcion);
-            $sheet->setCellValue('C' . $contador_fila, $producto->cantidad);
-            $sheet->setCellValue('D' . $contador_fila, $producto->total);
-            $sheet->setCellValue('E' . $contador_fila, $producto->ultimo_costo);
-            $sheet->setCellValue('F' . $contador_fila, $almacenes);
-            $sheet->setCellValue('G' . $contador_fila, $existencias);
-
-            $spreadsheet->getActiveSheet()->getStyle('F' . $contador_fila . ":G" . $contador_fila)->getAlignment()->setWrapText(true);
-            $spreadsheet->getActiveSheet()->getStyle("D" . $contador_fila . ":E" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
-            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-
-            $contador_fila++;
+        if ($productos->isEmpty()) {
+            return response()->json([
+                'code' => 404,
+                'message' => 'No hay ventas en el rango indicado.'
+            ], 404);
         }
 
-        # Poner en automatico el ancho de la columna dependiendo el texto que esté dentro
+        $modeloIds = $productos->pluck('id_modelo')->all();
+
+        // 2) Último costo por modelo: modelo_costo más reciente, si 0/null → modelo.costo
+        $costosProm = DB::table('modelo_costo as mc1')
+            ->join(DB::raw('(SELECT id_modelo, MAX(id) AS max_id FROM modelo_costo GROUP BY id_modelo) t'), function ($j) {
+                $j->on('t.id_modelo', '=', 'mc1.id_modelo')->on('t.max_id', '=', 'mc1.id');
+            })
+            ->whereIn('mc1.id_modelo', $modeloIds)
+            ->pluck('mc1.costo_promedio', 'mc1.id_modelo'); // [id_modelo => costo_promedio]
+
+        $costosBase = DB::table('modelo')
+            ->whereIn('id', $modeloIds)
+            ->pluck('costo', 'id'); // [id_modelo => costo]
+
+        // 3) Existencias por almacén (todos con stock != 0) para la empresa solicitada
+        $existencias = DB::table('modelo_existencias as me')
+            ->join('empresa_almacen as ea', 'ea.id', '=', 'me.id_almacen')
+            ->join('almacen as al', 'al.id', '=', 'ea.id_almacen')
+            ->where('ea.id_empresa', $data->empresa)
+            ->whereIn('me.id_modelo', $modeloIds)
+            ->where('me.stock', '<>', 0)
+            ->orderBy('al.almacen')
+            ->get([
+                'me.id_modelo',
+                'al.almacen',
+                'me.stock as disponible',
+            ]);
+
+        // Agrupar existencias por modelo
+        $existenciasPorModelo = [];
+        foreach ($existencias as $ex) {
+            $existenciasPorModelo[$ex->id_modelo][] = [
+                'almacen'    => $ex->almacen,
+                'disponible' => (int)$ex->disponible,
+            ];
+        }
+
+        // 4) Completar datos y armar Excel
+        foreach ($productos as $p) {
+            $id = $p->id_modelo;
+
+            $costoProm = isset($costosProm[$id]) ? (float)$costosProm[$id] : null;
+            $costoBase = isset($costosBase[$id]) ? (float)$costosBase[$id] : 0.0;
+            $ultimoCosto = ($costoProm !== null && $costoProm > 0) ? $costoProm : $costoBase;
+
+            // Almacenes con existencia ≠ 0
+            $almacenesArr = $existenciasPorModelo[$id] ?? [];
+
+            // Para Excel: concatenar líneas
+            $almacenesTxt  = '';
+            $existenciasTxt = '';
+            foreach ($almacenesArr as $a) {
+                $almacenesTxt   .= $a['almacen'] . "\n";
+                $existenciasTxt .= $a['disponible'] . "\n";
+            }
+            $almacenesTxt   = $almacenesTxt   !== '' ? substr($almacenesTxt, 0, -1) : '';
+            $existenciasTxt = $existenciasTxt !== '' ? substr($existenciasTxt, 0, -1) : '';
+
+            // Añadir campos que espera el front
+            $p->ultimo_costo = round($ultimoCosto, 2);
+            $p->almacenes    = $almacenesArr;
+
+            // Escribir fila en Excel
+            $sheet->setCellValue('A' . $fila, $p->sku);
+            $sheet->setCellValue('B' . $fila, $p->descripcion);
+            $sheet->setCellValue('C' . $fila, (int)$p->cantidad);
+            $sheet->setCellValue('D' . $fila, (float)$p->total);
+            $sheet->setCellValue('E' . $fila, (float)$p->ultimo_costo);
+            $sheet->setCellValue('F' . $fila, $almacenesTxt);
+            $sheet->setCellValue('G' . $fila, $existenciasTxt);
+
+            // Estilos: wrap y moneda
+            $sheet->getStyle('F' . $fila . ':G' . $fila)->getAlignment()->setWrapText(true);
+            $sheet->getStyle('D' . $fila . ':E' . $fila)->getNumberFormat()
+                ->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
+
+            // SKU como texto
+            $sheet->getCellByColumnAndRow(1, $fila)
+                ->setValueExplicit($p->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+
+            $fila++;
+        }
+
+        // Autosize columnas
         foreach (range('A', 'G') as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+            $sheet->getColumnDimension($columna)->setAutoSize(true);
         }
 
+        // Guardar y responder
         $writer = new Xlsx($spreadsheet);
-        $writer->save('productos_top_20.xlsx');
+        $file = 'productos_top_20.xlsx';
+        $writer->save($file);
 
-        $json['code'] = 200;
-        $json['data'] = $productos;
-        $json['excel'] = base64_encode(file_get_contents('productos_top_20.xlsx'));
+        $json['code']  = 200;
+        $json['data']  = $productos; // incluye almacenes[] y ultimo_costo
+        $json['excel'] = base64_encode(file_get_contents($file));
 
-        unlink('productos_top_20.xlsx');
+        @unlink($file);
 
         return response()->json($json);
     }
@@ -3415,331 +3472,207 @@ class GeneralController extends Controller
         set_time_limit(0);
 
         $data = json_decode($request->input("data"));
+        $anio = (int) $data->year;
+        $empresaId = 1; // solo 1 empresa
+        $esVenta = ($data->type === 'venta');
+        $idTipoDocumento = $esVenta ? 2 : 6;
 
-        if ($data->type == "venta") {
-            $productos = DB::table("documento")
-                ->join("empresa_almacen", "documento.id_almacen_principal_empresa", "=", "empresa_almacen.id")
-                ->join("movimiento", "documento.id", "=", "movimiento.id_documento")
-                ->join("modelo", "movimiento.id_modelo", "=", "modelo.id")
-                ->whereBetween("documento.created_at", [date("" . $data->year . "-01-01") . " 00:00:00", date("" . $data->year . "-12-t") . " 23:59:59"])
-                ->where("documento.id_tipo", 2)
-                ->where("documento.status", 1)
-                ->where("empresa_almacen.id_empresa", 1)
-                ->groupBy("modelo.sku")
-                ->get()
-                ->toArray();
-        } else {
-            $empresa_data = DB::table("empresa")->find(1);
+        // 1) Productos involucrados en el año (venta o nota) para la empresa 1
+        $productos = DB::table('documento as d')
+            ->join('empresa_almacen as ea', 'ea.id', '=', 'd.id_almacen_principal_empresa')
+            ->join('movimiento as mv', 'mv.id_documento', '=', 'd.id')
+            ->join('modelo as mo', 'mo.id', '=', 'mv.id_modelo')
+            ->where('d.id_tipo', $idTipoDocumento)
+            ->where('d.status', 1)
+            ->where('ea.id_empresa', $empresaId)
+            ->whereBetween('d.created_at', ["{$anio}-01-01 00:00:00", "{$anio}-12-31 23:59:59"])
+            ->groupBy('mo.id', 'mo.sku', 'mo.descripcion')
+            ->select('mo.id', 'mo.sku', 'mo.descripcion')
+            ->orderBy('mo.sku')
+            ->get();
 
-            $productos = json_decode(file_get_contents(config("webservice.url") . "Reporte/Productos/NotasCredito/DB/" . $empresa_data->bd . "/anio/" . $data->year));
-        }
-
-        if (empty($productos)) {
+        if ($productos->isEmpty()) {
             return response()->json([
-                "message" => "No se encontraron productos con las especificaciones datas"
+                "message" => "No se encontraron productos para {$data->type} en el año {$anio}."
             ], 404);
         }
 
+        // 2) Excel
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $spreadsheet->getActiveSheet()->setTitle('PRECIOS Y COSTOS PROMEDIO');
-        $spreadsheet->getActiveSheet()->getStyle('A1:AX1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:AX1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER); # Alineación centrica
+        $spreadsheet->getActiveSheet()->getStyle('A1:Z1')->getFont()->setBold(1)->getColor()->setARGB('DE573A');
+        $spreadsheet->getActiveSheet()->getStyle('A1:Z1')
+            ->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
 
-        $contador_fila = 2;
+        $fila = 2;
 
-        # Cabecera
+        // Cabeceras (las dejo tal cual tenías)
         $sheet->setCellValue('A1', 'CODIGO');
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
-
-        # Enero
-        $sheet->setCellValue('C1', 'TEne');
-        $sheet->setCellValue('D1', 'VEne');
-
-        # Febrero
-        $sheet->setCellValue('E1', 'PPFeb');
-        $sheet->setCellValue('F1', 'VFeb');
-
-        # Marzo
-        $sheet->setCellValue('G1', 'PPMar');
-        $sheet->setCellValue('H1', 'VMar');
-
-        # Abril
-        $sheet->setCellValue('I1', 'PPAbr');
-        $sheet->setCellValue('J1', 'VAbr');
-
-        # Mayo
-        $sheet->setCellValue('K1', 'PPMay');
-        $sheet->setCellValue('L1', 'VMay');
-
-        # Junio
-        $sheet->setCellValue('M1', 'PPJun');
-        $sheet->setCellValue('N1', 'VJun');
-
-        # Julio
-        $sheet->setCellValue('O1', 'PPJul');
-        $sheet->setCellValue('P1', 'VJul');
-
-        # Agosto
-        $sheet->setCellValue('Q1', 'PPAgos');
-        $sheet->setCellValue('R1', 'VAgos');
-
-        # Septiembre
-        $sheet->setCellValue('S1', 'PPSep');
-        $sheet->setCellValue('T1', 'VSep');
-
-        # Octubre
-        $sheet->setCellValue('U1', 'PPOct');
-        $sheet->setCellValue('V1', 'VOct');
-
-        # Noviembre
-        $sheet->setCellValue('W1', 'PPNov');
-        $sheet->setCellValue('X1', 'VNov');
-
-        # Diciembre
-        $sheet->setCellValue('Y1', 'PPDic');
-        $sheet->setCellValue('Z1', 'VDic');
-
-        foreach ($productos as $producto) {
-            $sheet->setCellValue('A' . $contador_fila, $producto->sku);
-            $sheet->setCellValue('B' . $contador_fila, $data->type == 'venta' ? $producto->descripcion : $producto->producto);
-
-            $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-
-            if ($data->type == "venta") {
-                $producto->precio_promedio_enero = self::rawinfo_precio_cantidad_mes("01", $producto->id, 1, $data->year);
-                $producto->precio_promedio_febrero = self::rawinfo_precio_cantidad_mes("02", $producto->id, 1, $data->year);
-                $producto->precio_promedio_marzo = self::rawinfo_precio_cantidad_mes("03", $producto->id, 1, $data->year);
-                $producto->precio_promedio_abril = self::rawinfo_precio_cantidad_mes("04", $producto->id, 1, $data->year);
-                $producto->precio_promedio_mayo = self::rawinfo_precio_cantidad_mes("05", $producto->id, 1, $data->year);
-                $producto->precio_promedio_junio = self::rawinfo_precio_cantidad_mes("06", $producto->id, 1, $data->year);
-                $producto->precio_promedio_julio = self::rawinfo_precio_cantidad_mes("07", $producto->id, 1, $data->year);
-                $producto->precio_promedio_agosto = self::rawinfo_precio_cantidad_mes("08", $producto->id, 1, $data->year);
-                $producto->precio_promedio_septiembre = self::rawinfo_precio_cantidad_mes("09", $producto->id, 1, $data->year);
-                $producto->precio_promedio_octubre = self::rawinfo_precio_cantidad_mes("10", $producto->id, 1, $data->year);
-                $producto->precio_promedio_noviembre = self::rawinfo_precio_cantidad_mes("11", $producto->id, 1, $data->year);
-                $producto->precio_promedio_diciembre = self::rawinfo_precio_cantidad_mes("12", $producto->id, 1, $data->year);
-
-                # Enero
-                $sheet->setCellValue('C' . $contador_fila, round((float) $producto->precio_promedio_enero["total"]), 4);
-                $sheet->setCellValue('D' . $contador_fila, $producto->precio_promedio_enero["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("C" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Febrero
-                $sheet->setCellValue('E' . $contador_fila, round((float) $producto->precio_promedio_febrero["total"], 4));
-                $sheet->setCellValue('F' . $contador_fila, $producto->precio_promedio_febrero["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("E" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Marzo
-                $sheet->setCellValue('G' . $contador_fila, round((float) $producto->precio_promedio_marzo["total"], 4));
-                $sheet->setCellValue('H' . $contador_fila, $producto->precio_promedio_marzo["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Abril
-                $sheet->setCellValue('I' . $contador_fila, round((float) $producto->precio_promedio_abril["total"], 4));
-                $sheet->setCellValue('J' . $contador_fila, $producto->precio_promedio_abril["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Mayo
-                $sheet->setCellValue('K' . $contador_fila, round((float) $producto->precio_promedio_mayo["total"], 4));
-                $sheet->setCellValue('L' . $contador_fila, $producto->precio_promedio_mayo["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("K" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Junio
-                $sheet->setCellValue('M' . $contador_fila, round((float) $producto->precio_promedio_junio["total"], 4));
-                $sheet->setCellValue('N' . $contador_fila, $producto->precio_promedio_junio["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("M" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Julio
-                $sheet->setCellValue('O' . $contador_fila, round((float) $producto->precio_promedio_julio["total"], 4));
-                $sheet->setCellValue('P' . $contador_fila, $producto->precio_promedio_julio["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("O" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Agosto
-                $sheet->setCellValue('Q' . $contador_fila, round((float) $producto->precio_promedio_agosto["total"], 4));
-                $sheet->setCellValue('R' . $contador_fila, $producto->precio_promedio_agosto["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("Q" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Septiembre
-                $sheet->setCellValue('S' . $contador_fila, round((float) $producto->precio_promedio_septiembre["total"], 4));
-                $sheet->setCellValue('T' . $contador_fila, $producto->precio_promedio_septiembre["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("S" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Octubre
-                $sheet->setCellValue('U' . $contador_fila, round((float) $producto->precio_promedio_octubre["total"], 4));
-                $sheet->setCellValue('V' . $contador_fila, $producto->precio_promedio_octubre["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("U" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Noviembre
-                $sheet->setCellValue('W' . $contador_fila, round((float) $producto->precio_promedio_noviembre["total"], 4));
-                $sheet->setCellValue('X' . $contador_fila, $producto->precio_promedio_noviembre["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("W" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                # Diciembre
-                $sheet->setCellValue('Y' . $contador_fila, round((float) $producto->precio_promedio_diciembre["total"], 4));
-                $sheet->setCellValue('Z' . $contador_fila, $producto->precio_promedio_diciembre["productos"]);
-
-                $spreadsheet->getActiveSheet()->getStyle("Z" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-            } else {
-                foreach ($producto->meses as $mes) {
-                    switch ($mes->mes) {
-                        case '1':
-                            # Enero
-                            $sheet->setCellValue('C' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('D' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("C" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '2':
-                            # Febrero
-                            $sheet->setCellValue('E' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('F' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("E" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '3':
-                            # Marzo
-                            $sheet->setCellValue('G' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('H' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("G" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '4':
-                            # Abril
-                            $sheet->setCellValue('I' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('J' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("I" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '5':
-                            # Mayo
-                            $sheet->setCellValue('K' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('L' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("K" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '6':
-                            # Junio
-                            $sheet->setCellValue('M' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('N' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("M" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '7':
-                            # Julio
-                            $sheet->setCellValue('O' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('P' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("O" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '8':
-                            # Agosto
-                            $sheet->setCellValue('Q' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('R' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("Q" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '9':
-                            # Septiembre
-                            $sheet->setCellValue('S' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('T' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("S" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '10':
-                            # Octubre
-                            $sheet->setCellValue('U' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('V' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("U" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        case '11':
-                            # Noviembre
-                            $sheet->setCellValue('W' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('X' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("W" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-
-                        default:
-                            # Diciembre
-                            $sheet->setCellValue('Y' . $contador_fila, round((float) $mes->total_nc), 4);
-                            $sheet->setCellValue('Z' . $contador_fila, $mes->cantidad_nc);
-
-                            $spreadsheet->getActiveSheet()->getStyle("Z" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-
-                            break;
-                    }
-                }
+        // Enero
+        $sheet->setCellValue('C1', 'TEne');  $sheet->setCellValue('D1', 'VEne');
+        // Febrero
+        $sheet->setCellValue('E1', 'PPFeb'); $sheet->setCellValue('F1', 'VFeb');
+        // Marzo
+        $sheet->setCellValue('G1', 'PPMar'); $sheet->setCellValue('H1', 'VMar');
+        // Abril
+        $sheet->setCellValue('I1', 'PPAbr'); $sheet->setCellValue('J1', 'VAbr');
+        // Mayo
+        $sheet->setCellValue('K1', 'PPMay'); $sheet->setCellValue('L1', 'VMay');
+        // Junio
+        $sheet->setCellValue('M1', 'PPJun'); $sheet->setCellValue('N1', 'VJun');
+        // Julio
+        $sheet->setCellValue('O1', 'PPJul'); $sheet->setCellValue('P1', 'VJul');
+        // Agosto
+        $sheet->setCellValue('Q1', 'PPAgos'); $sheet->setCellValue('R1', 'VAgos');
+        // Septiembre
+        $sheet->setCellValue('S1', 'PPSep');  $sheet->setCellValue('T1', 'VSep');
+        // Octubre
+        $sheet->setCellValue('U1', 'PPOct');  $sheet->setCellValue('V1', 'VOct');
+        // Noviembre
+        $sheet->setCellValue('W1', 'PPNov');  $sheet->setCellValue('X1', 'VNov');
+        // Diciembre
+        $sheet->setCellValue('Y1', 'PPDic');  $sheet->setCellValue('Z1', 'VDic');
+
+        // Mapeo columnas por mes: [totalCol, cantidadCol]
+        $cols = [
+            1  => ['C','D'],
+            2  => ['E','F'],
+            3  => ['G','H'],
+            4  => ['I','J'],
+            5  => ['K','L'],
+            6  => ['M','N'],
+            7  => ['O','P'],
+            8  => ['Q','R'],
+            9  => ['S','T'],
+            10 => ['U','V'],
+            11 => ['W','X'],
+            12 => ['Y','Z'],
+        ];
+
+        foreach ($productos as $p) {
+            $sheet->setCellValue('A' . $fila, $p->sku);
+            $sheet->setCellValue('B' . $fila, $p->descripcion);
+            // SKU como texto
+            $sheet->getCellByColumnAndRow(1, $fila)->setValueExplicit($p->sku, DataType::TYPE_STRING);
+
+            for ($mes = 1; $mes <= 12; $mes++) {
+                $info = $this->rawinfo_precio_cantidad_mes($mes, $p->id, $empresaId, $anio, $idTipoDocumento);
+                // Total (moneda) y cantidad
+                $sheet->setCellValue($cols[$mes][0] . $fila, round((float)$info['total'], 4));
+                $sheet->setCellValue($cols[$mes][1] . $fila, (int)$info['productos']);
+
+                // Formato de moneda para la columna de total
+                $spreadsheet->getActiveSheet()->getStyle($cols[$mes][0] . $fila)
+                    ->getNumberFormat()->setFormatCode(
+                        '_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)'
+                    );
             }
 
-            $contador_fila++;
+            $fila++;
         }
 
-        foreach (range('A', 'F') as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
+        // Autosize
+        foreach (range('A', 'Z') as $col) {
+            $spreadsheet->getActiveSheet()->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $file_name = uniqid() . ".xlsx";
+        $fileName = uniqid() . ".xlsx";
+        (new Xlsx($spreadsheet))->save($fileName);
 
-        $writer = new Xlsx($spreadsheet);
-        $writer->save($file_name);
+        $json['code']      = 200;
+        $json['excel']     = base64_encode(file_get_contents($fileName));
+        $json['file_name'] = $fileName;
 
-        $json['code'] = 200;
-        $json['excel'] = base64_encode(file_get_contents($file_name));
-        $json['file_name'] = $file_name;
-
-        unlink($file_name);
+        @unlink($fileName);
 
         return response()->json($json);
     }
 
-    public function general_reporte_nota_credito_data(Request $request)
+    public function general_reporte_pendientes_ingresosegresos(Request $request)
     {
-        $auth = json_decode($request->auth);
+        $tipo         = $request->input('tipo', 'Ingresos'); // 'Ingresos' | 'Egresos'
+        $fechaInicio  = $request->input('fecha_inicio');     // 'YYYY-MM-DD'
+        $fechaFinal   = $request->input('fecha_final');      // 'YYYY-MM-DD'
 
-        $compranies = DB::table("empresa")
-            ->select("empresa.id", "empresa.empresa")
-            ->join("usuario_empresa", "empresa.id", "=", "usuario_empresa.id_empresa")
-            ->where("usuario_empresa.id_usuario", $auth->id)
-            ->where("empresa.id", "<>", 0)
-            ->get()
-            ->toArray();
+        if (!$fechaInicio || !$fechaFinal) {
+            return response()->json(['code' => 422, 'message' => 'Faltan fechas.'], 422);
+        }
+
+        $ini = $fechaInicio . ' 00:00:00';
+        $fin = $fechaFinal  . ' 23:59:59';
+
+        $esIngreso = strcasecmp($tipo, 'Ingresos') === 0;
+
+        // Nombre mostrado (cuenta/entidad) y RFC según la dirección del flujo
+        $financialExpr = $esIngreso
+            ? "CASE WHEN mc.destino_tipo = 2 THEN cfd.nombre      /* banco destino */
+                WHEN mc.destino_tipo = 1 THEN ded.razon_social
+                ELSE '' END"
+            : "CASE WHEN mc.origen_tipo  = 2 THEN cfo.nombre      /* banco origen  */
+                WHEN mc.origen_tipo  = 1 THEN deo.razon_social
+                ELSE '' END";
+
+        $rfcExpr = $esIngreso
+            ? "CASE WHEN mc.origen_tipo  = 1 THEN deo.rfc  ELSE '' END"
+            : "CASE WHEN mc.destino_tipo = 1 THEN ded.rfc  ELSE '' END";
+
+        $q = DB::table('movimiento_contable as mc')
+            // aplicaciones contra documentos
+            ->leftJoin('movimiento_contable_documento as mcd', 'mcd.id_movimiento_contable', '=', 'mc.id')
+            // catálogos
+            ->leftJoin('moneda as mn', 'mn.id', '=', 'mc.id_moneda')
+            ->leftJoin('documento_entidad as deo', 'deo.id', '=', 'mc.entidad_origen')
+            ->leftJoin('documento_entidad as ded', 'ded.id', '=', 'mc.entidad_destino')
+            ->leftJoin('cat_entidad_financiera as cfo', 'cfo.id', '=', 'mc.entidad_origen')
+            ->leftJoin('cat_entidad_financiera as cfd', 'cfd.id', '=', 'mc.entidad_destino')
+            ->whereBetween('mc.created_at', [$ini, $fin]);
+
+        // Dirección del flujo:
+        // Ingresos:  de cliente/proveedor (1) -> banco (2)
+        // Egresos:   de banco (2)              -> cliente/proveedor (1)
+        if ($esIngreso) {
+            $q->where('mc.origen_tipo', 1)->where('mc.destino_tipo', 2);
+        } else {
+            $q->where('mc.origen_tipo', 2)->where('mc.destino_tipo', 1);
+        }
+
+        $rows = $q->groupBy(
+            'mc.id','mn.moneda','mc.referencia_pago','mc.descripcion_pago',
+            'mc.created_at','mc.fecha_operacion',
+            'mc.origen_tipo','mc.destino_tipo',
+            'deo.rfc','ded.rfc','deo.razon_social','ded.razon_social',
+            'cfo.nombre','cfd.nombre','mc.monto'
+        )
+            ->selectRaw("
+            mc.id AS operacionid,
+            '".($esIngreso ? 'Ingresos' : 'Egresos')."' AS modulo,
+            DATE(COALESCE(mc.fecha_operacion, mc.created_at)) AS fecha,
+            $financialExpr AS financialentity,
+            $rfcExpr       AS rfc,
+            mn.moneda      AS moneda,
+            mc.referencia_pago AS referencia,
+            mc.descripcion_pago AS descripcion,
+            /* pendiente por aplicar */
+            (COALESCE(mc.monto,0) -
+             COALESCE(SUM(CASE WHEN mcd.status IS NULL OR mcd.status = 1
+                               THEN mcd.monto_aplicado ELSE 0 END),0)
+            ) AS pendiente
+        ")
+            ->havingRaw('pendiente > 0')
+            ->orderBy('mc.created_at')
+            ->get();
+
+        // Ajuste de nombre de campo para el front (usa "monto")
+        foreach ($rows as $r) {
+            $r->monto = round((float)$r->pendiente, 2);
+            unset($r->pendiente);
+        }
 
         return response()->json([
-            "companies" => $compranies
+            'code'       => 200,
+            'pendientes' => $rows,
         ]);
     }
 
@@ -3747,191 +3680,225 @@ class GeneralController extends Controller
     {
         $data = json_decode($request->input("data"));
 
-        $initial_date = date("d/m/Y", strtotime($data->initial_date));
-        $final_date = date("d/m/Y", strtotime($data->final_date));
+        $fechaIni = $data->initial_date . ' 00:00:00';
+        $fechaFin = $data->final_date   . ' 23:59:59';
 
-        $company = DB::table("empresa")->find(1);
+        // 1) Notas de crédito (NC) + venta aplicada (venta.nota = nc.id)
+        $ncs = DB::table('documento as nc')
+            ->leftJoin('documento_entidad as de', 'de.id', '=', 'nc.id_entidad')
+            ->leftJoin('empresa_almacen as ea', 'ea.id', '=', 'nc.id_almacen_principal_empresa')
+            ->leftJoin('almacen as al', 'al.id', '=', 'ea.id_almacen')
+            ->leftJoin('moneda as mon_nc', 'mon_nc.id', '=', 'nc.id_moneda')
+            ->leftJoin('documento as venta', 'venta.nota', '=', 'nc.id') // documento al que aplica la NC
+            ->where('nc.id_tipo', 6)
+            ->whereBetween('nc.created_at', [$fechaIni, $fechaFin])
+            ->orderBy('nc.created_at')
+            ->get([
+                'nc.id            as nc_id',
+                'nc.factura_serie as nc_serie',
+                'nc.factura_folio as nc_folio',
+                'al.almacen       as nc_almacen',
+                'de.razon_social  as nc_cliente',
+                'mon_nc.moneda    as nc_moneda',
+                'nc.tipo_cambio   as nc_tc',
+                'nc.total         as nc_total',
+                'nc.created_at    as nc_fecha',
+                'nc.uuid          as nc_uuid',
+                'venta.id         as doc_aplicado_id',
+            ]);
 
-        $documents = json_decode(file_get_contents(config("webservice.url") . "Reporte/NotasCreditoRelacionadas/Ventas/DB/" . $company->bd . "/rangofechas/De/" . $initial_date . "/Al/" . $final_date . ""));
-
-        if (empty($documents)) {
+        if ($ncs->isEmpty()) {
             return response()->json([
-                "message" => "Ocurrio un error al generar el reporte de notas de credito"
+                "message" => "No hay Notas de Crédito en el rango indicado."
             ], 404);
         }
 
+        $ncIds = $ncs->pluck('nc_id')->all();
+
+        // 2) Egresos y aplicaciones contables de esas NC
+        // mcd.id_documento = id de la NC
+        $egresos = DB::table('movimiento_contable_documento as mcd')
+            ->join('movimiento_contable as mc', 'mc.id', '=', 'mcd.id_movimiento_contable')
+            ->leftJoin('moneda as mce', 'mce.id', '=', 'mc.id_moneda')
+
+            // ORIGEN: si origen_tipo=1 → documento_entidad; si =2 → cat_entidad_financiera
+            ->leftJoin('documento_entidad as deo', function ($j) {
+                $j->on('deo.id', '=', 'mc.entidad_origen')->where('mc.origen_tipo', 1);
+            })
+            ->leftJoin('cat_entidad_financiera as cefo', function ($j) {
+                $j->on('cefo.id', '=', 'mc.entidad_origen')->where('mc.origen_tipo', 2);
+            })
+
+            // DESTINO: si destino_tipo=1 → documento_entidad; si =2 → cat_entidad_financiera
+            ->leftJoin('documento_entidad as ded', function ($j) {
+                $j->on('ded.id', '=', 'mc.entidad_destino')->where('mc.destino_tipo', 1);
+            })
+            ->leftJoin('cat_entidad_financiera as cefd', function ($j) {
+                $j->on('cefd.id', '=', 'mc.entidad_destino')->where('mc.destino_tipo', 2);
+            })
+
+            ->whereIn('mcd.id_documento', $ncIds)
+            ->get([
+                'mcd.id_documento       as nc_id',
+                'mcd.monto_aplicado',
+                'mcd.tipo_cambio        as mcd_tc',
+                'mcd.parcialidad',
+                'mcd.saldo_documento',
+                'mcd.created_at         as mcd_fecha',
+
+                'mc.id                  as egreso_id',
+                'mc.fecha_operacion',
+                'mc.fecha_afectacion',
+                'mc.id_moneda           as egreso_id_moneda',
+                'mce.moneda             as egreso_moneda',
+                'mc.tipo_cambio         as egreso_tc',
+                'mc.monto               as egreso_monto',
+                'mc.id_forma_pago',
+                'mc.referencia_pago',
+                'mc.descripcion_pago',
+                'mc.comentarios',
+
+                // Nombres ya resueltos (omitimos origen_tipo/destino_tipo)
+                DB::raw('COALESCE(deo.razon_social, cefo.nombre, mc.nombre_entidad_origen) as egreso_entidad_origen_nombre'),
+                DB::raw('COALESCE(ded.razon_social, cefd.nombre, mc.nombre_entidad_destino) as egreso_entidad_destino_nombre'),
+            ]);
+
+        // Sumas por NC para pagado/balance
+        $aplicadoPorNc = [];
+        $egresosPorNc  = [];
+        foreach ($egresos as $e) {
+            $aplicadoPorNc[$e->nc_id] = ($aplicadoPorNc[$e->nc_id] ?? 0) + (float)$e->monto_aplicado;
+            $egresosPorNc[$e->nc_id][] = $e;
+        }
+
+        // 3) Excel
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $spreadsheet->getActiveSheet()->setTitle('REPORTE DE NOTAS DE CREDITO');
+        $sheet->setTitle('REPORTE NC & EGRESOS');
 
         $line = 7;
 
-        $sheet->setCellValue('B2', mb_strtoupper($company->empresa, 'UTF-8'));
-        $sheet->setCellValue('B3', "REPORTE DE NOTAS DE CREDITO Y SUS RELACIONES");
+        // Encabezado
+        $sheet->setCellValue('B2', 'AFA INNOVATIONS');
+        $sheet->setCellValue('B3', 'REPORTE DE NOTAS DE CRÉDITO Y EGRESOS');
         $sheet->setCellValue('B4', "DEL (" . date("d-m-Y", strtotime($data->initial_date)) . ") AL (" . date("d-m-Y", strtotime($data->final_date)) . ")");
+        $sheet->getStyle("B2:B4")->getFont()->setSize(14)->setBold(true);
+        $sheet->getStyle("B2:B4")->getAlignment()->setHorizontal('center');
 
-        $spreadsheet->getActiveSheet()->getStyle("B2")->getFont()->setSize(14)->setBold(1);
-        $spreadsheet->getActiveSheet()->getStyle("B3")->getFont()->setSize(14)->setBold(1);
-        $spreadsheet->getActiveSheet()->getStyle("B4")->getFont()->setSize(14)->setBold(1);
+        // Headers (NC)
+        $sheet->setCellValue('A6', 'NC ID');
+        $sheet->setCellValue('B6', 'NC SERIE');
+        $sheet->setCellValue('C6', 'NC FOLIO');
+        $sheet->setCellValue('D6', 'ALMACÉN');
+        $sheet->setCellValue('E6', 'CLIENTE');
+        $sheet->setCellValue('F6', 'NC MONEDA');
+        $sheet->setCellValue('G6', 'NC T.C');
+        $sheet->setCellValue('H6', 'NC TOTAL');
+        $sheet->setCellValue('I6', 'NC TOTAL MXN');
+        $sheet->setCellValue('J6', 'NC PAGADO');
+        $sheet->setCellValue('K6', 'NC BALANCE');
+        $sheet->setCellValue('L6', 'NC FECHA');
+        $sheet->setCellValue('M6', 'NC UUID');
+        $sheet->setCellValue('N6', 'DOC APLICADO ID');
 
-        $sheet->getStyle('B2')->getAlignment()->setHorizontal('center');
-        $sheet->getStyle('B3')->getAlignment()->setHorizontal('center');
-        $sheet->getStyle('B4')->getAlignment()->setHorizontal('center');
+        // Headers (Egreso) — sin ORIGEN/DESTINO TIPO; mostramos los NOMBRES directos
+        $sheet->setCellValue('O6', 'EGRESO ID');
+        $sheet->setCellValue('P6', 'FECHA OPERACIÓN');
+        $sheet->setCellValue('Q6', 'FECHA AFECTACIÓN');
+        $sheet->setCellValue('R6', 'EGRESO MONEDA');
+        $sheet->setCellValue('S6', 'EGRESO T.C');
+        $sheet->setCellValue('T6', 'EGRESO MONTO');
+        $sheet->setCellValue('U6', 'ENTIDAD ORIGEN');
+        $sheet->setCellValue('V6', 'ENTIDAD DESTINO');
+        $sheet->setCellValue('W6', 'ID FORMA PAGO');
+        $sheet->setCellValue('X6', 'REFERENCIA PAGO');
+        $sheet->setCellValue('Y6', 'DESCRIPCIÓN PAGO');
+        $sheet->setCellValue('Z6', 'COMENTARIOS');
+        $sheet->setCellValue('AA6', 'APLICADO');
+        $sheet->setCellValue('AB6', 'APLICADO MXN');
+        $sheet->setCellValue('AC6', 'PARCIALIDAD');
+        $sheet->setCellValue('AD6', 'SALDO DOC (hist)');
+        $sheet->setCellValue('AE6', 'FECHA APLICACIÓN');
 
-        # Header
-        $sheet->setCellValue('A6', 'ID');
-        $sheet->setCellValue('B6', 'MODULO');
-        $sheet->setCellValue('C6', 'SERIE');
-        $sheet->setCellValue('D6', 'FOLIO');
-        $sheet->setCellValue('E6', 'TITULO');
-        $sheet->setCellValue('F6', 'ALMACÉN');
-        $sheet->setCellValue('G6', 'RAZÓN SOCIAL');
-        $sheet->setCellValue('H6', 'MONEDA');
-        $sheet->setCellValue('I6', 'T.C');
-        $sheet->setCellValue('J6', 'NC TOTAL');
-        $sheet->setCellValue('K6', 'NC TOTAL MXN');
-        $sheet->setCellValue('L6', 'NC PAGADO');
-        $sheet->setCellValue('M6', 'NC BALANCE');
-        $sheet->setCellValue('N6', 'NC CANCELADA (SAT)');
-        $sheet->setCellValue('O6', 'NC ELIMINADA');
-        $sheet->setCellValue('P6', 'NC FECHA');
-        $sheet->setCellValue('Q6', 'NC UUID');
-        $sheet->setCellValue('R6', 'DOC ID');
-        $sheet->setCellValue('S6', 'DOC MODULO');
-        $sheet->setCellValue('T6', 'DOC SERIE');
-        $sheet->setCellValue('U6', 'DOC FOLIO');
-        $sheet->setCellValue('V6', 'DOC TITULO');
-        $sheet->setCellValue('W6', 'DOC MONEDA');
-        $sheet->setCellValue('X6', 'DOC T.C');
-        $sheet->setCellValue('Y6', 'DOC TOTAL');
-        $sheet->setCellValue('Z6', 'DOC TOTAL MXN');
-        $sheet->setCellValue('AA6', 'DOC PAGADO');
-        $sheet->setCellValue('AB6', 'DOC BALANCE');
-        $sheet->setCellValue('AC6', 'DOC FECHA');
-        $sheet->setCellValue('AD6', 'FACTURA FINAL');
-        $sheet->setCellValue('AE6', 'UUID');
-        $sheet->setCellValue('AF6', 'FECHA');
-        $sheet->setCellValue('AG6', 'MONEDA');
-        $sheet->setCellValue('AH6', 'T.C');
-        $sheet->setCellValue('AI6', 'SUBTOTAL');
-        $sheet->setCellValue('AJ6', 'TOTAL');
-        $sheet->setCellValue('AK6', 'TOTAL MXN');
+        $sheet->getStyle('A6:AE6')->getFont()->setBold(true);
+        $sheet->freezePane('A7');
 
-        $spreadsheet->getActiveSheet()->getStyle('A6:AC6')->getFont()->setBold(1)->getColor()->setARGB('A8CEA0'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('AD6:AK6')->getFont()->setBold(1)->getColor()->setARGB('33DAFF'); # Cabecera en negritas con color negro
+        foreach ($ncs as $nc) {
+            $total   = (float)($nc->nc_total ?? 0);
+            $tc      = (float)($nc->nc_tc ?? 1);
+            $pagado  = (float)($aplicadoPorNc[$nc->nc_id] ?? 0);
+            $balance = round($total - $pagado, 2);
 
-        $sheet->freezePane("A7");
+            $rows = $egresosPorNc[$nc->nc_id] ?? [null];
 
-        foreach ($documents as $document) {
-            $sheet->setCellValue('A' . $line, $document->nc_documentid);
-            $sheet->setCellValue('B' . $line, $document->nc_modulo);
-            $sheet->setCellValue('C' . $line, $document->nc_serie);
-            $sheet->setCellValue('D' . $line, $document->nc_folio);
-            $sheet->setCellValue('E' . $line, $document->nc_titulo);
-            $sheet->setCellValue('F' . $line, $document->nc_almacen);
-            $sheet->setCellValue('G' . $line, $document->nc_cliente);
-            $sheet->setCellValue('H' . $line, $document->nc_moneda);
-            $sheet->setCellValue('I' . $line, $document->nc_tc);
-            $sheet->setCellValue('J' . $line, $document->nc_total);
-            $sheet->setCellValue('K' . $line, round($document->nc_total * $document->nc_tc, 2));
-            $sheet->setCellValue('L' . $line, $document->nc_pagado);
-            $sheet->setCellValue('M' . $line, $document->nc_balance);
-            $sheet->setCellValue('N' . $line, !is_null($document->nc_cancelado) && $document->nc_cancelado == 0 ? "NO" : "SI");
-            $sheet->setCellValue('O' . $line, !is_null($document->nc_eliminado) && $document->nc_eliminado == 0 ? "NO" : "SI");
-            $sheet->setCellValue('P' . $line, $document->nc_fecha);
-            $sheet->setCellValue('Q' . $line, $document->nc_uuid);
+            foreach ($rows as $row) {
+                // NC
+                $sheet->setCellValue("A{$line}", $nc->nc_id);
+                $sheet->getCell("B{$line}")->setValueExplicit((string)$nc->nc_serie, DataType::TYPE_STRING);
+                $sheet->getCell("C{$line}")->setValueExplicit((string)$nc->nc_folio, DataType::TYPE_STRING);
+                $sheet->setCellValue("D{$line}", $nc->nc_almacen);
+                $sheet->setCellValue("E{$line}", $nc->nc_cliente);
+                $sheet->setCellValue("F{$line}", $nc->nc_moneda);
+                $sheet->setCellValue("G{$line}", $tc);
+                $sheet->setCellValue("H{$line}", $total);
+                $sheet->setCellValue("I{$line}", round($total * $tc, 2));
+                $sheet->setCellValue("J{$line}", $pagado);
+                $sheet->setCellValue("K{$line}", $balance);
+                $sheet->setCellValue("L{$line}", $nc->nc_fecha);
+                $sheet->getCell("M{$line}")->setValueExplicit((string)$nc->nc_uuid, DataType::TYPE_STRING);
+                $sheet->setCellValue("N{$line}", $nc->doc_aplicado_id);
 
-            $spreadsheet->getActiveSheet()->getStyle("I" . $line . ":M" . $line)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+                // Egreso / aplicación (si hay)
+                if ($row) {
+                    $sheet->setCellValue("O{$line}", $row->egreso_id);
+                    $sheet->setCellValue("P{$line}", $row->fecha_operacion);
+                    $sheet->setCellValue("Q{$line}", $row->fecha_afectacion);
+                    $sheet->setCellValue("R{$line}", $row->egreso_moneda);
+                    $sheet->setCellValue("S{$line}", $row->egreso_tc);
+                    $sheet->setCellValue("T{$line}", $row->egreso_monto);
 
-            foreach ($document->documentos_pagos as $payment) {
-                $sheet->setCellValue('A' . $line, $document->nc_documentid);
-                $sheet->setCellValue('B' . $line, $document->nc_modulo);
-                $sheet->setCellValue('C' . $line, $document->nc_serie);
-                $sheet->setCellValue('D' . $line, $document->nc_folio);
-                $sheet->setCellValue('E' . $line, $document->nc_titulo);
-                $sheet->setCellValue('F' . $line, $document->nc_almacen);
-                $sheet->setCellValue('G' . $line, $document->nc_cliente);
-                $sheet->setCellValue('H' . $line, $document->nc_moneda);
-                $sheet->setCellValue('I' . $line, $document->nc_tc);
-                $sheet->setCellValue('J' . $line, $document->nc_total);
-                $sheet->setCellValue('K' . $line, round($document->nc_total * $document->nc_tc, 2));
-                $sheet->setCellValue('L' . $line, $document->nc_pagado);
-                $sheet->setCellValue('M' . $line, $document->nc_balance);
-                $sheet->setCellValue('N' . $line, !is_null($document->nc_cancelado) && $document->nc_cancelado == 0 ? "NO" : "SI");
-                $sheet->setCellValue('O' . $line, !is_null($document->nc_eliminado) && $document->nc_eliminado == 0 ? "NO" : "SI");
-                $sheet->setCellValue('P' . $line, $document->nc_fecha);
-                $sheet->setCellValue('Q' . $line, $document->nc_uuid);
-                $sheet->setCellValue('R' . $line, $payment->payment_documentid);
-                $sheet->setCellValue('S' . $line, $payment->f_modulo);
-                $sheet->setCellValue('T' . $line, $payment->f_serie);
-                $sheet->setCellValue('U' . $line, $payment->f_folio);
-                $sheet->setCellValue('V' . $line, $payment->titulo);
-                $sheet->setCellValue('W' . $line, $payment->f_moneda);
-                $sheet->setCellValue('X' . $line, $payment->f_tc);
-                $sheet->setCellValue('Y' . $line, $payment->f_total);
-                $sheet->setCellValue('Z' . $line, round($payment->f_total * $payment->f_tc, 2));
-                $sheet->setCellValue('AA' . $line, $payment->payment_monto);
-                $sheet->setCellValue('AB' . $line, $payment->f_balance);
-                $sheet->setCellValue('AC' . $line, $payment->f_fecha);
+                    // Nombres ya resueltos (sin mostrar el tipo)
+                    $sheet->setCellValue("U{$line}", $row->egreso_entidad_origen_nombre);
+                    $sheet->setCellValue("V{$line}", $row->egreso_entidad_destino_nombre);
 
-                $spreadsheet->getActiveSheet()->getStyle("X" . $line . ":AB" . $line)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+                    $sheet->setCellValue("W{$line}", $row->id_forma_pago);
+                    $sheet->setCellValue("X{$line}", $row->referencia_pago);
+                    $sheet->setCellValue("Y{$line}", $row->descripcion_pago);
+                    $sheet->setCellValue("Z{$line}", $row->comentarios);
 
-                /* Agregar datos de refacturación (factura nueva) */
-                $documento_refacturado = DB::table("documento")
-                    ->where("id", $payment->f_folio)
-                    ->first();
+                    $aplicado   = (float)$row->monto_aplicado;
+                    $tcAplicado = (float)($row->mcd_tc ?? $tc);
 
-                if ($documento_refacturado) {
-                    if ($documento_refacturado->refacturado) {
-                        $documento_refacturado_nuevo = DB::table("seguimiento")
-                            ->select("moneda.moneda", "documento.tipo_cambio", "documento.created_at", "documento.id")
-                            ->where("seguimiento", "Facturada generada por refacturación del pedido " . $payment->f_folio . ", esta nueva factura se salda con el pago original del cliente.")
-                            ->join("documento", "seguimiento.id_documento", "=", "documento.id")
-                            ->join("moneda", "documento.id_moneda", "=", "moneda.id")
-                            ->first();
-
-                        if ($documento_refacturado_nuevo) {
-                            $factura_data = @json_decode(file_get_contents(config('webservice.url') . $company->bd  . '/Factura/Estado/Folio/' . $documento_refacturado_nuevo->id));
-
-                            if (!empty($factura_data)) {
-                                $factura_data = is_array($factura_data) ? $factura_data[0] : $factura_data;
-
-                                $sheet->setCellValue('AD' . $line, $factura_data->folio);
-                                $sheet->setCellValue('AE' . $line, $factura_data->uuid);
-                                $sheet->setCellValue('AF' . $line, $documento_refacturado_nuevo->created_at);
-                                $sheet->setCellValue('AG' . $line, $documento_refacturado_nuevo->moneda);
-                                $sheet->setCellValue('AH' . $line, $documento_refacturado_nuevo->tipo_cambio);
-                                $sheet->setCellValue('AI' . $line, round($factura_data->total / 1.16, 2));
-                                $sheet->setCellValue('AJ' . $line, $factura_data->total);
-                                $sheet->setCellValue('AK' . $line, $factura_data->total * $documento_refacturado_nuevo->tipo_cambio);
-                            }
-                        }
-                    }
+                    $sheet->setCellValue("AA{$line}", $aplicado);
+                    $sheet->setCellValue("AB{$line}", round($aplicado * $tcAplicado, 2));
+                    $sheet->setCellValue("AC{$line}", $row->parcialidad);
+                    $sheet->setCellValue("AD{$line}", $row->saldo_documento);
+                    $sheet->setCellValue("AE{$line}", $row->mcd_fecha);
                 }
+
+                // Formatos monetarios
+                $sheet->getStyle("G{$line}:K{$line}")
+                    ->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)');
+                $sheet->getStyle("S{$line}:T{$line}")
+                    ->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)');
+                $sheet->getStyle("AA{$line}:AB{$line}")
+                    ->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \\(#,##0.00\\);_("$"* "-"??_);_(@_)');
 
                 $line++;
             }
-
-            if (empty($document->documentos_pagos)) $line++;
         }
 
-        foreach (range('A', 'Z') as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
-
-            if (in_array($columna, range('A', 'K'))) {
-                $spreadsheet->getActiveSheet()->getColumnDimension("A" . $columna)->setAutoSize(true);
-            }
+        foreach (range('A', 'AE') as $col) {
+            $spreadsheet->getActiveSheet()->getColumnDimension($col)->setAutoSize(true);
         }
 
-        $file_name = uniqid() . ".xlsx";
+        $file = uniqid() . ".xlsx";
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($file);
 
-        $writer = new Xlsx($spreadsheet);
-        $writer->save($file_name);
+        $json['excel'] = base64_encode(file_get_contents($file));
+        $json['name']  = $file;
 
-        $json['excel'] = base64_encode(file_get_contents($file_name));
-        $json['name'] = $file_name;
-
-        unlink($file_name);
+        @unlink($file);
 
         return response()->json($json);
     }
@@ -5119,6 +5086,7 @@ class GeneralController extends Controller
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS DEVOLUCIÓN O GARANTÍA');
         $fila = 2;
 
+        // Cabeceras
         $sheet->setCellValue('A1', 'PEDIDO');
         $sheet->setCellValue('B1', 'VENTA');
         $sheet->setCellValue('C1', 'MARKETPLACE');
@@ -5131,56 +5099,86 @@ class GeneralController extends Controller
         $sheet->setCellValue('J1', 'TIPO');
         $sheet->setCellValue('K1', 'DOCUMENTO');
         $sheet->setCellValue('L1', 'FECHA');
+        $sheet->setCellValue('M1', 'SERIE DEVUELTA');
 
-        $spreadsheet->getSheet(0)->getStyle('A1:L1')->getFont()->setBold(1); # Cabecera en negritas
+        $spreadsheet->getSheet(0)->getStyle('A1:M1')->getFont()->setBold(true);
 
-        $ventas = DB::select("SELECT
-                                documento.id,
-                                documento.no_venta,
-                                area.area,
-                                marketplace.marketplace,
-                                documento_entidad.razon_social,
-                                almacen.almacen,
-                                modelo.sku,
-                                modelo.descripcion,
-                                movimiento.cantidad,
-                                movimiento.precio,
-                                documento_garantia_tipo.tipo,
-                                documento_garantia.id AS documento_garantia_id,
-                                documento_garantia.created_at
-                            FROM documento
-                            INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                            INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
-                            INNER JOIN documento_garantia_re ON documento.id = documento_garantia_re.id_documento
-                            INNER JOIN documento_garantia ON documento_garantia_re.id_garantia = documento_garantia.id
-                            INNER JOIN documento_garantia_tipo ON documento_garantia.id_tipo = documento_garantia_tipo.id
-                            INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
-                            INNER JOIN almacen ON empresa_almacen.id_almacen = almacen.id
-                            INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                            INNER JOIN area ON marketplace_area.id_area = area.id
-                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                            INNER JOIN movimiento ON documento.id = movimiento.id_documento
-                            INNER JOIN modelo ON movimiento.id_modelo = modelo.id
-                            WHERE documento_garantia.created_at BETWEEN '" . $data->fecha_inicio . " 00:00:00' AND '" . $data->fecha_final . " 23:59:59'
-                            AND empresa_almacen.id_empresa = " . $data->empresa . "");
+        // =========
+        // CONSULTA
+        // =========
+        // Nota: dgp.producto = SKU (string). Lo enlazamos con modelo.sku.
+        // El precio se toma de movimiento.precio de la venta original (d.id).
+        $ventas = DB::table('documento_garantia as dg')
+            ->join('documento_garantia_re as dgr', 'dgr.id_garantia', '=', 'dg.id')
+            ->join('documento as d', 'd.id', '=', 'dgr.id_documento')
+            ->join('documento_entidad as de', 'de.id', '=', 'd.id_entidad')
+            ->join('documento_garantia_tipo as dgt', 'dgt.id', '=', 'dg.id_tipo')
+            ->join('empresa_almacen as ea', 'ea.id', '=', 'd.id_almacen_principal_empresa')
+            ->join('almacen as al', 'al.id', '=', 'ea.id_almacen')
+            ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
+            ->join('area as a', 'a.id', '=', 'ma.id_area')
+            ->join('marketplace as mkt', 'mkt.id', '=', 'ma.id_marketplace')
+            ->join('documento_garantia_producto as dgp', 'dgp.id_garantia', '=', 'dg.id')
+            ->join('modelo as mo', 'mo.sku', '=', 'dgp.producto')
+            ->leftJoin('documento_garantia_producto_series as dgps', 'dgps.id_documento_garantia_producto', '=', 'dgp.id')
+            ->leftJoin('movimiento as mov', function ($j) {
+                $j->on('mov.id_documento', '=', 'd.id');
+                $j->on('mov.id_modelo', '=', 'mo.id');
+            })
 
-        foreach ($ventas as $venta) {
-            $sheet->setCellValue('A' . $fila, $venta->id);
-            $sheet->setCellValue('B' . $fila, $venta->no_venta);
-            $sheet->setCellValue('C' . $fila, $venta->area . " / " . $venta->marketplace);
-            $sheet->setCellValue('D' . $fila, $venta->razon_social);
-            $sheet->setCellValue('E' . $fila, $venta->almacen);
-            $sheet->setCellValue('F' . $fila, $venta->sku);
-            $sheet->setCellValue('G' . $fila, $venta->descripcion);
-            $sheet->setCellValue('H' . $fila, $venta->cantidad);
-            $sheet->setCellValue('I' . $fila, round($venta->precio * 1.16, 2));
-            $sheet->setCellValue('J' . $fila, $venta->tipo);
-            $sheet->setCellValue('K' . $fila, $venta->documento_garantia_id);
-            $sheet->setCellValue('L' . $fila, $venta->created_at);
+            ->whereBetween('dg.created_at', [
+                $data->fecha_inicio . ' 00:00:00',
+                $data->fecha_final  . ' 23:59:59',
+            ])
+            ->orderBy('dg.created_at')
+            ->orderBy('d.id')
+            ->orderBy('mo.sku')
+            ->get([
+                'd.id as documento_id',
+                'd.no_venta',
+                'a.area',
+                'mkt.marketplace',
+                'de.razon_social',
+                'al.almacen',
+                'mo.sku',
+                'mo.descripcion',
+                // si hay serie => cantidad 1, si no hay serie => cantidad de la línea de garantía
+                DB::raw('CASE WHEN dgps.id IS NULL THEN dgp.cantidad ELSE 1 END as cantidad'),
+                // precio traído de la venta original (movimiento)
+                DB::raw('COALESCE(mov.precio, 0) as precio_unitario'),
+                'dgt.tipo as tipo_garantia',
+                'dg.id as documento_garantia_id',
+                'dg.created_at as fecha_garantia',
+                DB::raw('COALESCE(dgps.serie, "") as serie_devuelta'),
+            ]);
 
-            $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
-            $sheet->getCellByColumnAndRow(6, $fila)->setValueExplicit($venta->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-            $sheet->getCellByColumnAndRow(2, $fila)->setValueExplicit($venta->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+        foreach ($ventas as $v) {
+            $sheet->setCellValue('A' . $fila, $v->documento_id);
+            $sheet->setCellValue('B' . $fila, $v->no_venta);
+            $sheet->setCellValue('C' . $fila, $v->area . " / " . $v->marketplace);
+            $sheet->setCellValue('D' . $fila, $v->razon_social);
+            $sheet->setCellValue('E' . $fila, $v->almacen);
+            $sheet->setCellValue('F' . $fila, $v->sku);
+            $sheet->setCellValue('G' . $fila, $v->descripcion);
+            $sheet->setCellValue('H' . $fila, $v->cantidad);
+            $sheet->setCellValue('I' . $fila, $v->precio_unitario);
+            $sheet->setCellValue('J' . $fila, $v->tipo_garantia);
+            $sheet->setCellValue('K' . $fila, $v->documento_garantia_id);
+            $sheet->setCellValue('L' . $fila, $v->fecha_garantia);
+            $sheet->setCellValue('M' . $fila, $v->serie_devuelta);
+
+            // formatos
+            $spreadsheet->getActiveSheet()->getStyle("I" . $fila)->getNumberFormat()
+                ->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
+
+            // forzar texto
+            $sheet->getCellByColumnAndRow(6, $fila) // F (SKU)
+            ->setValueExplicit($v->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getCellByColumnAndRow(2, $fila) // B (NO_VENTA)
+            ->setValueExplicit($v->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->getCellByColumnAndRow(13, $fila) // Columna M = 13
+            ->setValueExplicit($v->serie_devuelta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+
 
             $fila++;
         }
@@ -5192,10 +5190,10 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save('VENTAS DEVOLUCIONES.xlsx');
 
-        $json['code']   = 200;
-        $json['excel']  = base64_encode(file_get_contents('VENTAS DEVOLUCIONES.xlsx'));
+        $json['code']  = 200;
+        $json['excel'] = base64_encode(file_get_contents('VENTAS DEVOLUCIONES.xlsx'));
 
-        unlink('VENTAS DEVOLUCIONES.xlsx');
+        @unlink('VENTAS DEVOLUCIONES.xlsx');
 
         return response()->json($json);
     }
@@ -5379,79 +5377,122 @@ class GeneralController extends Controller
         ]);
     }
 
-    public function general_reporte_logistica_manifiesto_generar($paqueteria, $fecha)
-    {
-        //$pdf = app('FPDF');
-        $pdf = new FPDF('P', 'in', array(8, 4));
-
-        $pdf->AddPage();
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->SetTextColor(69, 90, 100);
-
-        $pdf->Image('img/omg.png', 1, .1, 2, 0.7, 'png');
-
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Write(1.5, 'Manifiesto del Dia:  ');
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->Write(1.5, $fecha);
-        $pdf->Ln(0.1);
-
-        $pdf->SetFont('Arial', 'B', 10);
-        $pdf->Write(1.6, 'Proveedor de logistica: ');
-        $pdf->SetFont('Arial', '', 10);
-        $pdf->Write(1.6, $paqueteria);
-        $pdf->Ln(1.1);
-
-        $pdf->SetFont('Arial', '', 12);
-        $pdf->Cell(3.25, 0.3, 'Numero de guia', 1);
-        $pdf->Ln();
-
-        $fecha_manifiesto = explode(' ', $fecha)[0];
-        $fecha_manifiesto = explode('-', $fecha_manifiesto);
-        $fecha_manifiesto = $fecha_manifiesto[2] . $fecha_manifiesto[1] . $fecha_manifiesto[0];
-
-        $guias = DB::select("SELECT
-                                id,
-                                guia, 
-                                CASE LENGTH(guia) 
-                                    WHEN 10 THEN 'DHL' 
-                                    WHEN 11 THEN 'MEL'
-                                    WHEN 18 THEN 'UPS' 
-                                    WHEN 20 THEN 'PAQUETEXPRESS' 
-                                    WHEN 34 THEN 'Fedex' 
-                                    ELSE 'Estafeta'
-                                    END AS paqueteria
-                            FROM manifiesto
-                            WHERE manifiesto = '" . $fecha_manifiesto . "' AND salida = 1 AND impreso = 1");
-
-        $contador   = 0;
-        $suma       = 0;
-        $arrayE     = array();
-
-        $pdf->SetFont('Arial', '', 12);
-
-        foreach ($guias as $guia) {
-            if ($guia->paqueteria == $paqueteria) {
-                $pdf->Cell(3.25, 0.3, $guia->guia, 1);
-
-                $pdf->Ln();
-                $contador++;
-            }
-        }
-
-        $pdf->SetFont('Arial', '', 12);
-        $pdf->Write(0.5, 'Total de guias: ');
-        $pdf->Write(0.5, $contador);
-
-        $pdf_name   = uniqid() . ".pdf";
-        $pdf_data   = $pdf->Output($pdf_name, 'S');
-
-        $file_name  = "MANIFIESTO_" . mb_strtoupper($paqueteria, 'UTF-8') . "_" . date('d-m-Y') . "_" . uniqid() . ".pdf";
+    public function general_reporte_logistica_manifiesto_data() {
+        $paqueterias = DB::table('paqueteria')->where('status', 1)->where('guia', 1)->get();
 
         return response()->json([
             'code'  => 200,
-            'file'  => base64_encode($pdf_data),
-            'name'  => $file_name
+            'paqueterias'  => $paqueterias
+        ]);
+    }
+
+    public function general_reporte_logistica_manifiesto_generar($paqueteria, $fecha)
+    {
+        $idPaqueteria = (int) $paqueteria;
+
+        // Nombre de paquetería para encabezado / archivo
+        $paq = DB::table('paqueteria')->where('id', $idPaqueteria)->first();
+        $paqNombre = $paq->nombre ?? $paq->paqueteria ?? (string)$idPaqueteria;
+
+        // ---- PDF ----
+        $pdf = new FPDF('P', 'in', [8, 4]);
+
+        // Márgenes (guardamos nuestras copias)
+        $leftMargin   = 0.5;
+        $topMargin    = 0.45;
+        $rightMargin  = 0.5;
+        $bottomMargin = 0.5;
+
+        $pdf->SetMargins($leftMargin, $topMargin, $rightMargin);
+        $pdf->SetAutoPageBreak(true, $bottomMargin);
+        $pdf->AddPage();
+
+        // Encabezado
+        $pdf->SetTextColor(69, 90, 100);
+        $logo = 'img/omg.png';
+        $pdf->Image($logo, $leftMargin + 0.05, 0.3, 1.8, 0.7, 'png');
+
+        $pdf->SetXY($leftMargin, 1.15);
+        $pdf->SetFont('Arial', 'B', 11);
+        $pdf->Cell(0, 0.2, 'Manifiesto de Guias', 0, 1, 'L');
+
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(0, 0.22, 'Manifiesto del Dia:  ' . $fecha, 0, 1, 'L');
+        $pdf->Cell(0, 0.22, 'Proveedor de logistica: ' . $paqNombre, 0, 1, 'L');
+        $pdf->Ln(0.08);
+
+        // Fecha ddmmyyyy que guarda la tabla
+        [$y,$m,$d] = explode('-', explode(' ', $fecha)[0]);
+        $fecha_manifiesto = $d.$m.$y;
+
+        // Datos (sin filtrar salida/impreso)
+        $guias = DB::table('manifiesto')
+            ->select('id', 'guia', 'salida', 'impreso')
+            ->where('manifiesto', $fecha_manifiesto)
+            ->where('id_paqueteria', $idPaqueteria)
+            ->orderBy('id')
+            ->get();
+
+        // Dimensiones de tabla
+        $usableW = $pdf->GetPageWidth() - $leftMargin - $rightMargin;
+        $rowH    = 0.28;
+        $wEnt    = 0.9;                     // ancho "Entregada"
+        $wGuia   = $usableW - $wEnt;        // ancho "Numero de guia"
+        $pageBreakY = $pdf->GetPageHeight() - $bottomMargin;
+
+        // Estilos
+        $pdf->SetDrawColor(180,196,207);
+        $pdf->SetTextColor(69,90,100);
+
+        // Cabecera de la tabla
+        $drawHeader = function() use ($pdf, $wGuia, $wEnt, $rowH) {
+            $pdf->SetFillColor(234,240,246);
+            $pdf->SetFont('Arial', 'B', 10);
+            $pdf->Cell($wGuia, $rowH, 'Numero de guia', 1, 0, 'L', true);
+            $pdf->Cell($wEnt,  $rowH, 'Entregada',      1, 1, 'C', true);
+            $pdf->SetFont('Arial', '', 10);
+        };
+        $drawHeader();
+
+        // Filas
+        $total = 0; $entregadas = 0;
+        foreach ($guias as $g) {
+            $total++;
+            $entregada = ((int)$g->salida === 1 && (int)$g->impreso === 1);
+            if ($entregada) $entregadas++;
+
+            // Salto de página
+            if ($pdf->GetY() + $rowH > $pageBreakY) {
+                $pdf->AddPage();
+                $drawHeader();
+            }
+
+            // Zebra
+            $fill = ($total % 2 === 0);
+            if ($fill) $pdf->SetFillColor(248,251,253);
+
+            $pdf->Cell($wGuia, $rowH, (string)$g->guia, 1, 0, 'L', $fill);
+            // Solo “SI” cuando salida=1 e impreso=1; en otro caso vacío
+            $pdf->Cell($wEnt,  $rowH, $entregada ? 'SI' : 'NO', 1, 1, 'C', $fill);
+        }
+
+        // Resumen
+        $pdf->Ln(0.2);
+        $pdf->SetFont('Arial', 'B', 10);
+        $pdf->Cell(0, 0.22, 'Resumen', 0, 1, 'L');
+        $pdf->SetFont('Arial', '', 10);
+        $pdf->Cell(0, 0.20, 'Total de guias: ' . $total, 0, 1, 'L');
+        $pdf->Cell(0, 0.20, 'Entregadas (salida e impreso): ' . $entregadas, 0, 1, 'L');
+        $pdf->Cell(0, 0.20, 'Pendientes: ' . max(0, $total - $entregadas), 0, 1, 'L');
+
+        // Salida
+        $pdfData  = $pdf->Output('', 'S');
+        $fileName = 'MANIFIESTO_' . mb_strtoupper($paqNombre, 'UTF-8') . '_' . date('d-m-Y') . '_' . uniqid() . '.pdf';
+
+        return response()->json([
+            'code' => 200,
+            'file' => base64_encode($pdfData),
+            'name' => $fileName,
         ]);
     }
 
