@@ -171,136 +171,146 @@ class SoporteController extends Controller
     /* Soporte > garantías y devoluciones > devolución */
     public function soporte_garantia_devolucion_crear(Request $request)
     {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
+        try {
+            DB::beginTransaction();
 
-        $informacion_documento = Documento::select(
-            "documento.id",
-            "documento.id_fase"
-        )
-            ->where("documento.id", $data->venta_id)
-            ->where("documento.id_tipo", DocumentoTipo::VENTA)
-            ->where("documento.status", DocumentoStatus::ACTIVO)
-            ->first();
+            $data = json_decode($request->input('data'));
+            $auth = json_decode($request->auth);
 
-        if (!$informacion_documento) {
-            return response()->json([
-                'message' => "No se encontró la venta con el ID proporcionado."
-            ], HttpStatusCode::NOT_FOUND);
-        }
+            $informacion_documento = Documento::select(
+                "documento.id",
+                "documento.id_fase"
+            )
+                ->where("documento.id", $data->venta_id)
+                ->where("documento.id_tipo", DocumentoTipo::VENTA)
+                ->where("documento.status", DocumentoStatus::ACTIVO)
+                ->first();
 
-        if ($informacion_documento->id_fase < DocumentoFase::PENDIENTE_FACTURA) {
-            return response()->json([
-                'message' => "No es posible generar un documento de devolución o garantía ya que el producto no ha sido enviado."
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
+            if (!$informacion_documento) {
+                throw new \Exception("No se encontró la venta con el ID proporcionado.", HttpStatusCode::NOT_FOUND);
+            }
 
-        $existe_devolucion = DB::table("documento_garantia")
-            ->select("documento_garantia.id")
-            ->join("documento_garantia_re", "documento_garantia.id", "=", "documento_garantia_re.id_garantia")
-            ->where("documento_garantia_re.id_documento", $informacion_documento->id)
-            ->where("documento_garantia.id_tipo", DocumentoGarantiaTipo::DEVOLUCION)
-            ->first();
+            if ($informacion_documento->id_fase < DocumentoFase::PENDIENTE_FACTURA) {
+                throw new \Exception("No es posible generar un documento de devolución o garantía ya que el producto no ha sido enviado.", HttpStatusCode::NOT_ACCEPTABLE);
+            }
 
-        if ($existe_devolucion) {
-            return response()->json([
-                'message' => "Ya éxiste una devolución generada a partir de esa venta. ID " . $existe_devolucion->id
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
+            $existe_devolucion = DB::table("documento_garantia")
+                ->select("documento_garantia.id")
+                ->join("documento_garantia_re", "documento_garantia.id", "=", "documento_garantia_re.id_garantia")
+                ->where("documento_garantia_re.id_documento", $informacion_documento->id)
+                ->where("documento_garantia.id_tipo", DocumentoGarantiaTipo::DEVOLUCION)
+                ->first();
 
-        $informacion_usuario = Usuario::find($auth->id);
+            if ($existe_devolucion) {
+                throw new \Exception("Ya existe una devolución generada a partir de esa venta. ID " . $existe_devolucion->id, HttpStatusCode::NOT_ACCEPTABLE);
+            }
 
-        if (!$informacion_usuario) {
-            return response()->json([
-                'message' => "No se encontró información sobre el usuario"
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
+            $informacion_usuario = Usuario::find($auth->id);
+            if (!$informacion_usuario) {
+                throw new \Exception("No se encontró información sobre el usuario", HttpStatusCode::NOT_ACCEPTABLE);
+            }
 
-        $informacion_cliente = DB::table("documento")
-            ->select("documento_entidad.*")
-            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
-            ->where("documento.id", $informacion_documento->id)
-            ->first();
+            $informacion_cliente = DB::table("documento")
+                ->select("documento_entidad.*")
+                ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
+                ->where("documento.id", $informacion_documento->id)
+                ->first();
 
-        if (!$informacion_cliente) {
-            return response()->json([
-                'message' => "No se encontró información sobre el cliente."
-            ], HttpStatusCode::NOT_ACCEPTABLE);
-        }
+            if (!$informacion_cliente) {
+                throw new \Exception("No se encontró información sobre el cliente.", HttpStatusCode::NOT_ACCEPTABLE);
+            }
 
-        $documento_garantia = DB::table('documento_garantia')->insertGetId([
-            'id_tipo' => $data->tipo,
-            'id_causa' => $data->causa,
-            'id_fase' => $data->tipo == DocumentoGarantiaTipo::GARANTIA ? DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA : DocumentoGarantiaFase::DEVOLUCION_PENDIENTE,
-            'no_reclamo' => $data->reclamo,
-            'created_by' => $auth->id
-        ]);
+            $documento_garantia = DB::table('documento_garantia')->insertGetId([
+                'id_tipo'   => $data->tipo,
+                'id_causa'  => $data->causa,
+                'id_fase'   => $data->tipo == DocumentoGarantiaTipo::GARANTIA
+                    ? DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA
+                    : DocumentoGarantiaFase::DEVOLUCION_PENDIENTE,
+                'no_reclamo'=> $data->reclamo,
+                'created_by'=> $auth->id
+            ]);
 
-        DB::table('documento_garantia_re')->insertGetId([
-            'id_documento' => $informacion_documento->id,
-            'id_garantia' => $documento_garantia
-        ]);
+            DB::table('documento_garantia_re')->insertGetId([
+                'id_documento' => $informacion_documento->id,
+                'id_garantia'  => $documento_garantia
+            ]);
 
-        DB::table('documento_garantia_seguimiento')->insert([
-            'id_documento' => $documento_garantia,
-            'id_usuario' => $auth->id,
-            'seguimiento' => $data->seguimiento
-        ]);
+            DB::table('documento_garantia_seguimiento')->insert([
+                'id_documento' => $documento_garantia,
+                'id_usuario'   => $auth->id,
+                'seguimiento'  => $data->seguimiento
+            ]);
 
-        foreach ($data->archivos as $archivo) {
-            if ($archivo->nombre != "" && $archivo->data != "") {
-                $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+            foreach ($data->archivos as $archivo) {
+                if ($archivo->nombre != "" && $archivo->data != "") {
+                    $archivo_data = base64_decode(
+                        preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data)
+                    );
 
-                $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                    ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                    ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                    ->addHeader('Content-Type', 'application/octet-stream')
-                    ->body($archivo_data)
-                    ->send();
+                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
+                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
+                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
+                        ->addHeader('Content-Type', 'application/octet-stream')
+                        ->body($archivo_data)
+                        ->send();
 
-                $documento_archivo = DB::table('documento_archivo')->insert([
-                    'id_documento' => $informacion_documento->id,
-                    'id_usuario' => $auth->id,
-                    'nombre' => $archivo->nombre,
-                    'dropbox' => $response->body->id
-                ]);
+                    if (!$response || !$response->body || empty($response->body->id)) {
+                        throw new \Exception("Error al subir archivo a Dropbox.");
+                    }
 
-                DB::table('documento_garantia_archivo')->insert([
-                    'id_archivo' => $documento_archivo,
-                    'id_garantia' => $documento_garantia
+                    $documento_archivo = DB::table('documento_archivo')->insertGetId([
+                        'id_documento' => $informacion_documento->id,
+                        'id_usuario'   => $auth->id,
+                        'nombre'       => $archivo->nombre,
+                        'dropbox'      => $response->body->id
+                    ]);
+
+                    DB::table('documento_garantia_archivo')->insert([
+                        'id_archivo' => $documento_archivo,
+                        'id_garantia'=> $documento_garantia
+                    ]);
+                }
+            }
+
+            foreach ($data->productos as $producto) {
+                DB::table('documento_garantia_producto')->insert([
+                    'id_garantia' => $documento_garantia,
+                    'producto'    => $producto->sku,
+                    'cantidad'    => $producto->cantidad
                 ]);
             }
+
+            // Generar PDF (si aplica)
+            $file_name = "";
+            $file_data = "";
+
+            $response = self::documento_garantia($documento_garantia);
+            if ($response && !$response->error) {
+                $file_data = base64_encode($response->file);
+                $file_name = $response->name;
+            }
+
+            DB::commit();
+
+            $jsonResponse = [
+                "code"    => 200,
+                "message" => "Documento creado correctamente con el siguiente número: " . $documento_garantia,
+            ];
+
+            if (!empty($file_name)) {
+                $jsonResponse['file'] = $file_data;
+                $jsonResponse['name'] = $file_name;
+            }
+
+            return response()->json($jsonResponse);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                "code"    => $e->getCode() ?: 500,
+                "message" => $e->getMessage()
+            ], $e->getCode() ?: 500);
         }
-
-        $file_name = "";
-        $file_data = "";
-
-        foreach ($data->productos as $producto) {
-            DB::table('documento_garantia_producto')->insert([
-                'id_garantia' => $documento_garantia,
-                'producto' => $producto->sku,
-                'cantidad' => $producto->cantidad
-            ]);
-        }
-
-        $response = self::documento_garantia($documento_garantia);
-
-        if (!$response->error) {
-            $file_data = base64_encode($response->file);
-            $file_name = $response->name;
-        }
-
-        $jsonResponse = [
-            "code" => 200,
-            "message" => "Documento creado correctamente con el siguiente número: " . $documento_garantia,
-        ];
-
-        if (!empty($file_name)) {
-            $jsonResponse['file'] = $file_data; // OJO: debe ser $file_data, que contiene el base64
-            $jsonResponse['name'] = $file_name;
-        }
-
-        return response()->json($jsonResponse);
     }
 
     public function soporte_garantia_devolucion_devolucion_data()
