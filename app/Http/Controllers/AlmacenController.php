@@ -1076,6 +1076,14 @@ class AlmacenController extends Controller
             ]);
         }
 
+        DB::table('documento')->where(['id' => $data->documento])->update([
+            'id_fase' => 6,
+            'packing_by' => $auth->id,
+            'packing_date' => date('Y-m-d H:i:s'),
+            'shipping_date' => date('Y-m-d H:i:s'),
+            'problema' => $data->problema
+        ]);
+
         $marketplace_area = DB::table("documento")
             ->join("marketplace_area", "documento.id_marketplace_area", "=", "marketplace_area.id")
             ->join("marketplace", "marketplace_area.id_marketplace", "=", "marketplace.id")
@@ -1086,27 +1094,6 @@ class AlmacenController extends Controller
         if ($info_documento->guia && $info_documento->shipping_null == 0) {
             # Verificamos que la guía no se haya imprimido
             if (!$info_documento->guia_impresa) {
-                # Sacamos la impresora asignada al usuario
-
-                $fase_documento = DB::table("documento")
-                    ->select("id_fase")
-                    ->where("id", $data->documento)
-                    ->first();
-
-                if ($fase_documento->id_fase < 3) {
-                    $this->eliminarSeries($data->documento);
-                    DB::table('seguimiento')->insert([
-                        'id_documento' => $data->documento,
-                        'id_usuario' => 1,
-                        'seguimiento' => "El pedido " . $data->documento . " no ha sido finalizado, se borraran las series y se manda a pendiente de remision."
-                    ]);
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "El documento no ha sido finalizado." . self::logVariableLocation(),
-                        "color" => "red-border-top"
-                    ]);
-                }
-//                }
 
                 $impresora = DB::table("usuario")
                     ->join("impresora", "usuario.id_impresora_packing", "=", "impresora.id")
@@ -1238,15 +1225,7 @@ class AlmacenController extends Controller
             }
         }
 
-        DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_fase' => 6,
-            'packing_by' => $auth->id,
-            'packing_date' => date('Y-m-d H:i:s'),
-            'shipping_date' => date('Y-m-d H:i:s'),
-            'problema' => $data->problema
-        ]);
-
-        if (!$info_documento->anticipada && ($info_documento->documento_extra == "N/A" || $info_documento->documento_extra == "")) {
+        if (!$info_documento->anticipada) {
             $crear_factura = InventarioService::aplicarMovimiento($data->documento);
 
             if ($crear_factura->error) {
