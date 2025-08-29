@@ -216,7 +216,7 @@ class MovimientoContableService
             'tipo_cambio'                  => $doc_original->tipo_cambio,
             'referencia'                   => 'Refacturación de pedido ' . $documento,
             'observacion'                  => 'Nota de crédito por refacturación. ' . $observacion,
-            'pagado'                       => 0,
+            'pagado'                       => 1,
             'status'                       => 1
         ]);
 

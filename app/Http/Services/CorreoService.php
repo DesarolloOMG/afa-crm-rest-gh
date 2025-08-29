@@ -213,41 +213,15 @@ class CorreoService {
      */
     public static function enviarManifiesto($guias, $tipo, $paqueteria, $server) {
         $emails = "";
-        if($server == "http://wimtech-test.ddns.net:9181") {
-            $correos = DB::table('usuario')
-                ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
-                ->join('subnivel_nivel', 'usuario_subnivel_nivel.id_subnivel_nivel', '=', 'subnivel_nivel.id')
-                ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
-                ->whereIn('subnivel_nivel.id', [69, 47, 48])
-                ->where('usuario.status', 1)
-                ->whereNotIn('usuario.area', ['SOPORTE', 'ADMINISTRACION', 'ALMACEN CDMX'])
-                ->whereNotIn('usuario.email', ['abelxxz1@gmail.com', 'echauriman17@gmail.com', 'cessoton@gmail.com', 'balexander.rosas@gmail.com',
-                    'e.herrera@laptopmexico.com', 'nuri@omg.com.mx','roberto@omg.com.mx','sauladrian.arias@gmail.com'])
-                ->groupBy('usuario.email')
-                ->pluck('usuario.email');
-        } else if($server == "http://wimtech-iztapalapa.ddns.net:9181") {
-            $correos = DB::table('usuario')
-                ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
-                ->join('subnivel_nivel', 'usuario_subnivel_nivel.id_subnivel_nivel', '=', 'subnivel_nivel.id')
-                ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
-                ->whereIn('subnivel_nivel.id', [69, 47, 48])
-                ->where('usuario.status', '=', 1)
-                ->whereNotIn('usuario.area', ['SOPORTE', 'ADMINISTRACION', 'ALMACEN', 'LOGISTICA'])
-                ->whereNotIn('usuario.email', [
-                    'abelxxz1@gmail.com',
-                    'echauriman17@gmail.com',
-                    'cessoton@gmail.com',
-                    'balexander.rosas@gmail.com',
-                    'e.herrera@laptopmexico.com',
-                    'nuri@omg.com.mx',
-                    'roberto@omg.com.mx',
-                    'sauladrian.arias@gmail.com'
-                ])
-                ->groupBy('usuario.email')
-                ->pluck('usuario.email');
-        } else {
-            $correos = DB::select("select * from usuario where id=51");
-        }
+        $correos = DB::table('usuario')
+            ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
+            ->join('subnivel_nivel', 'usuario_subnivel_nivel.id_subnivel_nivel', '=', 'subnivel_nivel.id')
+            ->join('subnivel', 'subnivel_nivel.id_subnivel', '=', 'subnivel.id')
+            ->whereIn('subnivel_nivel.id', [69, 47, 48])
+            ->where('usuario.status', 1)
+            ->whereNotIn('usuario.email', ['roberto@omg.com.mx','sauladrian.arias@gmail.com'])
+            ->groupBy('usuario.email')
+            ->pluck('usuario.email');
 
         $manifiesto = "";
         if($tipo == 1){
