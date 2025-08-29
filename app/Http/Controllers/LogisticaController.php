@@ -834,7 +834,7 @@ class LogisticaController extends Controller
         if (!empty($documento_guia)) {
             $documento = DB::table('documento')->where('id', $documento_guia->id_documento)->first();
             if (!empty($documento)) {
-                if (in_array($documento->id_marketplace_area, [1, 32, 43, 52, 55, 58])) {
+                if (in_array($documento->id_marketplace_area, [1])) {
                     $informacion = MercadolibreService::venta($documento->no_venta, $documento->id_marketplace_area);
                     if ($informacion->error) {
                         return response()->json([
@@ -854,7 +854,7 @@ class LogisticaController extends Controller
                         DB::table('manifiesto')->where('guia', $data)->delete();
 
                         return response()->json([
-                            'message' => "La guía no se encuentra activa, NO SURTIR, Guia quitada del manifiesto,Favor de cancelar el Pedido " . $documento->id
+                            'message' => "La guía no se encuentra activa, NO SURTIR, Guia quitada del manifiesto, Favor de cancelar el Pedido " . $documento->id
                         ], 500);
                     }
                 }
