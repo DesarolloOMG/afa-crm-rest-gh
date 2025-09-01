@@ -700,6 +700,20 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
     });
 
+    $router->group(['prefix' => 'ensamble'], function () use ($router) {
+        // Búsqueda de productos
+        $router->get('producto/kit/{sku}',        ['uses' => 'EnsambleController@getProductoKitBySku']);
+        $router->get('producto/componente/{sku}', ['uses' => 'EnsambleController@getProductoComponenteBySku']);
+
+        // Series
+        $router->get('series/{id_modelo}',  ['uses' => 'EnsambleController@getSeriesPorModelo']);
+        $router->post('serie/validar',      ['uses' => 'EnsambleController@validarSerieComponente']);
+
+        // Crear ensamble
+        $router->post('crear', ['uses' => 'EnsambleController@crear']);
+    });
+
+
     # Menú almacén
     $router->group(['prefix' => 'almacen'], function () use ($router) {
         $router->group(['prefix' => 'picking'], function () use ($router) {
