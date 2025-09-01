@@ -15,7 +15,7 @@ class PrintController extends Controller
         return $this->forwardRequest('GET', 'api/etiquetas/data', $request);
     }
 
-    private function forwardRequest(string $method, string $endpoint, Request $request): JsonResponse
+    private function forwardRequest(string $method, string $endpoint, Request $request, ?array $bodyOverride = null): JsonResponse
     {
         try {
             $token = $request->get('token');
@@ -24,12 +24,13 @@ class PrintController extends Controller
             if ($token) {
                 $url .= '?token=' . urlencode($token);
             }
+            $method = strtoupper($method);
 
-            if (strtoupper($method) === 'GET') {
+            if ($method === 'GET') {
                 $httpful = HttpfulRequest::get($url);
-            } elseif (strtoupper($method) === 'POST') {
-                $body = [
-                    'data' => $request->input('data')
+            } elseif ($method === 'POST') {
+                $body = $bodyOverride ?? [
+                    'data' => $request->input('data'),
                 ];
 
                 if ($request->has('tipo')) {
@@ -80,5 +81,10 @@ class PrintController extends Controller
     public function print($documento, $impresora, Request $request): JsonResponse
     {
         return $this->forwardRequest('GET', "api/guias/print/" . $documento . "/" . $impresora, $request);
+    }
+
+    public function manifiestoSalida($array, Request $request): JsonResponse
+    {
+        return $this->forwardRequest('POST', "api/manifiesto/salida/", $request, $array);
     }
 }
