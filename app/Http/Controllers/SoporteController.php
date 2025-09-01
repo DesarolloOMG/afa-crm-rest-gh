@@ -1000,7 +1000,7 @@ class SoporteController extends Controller
         $auth = json_decode($request->auth);
 
         if ($data->terminar) {
-            if ($data->disponible) {
+            if ($data->disponible == 0) {
                 $resultado = self::terminar_devolucion($data->documento, $data->documento_garantia);
 
                 // Si la función interna devuelve un error (ej. al crear la NC),
@@ -1062,22 +1062,6 @@ class SoporteController extends Controller
                 DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
                     'id_fase' => 5 // Se asume Fase de Indemnización
                 ]);
-            } else {
-                // Si se termina de forma normal (no es indemnización), se crea la NC y el Traspaso.
-                $resultado = self::terminar_devolucion(
-                    $data->documento,
-                    $data->documento_garantia
-                );
-
-                // Si la función interna devuelve un error, lo retornamos al frontend.
-                if ($resultado->error) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => $resultado->message
-                    ]);
-                }
-
-                $finalMessage = $resultado->message;
             }
         }
 
