@@ -33,6 +33,7 @@ use App\Models\Enums\UsuarioNivel;
 use App\Models\MarketplaceArea;
 use App\Models\Paqueteria;
 use App\Models\Usuario;
+use Carbon\Carbon;
 use Crabbly\Fpdf\Fpdf;
 use Exception;
 use Httpful\Exception\ConnectionErrorException;
@@ -43,6 +44,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Mailgun\Mailgun;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use stdClass;
 use Throwable;
 
@@ -3306,14 +3309,59 @@ class VentaController extends Controller
 
         // Armamos resultado
         foreach ($publicaciones as $publicacion) {
-            $publicacion->productos = isset($productosCounts[$publicacion->id]) ? $productosCounts[$publicacion->id] : 0;
-            $publicacion->skus = $productosSkus[$publicacion->id] ?? ''; // SKUs separados por coma
+            $publicacion->productos   = isset($productosCounts[$publicacion->id]) ? $productosCounts[$publicacion->id] : 0;
+            $publicacion->skus        = $productosSkus[$publicacion->id] ?? '';
             $publicacion->almacendrop = $almacenes[$publicacion->id_almacen_empresa] ?? '';
             $publicacion->almacenfull = $almacenes[$publicacion->id_almacen_empresa_fulfillment] ?? '';
         }
 
+        // ----------------------------
+        // Generar Excel
+        // ----------------------------
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Encabezados (igual a la tabla del front)
+        $headers = ['ID', 'Publicación', 'Total', 'SKUs', 'Productos'];
+        $col = 'A';
+        foreach ($headers as $h) {
+            $sheet->setCellValue($col.'1', $h);
+            $col++;
+        }
+
+        // Filas
+        $row = 2;
+        foreach ($publicaciones as $p) {
+            $sheet->setCellValue("A{$row}", $p->publicacion_id ?? $p->id);
+            $sheet->setCellValue("B{$row}", $p->publicacion ?? '');
+            $sheet->setCellValue("C{$row}", $p->total ?? 0);
+            $sheet->setCellValue("D{$row}", $p->skus ?: 'SIN PRODUCTOS');
+            $sheet->setCellValue("E{$row}", $p->productos > 0 ? 'Sí' : 'No');
+            $row++;
+        }
+
+        // Autosize columnas
+        foreach (['A','B','C','D','E'] as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        // Guardar en memoria
+        $writer = new Xlsx($spreadsheet);
+        ob_start();
+        $writer->save('php://output');
+        $excelBinary = ob_get_clean();
+
+        $filePayload = [
+            'filename' => 'publicaciones_'.Carbon::now()->format('Ymd_His').'.xlsx',
+            'data'     => base64_encode($excelBinary),
+        ];
+
+        // ----------------------------
+        // Respuesta final con datos + excel
+        // ----------------------------
         return response()->json([
-            "data" => $publicaciones
+            "data" => $publicaciones,
+            "file" => $filePayload
         ]);
     }
 
