@@ -81,53 +81,6 @@ class VentaController extends Controller
             }
         }
 
-        if (!empty($data->documento->proveedor)) {
-            $data->documento->fulfillment = 1;
-
-            foreach ($data->documento->productos as $producto) {
-                $existe_modelo = DB::select("SELECT id, sku FROM modelo WHERE sku = '" . trim($producto->codigo) . "'");
-
-                if (empty($existe_modelo)) {
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, 
-                        favor de verificar e intentar de nuevo. " . self::logVariableLocation()
-                    ]);
-                }
-
-                $existe_modelo_proveedor = DB::table("modelo_proveedor_producto")
-                    ->select("id")
-                    ->where("id_modelo", $existe_modelo[0]->id)
-                    ->where("id_modelo_proveedor", $data->documento->proveedor)
-                    ->first();
-
-                if (empty($existe_modelo_proveedor)) {
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "No se encontró el codigo del producto para el proveedor de dropshipping seleccionado, 
-                        favor de verificar e intentar de nuevo." . self::logVariableLocation()
-                    ]);
-                }
-
-                $inventario = DB::table("modelo_proveedor_producto_existencia")
-                    ->join("modelo_proveedor_almacen", "modelo_proveedor_producto_existencia.id_almacen", "=", "modelo_proveedor_almacen.id")
-                    ->where("modelo_proveedor_producto_existencia.id_modelo", $existe_modelo_proveedor->id)
-                    ->where("modelo_proveedor_producto_existencia.existencia", ">=", $producto->cantidad)
-                    ->orderByRaw("CASE WHEN modelo_proveedor_almacen.id_locacion LIKE '%MX%' THEN 1 WHEN modelo_proveedor_almacen.id_locacion LIKE '%GD%' THEN 2 ELSE 3 END")
-                    ->first();
-
-                if (empty($inventario)) {
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "No hay inventario suficiente del codigo " . $existe_modelo[0]->sku . " en ningun almacén del proveedor. " . self::logVariableLocation()
-                    ]);
-                }
-            }
-        }
-
         $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
 
         if (empty($existe_cliente)) {
@@ -263,8 +216,6 @@ class VentaController extends Controller
             }
         } catch (Exception $e) {
 
-            DB::table('documento')->where(['id' => $documento])->delete();
-
             return response()->json([
                 'code' => 500,
                 'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage() . self::logVariableLocation(),
@@ -324,13 +275,6 @@ class VentaController extends Controller
             $response = InventarioService::aplicarMovimiento($documento);
 
             if ($response->error) {
-                $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento);
-
-                foreach ($pagos as $pago) {
-                    DB::table('documento_pago')->where(['id' => $pago->id_pago])->delete();
-                }
-
-                DB::table('documento')->where(['id' => $documento])->delete();
 
                 return response()->json([
                     'code' => 500,
@@ -342,56 +286,6 @@ class VentaController extends Controller
                 $user = DB::table("usuario")->find($auth->id);
 
                 GeneralService::sendEmailToAdmins("Crear Venta", "El usuario " . $user->nombre . " solicitó CCE para el documento: " . $documento, "", 1);
-            }
-        }
-
-        if (!$data->documento->fulfillment) {
-            $marketplace_info = DB::select("SELECT
-                                                marketplace_area.id,
-                                                marketplace_api.extra_1,
-                                                marketplace_api.extra_2,
-                                                marketplace_api.app_id,
-                                                marketplace_api.secret,
-                                                marketplace.marketplace
-                                            FROM marketplace_area
-                                            INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                            INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                            WHERE marketplace_area.id = " . $data->documento->marketplace);
-
-            if (!empty($marketplace_info)) {
-                $marketplace_info = $marketplace_info[0];
-                $paqueteria = DB::select("SELECT paqueteria FROM paqueteria WHERE id = " . $data->documento->paqueteria)[0]->paqueteria;
-
-                if (strpos($marketplace_info->marketplace, 'LINIO') !== false) {
-                    $response = LinioService::cambiarEstadoVenta(trim($data->documento->referencia), $data->documento->marketplace, $paqueteria);
-
-                    if ($response->error) {
-                        if (strpos($response->mensaje, 'E073') === false) {
-                            $pagos = DB::select("SELECT id_pago FROM documento_pago_re WHERE id_documento = " . $documento);
-
-                            foreach ($pagos as $pago) {
-                                DB::table('documento_pago')->where(['id' => $pago->id_pago])->delete();
-                            }
-
-                            DB::table('documento')->where(['id' => $documento])->delete();
-
-                            return response()->json([
-                                "code" => 500,
-                                "message" => "No fue posible cargar los documentos de embarque correspondientes a la venta en dropbox, creación cancelada, mensaje de error: " . $response->mensaje,
-                                "data" => property_exists($response, "data") ? $response->data : 0,
-                                "a" => $response
-                            ]);
-                        }
-                    }
-                }
-
-                if (strpos($marketplace_info->marketplace, 'ELEKTRA') !== false) {
-                    $estado = ElektraService::cambiarEstado(trim($data->documento->venta), $marketplace_info, 1);
-
-                    if ($estado->error) {
-                        $message .= " No fue posible cambiar el estado de la venta, favor de cambiar manual.";
-                    }
-                }
             }
         }
 
