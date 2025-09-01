@@ -10,8 +10,8 @@ use Httpful\Request as HttpfulRequest;
 class EnsambleController extends Controller
 {
     /** Almacén de ensamble (con series y stock de componentes) */
-    private $ALMACEN_ENSAMBLE = 15;
-    private $ALMACEN_SERIES_ENSAMBLE = 8;
+    private $ALMACEN_ENSAMBLE = 16;
+    private $ALMACEN_SERIES_ENSAMBLE = 9;
 
     public function __construct()
     {

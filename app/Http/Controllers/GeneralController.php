@@ -1685,41 +1685,38 @@ class GeneralController extends Controller
     // OPT
     public function general_busqueda_serie($serie)
     {
-        $serie = urldecode($serie);
-        $serie = str_replace(["'", '\\'], '', $serie);
+        // -------- Sanitizado --------
+        $serie   = urldecode($serie);
+        $serie   = str_replace(["'", '\\'], '', $serie);
+        $serieUP = trim(mb_strtoupper($serie, 'UTF-8'));
+
         $empresas = DB::table('documento')
             ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
             ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
             ->join('movimiento', 'documento.id', '=', 'movimiento.id_documento')
             ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
             ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
-            ->where('producto.serie', '=', trim(mb_strtoupper($serie, 'UTF-8')))
+            ->where('producto.serie', '=', $serieUP)
             ->groupBy('empresa.id')
             ->select('empresa.id', 'empresa.empresa')
             ->get();
 
-        if (empty($empresas)) {
-            return response()->json([
-                "code" => 500,
-                "message" => "La serie proporcionada no existe registrada en el sistema."
-            ]);
-        }
+        // Subqueries de nombres de almacén (para mostrar en movimientos)
+        $subQueryAlmacenPrincipal = DB::table('empresa_almacen')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->select('almacen')
+            ->whereColumn('empresa_almacen.id', 'documento.id_almacen_principal_empresa')
+            ->limit(1)
+            ->toSql();
+
+        $subQueryAlmacenAlterno = DB::table('empresa_almacen')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->select('almacen')
+            ->whereColumn('empresa_almacen.id', 'documento.id_almacen_secundario_empresa')
+            ->limit(1)
+            ->toSql();
 
         foreach ($empresas as $empresa) {
-            $subQueryAlmacenPrincipal = DB::table('empresa_almacen')
-                ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
-                ->select('almacen')
-                ->whereColumn('empresa_almacen.id', 'documento.id_almacen_principal_empresa')
-                ->limit(1)
-                ->toSql();
-
-            $subQueryAlmacenAlterno = DB::table('empresa_almacen')
-                ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
-                ->select('almacen')
-                ->whereColumn('empresa_almacen.id', 'documento.id_almacen_secundario_empresa')
-                ->limit(1)
-                ->toSql();
-
             $empresa->movimientos = DB::table('documento')
                 ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
                 ->join('documento_tipo', 'documento.id_tipo', '=', 'documento_tipo.id')
@@ -1743,7 +1740,7 @@ class GeneralController extends Controller
                     'modelo.sku',
                     'modelo.descripcion'
                 ])
-                ->where('producto.serie', '=', $serie)
+                ->where('producto.serie', '=', $serieUP)
                 ->where('empresa_almacen.id_empresa', '=', $empresa->id)
                 ->orderBy('created_at', 'DESC')
                 ->get();
@@ -1755,8 +1752,148 @@ class GeneralController extends Controller
                 ->get();
         }
 
+        // -------- Helper para agregar un renglón "ENSAMBLADO" --------
+        $agregarMovimientoEnsamble = function (&$empresasColl, $empresaId, $empresaNombre, $almacenNombre, $idKit, $skuKit, $descKit, $observacion, $createdAt = null) {
+
+            // Busca/crea la empresa destino en la colección
+            $target = null;
+            if ($empresasColl instanceof \Illuminate\Support\Collection) {
+                $target = $empresasColl->first(function ($e) use ($empresaId) {
+                    return (int)$e->id === (int)$empresaId;
+                });
+            }
+
+            if (!$target) {
+                $target = (object)[
+                    'id'         => $empresaId,
+                    'empresa'    => $empresaNombre,
+                    'movimientos'=> collect(),
+                    'serie'      => collect()
+                ];
+                if ($empresasColl instanceof \Illuminate\Support\Collection) {
+                    $empresasColl->push($target);
+                } else {
+                    $empresasColl = collect([$target]);
+                }
+            }
+
+            if (!isset($target->movimientos) || !($target->movimientos instanceof \Illuminate\Support\Collection)) {
+                $target->movimientos = collect();
+            }
+
+            $target->movimientos->push((object)[
+                'id'                    => $idKit,            // Doc CRM (id del kit)
+                'factura_folio'         => null,
+                'created_at'            => $createdAt,
+                'observacion'           => $observacion,
+                'status'                => 1,
+                'tipo'                  => 'ENSAMBLADO',
+                'id_almacen_principal'  => null,
+                'id_almacen_secundario' => null,
+                'almacen_principal'     => $almacenNombre,    // almacén de la serie (kit o componente según caso)
+                'almacen_alterno'       => null,
+                'nombre'                => 'SISTEMA',
+                'sku'                   => $skuKit,
+                'descripcion'           => $descKit
+            ]);
+        };
+
+        // ============================================================
+        // 2) ENSAMBLE / KIT
+        // ============================================================
+
+        // 2.a) La serie es la SERIE DEL KIT (coincide con producto del id_serie_kit)
+        $kits = DB::table('modelo_ensamble_kit AS mek')
+            ->join('producto AS pk', 'pk.id', '=', 'mek.id_serie_kit')
+            ->join('modelo AS mk', 'mk.id', '=', 'mek.id_modelo_kit')
+            ->leftJoin('almacen', 'almacen.id', '=', 'pk.id_almacen')
+            ->leftJoin('empresa_almacen AS ea', 'ea.id_almacen', '=', 'pk.id_almacen')
+            ->leftJoin('empresa AS em', 'em.id', '=', 'ea.id_empresa')
+            ->whereRaw('UPPER(pk.serie) = ?', [$serieUP])
+            ->select([
+                'mek.id       AS id_kit',
+                'mk.sku       AS sku_kit',
+                'mk.descripcion AS desc_kit',
+                'em.id        AS id_empresa',
+                'em.empresa   AS empresa',
+                'almacen.almacen AS almacen_serie',
+                'mek.created_at'
+            ])
+            ->get();
+
+        foreach ($kits as $kit) {
+            // Series de TODOS los componentes del kit
+            $seriesComp = DB::table('modelo_ensamble_componente AS mec')
+                ->join('producto AS pc', 'pc.id', '=', 'mec.id_serie_componente')
+                ->where('mec.id_modelo_ensamble_kit', '=', $kit->id_kit)
+                ->pluck('pc.serie')
+                ->toArray();
+
+            $listaSeries = !empty($seriesComp) ? implode(', ', $seriesComp) : 'N/A';
+            $observacion = 'Serie ensamblada con las series: ' . $listaSeries;
+
+            $agregarMovimientoEnsamble(
+                $empresas,
+                (int)$kit->id_empresa,
+                $kit->empresa ?: 'N/D',
+                $kit->almacen_serie ?: 'N/D',
+                (int)$kit->id_kit,
+                $kit->sku_kit,
+                $kit->desc_kit,
+                $observacion,
+                $kit->created_at
+            );
+        }
+
+        // 2.b) La serie buscada es de un COMPONENTE (coincide con producto del id_serie_componente)
+        $comps = DB::table('modelo_ensamble_componente AS mec')
+            ->join('producto AS pc', 'pc.id', '=', 'mec.id_serie_componente')              // serie buscada
+            ->join('modelo_ensamble_kit AS mek', 'mek.id', '=', 'mec.id_modelo_ensamble_kit')
+            ->join('producto AS pk', 'pk.id', '=', 'mek.id_serie_kit')                     // serie del kit
+            ->join('modelo AS mk', 'mk.id', '=', 'mek.id_modelo_kit')
+            ->leftJoin('almacen', 'almacen.id', '=', 'pk.id_almacen')
+            ->leftJoin('empresa_almacen AS ea', 'ea.id_almacen', '=', 'pk.id_almacen')
+            ->leftJoin('empresa AS em', 'em.id', '=', 'ea.id_empresa')
+            ->whereRaw('UPPER(pc.serie) = ?', [$serieUP])
+            ->select([
+                'mek.id AS id_kit',
+                'mk.sku AS sku_kit',
+                'mk.descripcion AS desc_kit',
+                'em.id AS id_empresa',
+                'em.empresa AS empresa',
+                'almacen.almacen AS almacen_serie',
+                'pk.serie AS serie_kit',
+                'mek.created_at'
+            ])
+            ->get();
+
+        foreach ($comps as $comp) {
+            $observacion = 'Serie ensamblada en la serie: ' . ($comp->serie_kit ?: 'N/D');
+
+            $agregarMovimientoEnsamble(
+                $empresas,
+                (int)$comp->id_empresa,
+                $comp->empresa ?: 'N/D',
+                $comp->almacen_serie ?: 'N/D',
+                (int)$comp->id_kit,
+                $comp->sku_kit,
+                $comp->desc_kit,
+                $observacion,
+                $comp->created_at
+            );
+        }
+
+        // -------- 3) Si NO hay nada en absoluto --------
+        if (!($empresas instanceof \Illuminate\Support\Collection) || $empresas->isEmpty()) {
+            return response()->json([
+                'code'    => 500,
+                'message' => 'La serie proporcionada no existe registrada en el sistema.'
+            ]);
+        }
+
+        // -------- 4) Respuesta --------
         return response()->json([
-            'code' => 200,
+            'code'     => 200,
             'empresas' => $empresas
         ]);
     }

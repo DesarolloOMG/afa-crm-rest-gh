@@ -614,7 +614,7 @@ class InventarioService
      * @param int $id_garantia
      * @return \stdClass
      */
-    public static function crear_traspaso_devolucion(int $id_documento_original, int $id_garantia): \stdClass
+    public static function crear_traspaso_devolucion(int $id_documento_original, int $id_garantia, $esGarantia = 0): \stdClass
     {
         $response = new \stdClass();
 
@@ -650,7 +650,7 @@ class InventarioService
                 'id_almacen_secundario_empresa' => $info_documento_original->id_almacen_principal_empresa, // Origen: Almacén de la venta
                 'id_tipo' => 5, // Tipo: Traspaso
                 'id_fase' => 100, // Fase: Terminado
-                'observacion' => 'Traspaso por devolucion de venta ' . $id_documento_original,
+                'observacion' => 'Traspaso por ' . ($esGarantia ? 'garantía' : 'devolución') . ' de la venta ' . $id_documento_original,
                 'id_usuario' => 1,
                 'id_periodo' => $info_documento_original->id_periodo,
                 'id_cfdi' => $info_documento_original->id_cfdi,

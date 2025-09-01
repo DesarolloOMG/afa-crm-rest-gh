@@ -2595,12 +2595,22 @@ class DocumentoService
         return $response;
     }
 
-    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo = 0, $id_garantia = null): stdClass
+    public static function crearNotaCreditoConEgreso($documento_original_id, $tipo = 0, $id_garantia = null, $esGarantia = 0): stdClass
     {
         set_time_limit(0);
         $response = new stdClass();
-        $titulo_nota = $tipo == 0 ? "Nota de credito por devolucion del pedido " : ($tipo == 1 ? "Nota de credito para el pedido "
-            : ($tipo == 2 ? "Nota de credito por refacturacion del pedido " : "Nota de credito por cancelacion del pedido "));
+        // === NUEVO: textos según garantía vs devolución ===
+        $esGarantia = (int)$esGarantia === 1;
+        $frase_contexto = $esGarantia ? 'garantia' : 'devolucion';     // sin acento para claves si lo prefieres
+        $frase_contexto_legible = $esGarantia ? 'garantía' : 'devolución'; // con acento para textos visibles
+
+        // Mantengo tu lógica de $tipo, pero si es Garantía forzamos el título
+        $titulo_nota = $esGarantia
+            ? "Nota de credito por garantia del pedido "
+            : ($tipo == 0 ? "Nota de credito por devolucion del pedido "
+                : ($tipo == 1 ? "Nota de credito para el pedido "
+                    : ($tipo == 2 ? "Nota de credito por refacturacion del pedido "
+                        : "Nota de credito por cancelacion del pedido ")));
 
         DB::beginTransaction();
 
@@ -2713,7 +2723,7 @@ class DocumentoService
                 'id_forma_pago' => 1,
                 'descripcion_pago' => 'Egreso por nota de crédito ' . $documento_nota_id,
                 'referencia_pago' => 'Documento original ' . $documento_original_id,
-                'comentarios' => 'Generado por devolución de pedido ' . $documento_original_id,
+                'comentarios'  => 'Generado por ' . $frase_contexto_legible . ' del pedido ' . $documento_original_id,
                 'creado_por' => $usuario ?? 1,
                 'status' => 1,
             ]);

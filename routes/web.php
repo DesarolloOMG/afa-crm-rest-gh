@@ -633,6 +633,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
 
             $router->group(['prefix' => 'garantia'], function () use ($router) {
+                $router->get('producto/{sku}', 'SoporteController@getProductoBySku');
+
                 $router->group(['prefix' => 'recibir'], function () use ($router) {
                     $router->get('data', 'SoporteController@soporte_garantia_devolucion_garantia_recibir_data');
                     $router->post('guardar', 'SoporteController@soporte_garantia_devolucion_garantia_recibir_guardar');
