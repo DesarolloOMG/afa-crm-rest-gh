@@ -3257,14 +3257,10 @@ class VentaController extends Controller
     public function venta_mercadolibre_publicaciones_busqueda(Request $request): JsonResponse
     {
         set_time_limit(0);
-
         $data = json_decode($request->input("data"));
 
         $publicaciones = DB::table("marketplace_publicacion")
-            ->where(
-                "id_marketplace_area",
-                $data->marketplace
-            )
+            ->where("id_marketplace_area", $data->marketplace)
             ->when($data->provider, function ($query, $provider) {
                 return $query->where("id_proveedor", $provider);
             })
@@ -3281,26 +3277,37 @@ class VentaController extends Controller
 
         $publicacionIds = $publicaciones->pluck('id')->toArray();
 
-        /** @noinspection PhpParamsInspection */
+        // Conteo de productos
         $productosCounts = DB::table("marketplace_publicacion_producto")
             ->whereIn("id_publicacion", $publicacionIds)
             ->select("id_publicacion", DB::raw("COUNT(*) as count"))
             ->groupBy("id_publicacion")
             ->pluck('count', 'id_publicacion');
 
-        $almacenIds = $publicaciones->pluck('id_almacen_empresa')->merge($publicaciones->pluck('id_almacen_empresa_fulfillment'))->unique()->toArray();
+        // SKUs concatenados
+        $productosSkus = DB::table("marketplace_publicacion_producto as mpp")
+            ->join("modelo as m", "mpp.id_modelo", "=", "m.id")
+            ->whereIn("mpp.id_publicacion", $publicacionIds)
+            ->select("mpp.id_publicacion", DB::raw("GROUP_CONCAT(m.sku) as skus"))
+            ->groupBy("mpp.id_publicacion")
+            ->pluck('skus', 'id_publicacion');
+
+        // Almacenes
+        $almacenIds = $publicaciones->pluck('id_almacen_empresa')
+            ->merge($publicaciones->pluck('id_almacen_empresa_fulfillment'))
+            ->unique()
+            ->toArray();
 
         $almacenes = DB::table('empresa_almacen')
-            ->select(
-                'empresa_almacen.id',
-                'almacen.almacen'
-            )
+            ->select('empresa_almacen.id', 'almacen.almacen')
             ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
             ->whereIn('empresa_almacen.id', $almacenIds)
             ->pluck('almacen', 'empresa_almacen.id');
 
+        // Armamos resultado
         foreach ($publicaciones as $publicacion) {
-            $publicacion->productos = isset($productosCounts[$publicacion->id]);
+            $publicacion->productos = isset($productosCounts[$publicacion->id]) ? $productosCounts[$publicacion->id] : 0;
+            $publicacion->skus = $productosSkus[$publicacion->id] ?? ''; // SKUs separados por coma
             $publicacion->almacendrop = $almacenes[$publicacion->id_almacen_empresa] ?? '';
             $publicacion->almacenfull = $almacenes[$publicacion->id_almacen_empresa_fulfillment] ?? '';
         }
