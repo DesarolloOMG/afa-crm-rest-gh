@@ -812,8 +812,6 @@ class MercadolibreService
 
         DB::table('documento')->where(['id' => $existe_pack->id])->update([
             'id_fase' => 3,
-            'picking' => 0,
-            'picking_by' => 0
         ]);
 
     }
@@ -833,8 +831,6 @@ class MercadolibreService
             ->where('status', 1)
             ->update([
                 'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
             ]);
     }
 
@@ -1083,8 +1079,6 @@ class MercadolibreService
             ->where('status', 1)
             ->update([
                 'id_fase' => 3,
-                'picking' => 0,
-                'picking_by' => 0
             ]);
     }
 
