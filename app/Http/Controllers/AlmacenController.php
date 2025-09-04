@@ -187,8 +187,8 @@ class AlmacenController extends Controller
 //                        'comentario' => $data->seguimiento
 //                    ]);
 //
-//                    $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                    $domain = "omg.com.mx";
+//                    $mg     = Mailgun::create(config("mailgun.token"));
+//                    $domain = config("mailgun.email_from");
 //                    $mg->messages()->send($domain, array(
 //                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
 //                        'to'            => $usuario_documento->email,
@@ -955,10 +955,10 @@ class AlmacenController extends Controller
 //                        'comentario' => $data->seguimiento
 //                    ]);
 //
-//                    $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-//                    $domain = "omg.com.mx";
+//                    $mg = Mailgun::create(config("mailgun.token"));
+//                    $domain = config("mailgun.email_from");
 //                    $mg->messages()->send($domain, array(
-//                        'from' => 'CRM OMG International <crm@omg.com.mx>',
+//                        'from' => config("mailgun.email_from"),
 //                        'to' => $usuario_documento->email,
 //                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
 //                        'html' => $view->render()
@@ -1263,10 +1263,10 @@ class AlmacenController extends Controller
                     'documento' => $data->documento
                 ]);
 
-                $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-                $domain = "omg.com.mx";
+                $mg = Mailgun::create(config("mailgun.token"));
+                $domain = config("mailgun.email_from");
                 $mg->messages()->send($domain, array(
-                    'from' => 'CRM OMG International <crm@omg.com.mx>',
+                    'from' => config("mailgun.email_from"),
                     'to' => $emails,
                     'subject' => 'Error al generar factura',
                     'html' => $vista->render()

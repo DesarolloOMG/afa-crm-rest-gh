@@ -4436,7 +4436,7 @@ class GeneralController extends Controller
         $html = view('email.notificacion_reporte_diario')->with(['anio' => date('Y')]);
 
         $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
-        $domain = "omg.com.mx";
+        $domain = config("mailgun.email_from");
         $mg->messages()->send(config("mailgun.domain"), array('from'  => 'Reportes OMG International <crm@omg.com.mx>',
                                 'to'      => 'desarrollo1@omg.com.mx',
                                 'subject' => 'Reporte de actividades OMG International ' . date('d/m/Y'),
@@ -5033,7 +5033,7 @@ class GeneralController extends Controller
             $view       = view('email.notificacion_reporte_ventas_amazon')->with(['nombre' => $correo->nombre, 'anio' => date('Y')]);
 
             $mg     = Mailgun::create(config("mailgun.token"));
-            $domain = "omg.com.mx";
+            $domain = config("mailgun.email_from");
             $mg->messages()->send(
                 $domain,
                 array(
@@ -6534,8 +6534,8 @@ class GeneralController extends Controller
 
                         $view = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
 
-                        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-                        $domain = "omg.com.mx";
+                        $mg = Mailgun::create(config("mailgun.token"));
+                        $domain = config("mailgun.email_from");
                         $mg->messages()->send($domain, array(
                             'from' => 'CRM OMG International <generico@omg.com.mx>',
                             'to' => $usuario->email,

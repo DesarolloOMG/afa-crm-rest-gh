@@ -1526,9 +1526,9 @@ class CompraController extends Controller
                 $notificados[] = $usuario->id;
             }
 
-            $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-            $domain = "omg.com.mx";
-            $mg->messages()->send($domain, array('from' => 'CRM OMG International <crm@omg.com.mx>',
+            $mg = Mailgun::create(config("mailgun.token"));
+            $domain = config("mailgun.email_from");
+            $mg->messages()->send($domain, array('from' => config("mailgun.email_from"),
                 'to' => 'desarrollo1@omg.com.mx',
                 'subject' => 'Nueva requisición para orden de compra.',
                 'html' => $view->render()));
@@ -1837,10 +1837,10 @@ class CompraController extends Controller
         ]);
 
         try {
-            $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-            $domain = "omg.com.mx";
+            $mg = Mailgun::create(config("mailgun.token"));
+            $domain = config("mailgun.email_from");
             $mg->messages()->send($domain, array(
-                'from' => 'CRM OMG International <crm@omg.com.mx>',
+                'from' => config("mailgun.email_from"),
                 'to' => $usuario->email,
                 'subject' => 'Requisición con el ID ' . $documento . '.',
                 'html' => $view->render()
