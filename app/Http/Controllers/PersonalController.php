@@ -69,12 +69,12 @@ class PersonalController extends Controller
             'id_notificacion'   => $notificacion_id
         ]);
 
-        array_push($usuarios, $data->usuario);
+//        array_push($usuarios, $data->usuario);
         
         if (!empty($usuarios)) {
             $notificacion['usuario']    = $usuarios;
 
-            event(new PusherEvent(json_encode($notificacion)));
+//            event(new PusherEvent(json_encode($notificacion)));
         }
 
         return response()->json([
@@ -157,7 +157,7 @@ class PersonalController extends Controller
 
             $notificacion['usuario']    = $creador->id;
 
-            event(new PusherEvent(json_encode($notificacion)));
+//            event(new PusherEvent(json_encode($notificacion)));
         }
         else {
             if (!$autorizada->autorizada && $data->autorizada) {
@@ -181,7 +181,7 @@ class PersonalController extends Controller
 
                 $notificacion['usuario']    = $creador->id;
 
-                event(new PusherEvent(json_encode($notificacion)));
+//                event(new PusherEvent(json_encode($notificacion)));
             }
         }
 

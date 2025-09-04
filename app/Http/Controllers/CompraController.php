@@ -454,7 +454,7 @@ class CompraController extends Controller
             if (!empty($usuarios)) {
                 $notificacion['usuario'] = $usuarios;
 
-                event(new PusherEvent(json_encode($notificacion)));
+//                event(new PusherEvent(json_encode($notificacion)));
             }
         }
 
@@ -1552,7 +1552,7 @@ class CompraController extends Controller
             $notificacion['id'] = $notificacion_id;
             $notificacion['usuario'] = $notificados;
 
-            event(new PusherEvent(json_encode($notificacion)));
+//            event(new PusherEvent(json_encode($notificacion)));
         } catch (Exception $e) {
             return response()->json([
                 'code' => 200,
@@ -1863,7 +1863,7 @@ class CompraController extends Controller
             $notificacion['id'] = $notificacion_id;
             $notificacion['usuario'] = $usuario->id;
 
-            event(new PusherEvent(json_encode($notificacion)));
+//            event(new PusherEvent(json_encode($notificacion)));
         } catch (Exception $e) {
             return response()->json([
                 'code' => 200,

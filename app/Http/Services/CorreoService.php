@@ -249,7 +249,7 @@ class CorreoService
      */
     public static function notificationAndEmail($notificacion, $usuario_documento, $documento, $mensaje): void
     {
-        event(new PusherEvent(json_encode($notificacion)));
+//        event(new PusherEvent(json_encode($notificacion)));
 
         $view = view('email.notificacion_problema')->with([
             'vendedor' => $usuario_documento->nombre,
