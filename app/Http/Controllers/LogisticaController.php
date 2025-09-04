@@ -13,6 +13,7 @@ use App\Http\Services\ElektraService;
 use App\Http\Services\EnviaService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\LinioService;
+use App\Http\Services\Logistica\Manifiesto\Manifiesto\ManifiestoService;
 use App\Http\Services\Logistica\Manifiesto\ManifiestoSalida\ManifiestoSalidaService;
 use App\Http\Services\MercadolibreService;
 use App\Http\Services\ShopifyService;
@@ -706,76 +707,21 @@ class LogisticaController extends Controller
     /* Logistica > Manifiesto */
     public function logistica_manifiesto_manifiesto_data(): JsonResponse
     {
-        $shipment = DB::table('paqueteria')
-            ->select("id", "paqueteria")
-            ->orderBy('paqueteria')
-            ->get()
-            ->toArray();
-
-        $printers = DB::table("impresora")
-            ->select("id", "nombre")
-            ->where("tamanio", "Continuo")
-            ->get()
-            ->toArray();
-
-        $labels = self::manifiesto_guias_raw_data("salida = 0 AND impreso = 0");
-
-        return response()->json([
-            'labels' => $labels,
-            'printers' => $printers,
-            'shipment' => $shipment
-        ]);
+        return ManifiestoService::data();
     }
 
     public function logistica_manifiesto_manifiesto_agregar(Request $request): JsonResponse
     {
-
         $data = json_decode($request->input("data"));
 
-        $exits = DB::table("manifiesto")
-            ->where("guia", $data->label)
-            ->first();
-
-        if ($exits) {
-            if ($exits->manifiesto == date("dmY")) {
-                return response()->json([
-                    "message" => "La guía ya se encuentra en el manifiesto"
-                ], 500);
-            }
-
-            DB::table('manifiesto')->where("guia", $data->label)->update([
-                'id_impresora' => $data->printer,
-                'manifiesto' => date('dmY'),
-                'salida' => 0,
-                'impreso' => 0,
-                'created_at' => date('Y-m-d H:i:s'),
-                'id_paqueteria' => $data->shipment
-            ]);
-        } else {
-            DB::table('manifiesto')->insert([
-                'id_impresora' => $data->printer,
-                'manifiesto' => date('dmY'),
-                'guia' => trim($data->label),
-                'id_paqueteria' => $data->shipment
-            ]);
-        }
-
-        $label_data = self::manifiesto_guias_raw_data("manifiesto.salida = 0 AND manifiesto.impreso = 0 AND manifiesto.guia = '" . $data->label . "'");
-
-        return response()->json([
-            "label" => $label_data
-        ]);
+        return ManifiestoService::agregar($data);
     }
 
     public function logistica_manifiesto_manifiesto_eliminar(Request $request): JsonResponse
     {
         $data = $request->input("data");
 
-        DB::table('manifiesto')->where(['guia' => trim($data)])->delete();
-
-        return response()->json([
-            'message' => "Guía eliminada correctamente."
-        ]);
+        return ManifiestoService::eliminar($data);
     }
 
     public function logistica_manifiesto_manifiesto_salida_data(): JsonResponse
