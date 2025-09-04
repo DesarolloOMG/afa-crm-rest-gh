@@ -827,7 +827,7 @@ class LogisticaController extends Controller
 
         $notificacion['usuario'] = $usuarios;
 
-        event(new PusherEvent(json_encode($notificacion)));
+//        event(new PusherEvent(json_encode($notificacion)));
 
         return response()->json([
             'code' => 200,

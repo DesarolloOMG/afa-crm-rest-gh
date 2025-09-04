@@ -721,7 +721,7 @@ class ConfiguracionController extends Controller
     {
         $notificacion['reload_users'] = 1;
 
-        event(new PusherEvent(json_encode($notificacion)));
+//        event(new PusherEvent(json_encode($notificacion)));
     }
 
     private function make_json($json)

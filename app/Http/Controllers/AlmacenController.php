@@ -158,44 +158,44 @@ class AlmacenController extends Controller
                     )
                     ->first();
 
-                if ($usuario_documento->id_usuario > 1) {
-                    $notificacion['titulo']     = "Pedido en problemas.";
-                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-                    $notificacion['tipo'] = "warning";
-                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
-
-                    $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data'  => json_encode($notificacion)
-                    ]);
-
-                    $notificacion['id']         = $notificacion_id;
-
-                    DB::table('notificacion_usuario')->insert([
-                        'id_usuario'        => $usuario_documento->id_usuario,
-                        'id_notificacion'   => $notificacion_id
-                    ]);
-
-                    $notificacion['usuario']    = $usuario_documento->id_usuario;
-
-                    event(new PusherEvent(json_encode($notificacion)));
-
-                    $view = view('email.notificacion_problema')->with([
-                        'vendedor' => $usuario_documento->nombre,
-                        'usuario' => $usuario_documento->nombre,
-                        'anio' => date('Y'),
-                        'documento' => $data->documento,
-                        'comentario' => $data->seguimiento
-                    ]);
-
-                    $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-                    $domain = "omg.com.mx";
-                    $mg->messages()->send($domain, array(
-                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
-                        'to'            => $usuario_documento->email,
-                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
-                        'html'          => $view->render()
-                    ));
-                }
+//                if ($usuario_documento->id_usuario > 1) {
+//                    $notificacion['titulo']     = "Pedido en problemas.";
+//                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+//                    $notificacion['tipo'] = "warning";
+//                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
+//
+//                    $notificacion_id = DB::table('notificacion')->insertGetId([
+//                        'data'  => json_encode($notificacion)
+//                    ]);
+//
+//                    $notificacion['id']         = $notificacion_id;
+//
+//                    DB::table('notificacion_usuario')->insert([
+//                        'id_usuario'        => $usuario_documento->id_usuario,
+//                        'id_notificacion'   => $notificacion_id
+//                    ]);
+//
+//                    $notificacion['usuario']    = $usuario_documento->id_usuario;
+//
+//                    event(new PusherEvent(json_encode($notificacion)));
+//
+//                    $view = view('email.notificacion_problema')->with([
+//                        'vendedor' => $usuario_documento->nombre,
+//                        'usuario' => $usuario_documento->nombre,
+//                        'anio' => date('Y'),
+//                        'documento' => $data->documento,
+//                        'comentario' => $data->seguimiento
+//                    ]);
+//
+//                    $mg     = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+//                    $domain = "omg.com.mx";
+//                    $mg->messages()->send($domain, array(
+//                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
+//                        'to'            => $usuario_documento->email,
+//                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
+//                        'html'          => $view->render()
+//                    ));
+//                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,
@@ -925,45 +925,45 @@ class AlmacenController extends Controller
                                                 INNER JOIN usuario ON documento.id_usuario = usuario.id 
                                                 WHERE documento.id = " . $data->documento)[0];
 
-                if ($usuario_documento->id_usuario > 1) {
-                    $notificacion['titulo'] = "Pedido en problemas.";
-                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-                    $notificacion['tipo'] = "warning"; // success, warning, danger
-                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
-
-                    $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data' => json_encode($notificacion)
-                    ]);
-
-                    $notificacion['id'] = $notificacion_id;
-
-                    DB::table('notificacion_usuario')->insert([
-                        'id_usuario' => $usuario_documento->id_usuario,
-                        'id_notificacion' => $notificacion_id
-                    ]);
-
-                    $notificacion['usuario'] = $usuario_documento->id_usuario;
-
-                    event(new PusherEvent(json_encode($notificacion)));
-
-                    $view = view('email.notificacion_problema')->with([
-                        'vendedor' => $usuario_documento->nombre,
-                        'problema' => 0,
-                        'usuario' => $usuario_documento->nombre,
-                        'anio' => date('Y'),
-                        'documento' => $data->documento,
-                        'comentario' => $data->seguimiento
-                    ]);
-
-                    $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-                    $domain = "omg.com.mx";
-                    $mg->messages()->send($domain, array(
-                        'from' => 'CRM OMG International <crm@omg.com.mx>',
-                        'to' => $usuario_documento->email,
-                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
-                        'html' => $view->render()
-                    ));
-                }
+//                if ($usuario_documento->id_usuario > 1) {
+//                    $notificacion['titulo'] = "Pedido en problemas.";
+//                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+//                    $notificacion['tipo'] = "warning"; // success, warning, danger
+//                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
+//
+//                    $notificacion_id = DB::table('notificacion')->insertGetId([
+//                        'data' => json_encode($notificacion)
+//                    ]);
+//
+//                    $notificacion['id'] = $notificacion_id;
+//
+//                    DB::table('notificacion_usuario')->insert([
+//                        'id_usuario' => $usuario_documento->id_usuario,
+//                        'id_notificacion' => $notificacion_id
+//                    ]);
+//
+//                    $notificacion['usuario'] = $usuario_documento->id_usuario;
+//
+//                    event(new PusherEvent(json_encode($notificacion)));
+//
+//                    $view = view('email.notificacion_problema')->with([
+//                        'vendedor' => $usuario_documento->nombre,
+//                        'problema' => 0,
+//                        'usuario' => $usuario_documento->nombre,
+//                        'anio' => date('Y'),
+//                        'documento' => $data->documento,
+//                        'comentario' => $data->seguimiento
+//                    ]);
+//
+//                    $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
+//                    $domain = "omg.com.mx";
+//                    $mg->messages()->send($domain, array(
+//                        'from' => 'CRM OMG International <crm@omg.com.mx>',
+//                        'to' => $usuario_documento->email,
+//                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
+//                        'html' => $view->render()
+//                    ));
+//                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,

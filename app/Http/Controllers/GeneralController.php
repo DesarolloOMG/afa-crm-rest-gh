@@ -6530,7 +6530,7 @@ class GeneralController extends Controller
 
                         $notificacion['usuario'] = $usuario->id;
 
-                        event(new PusherEvent(json_encode($notificacion)));
+//                        event(new PusherEvent(json_encode($notificacion)));
 
                         $view = view('email.notificacion_problema_recordatorio')->with(['vendedor' => $usuario->nombre, 'anio' => date('Y'), 'documentos' => $array_documentos]);
 

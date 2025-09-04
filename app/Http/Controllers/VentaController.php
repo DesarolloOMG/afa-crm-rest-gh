@@ -261,7 +261,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-                        event(new PusherEvent(json_encode($notificacion)));
+//                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
@@ -1079,7 +1079,7 @@ class VentaController extends Controller
 
                 $notificacion->usuario = $usuarios_notificacion;
 
-                event(new PusherEvent(json_encode($notificacion)));
+//                event(new PusherEvent(json_encode($notificacion)));
             }
 
             DB::table('documento')->where(['id' => $data->documento->documento])->update([
@@ -2259,7 +2259,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-                        event(new PusherEvent(json_encode($notificacion)));
+//                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
@@ -2301,7 +2301,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-                        event(new PusherEvent(json_encode($notificacion)));
+//                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {

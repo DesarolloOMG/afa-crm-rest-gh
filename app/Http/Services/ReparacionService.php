@@ -304,7 +304,7 @@ class ReparacionService
                 $notificacion['id'] = $notificacion_id;
                 $notificacion['usuario'] = $usuario_devolucion;
 
-                event(new PusherEvent(json_encode($notificacion)));
+//                event(new PusherEvent(json_encode($notificacion)));
             }
 
             # De desaplican los pagos y notas de credito que tenga la factura y se genera una NC en general

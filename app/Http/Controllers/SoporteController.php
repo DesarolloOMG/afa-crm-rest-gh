@@ -1248,7 +1248,7 @@ class SoporteController extends Controller
 
                 if (!empty($usuarios)) {
                     $notificacion['usuario'] = $usuarios;
-                    event(new PusherEvent(json_encode($notificacion)));
+//                    event(new PusherEvent(json_encode($notificacion)));
                 }
             }
 
