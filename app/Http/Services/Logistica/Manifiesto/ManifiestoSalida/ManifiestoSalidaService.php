@@ -170,11 +170,11 @@ class ManifiestoSalidaService
             ]);
         }
 
-        CorreoService::enviarManifiesto(
-            $guias_paqueteria,
-            1,
-            $data->shipping_provider->paqueteria
-        );
+//        CorreoService::enviarManifiesto(
+//            $guias_paqueteria,
+//            1,
+//            $data->shipping_provider->paqueteria
+//        );
 
         return response()->json([
             'guias' => $guias_paqueteria,
