@@ -85,6 +85,6 @@ class PrintController extends Controller
 
     public function manifiestoSalida($array, Request $request): JsonResponse
     {
-        return $this->forwardRequest('POST', "api/manifiesto/salida/", $request, $array);
+        return $this->forwardRequest('POST', "api/manifiesto/salida", $request, $array);
     }
 }
