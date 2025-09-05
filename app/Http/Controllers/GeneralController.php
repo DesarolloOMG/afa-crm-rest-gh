@@ -1157,7 +1157,7 @@ class GeneralController extends Controller
             ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
             ->join('modelo_proveedor', 'documento.id_modelo_proveedor', '=', 'modelo_proveedor.id')
             ->leftJoin('documento_guia', 'documento.id', '=', 'documento_guia.id_documento')
-            ->whereIn('documento.id_tipo', [1, 2]);
+            ->where('documento.id_tipo', 2);
 
         if (in_array($data->campo, ["rfc", "razon_social", "correo"])) {
             $query->where('documento_entidad.' . $data->campo, 'LIKE', '%' . $criterio . '%');
