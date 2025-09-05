@@ -41,9 +41,9 @@ class InventarioService
         // Iniciamos una transacción para asegurar la atomicidad de las operaciones.
         DB::beginTransaction();
         try {
-            $esta_afectando = DB::table('modelo_kardex')->where('id_documento', $idDocumento)->get();
+            $esta_afectando = DB::table('modelo_kardex')->where('id_documento', $idDocumento)->first();
 
-            if(!empty($esta_afectando)) {
+            if($esta_afectando) {
                 $response->code = 200;
                 $response->error = 0;
                 $response->message = 'Este documento ya se encuentra afectando el inventario.';
