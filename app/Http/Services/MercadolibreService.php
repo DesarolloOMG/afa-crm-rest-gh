@@ -20,10 +20,6 @@ class MercadolibreService
         $ventas = [];
 
         $venta = rawurlencode($venta);
-        $noVenta = DB::table('documento')->where('no_venta', $venta)->first();
-        if ($noVenta) {
-            if($noVenta->comentario != $venta){}
-        }
         $paqueteData = self::callMlApi($marketplace_id, "packs/{venta}", ['{venta}' => $venta]);
         $informacion_paquete = json_decode($paqueteData->getContent());
 
@@ -62,9 +58,13 @@ class MercadolibreService
             ]);
             $envio = json_decode($envioData->getContent());
 
-            if (!isset($informacion_paquete->error) && !empty($envio) && !in_array($envio->status, ['to_be_agreed', 'shipping_deferred'])) {
-                $envio->costo = $envio->shipping_option->cost ?? 0;
-                $venta->shipping = $envio;
+            if (!empty($envio)) {
+                if ($envio->status == "to_be_agreed" || $envio->status == "shipping_deferred") {
+                    $venta->shipping = 0;
+                } else {
+                    $envio->costo = $envio->shipping_option->cost;
+                    $venta->shipping = $envio;
+                }
             } else {
                 $venta->shipping = 0;
             }
