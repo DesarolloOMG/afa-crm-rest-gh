@@ -716,10 +716,10 @@ class GeneralService
 
         # $emails = substr($emails, 0, -1);
 
-        $mg = Mailgun::create("key-ff8657eb0bb864245bfff77c95c21bef");
-        $domain = "omg.com.mx";
+        $mg = Mailgun::create(config("mailgun.token"));
+        $domain = config("mailgun.email_from");
         $mg->messages()->send($domain, array(
-            'from' => 'CRM OMG International <crm@omg.com.mx>',
+            'from' => config("mailgun.email_from"),
             'to' => $emails,
             'subject' => !$tipo ? 'Error en CRM' : '¡Advertencia!',
             'html' => $view->render()

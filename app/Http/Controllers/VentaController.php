@@ -1824,8 +1824,8 @@ class VentaController extends Controller
             fwrite($file, $pdf_data);
             fclose($file);
 
-            $mg = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
-            $domain = "omg.com.mx";
+            $mg = Mailgun::create(config("mailgun.token"));
+            $domain = config("mailgun.email_from");
             /** @noinspection PhpMethodParametersCountMismatchInspection */
             $mg->messages()->send(
                 $domain,

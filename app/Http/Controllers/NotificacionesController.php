@@ -606,7 +606,7 @@ class NotificacionesController extends Controller{
 //                $html = view('email.notificacion_pedido')->with(['cliente' => ($data->CustomerFirstName . " " . $data->CustomerLastName), 'pedido' => $documento, 'anio' => date('Y')]);
 //
 //                $mg     = Mailgun::create('key-ff8657eb0bb864245bfff77c95c21bef');
-//                $domain = "omg.com.mx";
+//                $domain = config("mailgun.email_from");
 //                $mg->messages()->send($domain, array('from'  => 'Laptop México <generico@omg.com.mx>',
 //                                        'to'      => 'desarrollo1@omg.com.mx',
 //                                        'subject' => '¡Pedido ' . $documento . ' procesado!',
