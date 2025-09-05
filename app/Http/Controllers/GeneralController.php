@@ -280,7 +280,7 @@ class GeneralController extends Controller
         $ventas = DB::select("SELECT
                                 documento.id,
                                 SUBSTRING_INDEX(documento.created_at, ' ', 1) AS fecha,
-                                ROUND(SUM(movimiento.precio * 1.16 * documento.tipo_cambio) / COUNT(*), 2) precio,
+                                ROUND(SUM(movimiento.precio * documento.tipo_cambio) / COUNT(*), 2) precio,
                                 SUM(movimiento.cantidad) AS cantidad
                             FROM documento
                             INNER JOIN movimiento ON documento.id = movimiento.id_documento
@@ -2137,7 +2137,7 @@ class GeneralController extends Controller
                                     modelo.cat2,
                                     modelo.cat3,
                                     movimiento.cantidad, 
-                                    ROUND((movimiento.precio * 1.16), 2) AS precio
+                                    movimiento.precio
                                 FROM movimiento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
                                 WHERE id_documento = " . $venta->id . "");
