@@ -2438,7 +2438,7 @@ class GeneralController extends Controller
                                 modelo.descripcion,
                                 COUNT(*) AS cantidad_venta,
                                 SUM(movimiento.cantidad) AS cantidad_productos,
-                                ROUND(SUM(movimiento.precio * 1.16 * movimiento.cantidad * documento.tipo_cambio), 2) AS precio_venta
+                                ROUND(SUM(movimiento.precio * movimiento.cantidad * documento.tipo_cambio), 2) AS precio_venta
                             FROM documento
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
@@ -2617,7 +2617,7 @@ class GeneralController extends Controller
                                 modelo.sku,
                                 modelo.sku AS modelo_sku,
                                 modelo.descripcion,
-                                ROUND(SUM(movimiento.cantidad * movimiento.precio * 1.16 * documento.tipo_cambio), 2) AS total,
+                                ROUND(SUM(movimiento.cantidad * movimiento.precio * documento.tipo_cambio), 2) AS total,
                                 (
                                     SELECT
                                         COUNT(*) AS total
@@ -3123,7 +3123,7 @@ class GeneralController extends Controller
                 ->select(
                     "modelo.sku AS codigo",
                     "modelo.descripcion",
-                    DB::raw("ROUND((movimiento.precio * 1.16 * documento.tipo_cambio), 4) AS costo"),
+                    DB::raw("ROUND((movimiento.precio * documento.tipo_cambio), 4) AS costo"),
                     "movimiento.cantidad",
                     "almacen.almacen",
                     "documento.created_at",
@@ -3153,7 +3153,7 @@ class GeneralController extends Controller
                 ->where("documento.status", "1")
                 ->where("empresa.id", $data->empresa)
                 ->whereBetween("documento_recepcion.created_at", [date($data->fecha_inicial), date($data->fecha_final)])
-                ->select("modelo.sku AS codigo", "modelo.descripcion", DB::raw("ROUND((movimiento.precio * 1.16 * documento.tipo_cambio), 4) AS costo"), "documento_recepcion.cantidad", "almacen.almacen", "documento.created_at", "documento.id AS odc", "documento.observacion AS requisiciones", "empresa.bd")
+                ->select("modelo.sku AS codigo", "modelo.descripcion", DB::raw("ROUND(( movimiento.precio * documento.tipo_cambio), 4) AS costo"), "documento_recepcion.cantidad", "almacen.almacen", "documento.created_at", "documento.id AS odc", "documento.observacion AS requisiciones", "empresa.bd")
                 ->get()
                 ->toArray();
         }
@@ -6140,7 +6140,7 @@ class GeneralController extends Controller
                                     modelo.cat2,
                                     modelo.cat3,
                                     movimiento.cantidad, 
-                                    ROUND((movimiento.precio * 1.16), 2) AS precio
+                                    movimiento.precio
                                 FROM movimiento 
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id 
                                 WHERE id_documento = " . $venta->id . "");
