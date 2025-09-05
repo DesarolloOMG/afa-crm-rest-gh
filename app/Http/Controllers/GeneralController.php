@@ -2311,7 +2311,7 @@ class GeneralController extends Controller
                                     modelo.sku,
                                     modelo.descripcion,
                                     SUM(movimiento.cantidad) AS cantidad,
-                                    ROUND(movimiento.precio * 1.16, 2) AS precio
+                                    movimiento.precio
                                 FROM documento
                                 INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                 INNER JOIN area ON marketplace_area.id_area = area.id
