@@ -159,7 +159,7 @@ class InventarioService
                 // Se calcula la cantidad, el precio unitario (considerando el tipo de cambio) y el total del movimiento.
                 $cantidad = $mov->cantidad;
                 $precioUnitario = $mov->precio;
-                $totalMovimiento = round($cantidad * $precioUnitario, 2);
+                $totalMovimiento = $cantidad * $precioUnitario;
 
                 // Inicializamos el nuevo stock con el valor actual.
                 $nuevoStock = $stockAnterior;
@@ -356,7 +356,7 @@ class InventarioService
         $stockAnteriorSalida = $existenciaSalida->stock;
         $cantidad = $mov->cantidad;
         $precioUnitario = $mov->precio * ($documento->tipo_cambio ?? 1);
-        $totalMovimiento = round($cantidad * $precioUnitario, 2);
+        $totalMovimiento = $cantidad * $precioUnitario;
 
         $nuevoStockSalida = $stockAnteriorSalida - $cantidad;
 
@@ -416,7 +416,7 @@ class InventarioService
             'afecta_costo'              => 0,
             'cantidad'                  => $cantidad,
             'costo'                     => $precioUnitario,
-            'total'                     => round($cantidad * $precioUnitario, 2),
+            'total'                     => $cantidad * $precioUnitario,
             'stock_anterior'            => $stockAnteriorEntrada,
             'costo_promedio'            => $costoEntrada->costo_promedio,
             'created_at'                => $mov->created_at,
