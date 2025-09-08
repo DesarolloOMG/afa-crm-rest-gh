@@ -986,7 +986,7 @@ class SoporteController extends Controller
     public function soporte_garantia_devolucion_devolucion_revision_data(Request $request)
     {
         $auth = json_decode($request->auth);
-        $documentos = $this->garantia_devolucion_raw_data(3, "1,2", $auth->id);
+        $documentos = $this->garantia_devolucion_raw_data(12, "1,2", $auth->id);
 
         return response()->json([
             'code' => 200,
@@ -2690,7 +2690,7 @@ class SoporteController extends Controller
             $pdf->Cell(71, 10, (strlen($producto->producto) > 40) ? substr($producto->producto, 0, 40) : $producto->producto, "1", 0, 'C');
             $pdf->Cell(25, 10, $producto->cantidad, "1", 0, 'C');
             $pdf->Cell(20, 10, '$ ' . (float)$producto->precio, "1", 0, 'C');
-            $pdf->Cell(30, 10, '$ ' . (float)round($producto->cantidad * $producto->precio, 2), "1", 0, 'C');
+            $pdf->Cell(30, 10, '$ ' . $producto->cantidad * $producto->precio, "1", 0, 'C');
             $pdf->Ln();
 
             $total += $producto->cantidad * $producto->precio / 1.16;
@@ -2714,14 +2714,14 @@ class SoporteController extends Controller
         $pdf->Cell(71, 10, '', "1", 0, 'C');
         $pdf->Cell(25, 10, '', "1", 0, 'C');
         $pdf->Cell(20, 10, 'Subtotal', "1", 0, 'C');
-        $pdf->Cell(30, 10, '$ ' . round($total, 2), "1", 0, 'C');
+        $pdf->Cell(30, 10, '$ ' . $total, "1", 0, 'C');
         $pdf->Ln();
 
         $pdf->Cell(25, 40, '');
         $pdf->Cell(71, 10, '', "1", 0, 'C');
         $pdf->Cell(25, 10, '', "1", 0, 'C');
         $pdf->Cell(20, 10, 'IVA', "1", 0, 'C');
-        $pdf->Cell(30, 10, '$ ' . round((($total * 1.16) - $total), 2), "1", 0, 'C');
+        $pdf->Cell(30, 10, '$ ' . (($total * 1.16) - $total), "1", 0, 'C');
         $pdf->Ln();
 
         $pdf->Cell(25, 40, '');
