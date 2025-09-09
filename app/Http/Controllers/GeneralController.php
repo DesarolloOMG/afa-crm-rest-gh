@@ -217,6 +217,7 @@ class GeneralController extends Controller
                 "message" => "No se encontró ningún producto con el criterio: {$criterio}"
             ]);
         }
+
         $modelo_costo = DB::table('modelo_costo')
             ->where('id_modelo', $modelo->id)
             ->first();
@@ -236,7 +237,7 @@ class GeneralController extends Controller
         $producto_catalogo = [
             'codigo' => $modelo->sku,
             'descripcion' => $modelo->descripcion,
-            'ultimo_costo' => $ultimo_costo_producto, // o null si prefieres
+            'costo_promedio' => $ultimo_costo_producto, // o null si prefieres
             'precio' => $precio,
             'tipo_producto' => $modelo->cat1,
             'marca' => $modelo->cat2,
