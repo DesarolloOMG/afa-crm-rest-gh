@@ -217,6 +217,15 @@ class GeneralController extends Controller
                 "message" => "No se encontró ningún producto con el criterio: {$criterio}"
             ]);
         }
+        $modelo_costo = DB::table('modelo_costo')
+            ->where('id_modelo', $modelo->id)
+            ->first();
+
+        $ultimo_costo_producto = 0;
+
+        if ($modelo_costo) {
+            $ultimo_costo_producto = $modelo_costo->costo_promedio;
+        }
 
         // Buscar el último precio registrado (puede ser null)
         $precio = DB::table('modelo_precio')
@@ -227,7 +236,7 @@ class GeneralController extends Controller
         $producto_catalogo = [
             'codigo' => $modelo->sku,
             'descripcion' => $modelo->descripcion,
-            'ultimo_costo' => $modelo->costo, // o null si prefieres
+            'ultimo_costo' => $ultimo_costo_producto, // o null si prefieres
             'precio' => $precio,
             'tipo_producto' => $modelo->cat1,
             'marca' => $modelo->cat2,
