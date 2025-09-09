@@ -26,6 +26,7 @@ use App\Http\Services\LiverpoolService;
 use App\Http\Services\MercadolibreService;
 use App\Http\Services\MovimientoContableService;
 use App\Http\Services\ShopifyService;
+use App\Http\Services\Venta\Ventas\VentaVentasService;
 use App\Http\Services\WalmartService;
 use App\Http\Services\WhatsAppService;
 use App\Models\DocumentoGarantiaCausa;
@@ -5508,5 +5509,13 @@ class VentaController extends Controller
         $response->name = $file_name;
 
         return $response;
+    }
+
+    public function venta_venta_relacionar_pdf_xml(Request $request)
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+
+        return VentaVentasService::relacionar_pdf_xml($data, $auth);
     }
 }

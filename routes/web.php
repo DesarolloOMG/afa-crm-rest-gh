@@ -422,6 +422,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     # Menú venta
     $router->group(['prefix' => 'venta'], function () use ($router) {
         $router->group(['prefix' => 'venta'], function () use ($router) {
+
             $router->group(['prefix' => 'crear'], function () use ($router) {
                 $router->post('', 'VentaController@venta_venta_crear');
 
@@ -472,6 +473,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             });
 
             $router->post('nota', 'VentaController@venta_venta_nota');
+
+            $router->post('relacionar-pdf-xml', 'VentaController@venta_venta_relacionar_pdf_xml');
 
             $router->group(['prefix' => 'importacion'], function () use ($router) {
                 $router->post('', 'VentaController@venta_venta_importacion');
