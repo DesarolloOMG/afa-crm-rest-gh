@@ -38,50 +38,48 @@ class InventarioService
         $response->error = 0;
         $response->message = '';
 
-        // Iniciamos una transacción para asegurar la atomicidad de las operaciones.
+        // 1. Buscamos el documento por su ID.
+        $documento = DB::table('documento')->where('id', $idDocumento)->first();
+        if (!$documento) {
+            $response->code = 404;
+            $response->error = 1;
+            $response->message = 'Documento no encontrado.';
+            $response->mensaje = 'Documento no encontrado.';
+            return $response;
+        }
+
+        // 2. Obtenemos el tipo de documento para determinar la operación.
+        $docTipo = DB::table('documento_tipo')->where('id', $documento->id_tipo)->first();
+        if (!$docTipo) {
+            $response->code = 404;
+            $response->error = 1;
+            $response->message = 'Tipo de documento no encontrado.';
+            $response->mensaje = 'Tipo de documento no encontrado.';
+            return $response;
+        }
+
+        $esta_afectando = DB::table('modelo_kardex')->where('id_documento', $idDocumento)->first();
+
+        if($esta_afectando && $docTipo->id == 2) {
+            $response->code = 200;
+            $response->error = 0;
+            $response->message = 'Este documento ya se encuentra afectando el inventario.';
+            $response->mensaje = 'Este documento ya se encuentra afectando el inventario.';
+            return $response;
+        }
+
+        // 3. Obtenemos los movimientos asociados al documento.
+        $movimientos = DB::table('movimiento')->where('id_documento', $idDocumento)->get();
+        if ($movimientos->isEmpty()) {
+            $response->code = 200;
+            $response->error = 0;
+            $response->message = 'No hay movimientos para este documento.';
+            $response->mensaje = 'No hay movimientos para este documento.';
+            return $response;
+        }
+
         DB::beginTransaction();
         try {
-            $esta_afectando = DB::table('modelo_kardex')->where('id_documento', $idDocumento)->first();
-
-            if($esta_afectando) {
-                $response->code = 200;
-                $response->error = 0;
-                $response->message = 'Este documento ya se encuentra afectando el inventario.';
-                $response->mensaje = 'Este documento ya se encuentra afectando el inventario.';
-                return $response;
-            }
-
-            // 1. Buscamos el documento por su ID.
-            $documento = DB::table('documento')->where('id', $idDocumento)->first();
-            if (!$documento) {
-                $response->code = 404;
-                $response->error = 1;
-                $response->message = 'Documento no encontrado.';
-                $response->mensaje = 'Documento no encontrado.';
-                return $response;
-            }
-
-            // 2. Obtenemos el tipo de documento para determinar la operación.
-            $docTipo = DB::table('documento_tipo')->where('id', $documento->id_tipo)->first();
-            if (!$docTipo) {
-                $response->code = 404;
-                $response->error = 1;
-                $response->message = 'Tipo de documento no encontrado.';
-                $response->mensaje = 'Tipo de documento no encontrado.';
-                return $response;
-            }
-
-            // 3. Obtenemos los movimientos asociados al documento.
-            $movimientos = DB::table('movimiento')->where('id_documento', $idDocumento)->get();
-            if ($movimientos->isEmpty()) {
-                DB::commit();
-                $response->code = 200;
-                $response->error = 0;
-                $response->message = 'No hay movimientos para este documento.';
-                $response->mensaje = 'No hay movimientos para este documento.';
-                return $response;
-            }
-
             // 4. Procesamos cada movimiento del documento.
             foreach ($movimientos as $mov) {
                 $se_agrego_costo = false;
