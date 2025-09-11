@@ -806,7 +806,7 @@ class DeveloperController extends Controller
 
                 $actual = (int) DB::table('modelo_existencias')
                     ->where('id_modelo', $modelo->id)
-                    ->where('id_almacen', $eaId)   // ojo: en tu esquema me.id_almacen = empresa_almacen.id
+                    ->where('id_almacen', $eaId)
                     ->value('stock');
 
                 if ($actual !== $nuevo) {
@@ -814,7 +814,7 @@ class DeveloperController extends Controller
                         'id_modelo' => $modelo->id,
                         'id_usuario' => $auth->id,
                         'tipo_elegido' => 'Calculado',
-                        'titulo' => "Recalculo de costo del sku: {$modelo->sku}",
+                        'titulo' => "Recalculo de costo del sku: {$sku}",
                         'stock_anterior' => $actual,
                         'stock_nuevo_calculado' => $nuevo,
                         'fecha' => Carbon::now()
