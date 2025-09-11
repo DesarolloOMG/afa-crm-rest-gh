@@ -1162,6 +1162,10 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     $router->group(['prefix' => 'developer'], function () use ($router) {
         $router->post('recalculaCosto', 'DeveloperController@recalcularCosto');
         $router->post('aplicarCosto', 'DeveloperController@aplicarCosto');
+        $router->post('recalcularInventario', 'DeveloperController@getInventarioPorAlmacen');
+        $router->post('getDocumentosPendientes',  'DeveloperController@getDocumentosPendientes');
+        $router->post('aplicarPendientes',  'DeveloperController@aplicarPendientes');
+        $router->post('developer/afectarInventario', 'DeveloperController@afectarInventario');
     });
 
     $router->group(['prefix' => 'print'], function () use ($router) {

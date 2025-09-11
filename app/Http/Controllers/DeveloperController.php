@@ -11,7 +11,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use MP;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use stdClass;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DeveloperController extends Controller
 {
@@ -512,6 +519,337 @@ class DeveloperController extends Controller
                 'code' => 500,
                 'message' => "Codigo no encontrado."
             ]);
+        }
+    }
+
+    /**
+     * Devuelve:
+     *  - inventario_original: { almacen, stock } desde sp_calcularExistenciaGeneral (solo columna stock)
+     *  - inventario_nuevo: { almacen, stock_movimientos, pendientes_fase3, stock_recalculado }
+     */
+    public function getInventarioPorAlmacen(Request $request)
+    {
+        set_time_limit(0);
+
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku === '') {
+            return response()->json(['code' => 422, 'message' => 'SKU requerido'], 422);
+        }
+
+        // 0) Localizar el modelo por SKU
+        $modelo = DB::table('modelo')->select('id', 'descripcion')->where('sku', $sku)->first();
+        if (!$modelo) {
+            return response()->json(['code' => 404, 'message' => 'Código no encontrado.'], 404);
+        }
+
+        // 1) INVENTARIO ORIGINAL (del SP de existencias): usamos SOLO 'almacen' y 'stock'
+        //    firma: sp_calcularExistenciaGeneral(criterio, id_almacen=0, con_existencia=0)
+        $origRows = DB::select('CALL sp_calcularExistenciaGeneral(?, ?, ?)', [$sku, 0, 0]);
+
+        // Agrupar por nombre de almacén sumando 'stock' (por si el SP devuelve varias filas del mismo almacén)
+        $mapOriginal = []; // 'ALMACEN' => stock
+        foreach ($origRows as $r) {
+            $almacen = (string) ($r->almacen ?? 'SIN NOMBRE');
+            $stock   = (float)  ($r->stock   ?? 0);
+            if (!isset($mapOriginal[$almacen])) $mapOriginal[$almacen] = 0.0;
+            $mapOriginal[$almacen] += $stock;
+        }
+
+        // Pasar a arreglo ordenado
+        $inventarioOriginal = [];
+        foreach ($mapOriginal as $almacen => $stock) {
+            $inventarioOriginal[] = [
+                'almacen' => $almacen,
+                'stock'   => (float) $stock,
+            ];
+        }
+
+        // 2) INVENTARIO NUEVO (del SP con pendientes fase 3 restados)
+        //    firma: sp_inventario_modelo_por_almacen(id_modelo)
+        $nuevoRows = DB::select('CALL sp_inventario_modelo_por_almacen(?)', [$modelo->id]);
+
+        $inventarioNuevo = array_map(function ($r) {
+            return [
+                // Si necesitas los IDs, ya vienen en el SP: id_empresa_almacen / id_almacen
+                'almacen'             => (string)($r->almacen ?? 'SIN NOMBRE'),
+                'stock_movimientos'   => (float) ($r->stock_movimientos ?? 0),
+                'pendientes_fase3'    => (float) ($r->pendientes_fase3    ?? 0),
+                'stock_recalculado'   => (float) ($r->stock_recalculado   ?? 0),
+            ];
+        }, $nuevoRows);
+
+        return response()->json([
+            'code'               => 200,
+            'message'            => 'OK',
+            'sku'                => $sku,
+            'producto'           => $modelo->descripcion,
+            'inventario_original'=> $inventarioOriginal,
+            'inventario_nuevo'   => $inventarioNuevo,
+        ]);
+    }
+
+    /**
+     * Descarga un Excel (.xlsx) con TODAS las columnas que regrese
+     * el SP sp_doc_fase3_pendientes_por_modelo (solo docs con series en FASE 3).
+     * Parámetro: sku (GET/POST)
+     */
+    public function getDocumentosPendientes(Request $request)
+    {
+        set_time_limit(0);
+        ini_set('memory_limit', '512M');
+
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku === '') {
+            return response()->json(['code' => 422, 'message' => 'SKU requerido'], 422);
+        }
+
+        // SP: pendientes fase 3 con series (tu SP ya filtra esto)
+        $rows = DB::select('CALL sp_doc_fase3_pendientes_por_modelo(?)', [$sku]);
+
+        // Construimos el Excel en memoria
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Pendientes Fase 3');
+
+        // Si no hay filas, devolvemos hoja con mensaje
+        if (empty($rows)) {
+            $sheet->setCellValue('A1', 'Sin pendientes con series para este SKU.');
+            $sheet->getStyle('A1')->getFont()->setBold(true);
+            $filename = 'pendientes_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $sku) . '_' . date('Ymd_His') . '.xlsx';
+
+            return new StreamedResponse(function () use ($spreadsheet) {
+                $writer = new Xlsx($spreadsheet);
+                $spreadsheet->getCalculationEngine()->disableCalculationCache();
+                $writer->save('php://output');
+                $spreadsheet->disconnectWorksheets();
+                unset($spreadsheet);
+            }, 200, [
+                'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+                'Cache-Control'       => 'max-age=0, no-store, no-cache, must-revalidate',
+                'Pragma'              => 'public',
+            ]);
+        }
+
+        // Encabezados dinámicos
+        $headers = array_keys((array) $rows[0]);
+
+        // Escribir encabezados con estilo
+        $colIndex = 1;
+        foreach ($headers as $h) {
+            $sheet->setCellValueByColumnAndRow($colIndex, 1, strtoupper($h));
+            $sheet->getStyleByColumnAndRow($colIndex, 1)->getFont()->setBold(true);
+            $sheet->getStyleByColumnAndRow($colIndex, 1)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyleByColumnAndRow($colIndex, 1)->getFill()
+                ->setFillType(Fill::FILL_SOLID)
+                ->getStartColor()->setRGB('E6F4F1');
+            $colIndex++;
+        }
+
+        // Columnas que deben ir SIEMPRE como TEXTO (sin notación científica)
+        $textCols = ['sku', 'series', 'serie', 'factura_folio']; // agrega/quita según tu SP
+
+        // Escribir filas
+        $rowIndex = 1;
+        foreach ($rows as $r) {
+            $rowIndex++;
+            $colIndex = 1;
+
+            foreach ($headers as $h) {
+                $key = strtolower($h);
+                $val = isset($r->$h) ? $r->$h : null;
+
+                if (in_array($key, $textCols, true)) {
+                    // Texto explícito + formato '@' para evitar notación científica
+                    $sheet->setCellValueExplicitByColumnAndRow(
+                        $colIndex,
+                        $rowIndex,
+                        (string) $val,
+                        DataType::TYPE_STRING
+                    );
+                    $sheet->getStyleByColumnAndRow($colIndex, $rowIndex)
+                        ->getNumberFormat()->setFormatCode('@');
+                } else {
+                    // Numérico si aplica; si no, texto
+                    if (is_numeric($val) && $val !== '' && $val !== null) {
+                        $sheet->setCellValueByColumnAndRow($colIndex, $rowIndex, $val + 0);
+                    } else {
+                        $sheet->setCellValueExplicitByColumnAndRow(
+                            $colIndex,
+                            $rowIndex,
+                            (string) $val,
+                            DataType::TYPE_STRING
+                        );
+                    }
+                }
+
+                $colIndex++;
+            }
+        }
+
+        // Auto-filtro, freeze y auto-size
+        $lastCol = Coordinate::stringFromColumnIndex(count($headers));
+        $sheet->setAutoFilter("A1:{$lastCol}{$rowIndex}");
+        $sheet->freezePane('A2');
+        for ($c = 1; $c <= count($headers); $c++) {
+            $sheet->getColumnDimensionByColumn($c)->setAutoSize(true);
+        }
+
+        // Descargar
+        $filename = 'pendientes_' . preg_replace('/[^A-Za-z0-9_\-]/', '_', $sku) . '_' . date('Ymd_His') . '.xlsx';
+
+        return new StreamedResponse(function () use ($spreadsheet) {
+            $writer = new Xlsx($spreadsheet);
+            $spreadsheet->getCalculationEngine()->disableCalculationCache();
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+        }, 200, [
+            'Content-Type'        => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            'Cache-Control'       => 'max-age=0, no-store, no-cache, must-revalidate',
+            'Pragma'              => 'public',
+        ]);
+    }
+
+
+    public function aplicarPendientes(Request $request)
+    {
+        set_time_limit(0);
+
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku === '') {
+            return response()->json(['code' => 422, 'message' => 'SKU requerido'], 422);
+        }
+
+        // Documentos fase 3 con series (pendientes)
+        $rows = DB::select('CALL sp_doc_fase3_pendientes_por_modelo(?)', [$sku]);
+
+        // Deduplicar id_documento
+        $docIds = [];
+        foreach ($rows as $r) {
+            $docIds[(int)$r->id_documento] = true;
+        }
+        $docIds = array_keys($docIds);
+
+        $resultados = [];
+
+        foreach ($docIds as $docId) {
+            $res = [
+                'id_documento' => $docId,
+                'aplicado'     => false,
+                'omitido'      => false,
+                'error'        => null,
+            ];
+
+            try {
+                DB::beginTransaction();
+
+                // Doble verificación para evitar doble aplicación en carreras
+                $yaAplicado = DB::table('modelo_kardex')->where('id_documento', $docId)->exists();
+                if ($yaAplicado) {
+                    $res['omitido'] = true;
+                    DB::commit();
+                    $resultados[] = $res;
+                    continue;
+                }
+
+                // Llama tu lógica de aplicación (ajusta la firma si necesitas más datos)
+                $aplicar = InventarioService::aplicarMovimiento($docId);
+
+                if ($aplicar->error) {
+                    throw new \Exception($aplicar['message'] ?? 'Error al aplicar movimiento.');
+                }
+                $res['aplicado'] = true;
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+                $res['error'] = $e->getMessage();
+            }
+
+            $resultados[] = $res;
+        }
+
+        return response()->json([
+            'code'        => 200,
+            'message'     => 'Proceso finalizado.',
+            'aplicaciones'=> $resultados,
+        ]);
+    }
+
+    public function afectarInventario(Request $request)
+    {
+        set_time_limit(0);
+
+        $auth = json_decode($request->auth);
+        $sku = trim((string) $request->input('sku', ''));
+        if ($sku === '') {
+            return response()->json(['code' => 422, 'message' => 'SKU requerido'], 422);
+        }
+
+        $modelo = DB::table('modelo')->select('id')->where('sku', $sku)->first();
+        if (!$modelo) {
+            return response()->json(['code' => 404, 'message' => 'Modelo no encontrado'], 404);
+        }
+
+        // Recalcular para obtener stock_recalculado por EA
+        $rows = DB::select('CALL sp_inventario_modelo_por_almacen(?)', [$modelo->id]);
+
+        $cambios = [];
+        DB::beginTransaction();
+        try {
+            foreach ($rows as $r) {
+                $eaId   = (int)($r->id_empresa_almacen ?? 0);
+                $nuevo  = (int)($r->stock_recalculado   ?? 0);
+
+                if ($eaId <= 0) { continue; }
+
+                $actual = (int) DB::table('modelo_existencias')
+                    ->where('id_modelo', $modelo->id)
+                    ->where('id_almacen', $eaId)   // ojo: en tu esquema me.id_almacen = empresa_almacen.id
+                    ->value('stock');
+
+                if ($actual !== $nuevo) {
+                    DB::table('bitacora_recalcular_productos')->insert([
+                        'id_modelo' => $modelo->id,
+                        'id_usuario' => $auth->id,
+                        'tipo_elegido' => 'Calculado',
+                        'titulo' => "Recalculo de costo del sku: {$modelo->sku}",
+                        'stock_anterior' => $actual,
+                        'stock_nuevo_calculado' => $nuevo,
+                        'fecha' => Carbon::now()
+                    ]);
+
+                    DB::table('modelo_existencias')
+                        ->where('id_modelo', $modelo->id)
+                        ->where('id_almacen', $eaId)
+                        ->update([
+                            'stock'      => $nuevo,
+                            'updated_at' => Carbon::now(),
+                        ]);
+
+                    $cambios[] = [
+                        'id_empresa_almacen' => $eaId,
+                        'almacen'            => (string)($r->almacen ?? ''),
+                        'antes'              => $actual,
+                        'despues'            => $nuevo,
+                    ];
+                }
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'code'    => 200,
+                'message' => 'Inventario actualizado.',
+                'cambios' => $cambios,
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return response()->json([
+                'code'    => 500,
+                'message' => 'Error al actualizar inventario: '.$e->getMessage(),
+            ], 500);
         }
     }
 }
