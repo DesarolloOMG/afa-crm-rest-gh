@@ -3019,8 +3019,7 @@ class GeneralController extends Controller
                                 INNER JOIN documento_fase ON documento.id_fase = documento_fase.id
                                 INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                                 INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                INNER JOIN documento_entidad_re ON documento.id = documento_entidad_re.id_documento
-                                INNER JOIN documento_entidad ON documento_entidad_re.id_entidad = documento_entidad.id
+                                INNER JOIN documento_entidad ON documento.id_entidad = documento_entidad.id
                                 INNER JOIN movimiento ON documento.id = movimiento.id_documento
                                 INNER JOIN modelo ON movimiento.id_modelo = modelo.id
                                 WHERE documento.status = 1
@@ -3132,7 +3131,6 @@ class GeneralController extends Controller
                     "documento.id AS odc",
                     "documento.observacion AS requisiciones",
                     "documento.arrived_at",
-                    "empresa.bd"
                 )
                 ->get()
                 ->toArray();
