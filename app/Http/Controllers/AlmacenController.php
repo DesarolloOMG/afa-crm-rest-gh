@@ -34,6 +34,7 @@ use Httpful\Mime;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rules\In;
 use Mailgun\Mailgun;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -1959,7 +1960,6 @@ class AlmacenController extends Controller
                                     INNER JOIN modelo ON movimiento.id_modelo = modelo.id
                                     WHERE movimiento.id_documento = " . $documento->id);
 
-            /** @noinspection PhpUnusedLocalVariableInspection */
             foreach ($productos as $k => $producto) {
                 if ($producto->serie) {
                     $series = DB::select("SELECT
@@ -2042,7 +2042,14 @@ class AlmacenController extends Controller
             $almacen = DB::table('empresa_almacen')->where('id', $info_documento->id_almacen_principal_empresa)->first();
 
             if ($tipo_documento == 4) {
-                $response = DocumentoService::crearMovimiento($data->document);
+                $response = InventarioService::aplicarMovimiento($info_documento->id);
+
+                if ($response->error) {
+                    return response()->json([
+                        'code' => 500,
+                        'message' => $response->mensaje,
+                    ]);
+                }
 
                 $series = DB::select("SELECT
                                     producto.id
@@ -2058,21 +2065,22 @@ class AlmacenController extends Controller
                 }
             } else {
                 if ($tipo_documento == 5) {
-                    $response = DocumentoService::afectarMovimiento($data->document);
+                    $response = InventarioService::aplicarMovimiento($info_documento->id);
 
                     if ($response->error) {
                         return response()->json([
-                            'message' => $response->mensaje . " " . self::logVariableLocation()
-                        ], 500);
+                            'code' => 500,
+                            'message' => $response->mensaje,
+                        ]);
                     }
                 }
 
-                $series = DB::select("SELECT
-                                    producto.id
-                                FROM movimiento
-                                INNER JOIN movimiento_producto ON movimiento.id = movimiento_producto.id_movimiento
-                                INNER JOIN producto ON movimiento_producto.id_producto = producto.id
-                                WHERE movimiento.id_documento = " . $data->document);
+                $series = DB::table('movimiento')
+                    ->join('movimiento_producto', 'movimiento.id', '=', 'movimiento_producto.id_movimiento')
+                    ->join('producto', 'movimiento_producto.id_producto', '=', 'producto.id')
+                    ->where('movimiento.id_documento', $info_documento->id)
+                    ->select('producto.id')
+                    ->get();
 
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
@@ -2082,7 +2090,7 @@ class AlmacenController extends Controller
                 }
             }
 
-            DB::table('documento')->where('id', $data->document)->update([
+            DB::table('documento')->where('id', $info_documento->id)->update([
                 'autorizado' => 1,
                 'autorizado_by' => $auth->id
             ]);
