@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
+use Carbon\Carbon;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -363,5 +364,154 @@ class DeveloperController extends Controller
             'aplicados_count' => count($aplicados),
             'errors_count' => count($errores),
         ], !empty($errores) ? 207 : 200);
+    }
+
+    public function recalcularCosto(Request $request)
+    {
+        set_time_limit(0);
+
+        $sku = $request->input('sku');
+
+        $modelo = DB::table('modelo')->where('sku', $sku)->first();
+
+        if (!empty($modelo)) {
+            $documentos = DB::select('CALL sp_historial_modelo(?)', [$modelo->id]);
+
+            $stock_total = 0;
+            $costo_promedio = 0;
+            $costo_provisional = 0;
+
+            foreach ($documentos as $venta) {
+                if($venta->id_tipo == 5) {
+                    continue;
+                }
+
+                if($venta->id_tipo == 3 && $costo_promedio == 0) {
+                    $costo_promedio = $venta->precio * $venta->tipo_cambio;
+                }
+
+                if($venta->id_tipo == 3 && $costo_provisional == 0) {
+                    $costo_provisional = $venta->precio * $venta->tipo_cambio;
+                }
+
+                if ($venta->id_tipo == 0) {
+                    $tiene_compra = DB::table('documento_recepcion')
+                        ->where('id_movimiento', $venta->id_movimiento)
+                        ->first();
+
+                    if (!empty($tiene_compra) && $tiene_compra->documento_erp_compra !== 'N/A') {
+                        $docCompraId = (int) $tiene_compra->documento_erp_compra;
+
+                        // Buscar la compra dentro del mismo arreglo $documentos
+                        foreach ($documentos as $k => $docCompra) {
+                            if ((int) $docCompra->id_documento === $docCompraId) {
+
+                                $montoCompra = (float) $docCompra->cantidad * (float) $docCompra->precio * (float) $docCompra->tipo_cambio;
+
+                                if ($stock_total == 0 || $costo_promedio == 0) {
+                                    // si no hay stock previo, el costo promedio pasa a ser el de esta compra
+                                    $costo_promedio = (float) $docCompra->precio * (float) $docCompra->tipo_cambio;
+                                } else {
+                                    // promedio ponderado
+                                    $montoTotal = $stock_total * $costo_promedio;
+                                    $costo_promedio = ($montoTotal + $montoCompra) / ($stock_total + (float) $docCompra->cantidad);
+                                }
+                                // === Quitar la compra del arreglo para no reprocesarla después ===
+                                unset($documentos[$k]);
+
+                                break;
+                            }
+                        }
+                    } else {
+                        $montoCompraProvisional = $venta->cantidad * $venta->precio * $venta->tipo_cambio;
+
+                        if ($stock_total <= 0) {
+                            $costo_provisional = $venta->precio * $venta->tipo_cambio;
+                        } else {
+                            $montoTotalProvisional = $stock_total * $costo_provisional;
+                            $costo_provisional = ($montoTotalProvisional + $montoCompraProvisional) / ($stock_total + $venta->cantidad);
+                        }
+                    }
+                }
+
+                if($venta->sumaInventario == 1) {
+                    $stock_total = $stock_total + $venta->cantidad;
+                }
+
+                if($venta->restaInventario == 1) {
+                    $stock_total = $stock_total - $venta->cantidad;
+                }
+            }
+
+            return response()->json([
+                'code' => 200,
+                'message' => "Costo calculado correctamente.",
+                'producto' => $modelo->descripcion,
+                "costo" => $costo_promedio,
+                'costo_provisional' => $costo_provisional,
+                'stock_total' => $stock_total,
+            ]);
+        } else {
+            return response()->json([
+                'code' => 500,
+                'message' => "Codigo no encontrado."
+            ]);
+        }
+    }
+
+    public function aplicarCosto(Request $request) {
+        $costo = $request->input('costo');
+        $sku = $request->input('sku');
+        $tipo = $request->input('tipo');
+        $auth = json_decode($request->auth);
+
+        $modelo = DB::table('modelo')->where('sku', $sku)->first();
+
+        if (!empty($modelo)) {
+            $modelo_costo = DB::table('modelo_costo')->where('id_modelo', $modelo->id)->first();
+            if (empty($modelo_costo)) {
+                DB::table('bitacora_recalcular_productos')->insert([
+                    'id_modelo' => $modelo->id,
+                    'id_usuario' => $auth->id,
+                    'tipo_elegido' => $tipo,
+                    'titulo' => "Recalculo de costo del sku: {$modelo->sku}",
+                    'costo_anterior' => 0,
+                    'costo_nuevo_calculado' => $costo,
+                    'fecha' => Carbon::now()
+                ]);
+
+                DB::table('modelo_costo')->insert([
+                    'id_modelo' => $modelo->id,
+                    'costo_inicial' => $costo,
+                    'costo_promedio' => $costo,
+                    'ultimo_costo' => $costo
+                ]);
+            } else {
+                DB::table('bitacora_recalcular_productos')->insert([
+                    'id_modelo' => $modelo->id,
+                    'id_usuario' => $auth->id,
+                    'tipo_elegido' => $tipo,
+                    'titulo' => "Recalculo de costo del sku: {$modelo->sku}",
+                    'costo_anterior' => $modelo_costo->costo_promedio,
+                    'costo_nuevo_calculado' => $costo,
+                    'fecha' => Carbon::now()
+                ]);
+
+                DB::table('modelo_costo')->where('id_modelo', $modelo->id)->update([
+                    'costo_promedio' => $costo,
+                ]);
+            }
+
+
+            return response()->json([
+                'code' => 200,
+                'message' => "Costo aplicado correctamente."
+            ]);
+        } else {
+            return response()->json([
+                'code' => 500,
+                'message' => "Codigo no encontrado."
+            ]);
+        }
     }
 }

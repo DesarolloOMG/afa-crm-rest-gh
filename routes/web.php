@@ -719,7 +719,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->post('crear', ['uses' => 'EnsambleController@crear']);
     });
 
-
     # Menú almacén
     $router->group(['prefix' => 'almacen'], function () use ($router) {
         $router->group(['prefix' => 'picking'], function () use ($router) {
@@ -1161,7 +1160,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'developer'], function () use ($router) {
-        $router->get('test', 'DeveloperController@test');
+        $router->post('recalculaCosto', 'DeveloperController@recalcularCosto');
+        $router->post('aplicarCosto', 'DeveloperController@aplicarCosto');
     });
 
     $router->group(['prefix' => 'print'], function () use ($router) {

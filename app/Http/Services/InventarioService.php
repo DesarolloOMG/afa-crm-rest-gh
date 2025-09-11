@@ -156,7 +156,7 @@ class InventarioService
 
                 // Se calcula la cantidad, el precio unitario (considerando el tipo de cambio) y el total del movimiento.
                 $cantidad = $mov->cantidad;
-                $precioUnitario = $mov->precio;
+                $precioUnitario = $mov->precio * $documento->tipo_cambio ?? 1;
                 $totalMovimiento = $cantidad * $precioUnitario;
 
                 // Inicializamos el nuevo stock con el valor actual.
