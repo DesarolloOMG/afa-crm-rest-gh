@@ -475,6 +475,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('nota', 'VentaController@venta_venta_nota');
 
             $router->post('relacionar-pdf-xml', 'VentaController@venta_venta_relacionar_pdf_xml');
+            $router->get('descargar-pdf-xml/{type}/{document}', 'VentaController@venta_venta_descargar_pdf_xml');
 
             $router->group(['prefix' => 'importacion'], function () use ($router) {
                 $router->post('', 'VentaController@venta_venta_importacion');

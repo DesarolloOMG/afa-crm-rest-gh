@@ -11,7 +11,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Events\PusherEvent;
 use App\Http\Services\AmazonService;
 use App\Http\Services\BitacoraService;
 use App\Http\Services\ClaroshopServiceV2;
@@ -52,6 +51,12 @@ use Throwable;
 
 class VentaController extends Controller
 {
+    protected $ventaVentasService;
+
+    public function __construct(VentaVentasService $ventaVentasService)
+    {
+        $this->ventaVentasService = $ventaVentasService;
+    }
     /* Venta > Venta > Crear */
     /**
      * @throws Throwable
@@ -304,8 +309,6 @@ class VentaController extends Controller
     }
 
     // OPT
-
-    /** @noinspection PhpUndefinedVariableInspection */
 
     public static function logVariableLocation(): string
     {
@@ -1137,7 +1140,9 @@ class VentaController extends Controller
 
             $skus = collect($data->documento->productos)
                 ->pluck('codigo')
-                ->map(function($sku) { return trim((string)$sku); })
+                ->map(function ($sku) {
+                    return trim((string)$sku);
+                })
                 ->toArray();
 
             $modelos = DB::table('modelo')
@@ -1194,7 +1199,7 @@ class VentaController extends Controller
                 $nuevoTotal += $movimiento->cantidad * $movimiento->precio;
             }
 
-            if($nuevoTotal != $documento->total){
+            if ($nuevoTotal != $documento->total) {
                 DB::table('documento')->where(['id' => $data->documento->documento])->update(['total' => $nuevoTotal, 'saldo' => $nuevoTotal]);
             }
 
@@ -1268,7 +1273,7 @@ class VentaController extends Controller
                 'code' => 200,
                 'message' => "Venta editada correctamente."
             ]);
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             DB::rollBack();
             return response()->json([
                 'code' => 500,
@@ -1688,7 +1693,6 @@ class VentaController extends Controller
         $pdf->Ln(5);
         $pdf->Cell(20, 10, 'Nombre: ');
         $pdf->SetFont('Arial', '', 10);
-        /** @noinspection PhpComposerExtensionStubsInspection */
         $pdf->Cell(80, 10, iconv('UTF-8', 'windows-1252', mb_strtoupper($cliente->cliente, 'UTF-8')));
 
         $pdf->SetFont('Arial', 'B', 10);
@@ -3152,6 +3156,9 @@ class VentaController extends Controller
         ]);
     }
 
+    /**
+     * @throws \PhpOffice\PhpSpreadsheet\Writer\Exception
+     */
     public function venta_mercadolibre_publicaciones_busqueda(Request $request): JsonResponse
     {
         set_time_limit(0);
@@ -3204,8 +3211,8 @@ class VentaController extends Controller
 
         // Armamos resultado
         foreach ($publicaciones as $publicacion) {
-            $publicacion->productos   = isset($productosCounts[$publicacion->id]) ? $productosCounts[$publicacion->id] : 0;
-            $publicacion->skus        = $productosSkus[$publicacion->id] ?? '';
+            $publicacion->productos = isset($productosCounts[$publicacion->id]) ? $productosCounts[$publicacion->id] : 0;
+            $publicacion->skus = $productosSkus[$publicacion->id] ?? '';
             $publicacion->almacendrop = $almacenes[$publicacion->id_almacen_empresa] ?? '';
             $publicacion->almacenfull = $almacenes[$publicacion->id_almacen_empresa_fulfillment] ?? '';
         }
@@ -3220,23 +3227,23 @@ class VentaController extends Controller
         $headers = ['ID', 'Publicación', 'Total', 'SKUs', 'Productos'];
         $col = 'A';
         foreach ($headers as $h) {
-            $sheet->setCellValue($col.'1', $h);
+            $sheet->setCellValue($col . '1', $h);
             $col++;
         }
 
         // Filas
         $row = 2;
         foreach ($publicaciones as $p) {
-            $sheet->setCellValue("A{$row}", $p->publicacion_id ?? $p->id);
-            $sheet->setCellValue("B{$row}", $p->publicacion ?? '');
-            $sheet->setCellValue("C{$row}", $p->total ?? 0);
-            $sheet->setCellValue("D{$row}", $p->skus ?: 'SIN PRODUCTOS');
-            $sheet->setCellValue("E{$row}", $p->productos > 0 ? 'Sí' : 'No');
+            $sheet->setCellValue("A$row", $p->publicacion_id ?? $p->id);
+            $sheet->setCellValue("B$row", $p->publicacion ?? '');
+            $sheet->setCellValue("C$row", $p->total ?? 0);
+            $sheet->setCellValue("D$row", $p->skus ?: 'SIN PRODUCTOS');
+            $sheet->setCellValue("E$row", $p->productos > 0 ? 'Sí' : 'No');
             $row++;
         }
 
         // Autosize columnas
-        foreach (['A','B','C','D','E'] as $col) {
+        foreach (['A', 'B', 'C', 'D', 'E'] as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
 
@@ -3247,8 +3254,8 @@ class VentaController extends Controller
         $excelBinary = ob_get_clean();
 
         $filePayload = [
-            'filename' => 'publicaciones_'.Carbon::now()->format('Ymd_His').'.xlsx',
-            'data'     => base64_encode($excelBinary),
+            'filename' => 'publicaciones_' . Carbon::now()->format('Ymd_His') . '.xlsx',
+            'data' => base64_encode($excelBinary),
         ];
 
         // ----------------------------
@@ -3547,7 +3554,7 @@ class VentaController extends Controller
             ->where("documento.id_tipo", 2)
             ->where("documento.status", 1)
             ->where("documento.id_marketplace_area", $data->marketplace)
-            ->when(!empty($ids_fase), function($query) use ($ids_fase) {
+            ->when(!empty($ids_fase), function ($query) use ($ids_fase) {
                 $query->whereNotIn("documento.id", $ids_fase);
             })
             ->groupBy(
@@ -3593,8 +3600,6 @@ class VentaController extends Controller
         ]);
     }
 
-
-    /** @noinspection PhpUndefinedVariableInspection */
 
     public function venta_mercadolibre_valida_venta(Request $request): JsonResponse
     {
@@ -3833,7 +3838,7 @@ class VentaController extends Controller
                 if (empty($existe_en_inventario)) {
                     $aplicar = InventarioService::aplicarMovimiento($venta->id);
 
-                    if($aplicar->error) {
+                    if ($aplicar->error) {
                         BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
                         return response()->json([
                             'code' => 500,
@@ -5511,11 +5516,17 @@ class VentaController extends Controller
         return $response;
     }
 
-    public function venta_venta_relacionar_pdf_xml(Request $request)
+    public function venta_venta_relacionar_pdf_xml(Request $request): JsonResponse
     {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        return VentaVentasService::relacionar_pdf_xml($data, $auth);
+        return $this->ventaVentasService->relacionar_pdf_xml($data, $auth);
+    }
+
+    public function venta_venta_descargar_pdf_xml($tipo, $documento): JsonResponse
+    {
+
+        return $this->ventaVentasService->descargar_pdf_xml($tipo, $documento);
     }
 }

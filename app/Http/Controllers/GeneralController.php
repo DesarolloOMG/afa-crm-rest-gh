@@ -1140,9 +1140,8 @@ class GeneralController extends Controller
         $data = json_decode($request->input("data"));
         $criterio = trim(str_replace("%20", " ", $data->criterio));
 
-        if (isset($data->criterio) && !is_numeric($data->criterio)) {
-            $data_arreglo = explode("&", $data->criterio);
-
+        if (!is_numeric($criterio)) {
+            $data_arreglo = explode("&", $criterio);
             if (count($data_arreglo) > 1 && is_numeric($data_arreglo[1])) {
                 return response()->json([
                     'code' => 200,
@@ -1169,12 +1168,21 @@ class GeneralController extends Controller
             ->leftJoin('documento_guia', 'documento.id', '=', 'documento_guia.id_documento')
             ->where('documento.id_tipo', 2);
 
-        if (in_array($data->campo, ["rfc", "razon_social", "correo"])) {
-            $query->where('documento_entidad.' . $data->campo, 'LIKE', '%' . $criterio . '%');
-        } elseif ($data->campo == "guia") {
-            $query->where('documento_guia.guia', 'LIKE', '%' . $criterio . '%');
-        } else {
-            $query->where('documento.' . $data->campo, 'LIKE', '%' . $criterio . '%');
+        switch ($data->campo) {
+            case 'rfc':
+            case 'razon_social':
+            case 'correo':
+                $query->where('documento_entidad.' . $data->campo, 'LIKE', '%' . $criterio . '%');
+                break;
+            case 'guia':
+                $query->where('documento_guia.guia', 'LIKE', '%' . $criterio . '%');
+                break;
+            case 'id':
+                $query->where('documento.id', $criterio);
+                break;
+            default:
+                $query->where('documento.' . $data->campo, 'LIKE', '%' . $criterio . '%');
+                break;
         }
 
         $ventas = $query->select(
@@ -1291,15 +1299,6 @@ class GeneralController extends Controller
             $venta->api = DB::table('marketplace_api')->where('id_marketplace_area', '=', $venta->id_marketplace_area)->first() ?? 0;
             $venta->refacturacion_pendiente = DB::table('refacturacion')->where('id_documento', $venta->id)->whereNotIn('step', ['99'])->first() ? 1 : 0;
 
-            $empresa_externa = DB::table('documento')
-                ->select('empresa.bd', 'empresa.empresa')
-                ->join('marketplace_area_empresa', 'documento.id_marketplace_area', '=', 'marketplace_area_empresa.id_marketplace_area')
-                ->join('empresa', 'marketplace_area_empresa.id_empresa', '=', 'empresa.id')
-                ->where('documento.id', $venta->id)
-                ->first();
-            $venta->empresa_externa = $empresa_externa->bd ?? 0;
-            $venta->empresa_externa_razon = $empresa_externa->empresa ?? 0;
-
             $nota = DB::table('documento_nota_autorizacion')
                 ->select('estado')
                 ->where('id_documento', $venta->id)
@@ -1343,17 +1342,10 @@ class GeneralController extends Controller
                 )
                 ->get();
 
-
-            $venta->usuario_agro = 0;
-            if ($venta->area === "AGRO") {
-                $usuario_agro = DB::table('usuarios_agro')
-                    ->select('usuarios_agro.nombre')
-                    ->join('documento_usuario_agro', 'documento_usuario_agro.id_usuarios_agro', '=', 'usuarios_agro.id')
-                    ->join('documento', 'documento.id', '=', 'documento_usuario_agro.id_documento')
-                    ->where('documento.id', $venta->id)
-                    ->first();
-                $venta->usuario_agro = $usuario_agro->nombre ?? 0;
-            }
+            $venta->archivos_factura = DB::table('documento_factura')
+                ->where('id_documento', $venta->id)
+                ->select('xml', 'pdf')
+                ->first();
         }
 
         return response()->json([
