@@ -1169,6 +1169,10 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'print'], function () use ($router) {
+
+        $router->get('/impresoras', 'PrintController@impresoras');
+
+
         $router->group(['prefix' => 'etiquetas'], function () use ($router) {
             $router->get('/data', 'PrintController@data');
 

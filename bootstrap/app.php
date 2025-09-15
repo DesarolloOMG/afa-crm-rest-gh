@@ -103,6 +103,7 @@ $app->routeMiddleware([
 $app->register(Crabbly\Fpdf\FpdfServiceProvider::class);
 $app->register(App\Providers\EventServiceProvider::class);
 $app->register(Nord\Lumen\Cors\CorsServiceProvider::class);
+$app->register(Illuminate\Queue\QueueServiceProvider::class);
 // $app->register(App\Providers\AppServiceProvider::class);
 // $app->register(App\Providers\AuthServiceProvider::class);
 // $app->register(App\Providers\EventServiceProvider::class);
@@ -135,5 +136,6 @@ $app->configure('twilio');
 $app->configure('keys');
 $app->configure('mailgun');
 $app->configure('cors');
+$app->configure('queue');
 
 return $app;

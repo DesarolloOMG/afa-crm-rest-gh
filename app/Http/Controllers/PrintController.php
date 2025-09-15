@@ -6,6 +6,7 @@ use Exception;
 use Httpful\Request as HttpfulRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
 class PrintController extends Controller
@@ -86,5 +87,11 @@ class PrintController extends Controller
     public function manifiestoSalida($array, Request $request): JsonResponse
     {
         return $this->forwardRequest('POST', "api/manifiesto/salida", $request, $array);
+    }
+
+    public function impresoras(): JsonResponse
+    {
+        $impresoras = DB::table('impresora')->where('status', 1)->where('id', '!=', 0)->select('id', 'nombre', 'tamanio')->get();
+        return response()->json($impresoras);
     }
 }
