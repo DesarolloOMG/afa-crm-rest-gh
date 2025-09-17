@@ -1,9 +1,11 @@
-<?php /** @noinspection PhpComposerExtensionStubsInspection */
+<?php
 
 namespace App\Http\Services;
 
+use Exception;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
+use Httpful\Exception\ConnectionErrorException;
+use Httpful\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -13,9 +15,11 @@ class DropboxService
     protected $clientSecret;
     protected $refreshToken;
     protected $client;
+    protected $vault;
 
     public function __construct()
     {
+        $this->vault = app(RemoteVaultService::class);
         $this->clientId = env('DROPBOX_CLIENT_ID');
         $this->clientSecret = env('DROPBOX_CLIENT_SECRET');
         $this->refreshToken = env('DROPBOX_REFRESH_TOKEN');
@@ -24,9 +28,16 @@ class DropboxService
 
     /**
      * Renueva el access token de Dropbox y lo guarda en DROPBOX_TOKEN del .env
+     * @throws ConnectionErrorException
+     * @throws Exception
      */
     public function refreshAccessToken()
     {
+        if ($token = $this->vault->getValid($this->clientId)) {
+            self::setEnvValue($token);
+            return $token;
+        }
+
         $url = 'https://api.dropbox.com/oauth2/token';
         $body = http_build_query([
             'grant_type' => 'refresh_token',
@@ -35,7 +46,7 @@ class DropboxService
 
         $authorization = base64_encode($this->clientId . ':' . $this->clientSecret);
 
-        $response = \Httpful\Request::post($url)
+        $response = Request::post($url)
             ->addHeader('Authorization', "Basic $authorization")
             ->addHeader('Content-Type', 'application/x-www-form-urlencoded')
             ->body($body)
@@ -44,10 +55,11 @@ class DropboxService
         $data = json_decode($response->raw_body, true);
 
         if (isset($data['access_token'])) {
+            $this->vault->put($this->clientId, $data['access_token']);
             self::setEnvValue($data['access_token']);
             return $data['access_token'];
         }
-        throw new \Exception('No se pudo renovar el access token de Dropbox');
+        throw new Exception('No se pudo renovar el access token de Dropbox');
     }
 
     /**
@@ -59,9 +71,9 @@ class DropboxService
         $env = File::get($envPath);
 
         if (preg_match("/^DROPBOX_TOKEN=.*$/m", $env)) {
-            $env = preg_replace("/^DROPBOX_TOKEN=.*$/m", "DROPBOX_TOKEN={$value}", $env);
+            $env = preg_replace("/^DROPBOX_TOKEN=.*$/m", "DROPBOX_TOKEN=$value", $env);
         } else {
-            $env .= "\nDROPBOX_TOKEN={$value}";
+            $env .= "\nDROPBOX_TOKEN=$value";
         }
 
         File::put($envPath, $env);
@@ -81,7 +93,7 @@ class DropboxService
      * Descarga un archivo en binario desde Dropbox.
      * Devuelve el contenido binario (para enviar al frontend como base64 si se necesita).
      */
-    public function downloadFile($path)
+    public function downloadFile($path): ?string
     {
         $url = 'https://content.dropboxapi.com/2/files/download';
 
@@ -99,7 +111,7 @@ class DropboxService
                 return $response->getBody()->getContents();
             }
             sleep(1);
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Dropbox downloadFile error: '.$e->getMessage());
             sleep(1);
         }
@@ -170,7 +182,7 @@ class DropboxService
                     'dropbox' => $data
                 ];
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Dropbox uploadFile error: ' . $e->getMessage());
             return [
                 'error' => true,
@@ -205,7 +217,7 @@ class DropboxService
                 Log::warning('Dropbox request ('.$url.') status: '.$status.' | response: '.$res);
                 sleep(1);
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             Log::error('Dropbox request error: '.$e->getMessage());
             sleep(1);
         }
