@@ -242,7 +242,7 @@ class DropboxService
         return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 
-    private function ensureValidToken(): void
+    public function ensureValidToken(): void
     {
         try {
             $validToken = $this->vault->getValid($this->clientId);

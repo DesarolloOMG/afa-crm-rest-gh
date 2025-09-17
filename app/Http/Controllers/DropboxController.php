@@ -30,6 +30,8 @@ class DropboxController extends Controller
 
     public function getDropboxToken()
     {
+        $dropbox = new DropboxService();
+        $dropbox->ensureValidToken();
         $token = config('keys.dropbox');
         return response()->json(['token' => $token]);
     }
