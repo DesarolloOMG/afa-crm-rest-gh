@@ -95,6 +95,8 @@ class DropboxService
      */
     public function downloadFile($path): ?string
     {
+        $this->ensureValidToken();
+
         $url = 'https://content.dropboxapi.com/2/files/download';
 
         $headers = [
@@ -134,6 +136,8 @@ class DropboxService
      */
     public function uploadFile($path, $fileContent, $isBase64 = true)
     {
+        $this->ensureValidToken();
+
         $url = 'https://content.dropboxapi.com/2/files/upload';
 
         $headers = [
@@ -197,6 +201,8 @@ class DropboxService
      */
     private function requestDropbox($url, $body = [], $asJson = false)
     {
+        $this->ensureValidToken();
+
         $headers = [
             'Authorization' => 'Bearer ' . config('keys.dropbox'),
             'Content-Type' => 'application/json',
@@ -234,5 +240,19 @@ class DropboxService
         $fin = 'APP'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
         $trace = debug_backtrace()[0];
         return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
+    }
+
+    private function ensureValidToken(): void
+    {
+        try {
+            $validToken = $this->vault->getValid($this->clientId);
+
+            if (!$validToken) {
+                $this->refreshAccessToken();
+            }
+
+        } catch (Exception $e) {
+            $this->refreshAccessToken();
+        }
     }
 }
