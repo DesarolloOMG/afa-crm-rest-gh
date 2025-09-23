@@ -1778,7 +1778,7 @@ class AlmacenController extends Controller
                         }
                     } else {
                         // Para SALIDA, TRASPASO y USO_INTERNO se utiliza la función existente de validación de series
-                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku), );
+                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku), $data->almacen_salida);
                         if ($validacion->error == 1) {
                             DB::rollBack();
                             return response()->json([
@@ -1796,7 +1796,7 @@ class AlmacenController extends Controller
                             if (!$existe_serie) {
                                 return response()->json([
                                     'code'  => 500,
-                                    'message' => "La serie no existe en la Base de Datos."
+                                    'message' => "La serie " . $serie . " no existe en la Base de Datos."
                                 ]);
                             } else {
                                 Producto::where("id", $existe_serie->id)->update([
