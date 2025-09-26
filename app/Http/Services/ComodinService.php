@@ -144,11 +144,23 @@ class ComodinService
         // Inicializa un array para almacenar mensajes de error durante la validación.
         $errores = array();
         $nombre_almacen = "";
+        $id_almacen = 0;
         if($almacen != 0) {
-            $info_almacen = DB::table("almacen")->where("id", $almacen)->first();
+            $empresa_almacen = DB::table("empresa_almacen")->where("id", $almacen)->first();
+            if(!empty($empresa_almacen)) {
+                $id_almacen = $empresa_almacen->id_almacen;
+                $info_almacen = DB::table("almacen")->where("id", $id_almacen)->first();
 
-            if(!empty($info_almacen)) {
-                $nombre_almacen = $info_almacen->almacen;
+                if(!empty($info_almacen)) {
+                    $nombre_almacen = $info_almacen->almacen;
+                }
+            } else {
+                $id_almacen = $almacen;
+                $info_almacen = DB::table("almacen")->where("id", $almacen)->first();
+
+                if(!empty($info_almacen)) {
+                    $nombre_almacen = $info_almacen->almacen;
+                }
             }
         }
 
@@ -199,7 +211,7 @@ class ComodinService
                             array_push($errores, $object->mensaje);
                         } else {
                             if($almacen != 0) {
-                                if($existe_serie->id_almacen != $almacen) {
+                                if($existe_serie->id_almacen != $id_almacen) {
                                     $object->status = 0;
                                     $object->mensaje = "La serie " . $serie . " no pertenece al almacen " . $nombre_almacen;
                                     array_push($errores, "La serie " . $serie . " no pertenece al almacen " . $nombre_almacen);
