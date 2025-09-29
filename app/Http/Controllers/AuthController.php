@@ -1,4 +1,6 @@
-<?php /** @noinspection PhpUndefinedMethodInspection */
+<?php
+
+/** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUnused */
 
 /** @noinspection PhpComposerExtensionStubsInspection */
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Mailgun\Mailgun;
 use Mailgun\Messages\Exceptions\MissingRequiredMIMEParameters;
+use App\Http\Services\DropboxService;
 use stdClass;
 use Throwable;
 
@@ -63,7 +66,6 @@ class AuthController extends Controller
         try {
 
             $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
-
         } catch (Exception $e) {
             UsuarioLoginError::create([
                 "email" => $data->email,
@@ -173,7 +175,7 @@ class AuthController extends Controller
     /**
      * @throws ConnectionErrorException
      */
-    public function usuario_actualizar(Request $request): JsonResponse
+    public function usuario_actualizar(Request $request)
     {
         $data = json_decode($request->input('data'));
         $imagen = "";
@@ -217,68 +219,29 @@ class AuthController extends Controller
 
             $archivo_data = base64_decode(preg_replace('#^data:' . $data->imagen_data[0]->tipo . '/\w+;base64,#i', '', $data->imagen_data[0]->data));
 
-            $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $data->imagen_data[0]->nombre . '" , "mode": "add", "autorename": true}')
-                ->addHeader('Content-Type', 'application/octet-stream')
-                ->body($archivo_data)
-                ->send();
+            $dropboxService = new DropboxService();
+            $response = $dropboxService->uploadFile('/' . $data->imagen_data[0]->nombre, $archivo_data, false);
 
-            $response_data = $response->body;
-
-            if (property_exists($response_data, 'error')) {
+            if (isset($response['error']) && $response['error']) {
+                // Puedes personalizar el código (400, 422, 500, etc)
                 return response()->json([
-                    'message' => "Se actualizó la información pero hubo un error al obtener al subir la imagen a Dropbox, mensaje de error: " . $response_data->error_summary
+                    'code' => 500,
+                    'error' => true,
+                    'message' => "Se actualizó la información pero hubo un error al obtener al subir la imagen a Dropbox, mensaje de error: " . $response['message'],
+                    'dropbox' => $response['dropbox'] ?? null
                 ]);
             }
 
-            $object_data = new stdClass();
-            $object_data->path = "/" . $data->imagen_data[0]->nombre;
+            $created_shared_url = $dropboxService->createOrGetSharedLink($data->imagen_data[0]->nombre);
 
-            $object_data_settings = new stdClass();
-            $object_data_settings->requested_visibility = "public";
-            $object_data->settings = $object_data_settings;
-
-            $get_url = \Httpful\Request::post(config("webservice.dropbox_api") . 'sharing/create_shared_link_with_settings')
-                ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                ->addHeader('Content-Type', 'application/json')
-                ->body(json_encode($object_data))
-                ->send();
-
-            $url_data = $get_url->body;
-
-            if (property_exists($url_data, 'error')) {
-                if ($url_data->error_summary == 'shared_link_already_exists/') {
-                    $object_data = new stdClass();
-                    $object_data->path = "/" . $data->imagen_data[0]->nombre;
-
-                    $get_url = \Httpful\Request::post(config("webservice.dropbox_api") . 'sharing/list_shared_links')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Content-Type', 'application/json')
-                        ->body(json_encode($object_data))
-                        ->send();
-
-                    $url_data = $get_url->body;
-
-                    // Validación robusta aquí
-                    if (isset($url_data->links) && is_array($url_data->links) && count($url_data->links) > 0) {
-                        $usuario_data->imagen = self::dropboxLinkToRaw($url_data->links[0]->url);
-                        $usuario_data->save();
-                    } else {
-                        return response()->json([
-                            "message" => "Se actualizó la información pero Dropbox no devolvió ningún shared link para el archivo. Intenta borrarlo y volverlo a subir."
-                        ]);
-                    }
-                } else {
-                    return response()->json([
-                        "message" => "Se actualizó la información pero hubo un error al obtener el link de la imagen en Dropbox, mensaje de error: " . $url_data->error_summary
-                    ]);
-                }
-            } else {
-                $usuario_data->imagen = self::dropboxLinkToRaw($url_data->url);
-                $usuario_data->save();
+            if ($created_shared_url["error"]) {
+                return response()->json([
+                    'message' => "Se actualizó la información pero hubo un error al obtener al subir la imagen a Dropbox, mensaje de error: " . $created_shared_url["message"]
+                ]);
             }
 
+            $usuario_data->imagen = $created_shared_url["url"];
+            $usuario_data->save();
         }
 
         $usuario_data = self::usuario_data($data->id);
@@ -369,7 +332,6 @@ class AuthController extends Controller
                 $subniveles[] = $subnivel->id_nivel;
 
                 $subniveles[$subnivel->id_nivel] = [];
-
             }
             $subniveles[$subnivel->id_nivel][] = $subnivel->id_subnivel;
 
@@ -482,5 +444,4 @@ class AuthController extends Controller
         }
         DB::table('auth_codes')->where('id', $authCode->id)->delete();
     }
-
 }

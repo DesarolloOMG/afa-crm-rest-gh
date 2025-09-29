@@ -1,4 +1,6 @@
-<?php /** @noinspection PhpUndefinedMethodInspection */
+<?php
+
+/** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUnusedLocalVariableInspection */
 /** @noinspection PhpUnusedLocalVariableInspection */
 /** @noinspection PhpUnused */
@@ -159,44 +161,44 @@ class AlmacenController extends Controller
                     )
                     ->first();
 
-//                if ($usuario_documento->id_usuario > 1) {
-//                    $notificacion['titulo']     = "Pedido en problemas.";
-//                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-//                    $notificacion['tipo'] = "warning";
-//                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
-//
-//                    $notificacion_id = DB::table('notificacion')->insertGetId([
-//                        'data'  => json_encode($notificacion)
-//                    ]);
-//
-//                    $notificacion['id']         = $notificacion_id;
-//
-//                    DB::table('notificacion_usuario')->insert([
-//                        'id_usuario'        => $usuario_documento->id_usuario,
-//                        'id_notificacion'   => $notificacion_id
-//                    ]);
-//
-//                    $notificacion['usuario']    = $usuario_documento->id_usuario;
-//
-//                    event(new PusherEvent(json_encode($notificacion)));
-//
-//                    $view = view('email.notificacion_problema')->with([
-//                        'vendedor' => $usuario_documento->nombre,
-//                        'usuario' => $usuario_documento->nombre,
-//                        'anio' => date('Y'),
-//                        'documento' => $data->documento,
-//                        'comentario' => $data->seguimiento
-//                    ]);
-//
-//                    $mg     = Mailgun::create(config("mailgun.token"));
-//                    $domain = config("mailgun.email_from");
-//                    $mg->messages()->send($domain, array(
-//                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
-//                        'to'            => $usuario_documento->email,
-//                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
-//                        'html'          => $view->render()
-//                    ));
-//                }
+                //                if ($usuario_documento->id_usuario > 1) {
+                //                    $notificacion['titulo']     = "Pedido en problemas.";
+                //                    $notificacion['message']    = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+                //                    $notificacion['tipo'] = "warning";
+                //                    $notificacion['link']       = "/venta/venta/problema/" . $data->documento;
+                //
+                //                    $notificacion_id = DB::table('notificacion')->insertGetId([
+                //                        'data'  => json_encode($notificacion)
+                //                    ]);
+                //
+                //                    $notificacion['id']         = $notificacion_id;
+                //
+                //                    DB::table('notificacion_usuario')->insert([
+                //                        'id_usuario'        => $usuario_documento->id_usuario,
+                //                        'id_notificacion'   => $notificacion_id
+                //                    ]);
+                //
+                //                    $notificacion['usuario']    = $usuario_documento->id_usuario;
+                //
+                //                    event(new PusherEvent(json_encode($notificacion)));
+                //
+                //                    $view = view('email.notificacion_problema')->with([
+                //                        'vendedor' => $usuario_documento->nombre,
+                //                        'usuario' => $usuario_documento->nombre,
+                //                        'anio' => date('Y'),
+                //                        'documento' => $data->documento,
+                //                        'comentario' => $data->seguimiento
+                //                    ]);
+                //
+                //                    $mg     = Mailgun::create(config("mailgun.token"));
+                //                    $domain = config("mailgun.email_from");
+                //                    $mg->messages()->send($domain, array(
+                //                        'from'  => 'CRM OMG International <crm@omg.com.mx>',
+                //                        'to'            => $usuario_documento->email,
+                //                        'subject'       => 'Pedido ' . $data->documento . ' en problemas.',
+                //                        'html'          => $view->render()
+                //                    ));
+                //                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,
@@ -235,7 +237,7 @@ class AlmacenController extends Controller
                 if ($movimiento[0]->serie) {
                     $validar_series = ComodinService::validar_series($producto->series, trim($producto->producto));
 
-                    if($validar_series->error){
+                    if ($validar_series->error) {
                         return response()->json([
                             'code'  => 500,
                             'message'   => $validar_series->message,
@@ -407,7 +409,7 @@ class AlmacenController extends Controller
 
         $documento_info = DB::table('documento')->where('id', $documento)->first();
 
-        if($documento_info->id_tipo != 2) {
+        if ($documento_info->id_tipo != 2) {
             return response()->json([
                 'code' => 500,
                 'message' => "El documento no es una venta"
@@ -926,45 +928,45 @@ class AlmacenController extends Controller
                                                 INNER JOIN usuario ON documento.id_usuario = usuario.id 
                                                 WHERE documento.id = " . $data->documento)[0];
 
-//                if ($usuario_documento->id_usuario > 1) {
-//                    $notificacion['titulo'] = "Pedido en problemas.";
-//                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
-//                    $notificacion['tipo'] = "warning"; // success, warning, danger
-//                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
-//
-//                    $notificacion_id = DB::table('notificacion')->insertGetId([
-//                        'data' => json_encode($notificacion)
-//                    ]);
-//
-//                    $notificacion['id'] = $notificacion_id;
-//
-//                    DB::table('notificacion_usuario')->insert([
-//                        'id_usuario' => $usuario_documento->id_usuario,
-//                        'id_notificacion' => $notificacion_id
-//                    ]);
-//
-//                    $notificacion['usuario'] = $usuario_documento->id_usuario;
-//
-//                    event(new PusherEvent(json_encode($notificacion)));
-//
-//                    $view = view('email.notificacion_problema')->with([
-//                        'vendedor' => $usuario_documento->nombre,
-//                        'problema' => 0,
-//                        'usuario' => $usuario_documento->nombre,
-//                        'anio' => date('Y'),
-//                        'documento' => $data->documento,
-//                        'comentario' => $data->seguimiento
-//                    ]);
-//
-//                    $mg = Mailgun::create(config("mailgun.token"));
-//                    $domain = config("mailgun.email_from");
-//                    $mg->messages()->send($domain, array(
-//                        'from' => config("mailgun.email_from"),
-//                        'to' => $usuario_documento->email,
-//                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
-//                        'html' => $view->render()
-//                    ));
-//                }
+                //                if ($usuario_documento->id_usuario > 1) {
+                //                    $notificacion['titulo'] = "Pedido en problemas.";
+                //                    $notificacion['message'] = "Tú pedido " . $data->documento . " ah sido agregado a problemas.";
+                //                    $notificacion['tipo'] = "warning"; // success, warning, danger
+                //                    $notificacion['link'] = "/venta/venta/problema/" . $data->documento;
+                //
+                //                    $notificacion_id = DB::table('notificacion')->insertGetId([
+                //                        'data' => json_encode($notificacion)
+                //                    ]);
+                //
+                //                    $notificacion['id'] = $notificacion_id;
+                //
+                //                    DB::table('notificacion_usuario')->insert([
+                //                        'id_usuario' => $usuario_documento->id_usuario,
+                //                        'id_notificacion' => $notificacion_id
+                //                    ]);
+                //
+                //                    $notificacion['usuario'] = $usuario_documento->id_usuario;
+                //
+                //                    event(new PusherEvent(json_encode($notificacion)));
+                //
+                //                    $view = view('email.notificacion_problema')->with([
+                //                        'vendedor' => $usuario_documento->nombre,
+                //                        'problema' => 0,
+                //                        'usuario' => $usuario_documento->nombre,
+                //                        'anio' => date('Y'),
+                //                        'documento' => $data->documento,
+                //                        'comentario' => $data->seguimiento
+                //                    ]);
+                //
+                //                    $mg = Mailgun::create(config("mailgun.token"));
+                //                    $domain = config("mailgun.email_from");
+                //                    $mg->messages()->send($domain, array(
+                //                        'from' => config("mailgun.email_from"),
+                //                        'to' => $usuario_documento->email,
+                //                        'subject' => 'Pedido ' . $data->documento . ' en problemas.',
+                //                        'html' => $view->render()
+                //                    ));
+                //                }
 
                 DB::table('documento')->where(['id' => $data->documento])->update([
                     'problema' => 1,
@@ -1173,7 +1175,7 @@ class AlmacenController extends Controller
                 $file = "";
                 $pdf = "";
 
-                if($auth->id != 9999) {
+                if ($auth->id != 9999) {
                     $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
                     $impresion = @$impresion_raw;
 
@@ -1208,12 +1210,11 @@ class AlmacenController extends Controller
                             "raw" => property_exists($impresion, "raw") ? $impresion->raw : 0
                         ]);
                     }
-                }
-                else {
-                    $archivo_guia = ComodinService::logistica_envio_pendiente_documento($data->documento,$marketplace_area->id_marketplace_area);
+                } else {
+                    $archivo_guia = ComodinService::logistica_envio_pendiente_documento($data->documento, $marketplace_area->id_marketplace_area);
                     $respuesta = json_decode($archivo_guia->getContent());
 
-                    if($respuesta->code == 200){
+                    if ($respuesta->code == 200) {
                         $file = $respuesta->file;
                         $pdf = $respuesta->pdf;
                         $backup = 1;
@@ -1453,192 +1454,192 @@ class AlmacenController extends Controller
     }
 
 
-//    public function almacen_movimiento_crear_crear(Request $request)
-//    {
-//        set_time_limit(0);
-//        DB::beginTransaction();
-//
-//        try {
-//            $data = json_decode($request->input('data'));
-//            $auth = json_decode($request->auth);
-//            $series_afectadas = array();
-//
-//            // Se obtienen los almacenes, según si son de entrada o salida
-//            if (!empty($data->almacen_entrada)) {
-//                $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
-//            }
-//            if (!empty($data->almacen_salida)) {
-//                $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
-//            }
-//
-//            // Creación del documento
-//            $documento = Documento::create([
-//                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
-//                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
-//                'id_tipo' => $data->tipo,
-//                'id_usuario' => $auth->id,
-//                'id_fase' => 100,
-//                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
-//                'referencia' => 'N/A',
-//                'info_extra' => 'N/A',
-//                'observacion' => $data->observacion
-//            ])->id;
-//
-//            // Verificar existencia de la entidad; si no existe, crearla
-//            $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
-//            if (!$existe_entidad) {
-//                $entidad_id = DocumentoEntidad::create([
-//                    'tipo' => 2,
-//                    'razon_social' => 'SISTEMA OMG',
-//                    'rfc' => 'SISTEMAOMG'
-//                ])->id;
-//            } else {
-//                $entidad_id = $existe_entidad->id;
-//            }
-//            DocumentoEntidadRelacion::create([
-//                'id_documento' => $documento,
-//                'id_entidad' => $entidad_id
-//            ]);
-//
-//            // Procesar cada producto contenido en el documento
-//            foreach ($data->productos as $producto) {
-//                $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
-//                if (!$existe_modelo) {
-//                    $modelo = Modelo::create([
-//                        'id_tipo' => EnumModeloTipo::PRODUCTO,
-//                        'sku' => trim($producto->sku),
-//                        'descripcion' => $producto->descripcion,
-//                        'costo' => $producto->costo,
-//                        'alto' => $producto->alto,
-//                        'ancho' => $producto->ancho,
-//                        'largo' => $producto->largo,
-//                        'peso' => $producto->peso,
-//                        'serie' => $producto->serie
-//                    ])->id;
-//                } else {
-//                    $modelo = $existe_modelo->id;
-//                }
-//
-//                $movimiento = Movimiento::create([
-//                    'id_documento' => $documento,
-//                    'id_modelo' => $modelo,
-//                    'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
-//                    'precio' => $producto->costo,
-//                    'garantia' => 0,
-//                    'modificacion' => 'N/A',
-//                    'comentario' => $producto->comentarios,
-//                    'regalo' => 0
-//                ])->id;
-//
-//                // Si el producto se gestiona por series
-//                if ($producto->serie) {
-//                    // Solo se valida si el documento NO es de tipo ENTRADA
-//                    if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
-//                        // Se reutiliza la función de validación de series de ComodinService
-//                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
-//                        if ($validacion->error == 1) {
-//                            return response()->json([
-//                                'code'  => 500,
-//                                "color" => "red-border-top",
-//                                'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
-//                                'errores'   => $validacion->errores
-//                            ], 500);
-//                        }
-//                    }
-//
-//                    // Procesar cada serie individualmente
-//                    foreach ($producto->series as $serie) {
-//                        // Se eliminan caracteres conflictivos
-//                        $serie = str_replace(["'", '\\'], '', $serie);
-//                        $existe_serie = Producto::where("serie", trim($serie))->first();
-//
-//                        if (!$existe_serie) {
-//                            if($data->tipo != EnumDocumentoTipo::ENTRADA){
-//                                $productoId = Producto::create([
-//                                    'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-//                                        ? $id_almacen_salida->id_almacen
-//                                        : $id_almacen_entrada->id_almacen,
-//                                    'serie' => trim($serie),
-//                                    'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
-//                                ])->id;
-//
-//                                $serie_afectada = new \stdClass();
-//                                $serie_afectada->id = $productoId;
-//                                $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-//                                    ? $id_almacen_salida->id_almacen
-//                                    : $id_almacen_entrada->id_almacen;
-//                                $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
-//
-//                                array_push($series_afectadas, $serie_afectada);
-//                            }
-//                        } else {
-//                            Producto::where("id", $existe_serie->id)->update([
-//                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
-//                                    ? $id_almacen_salida->id_almacen
-//                                    : $id_almacen_entrada->id_almacen,
-//                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
-//                            ]);
-//
-//                            $productoId = $existe_serie->id;
-//
-//                            $serie_afectada = new \stdClass();
-//                            $serie_afectada->id = $existe_serie->id;
-//                            $serie_afectada->almacen_previo = $existe_serie->id_almacen;
-//                            $serie_afectada->status_previo = $existe_serie->status;
-//
-//                            array_push($series_afectadas, $serie_afectada);
-//                        }
-//
-//                        MovimientoProducto::create([
-//                            'id_movimiento' => $movimiento,
-//                            'id_producto' => $productoId
-//                        ]);
-//                    }
-//                }
-//            }
-//
-//            $mensaje = "Documento creado correctamente con el ID " . $documento;
-//
-//            if (in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO])) {
-//                $response = DocumentoService::crearMovimiento($documento);
-//
-//                if ($response->error) {
-//                    // Si ocurre error en el proceso de creación del movimiento, se revierten los cambios de las series afectadas
-//                    foreach ($series_afectadas as $serie) {
-//                        if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
-//                            DB::table('producto')->where(['id' => $serie->id])->delete();
-//                        } else {
-//                            DB::table('producto')->where(['id' => $serie->id])->update([
-//                                'id_almacen' => $serie->almacen_previo,
-//                                'status' => $serie->status_previo
-//                            ]);
-//                        }
-//                    }
-//
-//                    DB::rollBack();
-//                    return response()->json([
-//                        'message' => $response->mensaje . " " . self::logVariableLocation(),
-//                        'raw' => property_exists($response, "raw") ? $response->raw : 0
-//                    ], 500);
-//                }
-//
-//                $mensaje = $response->mensaje . " ID " . $documento;
-//            }
-//
-//            DB::commit();
-//
-//            return response()->json([
-//                'message' => $mensaje,
-//                'documento' => $documento
-//            ]);
-//        } catch (\Exception $e) {
-//            DB::rollBack();
-//
-//            return response()->json([
-//                'message' => 'Error al crear el documento: ' . $e->getMessage(),
-//            ], 500);
-//        }
-//    }
+    //    public function almacen_movimiento_crear_crear(Request $request)
+    //    {
+    //        set_time_limit(0);
+    //        DB::beginTransaction();
+    //
+    //        try {
+    //            $data = json_decode($request->input('data'));
+    //            $auth = json_decode($request->auth);
+    //            $series_afectadas = array();
+    //
+    //            // Se obtienen los almacenes, según si son de entrada o salida
+    //            if (!empty($data->almacen_entrada)) {
+    //                $id_almacen_entrada = EmpresaAlmacen::find($data->almacen_entrada);
+    //            }
+    //            if (!empty($data->almacen_salida)) {
+    //                $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
+    //            }
+    //
+    //            // Creación del documento
+    //            $documento = Documento::create([
+    //                'id_almacen_principal_empresa' => in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO]) ? $data->almacen_entrada : $data->almacen_salida,
+    //                'id_almacen_secundario_empresa' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO]) ? $data->almacen_salida : 0,
+    //                'id_tipo' => $data->tipo,
+    //                'id_usuario' => $auth->id,
+    //                'id_fase' => 100,
+    //                'autorizado' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0,
+    //                'referencia' => 'N/A',
+    //                'info_extra' => 'N/A',
+    //                'observacion' => $data->observacion
+    //            ])->id;
+    //
+    //            // Verificar existencia de la entidad; si no existe, crearla
+    //            $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
+    //            if (!$existe_entidad) {
+    //                $entidad_id = DocumentoEntidad::create([
+    //                    'tipo' => 2,
+    //                    'razon_social' => 'SISTEMA OMG',
+    //                    'rfc' => 'SISTEMAOMG'
+    //                ])->id;
+    //            } else {
+    //                $entidad_id = $existe_entidad->id;
+    //            }
+    //            DocumentoEntidadRelacion::create([
+    //                'id_documento' => $documento,
+    //                'id_entidad' => $entidad_id
+    //            ]);
+    //
+    //            // Procesar cada producto contenido en el documento
+    //            foreach ($data->productos as $producto) {
+    //                $existe_modelo = Modelo::where("sku", trim($producto->sku))->first();
+    //                if (!$existe_modelo) {
+    //                    $modelo = Modelo::create([
+    //                        'id_tipo' => EnumModeloTipo::PRODUCTO,
+    //                        'sku' => trim($producto->sku),
+    //                        'descripcion' => $producto->descripcion,
+    //                        'costo' => $producto->costo,
+    //                        'alto' => $producto->alto,
+    //                        'ancho' => $producto->ancho,
+    //                        'largo' => $producto->largo,
+    //                        'peso' => $producto->peso,
+    //                        'serie' => $producto->serie
+    //                    ])->id;
+    //                } else {
+    //                    $modelo = $existe_modelo->id;
+    //                }
+    //
+    //                $movimiento = Movimiento::create([
+    //                    'id_documento' => $documento,
+    //                    'id_modelo' => $modelo,
+    //                    'cantidad' => $producto->serie ? count($producto->series) : $producto->cantidad,
+    //                    'precio' => $producto->costo,
+    //                    'garantia' => 0,
+    //                    'modificacion' => 'N/A',
+    //                    'comentario' => $producto->comentarios,
+    //                    'regalo' => 0
+    //                ])->id;
+    //
+    //                // Si el producto se gestiona por series
+    //                if ($producto->serie) {
+    //                    // Solo se valida si el documento NO es de tipo ENTRADA
+    //                    if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
+    //                        // Se reutiliza la función de validación de series de ComodinService
+    //                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku));
+    //                        if ($validacion->error == 1) {
+    //                            return response()->json([
+    //                                'code'  => 500,
+    //                                "color" => "red-border-top",
+    //                                'message'   => $validacion->mensaje . " " . self::logVariableLocation(),
+    //                                'errores'   => $validacion->errores
+    //                            ], 500);
+    //                        }
+    //                    }
+    //
+    //                    // Procesar cada serie individualmente
+    //                    foreach ($producto->series as $serie) {
+    //                        // Se eliminan caracteres conflictivos
+    //                        $serie = str_replace(["'", '\\'], '', $serie);
+    //                        $existe_serie = Producto::where("serie", trim($serie))->first();
+    //
+    //                        if (!$existe_serie) {
+    //                            if($data->tipo != EnumDocumentoTipo::ENTRADA){
+    //                                $productoId = Producto::create([
+    //                                    'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+    //                                        ? $id_almacen_salida->id_almacen
+    //                                        : $id_almacen_entrada->id_almacen,
+    //                                    'serie' => trim($serie),
+    //                                    'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+    //                                ])->id;
+    //
+    //                                $serie_afectada = new \stdClass();
+    //                                $serie_afectada->id = $productoId;
+    //                                $serie_afectada->almacen_previo = in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+    //                                    ? $id_almacen_salida->id_almacen
+    //                                    : $id_almacen_entrada->id_almacen;
+    //                                $serie_afectada->status_previo = $data->tipo == "5" ? 1 : 0;
+    //
+    //                                array_push($series_afectadas, $serie_afectada);
+    //                            }
+    //                        } else {
+    //                            Producto::where("id", $existe_serie->id)->update([
+    //                                'id_almacen' => in_array($data->tipo, [EnumDocumentoTipo::SALIDA, EnumDocumentoTipo::USO_INTERNO])
+    //                                    ? $id_almacen_salida->id_almacen
+    //                                    : $id_almacen_entrada->id_almacen,
+    //                                'status' => $data->tipo == EnumDocumentoTipo::ENTRADA ? 1 : 0
+    //                            ]);
+    //
+    //                            $productoId = $existe_serie->id;
+    //
+    //                            $serie_afectada = new \stdClass();
+    //                            $serie_afectada->id = $existe_serie->id;
+    //                            $serie_afectada->almacen_previo = $existe_serie->id_almacen;
+    //                            $serie_afectada->status_previo = $existe_serie->status;
+    //
+    //                            array_push($series_afectadas, $serie_afectada);
+    //                        }
+    //
+    //                        MovimientoProducto::create([
+    //                            'id_movimiento' => $movimiento,
+    //                            'id_producto' => $productoId
+    //                        ]);
+    //                    }
+    //                }
+    //            }
+    //
+    //            $mensaje = "Documento creado correctamente con el ID " . $documento;
+    //
+    //            if (in_array($data->tipo, [EnumDocumentoTipo::ENTRADA, EnumDocumentoTipo::TRASPASO, EnumDocumentoTipo::USO_INTERNO])) {
+    //                $response = DocumentoService::crearMovimiento($documento);
+    //
+    //                if ($response->error) {
+    //                    // Si ocurre error en el proceso de creación del movimiento, se revierten los cambios de las series afectadas
+    //                    foreach ($series_afectadas as $serie) {
+    //                        if ($data->tipo == EnumDocumentoTipo::ENTRADA) {
+    //                            DB::table('producto')->where(['id' => $serie->id])->delete();
+    //                        } else {
+    //                            DB::table('producto')->where(['id' => $serie->id])->update([
+    //                                'id_almacen' => $serie->almacen_previo,
+    //                                'status' => $serie->status_previo
+    //                            ]);
+    //                        }
+    //                    }
+    //
+    //                    DB::rollBack();
+    //                    return response()->json([
+    //                        'message' => $response->mensaje . " " . self::logVariableLocation(),
+    //                        'raw' => property_exists($response, "raw") ? $response->raw : 0
+    //                    ], 500);
+    //                }
+    //
+    //                $mensaje = $response->mensaje . " ID " . $documento;
+    //            }
+    //
+    //            DB::commit();
+    //
+    //            return response()->json([
+    //                'message' => $mensaje,
+    //                'documento' => $documento
+    //            ]);
+    //        } catch (\Exception $e) {
+    //            DB::rollBack();
+    //
+    //            return response()->json([
+    //                'message' => 'Error al crear el documento: ' . $e->getMessage(),
+    //            ], 500);
+    //        }
+    //    }
 
     public function almacen_movimiento_crear_confirmar(Request $request): JsonResponse
     {
@@ -1705,7 +1706,7 @@ class AlmacenController extends Controller
                 // Verificar existencia del modelo; si no existe se crea
                 $existe_modelo = DB::table('modelo')->where('sku', $producto->sku)->first();
 
-                if(empty($existe_modelo)){
+                if (empty($existe_modelo)) {
                     DB::rollBack();
                     return response()->json([
                         'message' => "No existe el producto " . trim($producto->sku)
@@ -2140,7 +2141,7 @@ class AlmacenController extends Controller
 
                 $validar = ComodinService::validar_series($producto->series_afectar, $producto->sku);
 
-                if($validar->error){
+                if ($validar->error) {
                     return response()->json([
                         'code'  => 500,
                         'message'   => $validar->mensaje . " " . self::logVariableLocation()
@@ -2742,7 +2743,7 @@ class AlmacenController extends Controller
                 ->where("marketplace_publicacion_producto.etiqueta", $id_etiqueta)
                 ->get()->toArray();
 
-            if(empty($productos)) {
+            if (empty($productos)) {
                 $publicacion = DB::table("marketplace_publicacion")->where("marketplace_publicacion.publicacion_id", $publicacion_text)->first();
 
                 $productos = DB::table("marketplace_publicacion_producto")
@@ -2793,12 +2794,8 @@ class AlmacenController extends Controller
                     if ($archivo->nombre != "" && $archivo->data != "") {
                         $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                        $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                            ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                            ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                            ->addHeader('Content-Type', 'application/octet-stream')
-                            ->body($archivo_data)
-                            ->send();
+                        $dropboxService = new DropboxService();
+                        $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                         DB::table('documento_archivo')->insert([
                             'id_documento' => $data->id,
@@ -2806,7 +2803,7 @@ class AlmacenController extends Controller
                             'tipo' => 1,
                             'id_impresora' => 0,
                             'nombre' => $archivo->nombre,
-                            'dropbox' => $response->body->id
+                            'dropbox' => $response['id']
                         ]);
                     }
                 }
@@ -3266,7 +3263,6 @@ class AlmacenController extends Controller
                         'id_movimiento' => $movimiento,
                         'id_producto' => $producto_id
                     ]);
-
                 }
             }
         }
@@ -3407,13 +3403,12 @@ class AlmacenController extends Controller
         }
 
         $auth = json_decode($request->auth);
-        if ($auth->id == 134){
+        if ($auth->id == 134) {
             $data = array(
                 "etiquetas" => $etiquetas,
                 "impresora" => 37
             );
-        }
-        else{
+        } else {
             $data = array(
                 "etiquetas" => $etiquetas,
                 "impresora" => $marketplace_envio->id_impresora
@@ -3748,12 +3743,8 @@ class AlmacenController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento'  => $data->id,
@@ -3761,7 +3752,7 @@ class AlmacenController extends Controller
                         'tipo'          => 1,
                         'id_impresora'  => 0,
                         'nombre'        => $archivo->nombre,
-                        'dropbox'       => $response->body->id
+                        'dropbox'       => $response['id']
                     ]);
                 }
             }
@@ -3804,12 +3795,8 @@ class AlmacenController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->id,
@@ -3817,7 +3804,7 @@ class AlmacenController extends Controller
                         'tipo' => 1,
                         'id_impresora' => 0,
                         'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -3918,12 +3905,8 @@ class AlmacenController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->id,
@@ -3931,7 +3914,7 @@ class AlmacenController extends Controller
                         'tipo' => 1,
                         'id_impresora' => 0,
                         'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'dropbox' => $response['id']
                     ]);
                 }
             }

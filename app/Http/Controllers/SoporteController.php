@@ -1,4 +1,6 @@
-<?php /** @noinspection PhpComposerExtensionStubsInspection */
+<?php
+
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
@@ -122,7 +124,7 @@ class SoporteController extends Controller
             ])
             ->where('dgr.id_documento', $venta_id)
             ->where('dg.status', 1)          // solo garantías activas
-            ->whereIn('dg.id_tipo', [2, 3])// solo parciales (si tu lógica así lo requiere)
+            ->whereIn('dg.id_tipo', [2, 3]) // solo parciales (si tu lógica así lo requiere)
             ->groupBy('mo.id');
 
         $productos = DB::query()
@@ -226,8 +228,8 @@ class SoporteController extends Controller
                 'id_fase'   => $data->tipo == DocumentoGarantiaTipo::GARANTIA
                     ? DocumentoGarantiaFase::GARANTIA_PENDIENTE_LLEGADA
                     : DocumentoGarantiaFase::DEVOLUCION_PENDIENTE,
-                'no_reclamo'=> $data->reclamo,
-                'created_by'=> $auth->id
+                'no_reclamo' => $data->reclamo,
+                'created_by' => $auth->id
             ]);
 
             DB::table('documento_garantia_re')->insertGetId([
@@ -247,12 +249,8 @@ class SoporteController extends Controller
                         preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data)
                     );
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     if (!$response || !$response->body || empty($response->body->id)) {
                         throw new \Exception("Error al subir archivo a Dropbox.");
@@ -262,12 +260,12 @@ class SoporteController extends Controller
                         'id_documento' => $informacion_documento->id,
                         'id_usuario'   => $auth->id,
                         'nombre'       => $archivo->nombre,
-                        'dropbox'      => $response->body->id
+                        'dropbox'      => $response['id']
                     ]);
 
                     DB::table('documento_garantia_archivo')->insert([
                         'id_archivo' => $documento_archivo,
-                        'id_garantia'=> $documento_garantia
+                        'id_garantia' => $documento_garantia
                     ]);
                 }
             }
@@ -303,7 +301,6 @@ class SoporteController extends Controller
             }
 
             return response()->json($jsonResponse);
-
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([
@@ -752,9 +749,17 @@ class SoporteController extends Controller
             ->leftJoin('documento_garantia_causa as dgc', 'dg.id_causa', '=', 'dgc.id')
             ->leftJoin('paqueteria as p', 'dg.id_paqueteria_llegada', '=', 'p.id')
             ->select(
-                'dg.id', 'dg.id_tipo', 'd.id as numero_pedido', 'tecnico.nombre as tecnico',
-                'creador.nombre as creador', 'de.razon_social as cliente', 'de.telefono',
-                'de.correo', 'dgc.causa as motivo', 'dg.guia_llegada', 'p.paqueteria as paqueteria_llegada'
+                'dg.id',
+                'dg.id_tipo',
+                'd.id as numero_pedido',
+                'tecnico.nombre as tecnico',
+                'creador.nombre as creador',
+                'de.razon_social as cliente',
+                'de.telefono',
+                'de.correo',
+                'dgc.causa as motivo',
+                'dg.guia_llegada',
+                'p.paqueteria as paqueteria_llegada'
             )
             ->where('dg.id', $id_garantia)->first();
 
@@ -865,7 +870,7 @@ class SoporteController extends Controller
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(25, 6, 'Fecha:');
         $pdf->SetFont('Arial', '', 10);
-        $meses = ["January"=>"Enero", "February"=>"Febrero", "March"=>"Marzo", "April"=>"Abril", "May"=>"Mayo", "June"=>"Junio", "July"=>"Julio", "August"=>"Agosto", "September"=>"Septiembre", "October"=>"Octubre", "November"=>"Noviembre", "December"=>"Diciembre"];
+        $meses = ["January" => "Enero", "February" => "Febrero", "March" => "Marzo", "April" => "Abril", "May" => "Mayo", "June" => "Junio", "July" => "Julio", "August" => "Agosto", "September" => "Septiembre", "October" => "Octubre", "November" => "Noviembre", "December" => "Diciembre"];
         $fecha_actual = date("d") . " de " . $meses[date("F")] . " del " . date("Y");
         $pdf->Cell(65, 6, $fecha_actual);
         $pdf->Ln();
@@ -1248,7 +1253,7 @@ class SoporteController extends Controller
 
                 if (!empty($usuarios)) {
                     $notificacion['usuario'] = $usuarios;
-//                    event(new PusherEvent(json_encode($notificacion)));
+                    //                    event(new PusherEvent(json_encode($notificacion)));
                 }
             }
 
@@ -1257,7 +1262,7 @@ class SoporteController extends Controller
                 ->update([
                     'id_fase'              => 3,
                     'guia_llegada'         => $data->guia,
-                    'id_paqueteria_llegada'=> $data->paqueteria,
+                    'id_paqueteria_llegada' => $data->paqueteria,
                     'asigned_to'           => $data->tecnico
                 ]);
         }
@@ -1435,7 +1440,9 @@ class SoporteController extends Controller
 
             // === AQUÍ USAMOS TU SP TAL CUAL ===
             $sp = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
-                $modelo->sku, (int)$data->almacen_salida, 1
+                $modelo->sku,
+                (int)$data->almacen_salida,
+                1
             ]);
 
             if (empty($sp)) {
@@ -1556,7 +1563,6 @@ class SoporteController extends Controller
                     'pedido'       => $pedido->id_pedido
                 ]
             ]);
-
         } catch (\Throwable $e) {
             DB::rollBack();
             return response()->json(['code' => 500, 'message' => 'Error al procesar: ' . $e->getMessage()]);
@@ -1578,7 +1584,10 @@ class SoporteController extends Controller
     /** Crea el documento de venta básico (pagado, paquetería=106, id_entidad=3, fase=3) y sus movimientos. */
     private function crearPedidoVentaBasico($docOriginal, array $lineas, int $idEmpresaAlmacenDestino, int $idUsuario, int $idGarantia): \stdClass
     {
-        $r = new \stdClass(); $r->error = 0; $r->message = ''; $r->id_pedido = null;
+        $r = new \stdClass();
+        $r->error = 0;
+        $r->message = '';
+        $r->id_pedido = null;
 
         // encabezado
         $pedidoId = DB::table('documento')->insertGetId([
@@ -1586,7 +1595,7 @@ class SoporteController extends Controller
             'id_tipo'            => 1,           // 1 = Venta (ajusta si tu catálogo usa otro id)
             'id_periodo'         => $docOriginal->id_periodo,
             'id_cfdi'            => $docOriginal->id_cfdi,
-            'id_marketplace_area'=> $docOriginal->id_marketplace_area,
+            'id_marketplace_area' => $docOriginal->id_marketplace_area,
             'id_usuario'         => $idUsuario,
             'id_entidad'         => 3,           // SIEMPRE 3 (como pediste)
             'id_moneda'          => $docOriginal->id_moneda,
@@ -1599,7 +1608,7 @@ class SoporteController extends Controller
         ]);
 
         foreach ($lineas as $ln) {
-             DB::table('movimiento')->insertGetId([
+            DB::table('movimiento')->insertGetId([
                 'id_documento' => $pedidoId,
                 'id_modelo'    => $ln['id_modelo'],
                 'cantidad'     => $ln['cantidad'],
@@ -3196,7 +3205,7 @@ class SoporteController extends Controller
         $pdf->SetFont('Arial', 'B', 10);
         $pdf->Cell(25, 6, 'Fecha:');
         $pdf->SetFont('Arial', '', 10);
-        $meses = ["January"=>"Enero", "February"=>"Febrero", "March"=>"Marzo", "April"=>"Abril", "May"=>"Mayo", "June"=>"Junio", "July"=>"Julio", "August"=>"Agosto", "September"=>"Septiembre", "October"=>"Octubre", "November"=>"Noviembre", "December"=>"Diciembre"];
+        $meses = ["January" => "Enero", "February" => "Febrero", "March" => "Marzo", "April" => "Abril", "May" => "Mayo", "June" => "Junio", "July" => "Julio", "August" => "Agosto", "September" => "Septiembre", "October" => "Octubre", "November" => "Noviembre", "December" => "Diciembre"];
         $fecha_actual = date("d") . " de " . $meses[date("F")] . " del " . date("Y");
         $pdf->Cell(65, 6, $fecha_actual);
         $pdf->Ln();

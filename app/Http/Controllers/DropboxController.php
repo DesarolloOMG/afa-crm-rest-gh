@@ -1,4 +1,6 @@
-<?php /** @noinspection PhpComposerExtensionStubsInspection */
+<?php
+
+/** @noinspection PhpComposerExtensionStubsInspection */
 
 namespace App\Http\Controllers;
 
@@ -31,8 +33,8 @@ class DropboxController extends Controller
     public function getDropboxToken()
     {
         $dropbox = new DropboxService();
-        $dropbox->ensureValidToken();
-        $token = config('keys.dropbox');
+        $token = $dropbox->getDropboxToken();
+
         return response()->json(['token' => $token]);
     }
 

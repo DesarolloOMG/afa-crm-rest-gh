@@ -8,6 +8,9 @@ use Httpful\Exception\ConnectionErrorException;
 use Httpful\Request;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
+
+use App\Models\OauthToken;
 
 class DropboxService
 {
@@ -26,6 +29,23 @@ class DropboxService
         $this->client = new Client();
     }
 
+    public function getDropboxToken()
+    {
+        $dropbox_token = OauthToken::where('provider', 'dropbox')->first();
+
+        if (!$dropbox_token) {
+            throw new \RuntimeException('No hay registro de tokens para Dropbox');
+        }
+
+        if ($dropbox_token->expires_at && $dropbox_token->expires_at->gt(Carbon::now()->addMinutes(5))) {
+            return $dropbox_token->access_token;
+        }
+
+        $token = self::refreshAccessToken();
+
+        return $token;
+    }
+
     /**
      * Renueva el access token de Dropbox y lo guarda en DROPBOX_TOKEN del .env
      * @throws ConnectionErrorException
@@ -33,10 +53,12 @@ class DropboxService
      */
     public function refreshAccessToken()
     {
+        /*
         if ($token = $this->vault->getValid($this->clientId)) {
             self::setEnvValue($token);
             return $token;
         }
+        */
 
         $url = 'https://api.dropbox.com/oauth2/token';
         $body = http_build_query([
@@ -56,9 +78,17 @@ class DropboxService
 
         if (isset($data['access_token'])) {
             $this->vault->put($this->clientId, $data['access_token']);
-            self::setEnvValue($data['access_token']);
+            $expiresIn = isset($data['expires_in']) ? (int)$data['expires_in'] : 4 * 60 * 60;
+
+            OauthToken::where('provider', 'dropbox')->update([
+                "access_token" => $data['access_token'],
+                "expires_at" => Carbon::now()->addSeconds($expiresIn)
+            ]);
+
+            //self::setEnvValue($data['access_token']);
             return $data['access_token'];
         }
+
         throw new Exception('No se pudo renovar el access token de Dropbox');
     }
 
@@ -89,6 +119,54 @@ class DropboxService
         return $this->requestDropbox($url, $body, true);
     }
 
+    public function createOrGetSharedLink($path)
+    {
+        $createUrl = 'https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings';
+        $body = [
+            'path'     => $path,
+            'settings' => ['requested_visibility' => 'public']
+        ];
+        $res = $this->requestDropbox($createUrl, $body, true);
+
+        # devuelve url normalizada
+        if (is_array($res) && isset($res['url'])) {
+            return ['url' => $this->toRawUrl($res['url'])];
+        }
+
+        # Ya existe el link publico
+        if (isset($res['error']) && $res['error'] === true) {
+            # Si el error no es que ya existe, devuelve
+            $message = $res['message'] ?? '';
+            $already = strpos($message, 'shared_link_already_exists/') !== false;
+
+            if (!$already) {
+                return $res; # otro error real
+            }
+        }
+
+        # Obtenemos el link existente
+        $listUrl = 'https://api.dropboxapi.com/2/sharing/list_shared_links';
+        $listBody = ['path' => $path, 'direct_only' => true];
+        $list = $this->requestDropbox($listUrl, $listBody, true);
+
+        if (is_array($list) && !empty($list['links'][0]['url'])) {
+            return ['url' => $this->toRawUrl($list['links'][0]['url'])];
+        }
+
+        return [
+            'error' => true,
+            'message' => 'Dropbox no devolvió shared links para el archivo.'
+        ];
+    }
+
+    protected function toRawUrl(string $url): string
+    {
+        if (strpos($url, '?dl=0') !== false) return str_replace('?dl=0', '?dl=1', $url);
+        if (strpos($url, '?') !== false)     return $url . '&dl=1';
+        return $url . '?dl=1';
+    }
+
+
     /**
      * Descarga un archivo en binario desde Dropbox.
      * Devuelve el contenido binario (para enviar al frontend como base64 si se necesita).
@@ -96,11 +174,12 @@ class DropboxService
     public function downloadFile($path): ?string
     {
         $this->ensureValidToken();
+        $token = $this->getDropboxToken();
 
         $url = 'https://content.dropboxapi.com/2/files/download';
 
         $headers = [
-            'Authorization' => 'Bearer ' . config('keys.dropbox'),
+            'Authorization' => 'Bearer ' . $token,
             'Dropbox-API-Arg' => json_encode(['path' => $path])
         ];
 
@@ -114,7 +193,7 @@ class DropboxService
             }
             sleep(1);
         } catch (Exception $e) {
-            Log::error('Dropbox downloadFile error: '.$e->getMessage());
+            Log::error('Dropbox downloadFile error: ' . $e->getMessage());
             sleep(1);
         }
         // Si falla, retorna error estándar
@@ -137,11 +216,12 @@ class DropboxService
     public function uploadFile($path, $fileContent, $isBase64 = true)
     {
         $this->ensureValidToken();
+        $token = $this->getDropboxToken();
 
         $url = 'https://content.dropboxapi.com/2/files/upload';
 
         $headers = [
-            'Authorization' => 'Bearer ' . config('keys.dropbox'),
+            'Authorization' => 'Bearer ' . $token,
             'Dropbox-API-Arg' => json_encode([
                 'path' => $path,
                 'mode' => 'add',
@@ -202,9 +282,10 @@ class DropboxService
     private function requestDropbox($url, $body = [], $asJson = false)
     {
         $this->ensureValidToken();
+        $token = $this->getDropboxToken();
 
         $headers = [
-            'Authorization' => 'Bearer ' . config('keys.dropbox'),
+            'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json',
         ];
 
@@ -220,16 +301,16 @@ class DropboxService
             if ($status === 200) {
                 return $asJson ? json_decode($res, true) : $res;
             } else {
-                Log::warning('Dropbox request ('.$url.') status: '.$status.' | response: '.$res);
+                Log::warning('Dropbox request (' . $url . ') status: ' . $status . ' | response: ' . $res);
                 sleep(1);
             }
         } catch (Exception $e) {
-            Log::error('Dropbox request error: '.$e->getMessage());
+            Log::error('Dropbox request error: ' . $e->getMessage());
             sleep(1);
         }
         return [
             'error' => true,
-            'message' => 'No se pudo conectar con Dropbox ('.$url.')'
+            'message' => 'No se pudo conectar con Dropbox (' . $url . ')'
         ];
     }
 
@@ -250,7 +331,6 @@ class DropboxService
             if (!$validToken) {
                 $this->refreshAccessToken();
             }
-
         } catch (Exception $e) {
             $this->refreshAccessToken();
         }

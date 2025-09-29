@@ -1,4 +1,6 @@
-<?php /** @noinspection PhpUndefinedMethodInspection */
+<?php
+
+/** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpUndefinedMethodInspection */
@@ -178,7 +180,6 @@ class VentaController extends Controller
                     'modificacion' => 1,
                     'id_fase' => 2
                 ]);
-
             }
         }
 
@@ -203,12 +204,8 @@ class VentaController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $documento,
@@ -216,7 +213,7 @@ class VentaController extends Controller
                         'tipo' => $archivo->guia,
                         'id_impresora' => $archivo->impresora,
                         'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -267,7 +264,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-//                        event(new PusherEvent(json_encode($notificacion)));
+                        //                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
@@ -700,12 +697,12 @@ class VentaController extends Controller
 
         $total =
             DB::table('modelo_proveedor_producto')
-                ->select('modelo_proveedor_producto_existencia.existencia')
-                ->join('modelo_proveedor_producto_existencia', 'modelo_proveedor_producto.id', '=', 'modelo_proveedor_producto_existencia.id_modelo')
-                ->where('modelo_proveedor_producto.id_modelo', '=', $modelo->id)
-                ->where('modelo_proveedor_producto_existencia.existencia', '>=', $cantidad)
-                ->get()
-                ->first();
+            ->select('modelo_proveedor_producto_existencia.existencia')
+            ->join('modelo_proveedor_producto_existencia', 'modelo_proveedor_producto.id', '=', 'modelo_proveedor_producto_existencia.id_modelo')
+            ->where('modelo_proveedor_producto.id_modelo', '=', $modelo->id)
+            ->where('modelo_proveedor_producto_existencia.existencia', '>=', $cantidad)
+            ->get()
+            ->first();
 
         $promociones = DB::select("SELECT
                                         promocion.id,
@@ -1083,7 +1080,7 @@ class VentaController extends Controller
 
                 $notificacion->usuario = $usuarios_notificacion;
 
-//                event(new PusherEvent(json_encode($notificacion)));
+                //                event(new PusherEvent(json_encode($notificacion)));
             }
 
             DB::table('documento')->where(['id' => $data->documento->documento])->update([
@@ -2264,7 +2261,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-//                        event(new PusherEvent(json_encode($notificacion)));
+                        //                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
@@ -2306,7 +2303,7 @@ class VentaController extends Controller
                     if (!empty($usuarios)) {
                         $notificacion['usuario'] = $usuarios;
 
-//                        event(new PusherEvent(json_encode($notificacion)));
+                        //                        event(new PusherEvent(json_encode($notificacion)));
                     }
                 }
             } catch (Exception $e) {
@@ -3484,8 +3481,8 @@ class VentaController extends Controller
 
                 return (array)$data_to_update;
 
-//                $response = MercadolibreService::actualizarPublicacion($data_to_update);
-//                break;
+                //                $response = MercadolibreService::actualizarPublicacion($data_to_update);
+                //                break;
 
             default:
                 $response = new stdClass();
@@ -3655,8 +3652,11 @@ class VentaController extends Controller
 
         $total_pago = 0;
 
-        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-            "Se actualiza el almacen a " . $response->almacen . " y se actualiza el paqueteria a " . $response->paqueteria . " con el id " . $response->id);
+        BitacoraService::insertarBitacoraValidarVenta(
+            $documento,
+            $auth->id,
+            "Se actualiza el almacen a " . $response->almacen . " y se actualiza el paqueteria a " . $response->paqueteria . " con el id " . $response->id
+        );
 
         BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se borran los productos que tenia el pedido.");
 
@@ -3670,8 +3670,11 @@ class VentaController extends Controller
                     ->first();
 
                 if (!$existe_relacion_btob) {
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                        "No existe del relación del codigo " . $codigo . " con el proveedor B2B " . $documento);
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "No existe del relación del codigo " . $codigo . " con el proveedor B2B " . $documento
+                    );
 
                     DB::table("seguimiento")->insert([
                         'id_documento' => $venta->id,
@@ -3685,8 +3688,11 @@ class VentaController extends Controller
                 $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
 
                 if ($existencia->error) {
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                        "Error al consultar la existencia. Error: " . $existencia->mensaje);
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "Error al consultar la existencia. Error: " . $existencia->mensaje
+                    );
 
                     DB::table("seguimiento")->insert([
                         'id_documento' => $venta->id,
@@ -3698,8 +3704,11 @@ class VentaController extends Controller
                 }
 
                 if ($existencia->disponible < $producto->cantidad) {
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                        "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id);
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
+                    );
 
                     DB::table("seguimiento")->insert([
                         'id_documento' => $venta->id,
@@ -3723,9 +3732,12 @@ class VentaController extends Controller
 
             $total_pago += $producto->cantidad * $producto->precio;
 
-            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
+            BitacoraService::insertarBitacoraValidarVenta(
+                $documento,
+                $auth->id,
                 "Se agrega el producto con el id " . $producto->id_modelo . " con la cantidad de " . $producto->cantidad .
-                " y el precio de " . $producto->precio . " al pedido " . $venta->id . ". El id del movimiento es " . $movimiento);
+                    " y el precio de " . $producto->precio . " al pedido " . $venta->id . ". El id del movimiento es " . $movimiento
+            );
         }
 
         // === GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO (Mercado Libre) ===
@@ -3778,7 +3790,7 @@ class VentaController extends Controller
                     'entidad_origen' => $venta->id_entidad,                    // ID de la entidad (cliente) que pagó
                     'nombre_entidad_origen' => $venta->razon_social,                  // Nombre del cliente
                     'destino_tipo' => 2,                                     // 2 = cuenta bancaria (destino = tu cuenta financiera)
-                    'entidad_destino' => $cuenta_destino->id_entidad_financiera,// ID de la cuenta bancaria de la empresa
+                    'entidad_destino' => $cuenta_destino->id_entidad_financiera, // ID de la cuenta bancaria de la empresa
                     'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',           // Nombre de la cuenta bancaria
                     'id_forma_pago' => 21,                                    // Forma de pago (ajusta el id si tienes otro)
                     'referencia_pago' => $venta->no_venta,                      // Referencia (no_venta) de la venta en ML
@@ -3916,8 +3928,11 @@ class VentaController extends Controller
                         'validated_at' => date("Y-m-d H:i:s")
                     ]);
 
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id,
-                        "Se actualiza la fase a 6 y se crea la factura con el id " . $factura->id);
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "Se actualiza la fase a 6 y se crea la factura con el id " . $factura->id
+                    );
 
                     return response()->json([
                         'code' => 200,
@@ -4054,10 +4069,10 @@ class VentaController extends Controller
 
         $paqueterias =
             DB::table('paqueteria_tipo')
-                ->select('*')
-                ->where('id_paqueteria', '>', 100)
-                ->get()
-                ->toArray();
+            ->select('*')
+            ->where('id_paqueteria', '>', 100)
+            ->get()
+            ->toArray();
 
         return response()->json([
             "code" => 200,
@@ -4074,10 +4089,10 @@ class VentaController extends Controller
 
         $marketplace_area =
             DB::table('marketplace_area')
-                ->select('id')
-                ->where('id_area', $data->area)
-                ->where('id_marketplace', $data->marketplace)
-                ->first();
+            ->select('id')
+            ->where('id_area', $data->area)
+            ->where('id_marketplace', $data->marketplace)
+            ->first();
 
         if ($data->excel && $data->fulfillment) {
             $ventas = $data->data;
@@ -4151,10 +4166,10 @@ class VentaController extends Controller
 
         $marketplace_area =
             DB::table('marketplace_area')
-                ->select('id')
-                ->where('id_area', $data->area)
-                ->where('id_marketplace', $data->marketplace)
-                ->first();
+            ->select('id')
+            ->where('id_area', $data->area)
+            ->where('id_marketplace', $data->marketplace)
+            ->first();
 
         $importar = LiverpoolService::importar_ventas($data->data, $marketplace_area->id, $data->almacen);
 
@@ -4198,26 +4213,26 @@ class VentaController extends Controller
 
         $pendientes =
             DB::table('documento_nota_autorizacion')
-                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
-                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-                ->where('estado', 1)
-                ->where('modulo', 'Ventas')
-                ->get()
-                ->toArray();
+            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
+            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+            ->where('estado', 1)
+            ->where('modulo', 'Ventas')
+            ->get()
+            ->toArray();
 
         $terminados =
             DB::table('documento_nota_autorizacion')
-                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
-                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-                ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
-                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-                ->where('estado', '!=', 1)
-                ->where('modulo', 'Ventas')
-                ->get()
-                ->toArray();
+            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
+            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+            ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
+            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+            ->where('estado', '!=', 1)
+            ->where('modulo', 'Ventas')
+            ->get()
+            ->toArray();
 
         $personales = DB::table('documento_nota_autorizacion')
             ->select('documento_nota_autorizacion.*', 'documento.no_venta')
@@ -4242,26 +4257,26 @@ class VentaController extends Controller
 
         $pendientes =
             DB::table('documento_nota_autorizacion')
-                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
-                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-                ->where('estado', 1)
-                ->where('modulo', 'Sin Venta')
-                ->get()
-                ->toArray();
+            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'documento.no_venta')
+            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+            ->where('estado', 1)
+            ->where('modulo', 'Sin Venta')
+            ->get()
+            ->toArray();
 
         $terminados =
             DB::table('documento_nota_autorizacion')
-                ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
-                ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
-                ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
-                ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
-                ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
-                ->where('estado', '!=', 1)
-                ->where('modulo', 'Sin Venta')
-                ->get()
-                ->toArray();
+            ->select('documento_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente', 'documento.no_venta')
+            ->leftJoin('usuario as a', 'documento_nota_autorizacion.id_usuario', '=', 'a.id')
+            ->leftJoin('usuario as b', 'documento_nota_autorizacion.id_autoriza', '=', 'b.id')
+            ->leftJoin('usuario as c', 'documento_nota_autorizacion.id_rechaza', '=', 'c.id')
+            ->leftJoin('documento', 'documento_nota_autorizacion.id_documento', '=', 'documento.id')
+            ->where('estado', '!=', 1)
+            ->where('modulo', 'Sin Venta')
+            ->get()
+            ->toArray();
 
         $personales = DB::table('documento_nota_autorizacion')
             ->select('documento_nota_autorizacion.*', 'documento.no_venta')
@@ -4326,23 +4341,23 @@ class VentaController extends Controller
 
         $terminados =
             DB::table('garantia_nota_autorizacion')
-                ->select('garantia_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente')
-                ->leftJoin('usuario as a', 'garantia_nota_autorizacion.usuario', '=', 'a.id')
-                ->leftJoin('usuario as b', 'garantia_nota_autorizacion.autoriza', '=', 'b.id')
-                ->leftJoin('usuario as c', 'garantia_nota_autorizacion.rechaza', '=', 'c.id')
-                ->where('estado', '!=', 1)
-                ->orderBy('created_at', 'DESC')
-                ->get()
-                ->toArray();
+            ->select('garantia_nota_autorizacion.*', 'a.nombre as solicitante', 'b.nombre as autorizante', 'c.nombre as denegente')
+            ->leftJoin('usuario as a', 'garantia_nota_autorizacion.usuario', '=', 'a.id')
+            ->leftJoin('usuario as b', 'garantia_nota_autorizacion.autoriza', '=', 'b.id')
+            ->leftJoin('usuario as c', 'garantia_nota_autorizacion.rechaza', '=', 'c.id')
+            ->where('estado', '!=', 1)
+            ->orderBy('created_at', 'DESC')
+            ->get()
+            ->toArray();
 
         $personales =
             DB::table('garantia_nota_autorizacion')
-                ->select('*')
-                ->where('usuario', $auth->id)
-                ->where('estado', '!=', 1)
-                ->orderBy('created_at', 'DESC')
-                ->get()
-                ->toArray();
+            ->select('*')
+            ->where('usuario', $auth->id)
+            ->where('estado', '!=', 1)
+            ->orderBy('created_at', 'DESC')
+            ->get()
+            ->toArray();
 
 
         foreach ($pendientes as $key) {
@@ -4530,14 +4545,14 @@ class VentaController extends Controller
         /** @noinspection PhpParamsInspection */
         $areas =
             DB::table('marketplace_publicacion_marketplaces')
-                ->select('area.*')
-                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
-                ->join('area', 'area.id', 'marketplace_area.id_area')
-                ->groupBy('area.area')
-                ->where('marketplace_publicacion_marketplaces.estatus', 1)
-                ->where('area.area', '!=', 'N/A')
-                ->get()
-                ->toArray();
+            ->select('area.*')
+            ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', 'marketplace_area.id')
+            ->join('area', 'area.id', 'marketplace_area.id_area')
+            ->groupBy('area.area')
+            ->where('marketplace_publicacion_marketplaces.estatus', 1)
+            ->where('area.area', '!=', 'N/A')
+            ->get()
+            ->toArray();
 
         foreach ($areas as $i => $area) {
             $area->marketplaces = DB::table('marketplace_publicacion_marketplaces')
@@ -4677,12 +4692,12 @@ class VentaController extends Controller
 
         $data =
             DB::table('marketplace_publicacion_marketplaces')
-                ->select('marketplace_publicacion_marketplaces.*', 'marketplace.marketplace', 'area.area')
-                ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', '=', 'marketplace_area.id')
-                ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
-                ->join('area', 'marketplace_area.id_area', '=', 'area.id')
-                ->where('marketplace_publicacion_marketplaces.estatus', 1)
-                ->get()->toArray();
+            ->select('marketplace_publicacion_marketplaces.*', 'marketplace.marketplace', 'area.area')
+            ->join('marketplace_area', 'marketplace_publicacion_marketplaces.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->where('marketplace_publicacion_marketplaces.estatus', 1)
+            ->get()->toArray();
 
         return response()->json([
             'code' => 200,
