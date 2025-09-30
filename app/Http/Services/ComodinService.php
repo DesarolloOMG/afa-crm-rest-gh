@@ -205,7 +205,7 @@ class ComodinService
                             $object->status = 0;
                             $object->mensaje = "La serie " . $serie . " no pertenece a" . $sku;
                             array_push($errores, "La serie " . $serie . " no pertenece a" . $sku);
-                        } else if($existe_serie->status != 1) {
+                        } else if($existe_serie->status != 1 && $id_almacen != 3) {
                             $object->status = 0;
                             $object->mensaje = "La serie " . $serie . " no está disponible para venta.";
                             array_push($errores, $object->mensaje);
