@@ -1,4 +1,5 @@
 <?php
+
 /** @noinspection PhpUndefinedMethodInspection */
 /** @noinspection PhpRedundantOptionalArgumentInspection */
 /** @noinspection PhpUndefinedFieldInspection */
@@ -454,7 +455,7 @@ class CompraController extends Controller
             if (!empty($usuarios)) {
                 $notificacion['usuario'] = $usuarios;
 
-//                event(new PusherEvent(json_encode($notificacion)));
+                //                event(new PusherEvent(json_encode($notificacion)));
             }
         }
 
@@ -1472,7 +1473,6 @@ class CompraController extends Controller
                 'sku' => 'TEMPORAL',
                 'descripcion' => 'PRODUCTO TEMPORAL'
             ]);
-
         } else {
             $modelo_id = $existe_temporal[0]->id;
         }
@@ -1528,10 +1528,12 @@ class CompraController extends Controller
 
             $mg = Mailgun::create(config("mailgun.token"));
             $domain = config("mailgun.email_from");
-            $mg->messages()->send($domain, array('from' => config("mailgun.email_from"),
+            $mg->messages()->send($domain, array(
+                'from' => config("mailgun.email_from"),
                 'to' => 'desarrollo1@omg.com.mx',
                 'subject' => 'Nueva requisición para orden de compra.',
-                'html' => $view->render()));
+                'html' => $view->render()
+            ));
 
             $notificacion['titulo'] = "Requisición generada";
             $notificacion['message'] = "Se ha generado una nueva requisición para una orden de compra por el usuario " . $nombre . " con el ID " . $documento . ".";
@@ -1552,7 +1554,7 @@ class CompraController extends Controller
             $notificacion['id'] = $notificacion_id;
             $notificacion['usuario'] = $notificados;
 
-//            event(new PusherEvent(json_encode($notificacion)));
+            //            event(new PusherEvent(json_encode($notificacion)));
         } catch (Exception $e) {
             return response()->json([
                 'code' => 200,
@@ -1863,7 +1865,7 @@ class CompraController extends Controller
             $notificacion['id'] = $notificacion_id;
             $notificacion['usuario'] = $usuario->id;
 
-//            event(new PusherEvent(json_encode($notificacion)));
+            //            event(new PusherEvent(json_encode($notificacion)));
         } catch (Exception $e) {
             return response()->json([
                 'code' => 200,
@@ -1981,7 +1983,6 @@ class CompraController extends Controller
                     'sku' => $producto->codigo,
                     'descripcion' => $producto->descripcion
                 ]);
-
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -2015,7 +2016,6 @@ class CompraController extends Controller
                     ]);
                 }
             }
-
         } catch (Exception $e) {
             DB::table('documento')->where(['id' => $documento])->delete();
 
@@ -2796,7 +2796,6 @@ class CompraController extends Controller
                     'sku' => $producto->codigo,
                     'descripcion' => $producto->descripcion
                 ]);
-
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -2898,18 +2897,14 @@ class CompraController extends Controller
                 if ($archivo->nombre != "" && $archivo->data != "") {
                     $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
 
-                    $response = \Httpful\Request::post(config("webservice.dropbox") . '2/files/upload')
-                        ->addHeader('Authorization', "Bearer " . config("keys.dropbox"))
-                        ->addHeader('Dropbox-API-Arg', '{ "path": "/' . $archivo->nombre . '" , "mode": "add", "autorename": true}')
-                        ->addHeader('Content-Type', 'application/octet-stream')
-                        ->body($archivo_data)
-                        ->send();
+                    $dropboxService = new DropboxService();
+                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->id,
                         'id_usuario' => $auth->id,
                         'nombre' => $archivo->nombre,
-                        'dropbox' => $response->body->id
+                        'dropbox' => $response['id']
                     ]);
                 }
             }
@@ -3466,7 +3461,6 @@ class CompraController extends Controller
                     'sku' => $producto->codigo,
                     'descripcion' => $producto->descripcion
                 ]);
-
             } else {
                 $modelo_id = $existe_codigo[0]->id;
             }
@@ -4205,7 +4199,7 @@ class CompraController extends Controller
 
     public function compra_tipo_cambio_data(): JsonResponse
     {
-//        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
+        //        $tipo_cambio = DB::select("SELECT tipo_cambio FROM documento_tipo_cambio ORDER BY created_at DESC");
 
         return response()->json([
             'code' => 200,

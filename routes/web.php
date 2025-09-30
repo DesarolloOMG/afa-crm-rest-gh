@@ -969,7 +969,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('data', 'ContabilidadController@contabilidad_ingreso_eliminar_data');
                 $router->delete('eliminar/{id}', 'ContabilidadController@contabilidad_ingreso_eliminar_eliminar');
             });
-
         });
 
         $router->group(['prefix' => 'globalizar'], function () use ($router) {
@@ -1005,7 +1004,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('banco/crear', 'ContabilidadController@contabilidad_tesoreria_banco_crear');
             $router->post('banco/editar', 'ContabilidadController@contabilidad_tesoreria_banco_editar');
             $router->delete('banco/eliminar/{id}', 'ContabilidadController@contabilidad_tesoreria_banco_eliminar');
-
         });
     });
 
@@ -1189,7 +1187,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('/print/{documentoId}/{impresoraNombre}', 'PrintController@guias');
         });
     });
-
 });
 
 $router->post('rawinfo/mercadolibre/notificaciones/{marketplace_id}', 'NotificacionesController@notificacion');
