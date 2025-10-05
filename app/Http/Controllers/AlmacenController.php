@@ -1713,6 +1713,20 @@ class AlmacenController extends Controller
                     ], 500);
                 }
 
+                // Validar existencias para documentos que NO sean de entrada.
+                // Ahora, para SALIDA, TRASPASO y USO_INTERNO, se utiliza el almacén de salida para verificar el stock.
+                if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
+                    $sourceAlmacenId = $data->almacen_salida;
+                    $stock = InventarioService::existenciaProducto($producto->sku, $sourceAlmacenId);
+                    $cantidadRequerida = $producto->serie ? count($producto->series) : $producto->cantidad;
+                    if ($stock->error || $stock->disponible < $cantidadRequerida) {
+                        DB::rollBack();
+                        return response()->json([
+                            'message' => "Stock insuficiente para el producto " . trim($producto->sku) . ". Disponible: " . $stock->disponible . ", requerido: " . $cantidadRequerida
+                        ], 500);
+                    }
+                }
+
                 // Creación del movimiento
                 $movimiento = Movimiento::create([
                     'id_documento' => $documento,
@@ -1724,20 +1738,6 @@ class AlmacenController extends Controller
                     'comentario' => $producto->comentarios,
                     'regalo' => 0
                 ])->id;
-
-                // Validar existencias para documentos que NO sean de entrada.
-                // Ahora, para SALIDA, TRASPASO y USO_INTERNO, se utiliza el almacén de salida para verificar el stock.
-                if ($data->tipo != EnumDocumentoTipo::ENTRADA) {
-                    $sourceAlmacenId = $data->almacen_salida;
-                    $stock = InventarioService::stockDisponible(trim($producto->sku), $sourceAlmacenId);
-                    $cantidadRequerida = $producto->serie ? count($producto->series) : $producto->cantidad;
-                    if ($stock->error || $stock->disponible < $cantidadRequerida) {
-                        DB::rollBack();
-                        return response()->json([
-                            'message' => "Stock insuficiente para el producto " . trim($producto->sku) . ". Disponible: " . $stock->disponible . ", requerido: " . $cantidadRequerida
-                        ], 500);
-                    }
-                }
 
                 // Si el producto se gestiona por series
                 if ($producto->serie) {

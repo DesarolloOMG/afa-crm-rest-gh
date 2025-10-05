@@ -470,12 +470,12 @@ class InventarioService
     }
 
     /**
-     * Obtiene la existencia simplificada (stock, pendientes y disponible) de un producto
-     * en un almacén específico utilizando el SP sp_calcularExistenciaCompleta.
+     * Obtiene la existencia simplificada (stock y disponible) de un producto
+     * en un almacén específico utilizando el SP sp_calcularExistenciaProducto.
      *
-     * @param string $sku         SKU del producto a consultar.
-     * @param int $idAlmacen      ID del almacén específico.
-     * @return \stdClass          Objeto con stock, pendientesVenta, transito, pretransferencia y disponible.
+     * @param string $sku        SKU del producto a consultar.
+     * @param int    $idAlmacen  ID del almacén específico.
+     * @return \stdClass         Objeto con: error, mensaje, stock, disponible.
      */
     public static function existenciaProducto(string $sku, int $idAlmacen)
     {
@@ -483,84 +483,32 @@ class InventarioService
         $response->error = 0;
         $response->mensaje = '';
         $response->stock = 0;
-        $response->pendientesVenta = 0;
-        $response->transito = 0;
-        $response->pretransferencia = 0;
         $response->disponible = 0;
 
         try {
-            $results = DB::select("CALL sp_calcularExistenciaCompleta(?, ?)", [$sku, $idAlmacen]);
+            $results = DB::select("CALL sp_calcularExistenciaProducto(?, ?)", [$sku, $idAlmacen]);
 
-            if (count($results) > 0) {
+            if (!empty($results)) {
                 $row = $results[0];
 
-                if ($row->error == 1) {
-                    $response->error = 1;
-                    $response->mensaje = $row->mensaje;
-                } else {
+                // El SP puede regresar error=1 si no existe el SKU o si stock=0 en ese almacén.
+                $response->error = (int)($row->error ?? 1);
+                $response->mensaje = (string)($row->mensaje ?? 'Respuesta inválida del SP.');
+
+                // Solo asignamos si existen en la respuesta
+                if (property_exists($row, 'stock')) {
                     $response->stock = (int)$row->stock;
-                    $response->pendientesVenta = (int)$row->pendientesVenta;
-                    $response->transito = (int)$row->transito;
-                    $response->pretransferencia = (int)$row->pretransferencia;
+                }
+                if (property_exists($row, 'disponible')) {
                     $response->disponible = (int)$row->disponible;
-                    $response->mensaje = $row->mensaje;
-                    $response->tipo = $row->tipo;
                 }
             } else {
                 $response->error = 1;
-                $response->mensaje = "No se obtuvo respuesta del Stored Procedure sp_calcularExistenciaCompleta.";
+                $response->mensaje = "No se obtuvo respuesta del Stored Procedure sp_calcularExistenciaProducto.";
             }
         } catch (\Exception $e) {
             $response->error = 1;
             $response->mensaje = "Error al llamar SP: " . $e->getMessage();
-        }
-
-        return $response;
-    }
-
-    /**
-     * Obtiene el stock disponible y detalles relacionados de un producto específico en un almacén
-     * llamando al SP sp_calcularExistenciaCompleta.
-     *
-     * @param string $sku        SKU del producto.
-     * @param int $idAlmacen     ID del almacén.
-     * @return \stdClass         Objeto con stock, pendientesVenta, transito, pretransferencia y disponible.
-     */
-    public static function stockDisponible(string $sku, int $idAlmacen)
-    {
-        $response = new \stdClass();
-        $response->error = 0;
-        $response->mensaje = '';
-        $response->stock = 0;
-        $response->pendientesVenta = 0;
-        $response->transito = 0;
-        $response->pretransferencia = 0;
-        $response->disponible = 0;
-
-        try {
-            $results = DB::select("CALL sp_calcularExistenciaCompleta(?, ?)", [$sku, $idAlmacen]);
-
-            if (count($results) > 0) {
-                $row = $results[0];
-
-                if ($row->error == 1) {
-                    $response->error = 1;
-                    $response->mensaje = $row->mensaje;
-                } else {
-                    $response->stock = (int)$row->stock;
-                    $response->pendientesVenta = (int)$row->pendientesVenta;
-                    $response->transito = (int)$row->transito;
-                    $response->pretransferencia = (int)$row->pretransferencia;
-                    $response->disponible = (int)$row->disponible;
-                    $response->mensaje = $row->mensaje;
-                }
-            } else {
-                $response->error = 1;
-                $response->mensaje = "No se obtuvo respuesta del Stored Procedure sp_calcularExistenciaCompleta.";
-            }
-        } catch (\Exception $e) {
-            $response->error = 1;
-            $response->mensaje = "Error al llamar al SP: " . $e->getMessage();
         }
 
         return $response;

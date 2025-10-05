@@ -68,241 +68,286 @@ class VentaController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        $existe_venta = DB::select("SELECT 
-                                        documento.id,
-                                        marketplace.id AS id_marketplace,
-                                        marketplace.marketplace
-                                    FROM documento 
-                                    INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                    INNER JOIN marketplace ON marketplace_area.id_marketplace = marketplace.id
-                                    WHERE documento.no_venta = '" . trim($data->documento->venta) . "' 
-                                    AND documento.no_venta != '.' 
-                                    AND documento.id_marketplace_area = " . $data->documento->marketplace . " AND documento.status = 1");
+        // 1) Venta duplicada
+        $existeVenta = DB::table('documento')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->where('documento.no_venta', trim($data->documento->venta))
+            ->where('documento.no_venta', '!=', '.')
+            ->where('documento.id_marketplace_area', (int)$data->documento->marketplace)
+            ->where('documento.status', 1)
+            ->select('documento.id')
+            ->first();
 
-        if (!empty($existe_venta)) {
-            if ($existe_venta[0]->id_marketplace != 19 && $existe_venta[0]->marketplace != "WALMART") {
-
-                return response()->json([
-                    'code' => 500,
-                    'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: " . $existe_venta[0]->id . self::logVariableLocation()
-                ]);
-            }
-        }
-
-        $existe_cliente = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . trim($data->cliente->rfc) . "' AND tipo = 1");
-
-        if (empty($existe_cliente)) {
+        if ($existeVenta) {
             return response()->json([
-                'code' => 500,
-                'message' => "No hay un cliente que coincida con el rfc."
+                'code'    => 500,
+                'message' => "El número de venta ya se encuentra registrada<br>Documento CRM: {$existeVenta->id}" . self::logVariableLocation(),
             ]);
         }
 
-        $cliente = $existe_cliente[0]->id;
+        // 2) Cliente por RFC
+        $clienteId = DB::table('documento_entidad')
+            ->where('rfc', trim($data->cliente->rfc))
+            ->where('tipo', 1)
+            ->value('id');
 
-        DB::table('documento_entidad')->where(['id' => $cliente])->update([
-            'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-            'rfc' => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-            'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-            'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-            'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-            'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-            'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-            'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-        ]);
-
-        $documento = DB::table('documento')->insertGetId([
-            'id_almacen_principal_empresa' => $data->documento->almacen,
-            'id_periodo' => $data->documento->periodo,
-            'id_cfdi' => $data->documento->uso_venta,
-            'id_marketplace_area' => $data->documento->marketplace,
-            'id_usuario' => $auth->id,
-            'id_moneda' => $data->documento->moneda,
-            'id_paqueteria' => $data->documento->paqueteria,
-            'id_fase' => 3,
-            'no_venta' => TRIM($data->documento->venta),
-            'id_modelo_proveedor' => empty($data->documento->proveedor) ? 0 : $data->documento->proveedor,
-            'tipo_cambio' => $data->documento->tipo_cambio,
-            'referencia' => TRIM($data->documento->referencia),
-            'observacion' => TRIM($data->documento->observacion),
-            'info_extra' => $data->documento->info_extra,
-            'id_entidad' => $cliente,
-            'fulfillment' => $data->documento->fulfillment,
-            'series_factura' => $data->documento->series_factura,
-            'autorizado' => ($data->documento->baja_utilidad) ? 0 : 1,
-            'anticipada' => $data->documento->anticipada,
-            'total' => $data->documento->total_user,
-            'saldo' => $data->documento->total_user,
-            'addenda_orden_compra' => $data->addenda->orden_compra,
-            'addenda_solicitud_pago' => $data->addenda->solicitud_pago,
-            'addenda_tipo_documento' => $data->addenda->tipo_documento,
-            'addenda_factura_asociada' => $data->addenda->factura_asociada,
-            'mkt_fee' => $data->documento->mkt_fee ?? 0,
-            'mkt_shipping_total' => $data->documento->costo_envio ?? 0,
-            'mkt_shipping_total_cost' => $data->documento->costo_envio_total ?? 0,
-            'mkt_shipping_id' => $data->documento->mkt_shipping ?? 0,
-            'mkt_user_total' => $data->documento->total_user ?? 0,
-            'mkt_total' => $data->documento->total ?? 0,
-            'mkt_created_at' => $data->documento->mkt_created_at ?? 0,
-            'started_at' => $data->documento->fecha_inicio,
-            'shipping_null' => $data->documento->shipping_null ?? 0
-        ]);
-
-        DB::table('seguimiento')->insert([
-            'id_documento' => $documento,
-            'id_usuario' => $auth->id,
-            'seguimiento' => $data->documento->seguimiento
-        ]);
-
-        if (property_exists($data, 'usuario_agro')) {
-            DB::table('documento_usuario_agro')->insert([
-                'id_documento' => $documento,
-                'id_usuarios_agro' => $data->usuario_agro,
+        if (!$clienteId) {
+            return response()->json([
+                'code'    => 500,
+                'message' => 'No hay un cliente que coincida con el RFC.',
             ]);
         }
 
-        foreach ($data->documento->productos as $producto) {
-            DB::table('movimiento')->insertGetId([
-                'id_documento' => $documento,
-                'id_modelo' => $producto->id,
-                'cantidad' => $producto->cantidad,
-                'precio' => $producto->precio,
-                'garantia' => $producto->garantia,
-                'retencion' => $producto->ret,
-                'modificacion' => $producto->modificacion,
-                'comentario' => $producto->comentario,
-                'addenda' => $producto->addenda,
-                'regalo' => $producto->regalo
-            ]);
+        // 3) PRE-VALIDACIÓN DE EXISTENCIAS (súper simple: un loop por producto)
+        $productos = $data->documento->productos ?? [];
+        $idAlmacen = (int)$data->documento->almacen;
 
-            if (TRIM($producto->modificacion) != "") {
-                DB::table('documento')->where(['id' => $documento])->update([
-                    'modificacion' => 1,
-                    'id_fase' => 2
-                ]);
+        $faltantes = [];
+        $detalle   = [];
+
+        foreach ($productos as $p) {
+            $idModelo    = (int)$p->id;
+            $cantidadReq = (int)$p->cantidad;
+
+            // Traer SKU y descripción (dos consultas simples; sin pluck/array_map)
+            $sku  = DB::table('modelo')->where('id', $idModelo)->value('sku');
+            $desc = DB::table('modelo')->where('id', $idModelo)->value('descripcion');
+
+            if (!$sku) {
+                $faltantes[] = "Modelo {$idModelo} sin SKU.";
+                continue;
+            }
+
+            // Helper que ya tienes (stock, disponible)
+            $ex = InventarioService::existenciaProducto($sku, $idAlmacen);
+
+            $disp  = isset($ex->disponible) ? (int)$ex->disponible : 0;
+            $stock = isset($ex->stock) ? (int)$ex->stock : 0;
+
+            $detalle[] = [
+                'id'          => $idModelo,
+                'sku'         => $sku,
+                'descripcion' => $desc ?: '',
+                'requerido'   => $cantidadReq,
+                'stock'       => $stock,
+                'disponible'  => $disp,
+                'mensaje'     => isset($ex->mensaje) ? $ex->mensaje : '',
+            ];
+
+            if ($disp < $cantidadReq) {
+                $faltantes[] = "SKU {$sku} (" . ($desc ?: '') . "): requerido {$cantidadReq}, disponible {$disp}.";
             }
         }
 
-        DB::table('documento_direccion')->insert([
-            'id_documento' => $documento,
-            'id_direccion_pro' => property_exists($data->documento->direccion_envio, "colonia") ? $data->documento->direccion_envio->colonia : "",
-            'contacto' => property_exists($data->documento->direccion_envio, "contacto") ? $data->documento->direccion_envio->contacto : "",
-            'calle' => property_exists($data->documento->direccion_envio, "calle") ? $data->documento->direccion_envio->calle : "",
-            'numero' => property_exists($data->documento->direccion_envio, "numero") ? $data->documento->direccion_envio->numero : "",
-            'numero_int' => property_exists($data->documento->direccion_envio, "numero_int") ? $data->documento->direccion_envio->numero_int : "",
-            'colonia' => property_exists($data->documento->direccion_envio, "colonia_text") ? $data->documento->direccion_envio->colonia_text : "",
-            'ciudad' => property_exists($data->documento->direccion_envio, "ciudad") ? $data->documento->direccion_envio->ciudad : "",
-            'estado' => property_exists($data->documento->direccion_envio, "estado") ? $data->documento->direccion_envio->estado : "",
-            'codigo_postal' => property_exists($data->documento->direccion_envio, "codigo_postal") ? $data->documento->direccion_envio->codigo_postal : "",
-            'referencia' => property_exists($data->documento->direccion_envio, "referencia") ? $data->documento->direccion_envio->referencia : "",
-            'contenido' => property_exists($data->documento->direccion_envio, "contenido") ? $data->documento->direccion_envio->contenido : "",
-            'tipo_envio' => property_exists($data->documento->direccion_envio, "tipo_envio") ? $data->documento->direccion_envio->tipo_envio : "",
-        ]);
+        if (!empty($faltantes)) {
+            return response()->json([
+                'code'      => 422,
+                'message'   => 'No hay existencia suficiente en uno o más productos.',
+                'faltantes' => $faltantes,
+                'detalle'   => $detalle,
+            ]);
+        }
 
+        // 4) TRANSACCIÓN: todo o nada
         try {
-            foreach ($data->documento->archivos as $archivo) {
-                if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+            DB::beginTransaction();
 
-                    $dropboxService = new DropboxService();
-                    $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
-
-                    DB::table('documento_archivo')->insert([
-                        'id_documento' => $documento,
-                        'id_usuario' => $auth->id,
-                        'tipo' => $archivo->guia,
-                        'id_impresora' => $archivo->impresora,
-                        'nombre' => $archivo->nombre,
-                        'dropbox' => $response['id']
-                    ]);
-                }
-            }
-        } catch (Exception $e) {
-
-            return response()->json([
-                'code' => 500,
-                'message' => "No fue posible subir los archivos a dropbox, pedido cancelado, favor de contactar a un administrador. Mensaje de error: " . $e->getMessage() . self::logVariableLocation(),
-                'raw' => $e
+            // 4.1) Actualiza datos del cliente
+            DB::table('documento_entidad')->where('id', $clienteId)->update([
+                'razon_social'         => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
+                'rfc'                  => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
+                'telefono'             => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
+                'telefono_alt'         => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
+                'correo'               => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
+                'regimen'              => property_exists($data->cliente, 'regimen') ? trim($data->cliente->regimen) : '',
+                'regimen_id'           => property_exists($data->cliente, 'regimen') ? trim($data->cliente->regimen) : '',
+                'codigo_postal_fiscal' => property_exists($data->cliente, 'cp_fiscal') ? trim($data->cliente->cp_fiscal) : '',
             ]);
-        }
 
-        $message = "Venta creada correctamente. " . $documento;
+            // 4.2) Documento
+            $documentoId = DB::table('documento')->insertGetId([
+                'id_almacen_principal_empresa' => $idAlmacen,
+                'id_periodo'                   => $data->documento->periodo,
+                'id_cfdi'                      => $data->documento->uso_venta,
+                'id_marketplace_area'          => $data->documento->marketplace,
+                'id_usuario'                   => $auth->id,
+                'id_moneda'                    => $data->documento->moneda,
+                'id_paqueteria'                => $data->documento->paqueteria,
+                'id_fase'                      => 3,
+                'no_venta'                     => trim($data->documento->venta),
+                'id_modelo_proveedor'          => empty($data->documento->proveedor) ? 0 : $data->documento->proveedor,
+                'tipo_cambio'                  => $data->documento->tipo_cambio,
+                'referencia'                   => trim($data->documento->referencia),
+                'observacion'                  => trim($data->documento->observacion),
+                'info_extra'                   => $data->documento->info_extra,
+                'id_entidad'                   => $clienteId,
+                'fulfillment'                  => $data->documento->fulfillment,
+                'series_factura'               => $data->documento->series_factura,
+                'autorizado'                   => ($data->documento->baja_utilidad) ? 0 : 1,
+                'anticipada'                   => $data->documento->anticipada,
+                'total'                        => $data->documento->total_user,
+                'saldo'                        => $data->documento->total_user,
+                'addenda_orden_compra'         => $data->addenda->orden_compra,
+                'addenda_solicitud_pago'       => $data->addenda->solicitud_pago,
+                'addenda_tipo_documento'       => $data->addenda->tipo_documento,
+                'addenda_factura_asociada'     => $data->addenda->factura_asociada,
+                'mkt_fee'                      => $data->documento->mkt_fee ?? 0,
+                'mkt_shipping_total'           => $data->documento->costo_envio ?? 0,
+                'mkt_shipping_total_cost'      => $data->documento->costo_envio_total ?? 0,
+                'mkt_shipping_id'              => $data->documento->mkt_shipping ?? 0,
+                'mkt_user_total'               => $data->documento->total_user ?? 0,
+                'mkt_total'                    => $data->documento->total ?? 0,
+                'mkt_created_at'               => $data->documento->mkt_created_at ?? 0,
+                'started_at'                   => $data->documento->fecha_inicio,
+                'shipping_null'                => $data->documento->shipping_null ?? 0,
+            ]);
 
-        if ($data->documento->baja_utilidad) {
-            $message .= "<br>El documento no alcanza la ultilidad del 5% respecto al costo de los productos seleccionados por lo cual, quedará pendiente de autorización.";
+            // 4.3) Seguimiento
+            DB::table('seguimiento')->insert([
+                'id_documento' => $documentoId,
+                'id_usuario'   => $auth->id,
+                'seguimiento'  => $data->documento->seguimiento,
+            ]);
 
-            try {
-                $administradores = DB::select("SELECT 
-                                                usuario.id
-                                            FROM usuario 
-                                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario 
-                                            WHERE id_subnivel_nivel = 3 AND status = 1");
-
-                if (!empty($administradores)) {
-                    $usuarios = array();
-
-                    $notificacion['titulo'] = "Autorización requerida";
-                    $notificacion['message'] = "El pedido " . $documento . " requiere una autorización por no alcanzar el 5% de utilidad en el total de la venta.";
-                    $notificacion['tipo'] = "warning"; // success, warning, danger
-                    $notificacion['link'] = "/venta/venta/autorizar/" . $documento;
-
-                    $notificacion_id = DB::table('notificacion')->insertGetId([
-                        'data' => json_encode($notificacion)
-                    ]);
-
-                    $notificacion['id'] = $notificacion_id;
-
-                    foreach ($administradores as $usuario) {
-                        DB::table('notificacion_usuario')->insert([
-                            'id_usuario' => $usuario->id,
-                            'id_notificacion' => $notificacion_id
-                        ]);
-
-                        $usuarios[] = $usuario->id;
-                    }
-
-                    if (!empty($usuarios)) {
-                        $notificacion['usuario'] = $usuarios;
-
-                        //                        event(new PusherEvent(json_encode($notificacion)));
-                    }
-                }
-            } catch (Exception $e) {
-
-
-                $message .= "<br><br>No fue posible notificar a los administradores para la autorización del pedido por baja utilidad. " . self::logVariableLocation();
-            }
-        }
-
-        if ($data->documento->anticipada || $data->documento->fulfillment) {
-            $response = InventarioService::aplicarMovimiento($documento);
-
-            if ($response->error) {
-
-                return response()->json([
-                    'code' => 500,
-                    'message' => $response->mensaje,
-                    'raw' => property_exists($response, 'raw') ? $response->raw : 0,
-                    'data' => property_exists($response, 'data') ? $response->data : 0
+            // 4.4) Opcional agro
+            if (property_exists($data, 'usuario_agro')) {
+                DB::table('documento_usuario_agro')->insert([
+                    'id_documento'     => $documentoId,
+                    'id_usuarios_agro' => $data->usuario_agro,
                 ]);
-            } else {
-                $user = DB::table("usuario")->find($auth->id);
-
-                GeneralService::sendEmailToAdmins("Crear Venta", "El usuario " . $user->nombre . " solicitó CCE para el documento: " . $documento, "", 1);
             }
-        }
 
-        if (!empty($data->documento->proveedor)) {
+            // 4.5) Movimientos (loop simple)
+            $hayModificacion = false;
+            foreach ($productos as $producto) {
+                DB::table('movimiento')->insert([
+                    'id_documento' => $documentoId,
+                    'id_modelo'    => (int)$producto->id,
+                    'cantidad'     => (int)$producto->cantidad,
+                    'precio'       => (float)$producto->precio,
+                    'garantia'     => $producto->garantia,
+                    'retencion'    => $producto->ret,
+                    'modificacion' => $producto->modificacion,
+                    'comentario'   => $producto->comentario,
+                    'addenda'      => $producto->addenda,
+                    'regalo'       => $producto->regalo,
+                ]);
+
+                if (trim((string)$producto->modificacion) !== '') {
+                    $hayModificacion = true;
+                }
+            }
+
+            if ($hayModificacion) {
+                DB::table('documento')->where('id', $documentoId)->update([
+                    'modificacion' => 1,
+                    'id_fase'      => 2,
+                ]);
+            }
+
+            // 4.6) Dirección envío
+            DB::table('documento_direccion')->insert([
+                'id_documento'     => $documentoId,
+                'id_direccion_pro' => property_exists($data->documento->direccion_envio, 'colonia') ? $data->documento->direccion_envio->colonia : '',
+                'contacto'         => property_exists($data->documento->direccion_envio, 'contacto') ? $data->documento->direccion_envio->contacto : '',
+                'calle'            => property_exists($data->documento->direccion_envio, 'calle') ? $data->documento->direccion_envio->calle : '',
+                'numero'           => property_exists($data->documento->direccion_envio, 'numero') ? $data->documento->direccion_envio->numero : '',
+                'numero_int'       => property_exists($data->documento->direccion_envio, 'numero_int') ? $data->documento->direccion_envio->numero_int : '',
+                'colonia'          => property_exists($data->documento->direccion_envio, 'colonia_text') ? $data->documento->direccion_envio->colonia_text : '',
+                'ciudad'           => property_exists($data->documento->direccion_envio, 'ciudad') ? $data->documento->direccion_envio->ciudad : '',
+                'estado'           => property_exists($data->documento->direccion_envio, 'estado') ? $data->documento->direccion_envio->estado : '',
+                'codigo_postal'    => property_exists($data->documento->direccion_envio, 'codigo_postal') ? $data->documento->direccion_envio->codigo_postal : '',
+                'referencia'       => property_exists($data->documento->direccion_envio, 'referencia') ? $data->documento->direccion_envio->referencia : '',
+                'contenido'        => property_exists($data->documento->direccion_envio, 'contenido') ? $data->documento->direccion_envio->contenido : '',
+                'tipo_envio'       => property_exists($data->documento->direccion_envio, 'tipo_envio') ? $data->documento->direccion_envio->tipo_envio : '',
+            ]);
+
+            // 4.7) Archivos → Dropbox
+            if (!empty($data->documento->archivos)) {
+                $dropboxService = new DropboxService();
+                foreach ($data->documento->archivos as $archivo) {
+                    if (!empty($archivo->nombre) && !empty($archivo->data)) {
+                        $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+                        $resp = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
+
+                        DB::table('documento_archivo')->insert([
+                            'id_documento' => $documentoId,
+                            'id_usuario'   => $auth->id,
+                            'tipo'         => $archivo->guia,
+                            'id_impresora' => $archivo->impresora,
+                            'nombre'       => $archivo->nombre,
+                            'dropbox'      => $resp['id'],
+                        ]);
+                    }
+                }
+            }
+
+            // 4.8) Baja utilidad (notificaciones)
+            if ($data->documento->baja_utilidad) {
+                $admins = DB::table('usuario')
+                    ->join('usuario_subnivel_nivel', 'usuario.id', '=', 'usuario_subnivel_nivel.id_usuario')
+                    ->where('usuario_subnivel_nivel.id_subnivel_nivel', 3)
+                    ->where('usuario.status', 1)
+                    ->pluck('usuario.id');
+
+                if ($admins && count($admins) > 0) {
+                    $payload = [
+                        'titulo'  => 'Autorización requerida',
+                        'message' => "El pedido {$documentoId} requiere autorización por no alcanzar el 5% de utilidad.",
+                        'tipo'    => 'warning',
+                        'link'    => "/venta/venta/autorizar/{$documentoId}",
+                    ];
+                    $notificacionId = DB::table('notificacion')->insertGetId(['data' => json_encode($payload)]);
+
+                    foreach ($admins as $uid) {
+                        DB::table('notificacion_usuario')->insert([
+                            'id_usuario'      => $uid,
+                            'id_notificacion' => $notificacionId,
+                        ]);
+                    }
+                }
+            }
+
+            // 4.9) Aplicar inventario si corresponde
+            if ($data->documento->anticipada || $data->documento->fulfillment) {
+                $respInv = InventarioService::aplicarMovimiento($documentoId);
+                if ($respInv->error) {
+                    throw new \RuntimeException($respInv->mensaje);
+                }
+            }
+
+            DB::commit();
+
+            // 5) Post-commit: correo si aplica
+            if ($data->documento->anticipada || $data->documento->fulfillment) {
+                $user = DB::table('usuario')->find($auth->id);
+                GeneralService::sendEmailToAdmins(
+                    'Crear Venta',
+                    "El usuario {$user->nombre} solicitó CCE para el documento: {$documentoId}",
+                    '',
+                    1
+                );
+            }
+
+            $message = "Venta creada correctamente. {$documentoId}";
+            if ($data->documento->baja_utilidad) {
+                $message .= "<br>El documento no alcanza la utilidad del 5% respecto al costo; quedará pendiente de autorización.";
+            }
+
+            if (!empty($data->documento->proveedor)) {
+                return response()->json(['code' => 200, 'message' => $message]);
+            }
+
+            return response()->json(['code' => 200, 'message' => $message]);
+
+        } catch (\Throwable $e) {
+            DB::rollBack();
             return response()->json([
-                'code' => 200,
-                'message' => $message,
+                'code'    => 500,
+                'message' => 'Error al crear la venta: ' . $e->getMessage() . self::logVariableLocation(),
             ]);
         }
-
-        return response()->json([
-            'code' => 200,
-            'message' => $message
-        ]);
     }
 
     // OPT
@@ -610,68 +655,100 @@ class VentaController extends Controller
 
     public function venta_venta_crear_producto_existencia($producto, $almacen, $cantidad): JsonResponse
     {
-        // Obtener empresa relacionada al almacen
+        // Normaliza entradas
+        $sku        = trim((string)$producto);     // OJO: aquí espero SKU, no id_modelo
+        $idAlmacen  = (int)$almacen;
+        $requerido  = max(1, (int)$cantidad);
+        $hoy        = date('Y-m-d');
+
+        // 1) Empresa del almacén
         $empresa = DB::table('empresa_almacen')
             ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
-            ->select('empresa.id', 'empresa.bd')
-            ->where('empresa_almacen.id', $almacen)
+            ->select('empresa.id') // 'bd' no se usa aquí
+            ->where('empresa_almacen.id', $idAlmacen)
             ->first();
 
         if (!$empresa) {
             return response()->json([
-                'code' => 500,
-                'message' => "No se encontró el almacén del documento, favor de contactar a un administrador."
-            ], 500);
+                'code'    => 404,
+                'message' => 'No se encontró el almacén del documento.',
+            ], 404);
         }
 
-        $total = InventarioService::existenciaProducto($producto, $almacen);
+        // 2) Existencia usando tu helper
+        $ex = InventarioService::existenciaProducto($sku, $idAlmacen);
 
-        if ($total->error) {
+        // Si el SP no regresó campos útiles y marcó error, es un 500 real
+        $tieneDatos = (isset($ex->stock) || isset($ex->disponible));
+        if (($ex->error ?? 0) === 1 && !$tieneDatos) {
             return response()->json([
-                'code' => 500,
-                'message' => $total->mensaje
+                'code'    => 500,
+                'message' => $ex->mensaje ?? 'No fue posible validar la existencia.',
             ]);
         }
 
-        if ($total->disponible < $cantidad) {
+        $stock      = (int)($ex->stock ?? 0);
+        $disponible = (int)($ex->disponible ?? 0);
+
+        // 3) Validación de negocio: existencia insuficiente
+        if ($disponible < $requerido) {
             return response()->json([
-                'code' => 500,
-                'message' => "Producto $producto sin suficiente existencias.<br><br>Requerida: $cantidad<br>Disponible: $total->disponible"
+                'code'       => 422,
+                'message'    => "Producto {$sku} sin suficiente existencia.<br><br>Requerida: {$requerido}<br>Disponible: {$disponible}",
+                'existencia' => $disponible,
             ]);
         }
 
-        $hoy = date('Y-m-d');
-
-        $promociones = DB::table('promocion')
-            ->join('promocion_modelo', 'promocion.id', '=', 'promocion_modelo.id_promocion')
-            ->join('modelo', 'promocion_modelo.id_modelo', '=', 'modelo.id')
-            ->select('promocion.id', 'promocion.titulo', 'promocion.inicio', 'promocion.fin')
-            ->whereDate('promocion.inicio', '<=', $hoy)
-            ->whereDate('promocion.fin', '>=', $hoy)
-            ->where('modelo.sku', $producto)
-            ->where('promocion.id_empresa', $empresa->id)
-            ->groupBy('promocion.id', 'promocion.titulo', 'promocion.inicio', 'promocion.fin')
+        // 4) Promociones (una sola consulta y agrupamos)
+        $promosFlat = DB::table('promocion as p')
+            ->join('promocion_modelo as pm', 'p.id', '=', 'pm.id_promocion')
+            ->join('modelo as m', 'pm.id_modelo', '=', 'm.id')
+            ->where('m.sku', $sku)
+            ->where('p.id_empresa', $empresa->id)
+            ->whereDate('p.inicio', '<=', $hoy)
+            ->whereDate('p.fin', '>=', $hoy)
+            ->select(
+                'p.id',
+                'p.titulo',
+                'p.inicio',
+                'p.fin',
+                'm.sku as codigo',
+                'm.descripcion',
+                'pm.cantidad',
+                'pm.precio',
+                'pm.garantia',
+                'pm.regalo'
+            )
+            ->orderBy('p.inicio', 'desc')
             ->get();
 
-        foreach ($promociones as $promocion) {
-            $promocion->productos = DB::table('promocion_modelo')
-                ->join('modelo', 'promocion_modelo.id_modelo', '=', 'modelo.id')
-                ->select(
-                    'modelo.sku as codigo',
-                    'modelo.descripcion',
-                    'promocion_modelo.cantidad',
-                    'promocion_modelo.precio',
-                    'promocion_modelo.garantia',
-                    'promocion_modelo.regalo'
-                )
-                ->where('promocion_modelo.id_promocion', $promocion->id)
-                ->get();
-        }
+        // Agrupar en el formato que ya consumías
+        $promociones = $promosFlat->groupBy('id')->map(function ($items) {
+            $head = $items->first();
+            return [
+                'id'        => $head->id,
+                'titulo'    => $head->titulo,
+                'inicio'    => $head->inicio,
+                'fin'       => $head->fin,
+                'productos' => $items->map(function ($it) {
+                    return [
+                        'codigo'      => $it->codigo,
+                        'descripcion' => $it->descripcion,
+                        'cantidad'    => $it->cantidad,
+                        'precio'      => $it->precio,
+                        'garantia'    => $it->garantia,
+                        'regalo'      => $it->regalo,
+                    ];
+                })->values(),
+            ];
+        })->values();
 
+        // 5) Respuesta OK
         return response()->json([
-            'code' => 200,
-            'existencia' => $total->disponible,
-            'promociones' => $promociones
+            'code'        => 200,
+            'existencia'  => $disponible, // lo que más te interesa para la UI
+            'stock'       => $stock,      // útil si quieres mostrar stock físico
+            'promociones' => $promociones,
         ]);
     }
 
@@ -1162,7 +1239,7 @@ class VentaController extends Controller
                 $productoActual = $currentProducts[$existe_modelo] ?? null;
 
                 if (!$productoActual) {
-                    $existencia = InventarioService::obtenerExistencia($sku, $data->documento->almacen);
+                    $existencia = InventarioService::existenciaProducto($sku, $data->documento->almacen);
 
                     if ($existencia->error) {
                         return response()->json([
