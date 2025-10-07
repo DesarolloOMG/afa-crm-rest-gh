@@ -221,7 +221,6 @@ class InventarioService
 
             // Confirmamos la transacción.
             DB::commit();
-            DB::table('documento')->where('id', $idDocumento)->update(['id_fase' => 6]);
             $response->code = 200;
             $response->error = 0;
             $response->message = 'Documento procesado exitosamente.';
