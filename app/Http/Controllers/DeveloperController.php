@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
+use App\Models\Documento;
+use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 use Carbon\Carbon;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
@@ -46,64 +48,8 @@ class DeveloperController extends Controller
     public function test(Request $request)
     {
         set_time_limit(0);
-        $log = [];
-
-        try {
-            // --- Paso 1: Buscar el último costo válido para cada modelo ---
-            $log[] = "Buscando los costos más recientes de ODCs y Entradas...";
-
-            // Se consultan los movimientos, se unen con los documentos para filtrar por tipo y fecha.
-            // Se ordena de más reciente a más antiguo para que el primer resultado sea el bueno.
-            $costosRecientes = DB::table('movimiento as m')
-                ->join('documento as d', 'm.id_documento', '=', 'd.id')
-                ->select('m.id_modelo', 'm.precio')
-                ->whereIn('d.id_tipo', [0, 3]) // Filtra solo por 'ORDEN DE COMPRA' y 'ENTRADA'
-                ->where('m.precio', '>', 0)   // Ignora movimientos con costo cero o negativo
-                ->orderBy('d.created_at', 'desc') // Ordena por fecha de creación del documento
-                ->orderBy('d.id', 'desc')         // Desempata usando el ID del documento
-                ->get()
-                ->unique('id_modelo'); // De todos los movimientos por modelo, nos quedamos solo con el primero (el más reciente)
-
-            $log[] = "Se encontraron " . $costosRecientes->count() . " modelos con costos para actualizar.";
-
-            if ($costosRecientes->isEmpty()) {
-                return response()->json([
-                    'message' => 'No se encontraron costos válidos en ODCs o Entradas para actualizar.',
-                    'log' => $log
-                ]);
-            }
-
-            // --- Paso 2: Actualizar la tabla modelo_costo ---
-            $modelosActualizados = 0;
-            foreach ($costosRecientes as $costo) {
-                // Por cada modelo encontrado, se actualiza su registro en la tabla de costos.
-                $actualizado = DB::table('modelo_costo')
-                    ->where('id_modelo', $costo->id_modelo)
-                    ->update([
-                        'ultimo_costo' => $costo->precio,
-                        'costo_promedio' => $costo->precio // Se resetea el costo promedio al último costo conocido.
-                    ]);
-
-                if ($actualizado) {
-                    $modelosActualizados++;
-                }
-            }
-
-            $log[] = "Actualización completada. Se actualizaron $modelosActualizados modelos.";
-
-            return response()->json([
-                'message' => 'Proceso de actualización de costos finalizado.',
-                'modelos_con_costo_encontrado' => $costosRecientes->count(),
-                'modelos_actualizados_exitosamente' => $modelosActualizados,
-                'log' => $log,
-            ]);
-
-        } catch (\Throwable $e) {
-            return response()->json([
-                'message' => 'Ocurrió un error crítico durante la actualización.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        $stock = InventarioService::existenciaProducto(194721097927, 2);
+        dd($stock);
     }
 
     public static function log_meli_error(string $mensaje, string $publicacion_id)
@@ -814,7 +760,7 @@ class DeveloperController extends Controller
                         'id_modelo' => $modelo->id,
                         'id_usuario' => $auth->id,
                         'tipo_elegido' => 'Calculado',
-                        'titulo' => "Recalculo de INVENTARIO del sku: {$sku}",
+                        'titulo' => "Recalculo de INVENTARIO del sku: {$sku} en el almacen {$eaId}",
                         'stock_anterior' => $actual,
                         'stock_nuevo_calculado' => $nuevo,
                         'fecha' => Carbon::now()
