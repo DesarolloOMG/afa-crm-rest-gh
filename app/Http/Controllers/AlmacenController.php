@@ -1105,7 +1105,6 @@ class AlmacenController extends Controller
                     ->first();
 
                 if (empty($impresora)) {
-                    $this->eliminarSeries($data->documento);
                     DB::table('seguimiento')->insert([
                         'id_documento' => $data->documento,
                         'id_usuario' => 1,
@@ -1138,7 +1137,6 @@ class AlmacenController extends Controller
 
                     if (empty($archivos_embarque)) {
                         if (!$info_documento->api) {
-                            $this->eliminarSeries($data->documento);
                             DB::table('seguimiento')->insert([
                                 'id_documento' => $data->documento,
                                 'id_usuario' => 1,
@@ -1153,7 +1151,6 @@ class AlmacenController extends Controller
                             $crear_guia = GeneralService::generarGuiaDocumento($data->documento, $auth->id);
 
                             if ($crear_guia->error) {
-                                $this->eliminarSeries($data->documento);
                                 DB::table('seguimiento')->insert([
                                     'id_documento' => $data->documento,
                                     'id_usuario' => 1,
@@ -1180,7 +1177,6 @@ class AlmacenController extends Controller
                     $impresion = @$impresion_raw;
 
                     if (empty($impresion)) {
-                        $this->eliminarSeries($data->documento);
                         DB::table('seguimiento')->insert([
                             'id_documento' => $data->documento,
                             'id_usuario' => $auth->id,
@@ -1196,7 +1192,6 @@ class AlmacenController extends Controller
                     }
 
                     if (property_exists($impresion, 'code') && $impresion->code != 200) {
-                        $this->eliminarSeries($data->documento);
                         DB::table('seguimiento')->insert([
                             'id_documento' => $data->documento,
                             'id_usuario' => $auth->id,
