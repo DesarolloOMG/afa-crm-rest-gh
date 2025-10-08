@@ -1283,6 +1283,10 @@ class AlmacenController extends Controller
             }
         }
 
+        DB::table('documento')->where('id',$data->documento)->update([
+            'id_fase' => 6
+        ]);
+
         return response()->json([
             'code' => 200,
             'message' => "Documento guardado correctamente.",
