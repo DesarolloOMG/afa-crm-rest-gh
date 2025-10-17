@@ -3442,6 +3442,15 @@ class MercadolibreService
         );
     }
 
+    public static function api_brands($data)
+    {
+        return self::callMlApi(
+            1,
+            'users/{user_id}/brands',
+            ['{user_id}' => $data]
+        );
+    }
+
     public static function api_userID($data)
     {
         return self::callMlApi(

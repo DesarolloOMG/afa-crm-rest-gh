@@ -666,7 +666,14 @@ class MercadolibreController extends Controller{
         return MercadolibreService::api_usersMe($data);
     }
 
-    public function api_userId(Request $request)
+    public function api_brands(Request $request)
+    {
+        $data = $request->input("user_id");
+
+        return MercadolibreService::api_brands($data);
+    }
+
+    public function api_userID(Request $request)
     {
         $data = json_decode($request->input("data"));
 

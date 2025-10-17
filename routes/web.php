@@ -541,6 +541,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('category_variants', 'MercadolibreController@api_getCategoryVariants');
                 $router->post('usersMe', 'MercadolibreController@api_usersMe');
                 $router->post('userID', 'MercadolibreController@api_userID');
+                $router->post('brands', 'MercadolibreController@api_brands');
                 $router->post('items', 'MercadolibreController@api_items');
                 $router->post('itemsDescription', 'MercadolibreController@api_itemsDescription');
             });
