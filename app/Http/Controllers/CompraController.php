@@ -1957,6 +1957,26 @@ class CompraController extends Controller
 
         unset($data->archivos);
 
+        $proveedor_id = 0;
+
+        if (strpos(TRIM($data->proveedor->rfc), 'XEXX010101000') === false) {
+            $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data->proveedor->rfc . "' AND tipo = 2");
+
+            if (empty($existe_entidad)) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "El RFC del proveedor no existe."
+                ]);
+            } else {
+                $proveedor_id = $existe_entidad[0]->id;
+            }
+        } else {
+            return response()->json([
+                'code' => 500,
+                'message' => "El RFC del proveedor no existe."
+            ]);
+        }
+
         $documento = DB::table('documento')->insertGetId([
             'id_almacen_principal_empresa' => $data->almacen,
             'id_moneda' => $data->moneda,
@@ -1965,7 +1985,7 @@ class CompraController extends Controller
             'id_marketplace_area' => 1,
             'id_usuario' => $auth->id,
             'id_fase' => 606,
-            'id_entidad' => $data->proveedor->id,
+            'id_entidad' => $proveedor_id,
             'tipo_cambio' => $data->tipo_cambio,
             'observacion' => implode(',', $data->documentos),
             'comentario' => (property_exists($data, "extranjero") && !is_null($data->extranjero)) ? $data->extranjero : "",
