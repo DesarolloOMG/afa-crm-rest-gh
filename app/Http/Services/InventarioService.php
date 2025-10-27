@@ -606,7 +606,7 @@ class InventarioService
                 'id_tipo' => 5, // Tipo: Traspaso
                 'id_fase' => 100, // Fase: Terminado
                 'observacion' => 'Traspaso por ' . ($esGarantia ? 'garantía' : 'devolución') . ' de la venta ' . $id_documento_original,
-                'id_usuario' => 1,
+                'id_usuario' => 173,
                 'id_periodo' => $info_documento_original->id_periodo,
                 'id_cfdi' => $info_documento_original->id_cfdi,
                 'id_marketplace_area' => $info_documento_original->id_marketplace_area,
