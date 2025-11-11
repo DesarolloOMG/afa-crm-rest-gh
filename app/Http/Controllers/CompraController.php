@@ -1654,7 +1654,7 @@ class CompraController extends Controller
                 'movimiento.cantidad',
                 'movimiento.cantidad_aceptada AS cantidad_recepcionada_anterior',
                 DB::raw('0 AS cantidad_recepcionada'),
-                'movimiento.comentario AS descripcion',
+                'modelo.descripcion',
                 DB::raw('IF(movimiento.descuento = 0, ROUND(movimiento.precio, 8), ROUND((movimiento.precio * movimiento.descuento) / 100, 8)) AS costo'),
                 'movimiento.modificacion AS condicion',
                 'movimiento.addenda AS marketplace',
