@@ -1592,7 +1592,7 @@ class SoporteController extends Controller
         // encabezado
         $pedidoId = DB::table('documento')->insertGetId([
             'id_almacen_principal_empresa' => $idEmpresaAlmacenDestino, // almacén seleccionado en la vista
-            'id_tipo'            => 1,           // 1 = Venta (ajusta si tu catálogo usa otro id)
+            'id_tipo'            => 2,           // 1 = Venta (ajusta si tu catálogo usa otro id)
             'id_periodo'         => $docOriginal->id_periodo,
             'id_cfdi'            => $docOriginal->id_cfdi,
             'id_marketplace_area' => $docOriginal->id_marketplace_area,
