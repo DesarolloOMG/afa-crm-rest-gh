@@ -358,18 +358,18 @@ class LogisticaController extends Controller
             }
         }
         //Aqui ta
-        $response = InventarioService::aplicarMovimiento($data->documento);
-
-        if ($response->error) {
-            DB::table('documento_guia')->where(['id_documento' => $data->documento])->delete();
-
-            return response()->json([
-                'code' => 500,
-                'message' => $response->mensaje,
-                'raw' => property_exists($response, 'raw') ? $response->raw : 0,
-                'data' => property_exists($response, 'data') ? json_encode($response->data) : 0
-            ]);
-        }
+//        $response = InventarioService::aplicarMovimiento($data->documento);
+//
+//        if ($response->error) {
+//            DB::table('documento_guia')->where(['id_documento' => $data->documento])->delete();
+//
+//            return response()->json([
+//                'code' => 500,
+//                'message' => $response->mensaje,
+//                'raw' => property_exists($response, 'raw') ? $response->raw : 0,
+//                'data' => property_exists($response, 'data') ? json_encode($response->data) : 0
+//            ]);
+//        }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
             'id_fase' => in_array($info_documento->id_marketplace_area, [14, 53, 4, 5]) ? 5 : 6, # ahora todas las ventas se pasan a facturas
@@ -533,14 +533,14 @@ class LogisticaController extends Controller
                 //Aqui ta
 //                $response = DocumentoService::crearFactura($documento, 0, 0);
 
-                $response = InventarioService::aplicarMovimiento($documento);
-
-                if ($response->error) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => $response->mensaje
-                    ]);
-                }
+//                $response = InventarioService::aplicarMovimiento($documento);
+//
+//                if ($response->error) {
+//                    return response()->json([
+//                        'code' => 500,
+//                        'message' => $response->mensaje
+//                    ]);
+//                }
 
                 DB::table('documento')->where(['id' => $documento])->update([
                     'id_fase' => 6,

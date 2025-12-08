@@ -310,12 +310,12 @@ class VentaController extends Controller
             }
 
             // 4.9) Aplicar inventario si corresponde
-            if ($data->documento->anticipada || $data->documento->fulfillment) {
-                $respInv = InventarioService::aplicarMovimiento($documentoId);
-                if ($respInv->error) {
-                    throw new \RuntimeException($respInv->mensaje);
-                }
-            }
+//            if ($data->documento->anticipada || $data->documento->fulfillment) {
+//                $respInv = InventarioService::aplicarMovimiento($documentoId);
+//                if ($respInv->error) {
+//                    throw new \RuntimeException($respInv->mensaje);
+//                }
+//            }
 
             DB::commit();
 
@@ -1322,20 +1322,20 @@ class VentaController extends Controller
                 $esta_importado = $documento->importado;
 
                 if ($data->documento->fulfillment && !$esta_importado) {
-                    $response = InventarioService::aplicarMovimiento($data->documento->documento);
-
-                    if ($response->error) {
-                        DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                            'id_fase' => 5
-                        ]);
-
-                        CorreoService::cambioFaseConta($data->documento->documento, $response->mensaje);
-
-                        return response()->json([
-                            'code' => 200,
-                            'message' => "Documento editado correctamente pero no fue posible importarlo al ERP, mensaje de error: " . $response->mensaje
-                        ]);
-                    }
+//                    $response = InventarioService::aplicarMovimiento($data->documento->documento);
+//
+//                    if ($response->error) {
+//                        DB::table('documento')->where(['id' => $data->documento->documento])->update([
+//                            'id_fase' => 5
+//                        ]);
+//
+//                        CorreoService::cambioFaseConta($data->documento->documento, $response->mensaje);
+//
+//                        return response()->json([
+//                            'code' => 200,
+//                            'message' => "Documento editado correctamente pero no fue posible importarlo al ERP, mensaje de error: " . $response->mensaje
+//                        ]);
+//                    }
 
                     DB::table('documento')->where(['id' => $data->documento->documento])->update([
                         'id_fase' => 6
@@ -2388,17 +2388,17 @@ class VentaController extends Controller
             }
         }
 
-        if ($informacion_documento->fulfillment) {
-            //Aqui ta
-            $response = InventarioService::aplicarMovimiento($documento);
-
-            if ($response->error) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => $response->mensaje
-                ]);
-            }
-        }
+//        if ($informacion_documento->fulfillment) {
+//            //Aqui ta
+//            $response = InventarioService::aplicarMovimiento($documento);
+//
+//            if ($response->error) {
+//                return response()->json([
+//                    'code' => 500,
+//                    'message' => $response->mensaje
+//                ]);
+//            }
+//        }
 
         DB::table('documento')->where(['id' => $documento])->update([
             'id_usuario' => $auth->id,
@@ -3922,19 +3922,19 @@ class VentaController extends Controller
                     'id_fase' => $venta->fulfillment ? $hayError ? 1 : 5 : 5
                 ]);
 
-                $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
-
-                if (empty($existe_en_inventario)) {
-                    $aplicar = InventarioService::aplicarMovimiento($venta->id);
-
-                    if ($aplicar->error) {
-                        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
-                        return response()->json([
-                            'code' => 500,
-                            'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
-                        ]);
-                    }
-                }
+//                $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
+//
+//                if (empty($existe_en_inventario)) {
+//                    $aplicar = InventarioService::aplicarMovimiento($venta->id);
+//
+//                    if ($aplicar->error) {
+//                        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
+//                        return response()->json([
+//                            'code' => 500,
+//                            'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
+//                        ]);
+//                    }
+//                }
 
                 BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, $venta->fulfillment ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
                     : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA.");
@@ -3998,35 +3998,34 @@ class VentaController extends Controller
 
         if ($venta->fulfillment) {
             if (!$hayError) {
-                $factura = InventarioService::aplicarMovimiento($venta->id);
-                if (!$factura->error) {
-                    DB::table('documento')->where(['id' => $venta->id])->update([
-                        'id_fase' => 6,
-                        'validated_at' => date("Y-m-d H:i:s")
-                    ]);
-
-                    BitacoraService::insertarBitacoraValidarVenta(
-                        $documento,
-                        $auth->id,
-                        "Se actualiza la fase a 6 y se crea la factura con el id " . $factura->id
-                    );
-
-                    return response()->json([
-                        'code' => 200,
-                        'mensaje' => "Documento actualizado correctamente"
-                    ]);
-                } else {
+//                $factura = InventarioService::aplicarMovimiento($venta->id);
+//                if (!$factura->error) {
+//                    DB::table('documento')->where(['id' => $venta->id])->update([
+//                        'id_fase' => 6,
+//                        'validated_at' => date("Y-m-d H:i:s")
+//                    ]);
+//
+//                    BitacoraService::insertarBitacoraValidarVenta(
+//                        $documento,
+//                        $auth->id,
+//                        "Se actualiza la fase a 6 y se crea la factura con el id " . $factura->id
+//                    );
+//
+//                    return response()->json([
+//                        'code' => 200,
+//                        'mensaje' => "Documento actualizado correctamente"
+//                    ]);
+//                } else {
                     DB::table('documento')->where('id', $venta->id)->update([
                         'id_fase' => 6,
                         'validated_at' => date("Y-m-d H:i:s")
                     ]);
-                    BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible crear la factura, mensaje de error: " . $factura->mensaje);
 
                     return response()->json([
                         'code' => 500,
-                        'mensaje' => "Documento actualizado correctamente, sin embargo hubo un error al crear la factura. Mensaje de error: " . $factura->mensaje
+                        'mensaje' => "Documento actualizado correctamente"
                     ]);
-                }
+//                }
             } else {
                 return response()->json([
                     'code' => 500,

@@ -264,7 +264,7 @@ class ReparacionService
                     }
                 }
 
-                $crear_traspaso = InventarioService::aplicarMovimiento($documento_traspaso);
+//                $crear_traspaso = InventarioService::aplicarMovimiento($documento_traspaso);
 
                 $seguimiento_traspaso .= "<p>Traspaso con el ID " . $documento_traspaso . " afectado correctamente.</p>";
 

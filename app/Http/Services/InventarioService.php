@@ -648,12 +648,6 @@ class InventarioService
                 }
             }
 
-            // 5. Afectamos el inventario
-            $afectar = InventarioService::aplicarMovimiento($documento_traspaso_id);
-            if ($afectar->error) {
-                throw new \Exception("El traspaso con ID " . $documento_traspaso_id . " no se pudo afectar correctamente.");
-            }
-
             // 6. Si todo sale bien, confirmamos la transacción
             DB::commit();
             $response->error = 0;

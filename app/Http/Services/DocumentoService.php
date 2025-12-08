@@ -2152,7 +2152,7 @@ class DocumentoService
             }
 
             // Afectar inventario para la nota de crédito
-            InventarioService::aplicarMovimiento($nota_id);
+//            InventarioService::aplicarMovimiento($nota_id);
 
             // --- 5. Crear egreso y saldar nota de crédito ---
             $egreso_id = DB::table('movimiento_contable')->insertGetId([
@@ -2231,7 +2231,7 @@ class DocumentoService
             }
 
             // Afectar inventario para el nuevo pedido
-            InventarioService::aplicarMovimiento($nuevo_pedido_id);
+//            InventarioService::aplicarMovimiento($nuevo_pedido_id);
 
             // --- 7. Saldar el nuevo pedido con el ingreso original ---
             $ingreso_original = DB::table('movimiento_contable_documento')
@@ -2744,12 +2744,12 @@ class DocumentoService
                     'nota' => $documento_nota_id
                 ]);
 
-            $aplicar = InventarioService::aplicarMovimiento($documento_nota_id);
-
-            if($aplicar->error){
-                DB::rollBack();
-                return $aplicar;
-            }
+//            $aplicar = InventarioService::aplicarMovimiento($documento_nota_id);
+//
+//            if($aplicar->error){
+//                DB::rollBack();
+//                return $aplicar;
+//            }
 
             DB::commit();
 
@@ -3192,10 +3192,10 @@ class DocumentoService
         set_time_limit(0);
         $response = new stdClass();
 
-        $afectar = InventarioService::aplicarMovimiento($documento);
+//        $afectar = InventarioService::aplicarMovimiento($documento);
 
-        $response->error = $afectar->error;
-        $response->mensaje = $afectar->mensaje;
+        $response->error = 0;
+        $response->mensaje = "";
         $response->id = $documento;
 
         return $response;

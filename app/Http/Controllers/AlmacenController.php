@@ -1067,9 +1067,9 @@ class AlmacenController extends Controller
                 'id_usuario' => 1,
                 'seguimiento' => "Ocurrió un error al finalizar el pedido " . $data->documento . " en packing v2, se borraran las series y se manda a pendiente de remision." . json_encode($errores)
             ]);
-            CorreoService::cambioDeFase($data->documento, "Ocurrió un error al finalizar el pedido " . $data->documento . " en packing v2, se borraran las series y se manda a pendiente de remision." . json_encode($errores));
+//            CorreoService::cambioDeFase($data->documento, "Ocurrió un error al finalizar el pedido " . $data->documento . " en packing v2, se borraran las series y se manda a pendiente de remision." . json_encode($errores));
 
-            file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al finalizar el pedido " . $data->documento . " en packing v2, errores: " . json_encode($errores) . "." . PHP_EOL, FILE_APPEND);
+//            file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al finalizar el pedido " . $data->documento . " en packing v2, errores: " . json_encode($errores) . "." . PHP_EOL, FILE_APPEND);
 
             return response()->json([
                 'code' => 500,
@@ -1222,69 +1222,12 @@ class AlmacenController extends Controller
             }
         }
 
-        if (!$info_documento->anticipada) {
-            $crear_factura = InventarioService::aplicarMovimiento($data->documento);
-
-            if ($crear_factura->error) {
-                file_put_contents("logs/documentos.log", date("d/m/Y H:i:s") . " Ocurrió un error al crear la factura " . $data->documento . " en packing v2." . PHP_EOL, FILE_APPEND);
-
-                DB::table('documento')->where(['id' => $data->documento])->update([
-                    'id_fase' => 5,
-                ]);
-
-                DB::table('seguimiento')->insert([
-                    'id_documento' => $data->documento,
-                    'id_usuario' => 1,
-                    'seguimiento' => "Ocurrió un error al generar la factura y se manda a fase Factura."
-                ]);
-
-                $emails = "";
-                $correos = DB::select("SELECT
-                                usuario.email
-                            FROM usuario
-                            INNER JOIN usuario_subnivel_nivel ON usuario.id = usuario_subnivel_nivel.id_usuario
-                            INNER JOIN subnivel_nivel ON usuario_subnivel_nivel.id_subnivel_nivel = subnivel_nivel.id
-                            INNER JOIN subnivel on subnivel_nivel.id_subnivel = subnivel.id
-                            WHERE subnivel.subnivel in ('CXC','CXP') and usuario.email like '%@omg%'
-                            GROUP BY usuario.email");
-
-                foreach ($correos as $correo) {
-                    $emails .= $correo->email . ";";
-                }
-
-                $emails .= "sistemas@omg.com.mx";
-
-                $vista = view('email.notificacion_factura')->with([
-                    'mensaje' => $crear_factura->mensaje,
-                    'anio' => date('Y'),
-                    'documento' => $data->documento
-                ]);
-
-                $mg = Mailgun::create(config("mailgun.token"));
-                $domain = config("mailgun.email_from");
-                $mg->messages()->send($domain, array(
-                    'from' => config("mailgun.email_from"),
-                    'to' => $emails,
-                    'subject' => 'Error al generar factura',
-                    'html' => $vista->render()
-                ));
-
-                return response()->json([
-                    "code" => 200,
-                    "message" => "No fue posible generar la factura del documento, mensaje de error: " . $crear_factura->mensaje . ", favor de contactar a un administrador." . self::logVariableLocation(),
-                    "raw" => property_exists($crear_factura, "raw") ? $crear_factura->raw : 0,
-                    "color" => "pink-border-top",
-                    "data" => property_exists($crear_factura, "data") ? $crear_factura->data : 0,
-                    'solicitar_guia' => $solicitar_guia,
-                    'file' => $file ?? null,
-                    'pdf' => $pdf ?? null,
-                    'backup' => $backup
-                ]);
-            }
-        }
-
-        DB::table('documento')->where('id',$data->documento)->update([
-            'id_fase' => 6
+        DB::table('documento')->where('id', $data->documento)->update([
+            'id_fase' => 6,
+            'packing_by' => $auth->id,
+            'packing_date' => date('Y-m-d H:i:s'),
+            'shipping_date' => date('Y-m-d H:i:s'),
+            'problema' => $data->problema
         ]);
 
         return response()->json([
@@ -2042,14 +1985,14 @@ class AlmacenController extends Controller
             $almacen = DB::table('empresa_almacen')->where('id', $info_documento->id_almacen_principal_empresa)->first();
 
             if ($tipo_documento == 4) {
-                $response = InventarioService::aplicarMovimiento($info_documento->id);
-
-                if ($response->error) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => $response->mensaje,
-                    ]);
-                }
+//                $response = InventarioService::aplicarMovimiento($info_documento->id);
+//
+//                if ($response->error) {
+//                    return response()->json([
+//                        'code' => 500,
+//                        'message' => $response->mensaje,
+//                    ]);
+//                }
 
                 $series = DB::select("SELECT
                                     producto.id
@@ -2065,14 +2008,14 @@ class AlmacenController extends Controller
                 }
             } else {
                 if ($tipo_documento == 5) {
-                    $response = InventarioService::aplicarMovimiento($info_documento->id);
-
-                    if ($response->error) {
-                        return response()->json([
-                            'code' => 500,
-                            'message' => $response->mensaje,
-                        ]);
-                    }
+//                    $response = InventarioService::aplicarMovimiento($info_documento->id);
+//
+//                    if ($response->error) {
+//                        return response()->json([
+//                            'code' => 500,
+//                            'message' => $response->mensaje,
+//                        ]);
+//                    }
                 }
 
                 $series = DB::table('movimiento')

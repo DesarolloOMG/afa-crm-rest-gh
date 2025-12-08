@@ -116,7 +116,7 @@ class CompraController extends Controller
                 ]);
             }
 
-            InventarioService::aplicarMovimiento($documento);
+//            InventarioService::aplicarMovimiento($documento);
         } catch (Exception $e) {
             if (isset($documento)) {
                 DB::table('documento')->where(['id' => $documento])->delete();
