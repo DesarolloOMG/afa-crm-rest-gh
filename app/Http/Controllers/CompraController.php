@@ -1960,7 +1960,7 @@ class CompraController extends Controller
         $proveedor_id = 0;
 
         if (strpos(TRIM($data->proveedor->rfc), 'XEXX010101000') === false) {
-            $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data->proveedor->rfc . "' AND tipo = 2");
+            $existe_entidad = DB::select("SELECT id FROM documento_entidad WHERE rfc = '" . $data->proveedor->rfc . "' AND tipo IN (2,3)");
 
             if (empty($existe_entidad)) {
                 return response()->json([
