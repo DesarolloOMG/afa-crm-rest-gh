@@ -195,46 +195,76 @@ class TicketController extends Controller
     }
 
     public function ticket_iniciar_revision(Request $request) {
-        $data = json_decode($request->input('data'));
-        $auth = json_decode($request->auth);
+        try {
+            $data = json_decode($request->input('data'));
+            $auth = json_decode($request->auth);
 
-        $ticket = Ticket::find($data->id);
+            $ticket = Ticket::find($data->id);
 
-        if (!$ticket) {
+            if (!$ticket) {
+                return response()->json([
+                    "message" => "Ticket no encontrado"
+                ], 404);
+            }
+
+            $ticket->estado = 'en_revision';
+            $ticket->started_at = date('Y-m-d H:i:s');
+            $ticket->save();
+
             return response()->json([
-                "message" => "Ticket no encontrado"
-            ], 404);
+                "message" => "Ticket iniciado en revisión exitosamente"
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                "error" => $e->getMessage(),
+                "line" => $e->getLine(),
+                "file" => $e->getFile()
+            ], 500);
         }
-
-        $ticket->estado = 'en_revision';
-        $ticket->started_at = date('Y-m-d H:i:s');
-        $ticket->save();
-
-        # Notificacion para el usuario
-        $notificacion_usuario['titulo'] = "Actualización de tu ticket";
-        $notificacion_usuario['message'] = "Tu ticket $ticket->id ha sido iniciado en revisión.";
-        $notificacion_usuario['tipo'] = "success"; // success, warning, danger
-        $notificacion_usuario['link'] = "/ticket/historial";
-
-        $notificacion_id = DB::table('notificacion')->insertGetId([
-            'data' => json_encode($notificacion_usuario)
-        ]);
-
-        $notificacion_usuario['id'] = $notificacion_id;
-
-        DB::table('notificacion_usuario')->insert([
-            'id_usuario' => $ticket->creado_por,
-            'id_notificacion' => $notificacion_id
-        ]);
-
-        $notificacion_usuario['usuario'] = $ticket->creado_por;
-
-        event(new PusherEvent(json_encode($notificacion_usuario)));
-
-        return response()->json([
-            "message" => "Ticket iniciado en revisión exitosamente"
-        ]);
     }
+
+
+//    public function ticket_iniciar_revision(Request $request) {
+//        $data = json_decode($request->input('data'));
+//        $auth = json_decode($request->auth);
+//
+//        $ticket = Ticket::find($data->id);
+//
+//        if (!$ticket) {
+//            return response()->json([
+//                "message" => "Ticket no encontrado"
+//            ], 404);
+//        }
+//
+//        $ticket->estado = 'en_revision';
+//        $ticket->started_at = date('Y-m-d H:i:s');
+//        $ticket->save();
+//
+////        # Notificacion para el usuario
+////        $notificacion_usuario['titulo'] = "Actualización de tu ticket";
+////        $notificacion_usuario['message'] = "Tu ticket $ticket->id ha sido iniciado en revisión.";
+////        $notificacion_usuario['tipo'] = "success"; // success, warning, danger
+////        $notificacion_usuario['link'] = "/ticket/historial";
+////
+////        $notificacion_id = DB::table('notificacion')->insertGetId([
+////            'data' => json_encode($notificacion_usuario)
+////        ]);
+////
+////        $notificacion_usuario['id'] = $notificacion_id;
+////
+////        DB::table('notificacion_usuario')->insert([
+////            'id_usuario' => $ticket->creado_por,
+////            'id_notificacion' => $notificacion_id
+////        ]);
+////
+////        $notificacion_usuario['usuario'] = $ticket->creado_por;
+////
+////        event(new PusherEvent(json_encode($notificacion_usuario)));
+//
+//        return response()->json([
+//            "message" => "Ticket iniciado en revisión exitosamente"
+//        ]);
+//    }
 
     public function ticket_terminar(Request $request) {
         $data = json_decode($request->input('data'));
