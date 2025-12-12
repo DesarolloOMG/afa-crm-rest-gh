@@ -39,7 +39,7 @@ class TicketController extends Controller
         if ($tickets_abiertos == 5) {
             return response()->json([
                 "message" => "Ya alcanzaste el limite de tickets abiertos (5), espera a que se cierren los anteriores para crear uno nuevo"
-            ], 400);
+            ]);
         }
 
         $ticket = Ticket::create([
@@ -85,7 +85,7 @@ class TicketController extends Controller
 
         return response()->json([
             "message" => "Ticket creado exitosamente con el ID $ticket->id"
-        ], 201);
+        ]);
     }
 
     public function ticket_tecnicos(Request $request)
@@ -191,7 +191,7 @@ class TicketController extends Controller
 
         return response()->json([
             "message" => "Ticket asignado exitosamente"
-        ], 200);
+        ]);
     }
 
     public function ticket_iniciar_revision(Request $request) {
@@ -233,7 +233,7 @@ class TicketController extends Controller
 
         return response()->json([
             "message" => "Ticket iniciado en revisión exitosamente"
-        ], 200);
+        ]);
     }
 
     public function ticket_terminar(Request $request) {
@@ -245,7 +245,7 @@ class TicketController extends Controller
         if (!$ticket) {
             return response()->json([
                 "message" => "Ticket no encontrado"
-            ], 404);
+            ]);
         }
 
         $ticket->estado = TicketEstado::RESUELTO;
@@ -276,6 +276,6 @@ class TicketController extends Controller
 
         return response()->json([
             "message" => "Ticket terminado exitosamente"
-        ], 200);
+        ]);
     }
 }
