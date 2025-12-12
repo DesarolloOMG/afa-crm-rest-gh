@@ -39,6 +39,22 @@ class WhatsAppService
         );
     }
 
+    public function send_whatsapp_ticket_notification($phone, $user): MessageInstance
+    {
+        $variables = [
+            "1" => strval($user)
+        ];
+
+        return $this->twilio->messages->create(
+            "whatsapp:+" . $phone,
+            [
+                "contentSid" => config("twilio.template_ticket_id"),
+                'from' => config("twilio.service_id"),
+                'contentVariables' => json_encode($variables)
+            ]
+        );
+    }
+
 
     public function sendCode(int $userId, string $phone): JsonResponse
     {

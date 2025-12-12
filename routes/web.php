@@ -92,6 +92,15 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         });
     });
 
+    $router->group(['prefix' => 'ticket'], function () use ($router) {
+        $router->post('crear', 'TicketController@ticket_crear');
+        $router->get('tecnicos', 'TicketController@ticket_tecnicos');
+        $router->post('informacion-por-estado', 'TicketController@ticket_informacion_por_estado');
+        $router->post('asignar', 'TicketController@ticket_asignar');
+        $router->post('iniciar-revision', 'TicketController@ticket_iniciar_revision');
+        $router->post('terminar', 'TicketController@ticket_terminar');
+    });
+
     # Menú personal
     $router->group(['prefix' => 'personal'], function () use ($router) {
         $router->group(['prefix' => 'modificacion'], function () use ($router) {
