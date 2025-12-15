@@ -8,7 +8,6 @@ use App\Http\Services\MercadolibreService;
 use App\Http\Services\VaultService;
 use App\Models\Documento;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
-use App\Models\OauthToken;
 use Carbon\Carbon;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
@@ -817,10 +816,7 @@ class DeveloperController extends Controller
     public function getDropboxToken()
     {
         VaultService::checkDropboxToken();
-        $token = OauthToken::where('provider', 'dropbox')
-            ->where('expires_at', '>', Carbon::now())
-            ->orderBy('expires_at', 'desc')
-            ->value('access_token');
+        $token = config('keys.dropbox');
         return response()->json(['token' => $token]);
     }
 }
