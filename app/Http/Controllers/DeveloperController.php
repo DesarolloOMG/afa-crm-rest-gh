@@ -816,6 +816,7 @@ class DeveloperController extends Controller
 
     public function getDropboxToken()
     {
+        VaultService::checkDropboxToken();
         $token = OauthToken::where('provider', 'dropbox')
             ->where('expires_at', '>', Carbon::now())
             ->orderBy('expires_at', 'desc')
