@@ -14,6 +14,7 @@ class RemoteVaultService
         $this->baseUrl = rtrim($baseUrl ?? env('VAULT_BASE_URL', 'https://rest.afainnova.com/'), '/');
         $this->http    = $client ?? new Client(['timeout' => 8.0]);
     }
+
     public function getValid(string $clientId): ?string
     {
         $res  = $this->http->get($this->baseUrl . '/vault/' . urlencode($clientId));
