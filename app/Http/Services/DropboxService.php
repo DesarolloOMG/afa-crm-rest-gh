@@ -173,6 +173,7 @@ class DropboxService
      */
     public function downloadFile($path): ?string
     {
+        $this->ensureValidToken();
         $token = $this->getDropboxToken();
 
         $url = 'https://content.dropboxapi.com/2/files/download';
@@ -214,6 +215,7 @@ class DropboxService
      */
     public function uploadFile($path, $fileContent, $isBase64 = true)
     {
+        $this->ensureValidToken();
         $token = $this->getDropboxToken();
 
         $url = 'https://content.dropboxapi.com/2/files/upload';
@@ -279,6 +281,7 @@ class DropboxService
      */
     private function requestDropbox($url, $body = [], $asJson = false)
     {
+        $this->ensureValidToken();
         $token = $this->getDropboxToken();
 
         $headers = [
