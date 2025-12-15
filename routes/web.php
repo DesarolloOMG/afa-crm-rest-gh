@@ -1174,6 +1174,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->post('getDocumentosPendientes',  'DeveloperController@getDocumentosPendientes');
         $router->post('aplicarPendientes',  'DeveloperController@aplicarPendientes');
         $router->post('afectarInventario', 'DeveloperController@afectarInventario');
+        $router->get('actTokenDropbox', 'DeveloperController@actualizarTokenDropbox');
+        $router->get('getTokenDropbox', 'DeveloperController@getDropboxToken');
     });
 
     $router->group(['prefix' => 'print'], function () use ($router) {
