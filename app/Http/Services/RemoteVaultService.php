@@ -11,7 +11,7 @@ class RemoteVaultService
 
     public function __construct(?string $baseUrl = null, ?Client $client = null)
     {
-        $this->baseUrl = rtrim($baseUrl ?? env('VAULT_BASE_URL', 'https://rest.afainnova.com/'), '/');
+        $this->baseUrl = rtrim($baseUrl ?? env('VAULT_BASE_URL', 'http://rest.crmomg.mx'), '/');
         $this->http    = $client ?? new Client(['timeout' => 8.0]);
     }
     public function getValid(string $clientId): ?string
