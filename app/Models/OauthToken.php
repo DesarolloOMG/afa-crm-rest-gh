@@ -8,15 +8,17 @@ use Illuminate\Support\Facades\Crypt;
 class OauthToken extends Model
 {
     protected $table = 'oauth_tokens';
+    protected $primaryKey = 'id';
+    public $incrementing = true;
+    public $timestamps = true;
 
     protected $fillable = [
-        'provider',
-        'access_token',
-        'refresh_token',
-        'expires_at'
+        'client_id', 'token', 'expires_at',
     ];
 
-    protected $dates = ['expires_at'];
-
-    protected $hidden = ['access_token', 'refresh_token'];
+    protected $casts = [
+        'expires_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+    ];
 }
