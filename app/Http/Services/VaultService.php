@@ -3,7 +3,6 @@
 namespace App\Http\Services;
 
 use App\Models\OauthToken;
-use Exception;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 
