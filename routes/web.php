@@ -1174,7 +1174,6 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
         $router->post('getDocumentosPendientes',  'DeveloperController@getDocumentosPendientes');
         $router->post('aplicarPendientes',  'DeveloperController@aplicarPendientes');
         $router->post('afectarInventario', 'DeveloperController@afectarInventario');
-        $router->get('actTokenDropbox', 'DeveloperController@actualizarTokenDropbox');
         $router->get('getTokenDropbox', 'DeveloperController@getDropboxToken');
     });
 
@@ -1210,6 +1209,7 @@ $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
     $router->get('test', 'DeveloperController@test');
     $router->get('recalcularInventario', 'DeveloperController@recalcularInventario');
+    $router->get('actTokenDropbox', 'DeveloperController@actualizarTokenDropbox');
 });
 
 $router->get('getToken', 'DropboxController@getDropboxToken');
