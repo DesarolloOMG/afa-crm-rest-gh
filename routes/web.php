@@ -1208,6 +1208,8 @@ $router->group(['prefix' => 'developer'], function () use ($router) {
     $router->post('serieVsAlmacen', 'AlmacenController@almacen_busqueda_serie_vs_almacen');
     $router->get('test', 'DeveloperController@test');
     $router->get('recalcularInventario', 'DeveloperController@recalcularInventario');
+    $router->get('actTokenDropbox', 'DeveloperController@actualizarTokenDropbox');
+    $router->get('getTokenDropbox', 'DeveloperController@getDropboxToken');
 });
 
 $router->get('getToken', 'DropboxController@getDropboxToken');

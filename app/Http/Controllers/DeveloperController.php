@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
+use App\Http\Services\VaultService;
 use App\Models\Documento;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
 use Carbon\Carbon;
@@ -797,5 +798,26 @@ class DeveloperController extends Controller
                 'message' => 'Error al actualizar inventario: '.$e->getMessage(),
             ], 500);
         }
+    }
+
+
+    public function actualizarTokenDropbox()
+    {
+        set_time_limit(0);
+        $dropbox = app(DropboxService::class);
+        try {
+            $token = $dropbox->refreshAccessToken();
+
+            return response()->json(['code' => 200, 'token' => $token]);
+        } catch (Exception $e) {
+            return response()->json(['code' => 500, 'error' => $e->getMessage()]);
+        }
+    }
+
+    public function getDropboxToken()
+    {
+        $dropbox = app(DropboxService::class);
+        $token = $dropbox->getDropboxToken();
+        return response()->json(['token' => $token]);
     }
 }
