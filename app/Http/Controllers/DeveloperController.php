@@ -491,7 +491,7 @@ class DeveloperController extends Controller
 
         // 1) INVENTARIO ORIGINAL (del SP de existencias): usamos SOLO 'almacen' y 'stock'
         //    firma: sp_calcularExistenciaGeneral(criterio, id_almacen=0, con_existencia=0)
-        $origRows = DB::select('CALL sp_calcularExistenciaGeneral(?, ?, ?)', [$sku, 0, 0]);
+        $origRows = DB::select('CALL sp_calcularExistenciaGeneral(?, ?, ?, ?)', [$sku, 0, 0, 2]);
 
         // Agrupar por nombre de almacén sumando 'stock' (por si el SP devuelve varias filas del mismo almacén)
         $mapOriginal = []; // 'ALMACEN' => stock

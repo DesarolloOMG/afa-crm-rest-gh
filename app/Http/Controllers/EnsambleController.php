@@ -78,10 +78,11 @@ class EnsambleController extends Controller
         $sku = trim($sku);
 
         // Usamos el SP para filtrar por almacén y exigir existencia
-        $rows = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
+        $rows = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?, ?)", [
             $sku,               // in_criterio
             $this->ALMACEN_ENSAMBLE, // in_id_almacen
-            1                   // in_con_existencia (1 = solo con existencia)
+            1,                   // in_con_existencia (1 = solo con existencia)
+            2
         ]);
 
         if (empty($rows)) {
@@ -203,8 +204,8 @@ class EnsambleController extends Controller
                 }
 
                 // 2.2) Validar existencia disponible (SP) en almacén de ensamble (por SKU)
-                $sp = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
-                    $modelo->sku, $this->ALMACEN_ENSAMBLE, 1
+                $sp = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?, ?)", [
+                    $modelo->sku, $this->ALMACEN_ENSAMBLE, 1, 2
                 ]);
 
                 if (empty($sp)) {
