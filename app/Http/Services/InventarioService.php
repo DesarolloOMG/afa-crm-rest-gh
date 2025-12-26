@@ -485,7 +485,7 @@ class InventarioService
         $response->disponible = 0;
 
         try {
-            $results = DB::select("CALL sp_calcularExistenciaProducto(?, ?)", [$sku, $idAlmacen]);
+            $results = DB::select("CALL sp_calcularExistenciaProducto(?, ?, ?)", [$sku, $idAlmacen, 2]);
 
             if (!empty($results)) {
                 $row = $results[0];

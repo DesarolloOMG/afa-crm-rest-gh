@@ -93,10 +93,11 @@ class GeneralController extends Controller
         $con_existencia = $data->con_existencia == false ? 0 : 1;
 
         // Llamada al SP
-        $productos = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
+        $productos = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?, ?)", [
             $criterio,
             $id_almacen,
-            $con_existencia
+            $con_existencia,
+            2
         ]);
 
         // Si SÍ hay productos con existencia, responder normal

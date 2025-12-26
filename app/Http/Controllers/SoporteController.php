@@ -1439,10 +1439,11 @@ class SoporteController extends Controller
             }
 
             // === AQUÍ USAMOS TU SP TAL CUAL ===
-            $sp = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?)", [
+            $sp = DB::select("CALL sp_calcularExistenciaGeneral(?, ?, ?, ?)", [
                 $modelo->sku,
                 (int)$data->almacen_salida,
-                1
+                1,
+                2
             ]);
 
             if (empty($sp)) {
