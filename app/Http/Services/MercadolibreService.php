@@ -29,11 +29,13 @@ class MercadolibreService
                     '{venta}' => rawurlencode($venta_paquete->id)
                 ]);
                 $info = json_decode($ventaData->getContent());
+
                 if (empty($info)) {
                     $response->error = 1;
                     $response->mensaje = "Error al obtener información de una venta del paquete." . self::logVariableLocation();
                     return $response;
                 }
+
                 $ventas[] = $info;
             }
         } else {
@@ -45,85 +47,117 @@ class MercadolibreService
                 $response->mensaje = "Error al obtener información de la venta." . self::logVariableLocation();
                 return $response;
             }
+
             $ventas[] = $info;
         }
 
         foreach ($ventas as $venta) {
             $venta->productos = [];
+            $venta->mensajes = [];
+            $venta->shipping = 0;
+
+            $estaCancelada = (($venta->status ?? null) === 'cancelled');
 
             $pack_id = explode('.', (string)($venta->pack_id ?? $venta->id))[0];
 
-            $envioData = self::callMlApi($marketplace_id, "orders/{ventaId}/shipments", [
-                '{ventaId}' => $venta->id
-            ]);
-            $envio = json_decode($envioData->getContent());
-
-            if (!empty($envio)) {
-                if ($envio->status == "to_be_agreed" || $envio->status == "shipping_deferred") {
-                    $venta->shipping = 0;
-                } else {
-                    $envio->costo = $envio->shipping_option->cost;
-                    $venta->shipping = $envio;
-                }
-            } else {
-                $venta->shipping = 0;
-            }
-
-            // Mensajes
-            $mensajesData = self::callMlApi($marketplace_id, "messages/packs/{packId}/sellers/{sellerId}?tag=post_sale", [
-                '{packId}' => $pack_id,
-                '{sellerId}' => $venta->seller->id
-            ]);
-            $mensajes = json_decode($mensajesData->getContent());
-            $venta->mensajes = $mensajes->messages ?? [];
-
-            // Pagos
-            foreach ($venta->payments as $payment) {
-                $pagoData = self::callMpApi($marketplace_id, "v1/payments/{paymentId}", [
-                    '{paymentId}' => $payment->id
+            if (!$estaCancelada) {
+                $envioData = self::callMlApi($marketplace_id, "orders/{ventaId}/shipments", [
+                    '{ventaId}' => $venta->id
                 ]);
-                $payment->more_details = json_decode($pagoData->getContent());
+                $envio = json_decode($envioData->getContent());
+
+                if (!empty($envio)) {
+                    if (($envio->status ?? null) === "to_be_agreed" || ($envio->status ?? null) === "shipping_deferred") {
+                        $venta->shipping = 0;
+                    } else {
+                        $envio->costo = $envio->shipping_option->cost ?? 0;
+                        $venta->shipping = $envio;
+                    }
+                } else {
+                    $venta->shipping = 0;
+                }
+
+                if (!empty($venta->seller->id) && !empty($pack_id)) {
+                    $mensajesData = self::callMlApi(
+                        $marketplace_id,
+                        "messages/packs/{packId}/sellers/{sellerId}?tag=post_sale",
+                        [
+                            '{packId}' => $pack_id,
+                            '{sellerId}' => $venta->seller->id
+                        ]
+                    );
+                    $mensajes = json_decode($mensajesData->getContent());
+                    $venta->mensajes = $mensajes->messages ?? [];
+                }
+
+                if (!empty($venta->payments) && is_array($venta->payments)) {
+                    foreach ($venta->payments as $payment) {
+                        if (!isset($payment->id)) continue;
+
+                        $pagoData = self::callMpApi($marketplace_id, "v1/payments/{paymentId}", [
+                            '{paymentId}' => $payment->id
+                        ]);
+                        $payment->more_details = json_decode($pagoData->getContent());
+                    }
+                }
             }
 
             $ids_publicacion = [];
-            foreach ($venta->order_items as $item) {
-                $ids_publicacion[] = $item->item->id;
+            if (!empty($venta->order_items) && is_array($venta->order_items)) {
+                foreach ($venta->order_items as $item) {
+                    if (!empty($item->item->id)) {
+                        $ids_publicacion[] = $item->item->id;
+                    }
+                }
             }
             $ids_publicacion = array_values(array_unique($ids_publicacion));
 
-            $publicaciones = DB::table('marketplace_publicacion')
-                ->join('empresa_almacen', 'marketplace_publicacion.id_almacen_empresa', '=', 'empresa_almacen.id')
-                ->select('marketplace_publicacion.id', 'empresa_almacen.id_almacen', 'marketplace_publicacion.publicacion_id')
-                ->whereIn('marketplace_publicacion.publicacion_id', $ids_publicacion)
-                ->get();
-
-            $publicaciones_indexadas = [];
-            foreach ($publicaciones as $pub) {
-                $publicaciones_indexadas[$pub->publicacion_id] = $pub;
-            }
-
-            foreach ($venta->order_items as $item) {
-                $publicacion = $publicaciones_indexadas[$item->item->id] ?? null;
-                if (!$publicacion) continue;
-
-                $productosPublicacion = DB::table('marketplace_publicacion_producto')
-                    ->join('modelo', 'marketplace_publicacion_producto.id_modelo', '=', 'modelo.id')
-                    ->select(
-                        'marketplace_publicacion_producto.id_modelo',
-                        'marketplace_publicacion_producto.garantia',
-                        DB::raw('marketplace_publicacion_producto.cantidad * ' . (int)$item->quantity . ' AS cantidad'),
-                        'marketplace_publicacion_producto.regalo',
-                        'modelo.sku',
-                        'modelo.descripcion'
-                    )
-                    ->where('marketplace_publicacion_producto.id_publicacion', $publicacion->id)
+            if (count($ids_publicacion)) {
+                $publicaciones = DB::table('marketplace_publicacion')
+                    ->join('empresa_almacen', 'marketplace_publicacion.id_almacen_empresa', '=', 'empresa_almacen.id')
+                    ->select('marketplace_publicacion.id', 'empresa_almacen.id_almacen', 'marketplace_publicacion.publicacion_id')
+                    ->whereIn('marketplace_publicacion.publicacion_id', $ids_publicacion)
                     ->get();
 
-                if (count($productosPublicacion)) {
-                    $publicacion->productos = $productosPublicacion;
-                    $venta->productos[] = $publicacion;
+                $publicaciones_indexadas = [];
+                foreach ($publicaciones as $pub) {
+                    $publicaciones_indexadas[$pub->publicacion_id] = $pub;
+                }
+
+                if (!empty($venta->order_items) && is_array($venta->order_items)) {
+                    foreach ($venta->order_items as $item) {
+                        $itemId = $item->item->id ?? null;
+                        if (!$itemId) continue;
+
+                        $publicacion = $publicaciones_indexadas[$itemId] ?? null;
+                        if (!$publicacion) continue;
+
+                        $qty = (int)($item->quantity ?? 0);
+                        if ($qty <= 0) $qty = 1;
+
+                        $productosPublicacion = DB::table('marketplace_publicacion_producto')
+                            ->join('modelo', 'marketplace_publicacion_producto.id_modelo', '=', 'modelo.id')
+                            ->select(
+                                'marketplace_publicacion_producto.id_modelo',
+                                'marketplace_publicacion_producto.garantia',
+                                DB::raw('marketplace_publicacion_producto.cantidad * ' . $qty . ' AS cantidad'),
+                                'marketplace_publicacion_producto.regalo',
+                                'modelo.sku',
+                                'modelo.descripcion'
+                            )
+                            ->where('marketplace_publicacion_producto.id_publicacion', $publicacion->id)
+                            ->get();
+
+                        if (count($productosPublicacion)) {
+                            $publicacion->productos = $productosPublicacion;
+                            $venta->productos[] = $publicacion;
+                        }
+                    }
                 }
             }
+
+            $venta->pack_id_resuelto = $pack_id;
+            $venta->es_cancelada = $estaCancelada ? 1 : 0;
         }
 
         $response->error = 0;
