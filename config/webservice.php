@@ -21,4 +21,7 @@ return [
     'arroba' => env('API_ENDPOINT_ARROBA', ''),
     'autoazur' => env('API_ENDPOINT_AUTOAZUR', ''),
     'printserver' => env('API_ENDPOINT_PRINTSERVER', ''),
+
+    'facturoporti_endpoint_production' => env('API_ENDPOINT_FACTUROPORTI_PRODUCTION', ''),
+    'facturoporti_endpoint_sandbox' => env('API_ENDPOINT_FACTUROPORTI_SANDBOX', ''),
 ];

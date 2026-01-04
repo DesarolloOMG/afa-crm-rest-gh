@@ -5,9 +5,10 @@ services:
     build: .
     container_name: lumen_app
     ports:
-      - "8000:8000"
+      - "8888:8000"
     volumes:
-      - .:/var/www/html
+      - .:/var/www/html  # Sync completo
+      - ./storage:/var/www/html/storage  # Sync storage
     environment:
       - APP_ENV=${APP_ENV:-local}
       - APP_DEBUG=${APP_DEBUG:-true}
