@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  lumen-app:
+    build: .
+    container_name: lumen_app
+    ports:
+      - "8888:8000"
+    volumes:
+      - .:/var/www/html  # Sync completo
+      - ./storage:/var/www/html/storage  # Sync storage
+    environment:
+      - APP_ENV=${APP_ENV:-local}
+      - APP_DEBUG=${APP_DEBUG:-true}
+      - APP_KEY=${APP_KEY}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+    restart: unless-stopped
