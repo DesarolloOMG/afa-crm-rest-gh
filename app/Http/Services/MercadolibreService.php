@@ -1567,8 +1567,13 @@ class MercadolibreService
         array_push($pack->ventas, $informacion_venta);
 
         if (!is_null($pack->id) && $pack->id != $informacion_venta->id) {
-            $pseudonimo_venta = str_replace(" ", "%20", $informacion_venta->buyer->nickname);
-            $ventas_pseudonimo = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . rawurlencode($pseudonimo_venta) . "&sort=date_desc&access_token=" . $token));
+            $pseudonimo_venta = $informacion_venta->buyer->nickname;
+            $ventas_pseudonimo = json_decode(file_get_contents(
+                config("webservice.mercadolibre_enpoint")
+                . "orders/search?seller={$seller->id}"
+                . "&q=" . rawurlencode($pseudonimo_venta)
+                . "&sort=date_desc&access_token={$token}"
+            ));
 
             if (empty($ventas_pseudonimo)) {
                 $log = self::logVariableLocation();
