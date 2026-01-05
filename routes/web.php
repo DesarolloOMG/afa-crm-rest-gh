@@ -17,6 +17,12 @@ $router->get('/', function () use ($router) {
 
 $router->get('testing', 'FacturoPorTiController@endpointurl');
 
+$router->group(['prefix' => 'facturoporti'], function () use ($router) {
+
+    $router->get('token', 'FacturoPorTiController@getToken');
+    $router->get('generar_ejemplo', 'FacturoPorTiController@GenerarFacturaCliente');
+   
+});
 # API Rest Cyberpuerta
 $router->group(['prefix' => 'api', 'middleware' => 'throttle'], function () use ($router) {
     $router->group(['prefix' => 'v1'], function () use ($router) {
