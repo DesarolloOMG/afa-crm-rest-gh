@@ -160,11 +160,18 @@ class GeneralController extends Controller
 
             // Guardar archivo Excel temporal y codificar en base64
             $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
-            $tempFile = 'reporte_productos.xlsx';
+
+            // ✅ Guardar en storage (escribible) y con nombre único
+            $dir = storage_path('app/reportes');
+            if (!is_dir($dir)) {
+                mkdir($dir, 0775, true);
+            }
+
+            $tempFile = $dir . '/reporte_productos_' . date('Ymd_His') . '_' . uniqid() . '.xlsx';
             $writer->save($tempFile);
 
             $json['excel'] = base64_encode(file_get_contents($tempFile));
-            unlink($tempFile);
+            @unlink($tempFile);
 
             // Agrupar resultados por código (SKU)
             $agrupados = [];
