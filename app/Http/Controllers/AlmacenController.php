@@ -427,38 +427,20 @@ class AlmacenController extends Controller
         if ($documento_info->packing_by != 0) {
             //El pedido ya fue surtido y tiene series asignadas
             if ($tiene_series->isNotEmpty()) {
-                $afecta_inventario = DB::table('modelo_kardex')->where('id_documento', $documento)->first();
-                //El pedido ya tiene documento en comercial
-                if (!$afecta_inventario) {
-                    DB::table('documento')->where('id', $documento)->update(['id_fase' => 5]);
+                //El pedido se manda a fase de Terminado porque ya fue surtido, ya tiene series y documento en comercial
+                DB::table('documento')->where('id', $documento)->update(['id_fase' => 6]);
 
-                    DB::table('seguimiento')->insert([
-                        'id_documento' => $documento,
-                        'id_usuario' => 1,
-                        'seguimiento' => "Pedido mandado a fase factura porque ya fue surtido y no se ha creado la factura."
-                    ]);
+                DB::table('seguimiento')->insert([
+                    'id_documento' => $documento,
+                    'id_usuario' => 1,
+                    'seguimiento' => "Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas."
+                ]);
 
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "El documento " . $documento . " ya fue remisionado. Pedido mandado a fase factura porque ya fue surtido y no se ha creado la factura." . " " . self::logVariableLocation(),
-                        "color" => "red-border-top"
-                    ]);
-                } else {
-                    //El pedido se manda a fase de Terminado porque ya fue surtido, ya tiene series y documento en comercial
-                    DB::table('documento')->where('id', $documento)->update(['id_fase' => 6]);
-
-                    DB::table('seguimiento')->insert([
-                        'id_documento' => $documento,
-                        'id_usuario' => 1,
-                        'seguimiento' => "Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas."
-                    ]);
-
-                    return response()->json([
-                        "code" => 500,
-                        "message" => "El documento " . $documento . " ya fue remisionado. Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas." . " " . self::logVariableLocation(),
-                        "color" => "red-border-top"
-                    ]);
-                }
+                return response()->json([
+                    "code" => 500,
+                    "message" => "El documento " . $documento . " ya fue remisionado. Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas." . " " . self::logVariableLocation(),
+                    "color" => "red-border-top"
+                ]);
             } else {
                 //El pedido ya fue surtido por alguien pero no se guardaron la series
                 //Validar primero si el pedido debe tener series
