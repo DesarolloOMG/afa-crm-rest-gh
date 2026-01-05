@@ -493,14 +493,23 @@ class GeneralController extends Controller
             $spreadsheet->setActiveSheetIndex(0);
         }
 
-        $excel_name = uniqid() . ".xlsx";
-        $writer = new Xlsx($spreadsheet);
-        $writer->save($excel_name);
+        // ✅ carpeta segura en storage
+        $dir = storage_path('app/reportes');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
 
-        $json['excel_data'] = base64_encode(file_get_contents($excel_name));
+        $excel_name = 'kardex_crm_' . date('Ymd_His') . '_' . uniqid() . '.xlsx';
+        $excel_path = $dir . '/' . $excel_name;
+
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($excel_path);
+
+        $json['excel_data'] = base64_encode(file_get_contents($excel_path));
         $json['excel_name'] = $excel_name;
 
-        unlink($excel_name);
+        @unlink($excel_path);
+
 
         return response()->json($json);
     }
