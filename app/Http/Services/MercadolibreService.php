@@ -832,14 +832,21 @@ class MercadolibreService
     {
         $publicacion_id = $publicacion_id ?: 'sin_id';
 
-        $dir = "logs/mercadolibre";
+        $dir = storage_path('logs/mercadolibre');
+
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0775, true);
         }
 
-        $archivo = "{$dir}/" . date("Y.m.d") . "-{$publicacion_id}.log";
-        file_put_contents($archivo, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
+        $archivo = $dir . '/' . date('Y.m.d') . "-{$publicacion_id}.log";
+
+        file_put_contents(
+            $archivo,
+            date('H:i:s') . " Error: {$mensaje}" . PHP_EOL,
+            FILE_APPEND | LOCK_EX
+        );
     }
+
 
     public static function actualizarRTS_com($existe_pack)
     {
