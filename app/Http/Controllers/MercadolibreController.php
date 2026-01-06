@@ -127,15 +127,39 @@ class MercadolibreController extends Controller{
         return MercadolibreService::importarVentas($cuenta[0]->id_marketplace_area, $publicacion);
     }
 
-    public function rawinfo_importar_publicaciones_fecha(Request $request){
+    public function rawinfo_importar_publicaciones_fecha(Request $request)
+    {
         set_time_limit(0);
-        $fp = fopen('rawinfoimportarpublicacionfecha', 'w+');
 
-        if (!flock($fp, LOCK_SH | LOCK_NB)) {
-            die();
+        $lockDir = storage_path('app/locks');
+        if (!is_dir($lockDir)) {
+            mkdir($lockDir, 0775, true);
         }
 
+        $lockFile = $lockDir . '/rawinfoimportarpublicacionfecha.lock';
+        $fp = fopen($lockFile, 'c+');
+
+        if (!$fp) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No se pudo crear/abrir el archivo de lock.'
+            ]);
+        }
+
+        if (!flock($fp, LOCK_EX | LOCK_NB)) {
+            fclose($fp);
+            return response()->json([
+                'code' => 409,
+                'message' => 'Ya existe una importación en proceso.'
+            ]);
+        }
+
+        ftruncate($fp, 0);
+        fwrite($fp, "PID: " . getmypid() . "\nFECHA: " . date('Y-m-d H:i:s') . "\n");
+        fflush($fp);
+
         $data = json_decode($request->input("data"));
+
         $cuenta = DB::table('marketplace_api')
             ->join('marketplace_area', 'marketplace_api.id_marketplace_area', '=', 'marketplace_area.id')
             ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
@@ -145,17 +169,31 @@ class MercadolibreController extends Controller{
             ->first();
 
         if (empty($cuenta)) {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+
             return response()->json([
                 'code'  => 500,
                 'message' => "Pseudonimo no encontrado."
             ]);
         }
 
-        flock($fp, LOCK_UN);
-        fclose($fp);
+        try {
+            $resp = MercadolibreService::importarVentas(
+                $cuenta->id_marketplace_area,
+                $data->publicacion,
+                $data->fecha_inicial,
+                $data->fecha_final,
+                $data->dropOrFull
+            );
+        } finally {
+            flock($fp, LOCK_UN);
+            fclose($fp);
+        }
 
-        return MercadolibreService::importarVentas($cuenta->id_marketplace_area, $data->publicacion, $data->fecha_inicial, $data->fecha_final, $data->dropOrFull);
+        return $resp;
     }
+
 
     public function rawinfo_ventas($pseudonimo){
         set_time_limit(0);
