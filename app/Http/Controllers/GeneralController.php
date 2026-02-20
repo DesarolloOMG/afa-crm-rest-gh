@@ -6720,10 +6720,10 @@ class GeneralController extends Controller
         $errores = [];
 
         // puede venir como JSON string
-        $data = $request->input('data');
+        $dataRaw = $request->input('data');
         $marketplaceReq = $request->input('marketplace');
 
-        $data = is_string($data) ? json_decode($data, true) : $data;
+        $dataArr = is_string($dataRaw) ? json_decode($dataRaw, true) : $dataRaw;
         $marketplaceReq = is_string($marketplaceReq) ? json_decode($marketplaceReq) : $marketplaceReq;
 
         // Si marketplace te llega como id o como objeto, lo normalizamos
@@ -6737,14 +6737,14 @@ class GeneralController extends Controller
             ]);
         }
 
-        // Normalizamos lista de ventas
-        // Espera:
-        // - array de strings/ids, o
-        // - array de objetos que traen no_venta / venta / id
-        if (!is_array($data)) $data = [];
+        if (!is_array($dataArr)) $dataArr = [];
 
+        // ✅ Guardamos CRM rows para el mapa (fase/nota)
+        $crmRows = $dataArr;
+
+        // Normalizamos lista de ventas
         $ventas = [];
-        foreach ($data as $row) {
+        foreach ($dataArr as $row) {
             if (is_array($row)) {
                 $ventas[] = $row['no_venta'] ?? $row['venta'] ?? $row['id'] ?? null;
             } elseif (is_object($row)) {
@@ -6769,10 +6769,7 @@ class GeneralController extends Controller
 
         // 1) credenciales UNA vez
         $marketplace = DB::select("
-        SELECT
-            marketplace_api.extra_2,
-            marketplace_api.app_id,
-            marketplace_api.secret
+        SELECT marketplace_api.extra_2, marketplace_api.app_id, marketplace_api.secret
         FROM marketplace_area
         INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
         WHERE marketplace_area.id = " . (int)$idArea . " LIMIT 1
@@ -6788,18 +6785,52 @@ class GeneralController extends Controller
         // 2) revisar canceladas en paralelo (Pool)
         try {
             $resultado = MercadolibreService::revisarCanceladasPool($idArea, $ventas, 20);
-
-            // salida:
-            // $resultado['reporte'] => lista con status de cada venta
-            // $resultado['errores'] => errores de llamadas
             $response = $resultado['reporte'] ?? [];
-            $errores = $resultado['errores'] ?? [];
+            $errores  = $resultado['errores'] ?? [];
         } catch (\Throwable $e) {
             $errores[] = ['error' => 'Error al revisar canceladas: ' . $e->getMessage()];
         }
 
+        // ====================================================
+        // 3) Enriquecer reporte con datos CRM (fase, nota)
+        //    y filtrar SOLO canceladas
+        // ====================================================
+        $crmMap = [];
+        foreach ($crmRows as $row) {
+            if (is_array($row)) $row = (object)$row;
+
+            $noVenta = trim((string)($row->no_venta ?? $row->venta ?? $row->id ?? ''));
+            if ($noVenta === '') continue;
+
+            $crmMap[$noVenta] = [
+                'fase' => (string)($row->fase ?? ''),
+                'nota' => (string)($row->nota ?? ''),
+            ];
+        }
+
+        $soloCanceladas = [];
+        foreach ($response as $r) {
+            if (is_array($r)) $r = (object)$r;
+
+            $ventaId = (string)($r->venta ?? '');
+            $status  = (string)($r->status ?? '');
+            $esCanc  = (int)($r->es_cancelada ?? 0);
+
+            $isCancelled = in_array($status, ['cancelled', 'canceled'], true) || $esCanc === 1;
+            if (!$isCancelled) continue;
+
+            $soloCanceladas[] = [
+                'venta'        => $ventaId,
+                'status'       => $status,
+                'es_cancelada' => 1,
+                'pack_id'      => (string)($r->pack_id ?? ''),
+                'fase'         => $crmMap[$ventaId]['fase'] ?? '',
+                'nota'         => $crmMap[$ventaId]['nota'] ?? '',
+            ];
+        }
+
         return response()->json([
-            'reporte' => $response,
+            'reporte' => $soloCanceladas,
             'errores' => $errores
         ]);
     }
