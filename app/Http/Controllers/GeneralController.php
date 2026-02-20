@@ -6804,6 +6804,7 @@ class GeneralController extends Controller
             if ($noVenta === '') continue;
 
             $crmMap[$noVenta] = [
+                'pedido' => (string)($row->id ?? ''),
                 'fase' => (string)($row->fase ?? ''),
                 'nota' => (string)($row->nota ?? ''),
             ];
@@ -6825,6 +6826,7 @@ class GeneralController extends Controller
                 'status'       => $status,
                 'es_cancelada' => 1,
                 'pack_id'      => (string)($r->pack_id ?? ''),
+                'pedido'       => $crmMap[$ventaId]['pedido'] ?? '',
                 'fase'         => $crmMap[$ventaId]['fase'] ?? '',
                 'nota'         => $crmMap[$ventaId]['nota'] ?? '',
             ];
@@ -6891,138 +6893,127 @@ class GeneralController extends Controller
     {
         set_time_limit(0);
 
-        // puede venir string JSON (FormData)
-        $data    = $request->input('data');
-        $errores = $request->input('errores');
-        $date    = $request->input('date');
-
-        $data    = is_string($data) ? json_decode($data) : $data;
-        $errores = is_string($errores) ? json_decode($errores) : $errores;
-        $date    = is_string($date) ? json_decode($date) : $date;
-
-        if (!is_array($data) && !is_object($data)) $data = [];
-        if (!is_array($errores) && !is_object($errores)) $errores = [];
+        $data    = json_decode($request->input('data')) ?: [];
+        $errores = json_decode($request->input('errores')) ?: [];
+        $date    = json_decode($request->input('date'));
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet()->setTitle('VENTAS CANCELADAS MERCADOLIBRE');
 
-        // ===== Header principal
         $contador_fila = 2;
 
+        // =========================
+        // CABECERA
+        // =========================
         $sheet->setCellValue('A1', 'VENTA');
-        $sheet->setCellValue('B1', 'PEDIDO');
-        $sheet->setCellValue('C1', 'FASE');
-        $sheet->setCellValue('D1', 'ESTATUS MERCADOLIBRE');
-        $sheet->setCellValue('E1', '# NDC');
+        $sheet->setCellValue('B1', 'PACK');
+        $sheet->setCellValue('C1', 'PEDIDO');
+        $sheet->setCellValue('D1', 'FASE');
+        $sheet->setCellValue('E1', 'ESTATUS MERCADOLIBRE');
+        $sheet->setCellValue('F1', '# NDC');
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:E1')->getFont()->setBold(true)->getColor()->setARGB('000000');
-        $spreadsheet->getActiveSheet()->getStyle('A1:E1')->getFill()
+        $spreadsheet->getActiveSheet()->getStyle('A1:F1')->getFont()
+            ->setBold(true)
+            ->getColor()->setARGB('000000');
+
+        $spreadsheet->getActiveSheet()->getStyle('A1:F1')->getFill()
             ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
             ->getStartColor()->setARGB('4CB9CD');
 
-        // Congelar encabezado (mejora visual sin cambiar tu diseño)
-        $sheet->freezePane('A2');
-
-        // ===== Body principal
+        // =========================
+        // DATA (SOLO CANCELADAS)
+        // =========================
         foreach ($data as $venta) {
-            // por si viene array
+            // por si viene como array
             if (is_array($venta)) $venta = (object)$venta;
 
+            $ventaNo = (string)($venta->venta ?? 'N/A');
+            $status  = (string)($venta->status ?? '');
+
+            // ✅ Si por algún motivo aquí llegara algo no-cancelado, lo saltamos
+            // (idealmente ya te llega filtrado desde revision_canceladas)
+            if ($status !== 'cancelled' && (int)($venta->es_cancelada ?? 0) !== 1) {
+                continue;
+            }
+
+            // A: VENTA
             $sheet->getCellByColumnAndRow(1, $contador_fila)
-                ->setValueExplicit($venta->venta ?? 'N/A', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                ->setValueExplicit($ventaNo, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
+            // B: PACK (pack_id de ML)
             $sheet->getCellByColumnAndRow(2, $contador_fila)
-                ->setValueExplicit((string)($venta->id ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                ->setValueExplicit((string)($venta->pack_id ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
-            $sheet->setCellValue('C' . $contador_fila, $venta->fase ?? '');
-            $sheet->setCellValue('D' . $contador_fila, $venta->status ?? 'Cancelada');
+            // C: PEDIDO (id del documento CRM)
+            // si en tu reporte lo mandas como "pedido" o "id", aquí lo tomamos
+            $pedido = $venta->pedido ?? $venta->id ?? '';
+            $sheet->getCellByColumnAndRow(3, $contador_fila)
+                ->setValueExplicit((string)$pedido, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
-            $sheet->getCellByColumnAndRow(5, $contador_fila)
+            // D: FASE (CRM)
+            $sheet->setCellValue('D' . $contador_fila, (string)($venta->fase ?? ''));
+
+            // E: STATUS (ML)
+            $sheet->setCellValue('E' . $contador_fila, $status !== '' ? $status : 'cancelled');
+
+            // F: # NDC (nota CRM)
+            $sheet->getCellByColumnAndRow(6, $contador_fila)
                 ->setValueExplicit((string)($venta->nota ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
             $contador_fila++;
         }
 
-        $contador_fila += 2;
+        $contador_fila++;
 
-        // Auto-size A..E
-        foreach (range('A', 'E') as $columna) {
+        // AutoSize A..F
+        foreach (range('A', 'F') as $columna) {
             $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
         }
 
-        // ===== Sección errores
-        $sheet->setCellValue('F' . $contador_fila, 'VENTA');
-        $sheet->setCellValue('G' . $contador_fila, 'PEDIDO');
-        $sheet->setCellValue('H' . $contador_fila, 'ERROR');
+        $contador_fila++;
 
-        // Estilo cabecera errores (ligero)
-        $spreadsheet->getActiveSheet()->getStyle("F{$contador_fila}:H{$contador_fila}")
-            ->getFont()->setBold(true)->getColor()->setARGB('000000');
-        $spreadsheet->getActiveSheet()->getStyle("F{$contador_fila}:H{$contador_fila}")
-            ->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
-            ->getStartColor()->setARGB('F2C94C');
+        // =========================
+        // ERRORES (corridos 1 col)
+        // =========================
+        $sheet->setCellValue('G' . $contador_fila, 'VENTA');
+        $sheet->setCellValue('H' . $contador_fila, 'PEDIDO');
+        $sheet->setCellValue('I' . $contador_fila, 'ERROR');
+
+        $spreadsheet->getActiveSheet()->getStyle("G{$contador_fila}:I{$contador_fila}")->getFont()
+            ->setBold(true)
+            ->getColor()->setARGB('000000');
+
+        $spreadsheet->getActiveSheet()->getStyle("G{$contador_fila}:I{$contador_fila}")->getFill()
+            ->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)
+            ->getStartColor()->setARGB('F8D7DA'); // rojo suave
 
         $contador_fila++;
 
-        foreach ($errores as $venta) {
-            if (is_array($venta)) $venta = (object)$venta;
+        foreach ($errores as $err) {
+            if (is_array($err)) $err = (object)$err;
 
-            $ventaId = $venta->venta ?? 'N/A';
-            $pedido  = $venta->id ?? ($venta->pack_id ?? $ventaId);
-
-            // Armar error “bonito”
-            $errorTxt = (string)($venta->error ?? '');
-            $raw = $venta->raw ?? null;
-
-            // raw puede ser array/object/string
-            if (is_array($raw)) $raw = (object)$raw;
-
-            if (is_object($raw)) {
-                $rawStatus  = $raw->status ?? '';
-                $rawCode    = $raw->error ?? '';
-                $rawMessage = $raw->message ?? '';
-
-                $detalle = trim(($rawCode ? $rawCode . ' | ' : '') . $rawMessage);
-
-                if ($rawStatus !== '' && strpos($errorTxt, (string)$rawStatus) === false) {
-                    $errorTxt = trim($errorTxt . " ({$rawStatus})");
-                }
-                if ($detalle !== '') {
-                    $errorTxt = trim($errorTxt . ' | ' . $detalle);
-                }
-            } elseif (is_string($raw) && $raw !== '') {
-                // texto/HTML -> limpiar y cortar
-                $rawClean = preg_replace("/\s+/", " ", strip_tags($raw));
-                $rawClean = mb_substr($rawClean, 0, 180);
-                if ($rawClean !== '') {
-                    $errorTxt = trim($errorTxt . ' | ' . $rawClean);
-                }
-            }
-
-            $sheet->getCellByColumnAndRow(6, $contador_fila)
-                ->setValueExplicit((string)$ventaId, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-
+            // G: VENTA
             $sheet->getCellByColumnAndRow(7, $contador_fila)
-                ->setValueExplicit((string)$pedido, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                ->setValueExplicit((string)($err->venta ?? 'N/A'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
+            // H: PEDIDO (si viene id, si no, usamos venta)
             $sheet->getCellByColumnAndRow(8, $contador_fila)
-                ->setValueExplicit($errorTxt, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                ->setValueExplicit((string)($err->id ?? $err->pedido ?? $err->venta ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+
+            // I: ERROR
+            $sheet->getCellByColumnAndRow(9, $contador_fila)
+                ->setValueExplicit((string)($err->error ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
             $contador_fila++;
         }
 
-        // Auto-size F..H
-        foreach (range('F', 'H') as $columna) {
-            $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
-        }
-
-        // AutoFilter solo para tabla principal (como lo tenías)
-        $spreadsheet->getActiveSheet()->setAutoFilter("A1:E" . max(1, ($contador_fila - 1)));
+        // Filtro solo para la tabla principal
+        $spreadsheet->getActiveSheet()->setAutoFilter("A1:F" . ($contador_fila - 1));
 
         $nombre_archivo = "Reporte de ventas canceladas de mercadolibre "
-            . date("d F Y", strtotime($date->fecha_inicio ?? date('Y-m-d')))
+            . date("d F Y", strtotime($date->fecha_inicio ?? 'now'))
             . " a "
-            . date("d F Y", strtotime($date->fecha_final ?? date('Y-m-d')))
+            . date("d F Y", strtotime($date->fecha_final ?? 'now'))
             . " "
             . uniqid()
             . ".xlsx";
@@ -7030,7 +7021,7 @@ class GeneralController extends Controller
         $writer = new Xlsx($spreadsheet);
         $writer->save($nombre_archivo);
 
-        $json['code'] = 200;
+        $json['code']  = 200;
         $json['excel'] = base64_encode(file_get_contents($nombre_archivo));
         $json['nombre'] = $nombre_archivo;
 
