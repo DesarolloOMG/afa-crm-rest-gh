@@ -3,6 +3,9 @@
 namespace App\Http\Services;
 
 use Exception;
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\RequestException;
+use GuzzleHttp\Pool;
 use Httpful\Mime;
 use Httpful\Request;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -3522,6 +3525,251 @@ class MercadolibreService
             'items/{item_id}/description',
             ['{item_id}' => $data->item_id], 1
         );
+    }
+
+    public static function checarCanceladoPorNoVenta($noVenta, $sellerId, $token)
+    {
+        $response = new \stdClass();
+        $endpoint = config("webservice.mercadolibre_enpoint");
+
+        $url = $endpoint . "orders/search?seller=" . $sellerId
+            . "&q=" . urlencode($noVenta)
+            . "&sort=date_desc&access_token=" . $token;
+
+        $info = @json_decode(file_get_contents($url));
+
+        if (empty($info) || empty($info->results)) {
+            $response->error = 1;
+            $response->mensaje = "No se encontró información de la venta " . $noVenta . " en MercadoLibre.";
+            return $response;
+        }
+
+        $venta = $info->results[0];
+
+        $response->error = 0;
+        $response->cancelada = ($venta->status === 'cancelled');
+        return $response;
+    }
+
+    /** =========================
+     *  HTTP CLIENT (Guzzle)
+     *  ========================= */
+    private static function getHttpClient(): Client
+    {
+        return new Client([
+            'timeout' => 40,
+            'connect_timeout' => 15,
+            'http_errors' => false, // nosotros controlamos códigos
+        ]);
+    }
+
+    /** =========================
+     *  Request JSON con reintento
+     *  ========================= */
+    private static function requestJsonWithRetry(Client $client, string $method, string $url, array $headers = [], array $query = [], int $maxRetries = 3): array
+    {
+        $attempt = 0;
+        $lastError = null;
+
+        while ($attempt <= $maxRetries) {
+            try {
+                $res = $client->request($method, $url, [
+                    'headers' => $headers,
+                    'query' => $query,
+                ]);
+
+                $code = (int)$res->getStatusCode();
+                $raw = (string)$res->getBody();
+
+                // 429 (rate limit) o 5xx => reintentar
+                if ($code === 429 || ($code >= 500 && $code <= 599)) {
+                    $attempt++;
+                    // backoff simple
+                    usleep(250000 * $attempt); // 0.25s, 0.5s, 0.75s...
+                    $lastError = "HTTP {$code}: {$raw}";
+                    continue;
+                }
+
+                $json = json_decode($raw, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return [
+                        'ok' => false,
+                        'code' => $code,
+                        'error' => 'JSON inválido: ' . json_last_error_msg(),
+                        'raw' => $raw,
+                    ];
+                }
+
+                return [
+                    'ok' => ($code >= 200 && $code < 300),
+                    'code' => $code,
+                    'data' => $json,
+                ];
+            } catch (\Throwable $e) {
+                $attempt++;
+                $lastError = $e->getMessage();
+                usleep(250000 * $attempt);
+            }
+        }
+
+        return [
+            'ok' => false,
+            'code' => 0,
+            'error' => $lastError ?: 'Error desconocido',
+        ];
+    }
+
+    /** =========================
+     *  ML API raw (array)
+     *  ========================= */
+    public static function callMlApiRaw($marketplaceId, $endpointTemplate, array $placeholders = []): array
+    {
+        set_time_limit(0);
+
+        $marketplace = self::getMarketplaceData($marketplaceId);
+        if (!$marketplace || ($marketplace->error ?? 1)) {
+            return [
+                'ok' => false,
+                'code' => 0,
+                'error' => 'No se encontró información del marketplace.',
+            ];
+        }
+
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $endpoint = strtr($endpointTemplate, $placeholders);
+        $url = rtrim(config("webservice.mercadolibre_enpoint"), '/') . '/' . ltrim($endpoint, '/');
+
+        $client = self::getHttpClient();
+
+        return self::requestJsonWithRetry(
+            $client,
+            'GET',
+            $url,
+            ['Authorization' => 'Bearer ' . $token]
+        );
+    }
+
+    /** ====================================================
+     *  Revisar canceladas en lote (Pool concurrente)
+     *  ==================================================== */
+    public static function revisarCanceladasPool(int $marketplaceId, array $ventas, int $concurrency = 20): array
+    {
+        set_time_limit(0);
+
+        // 1) credenciales + token
+        $marketplace = self::getMarketplaceData($marketplaceId);
+        if (!$marketplace || ($marketplace->error ?? 1)) {
+            return [
+                'reporte' => [],
+                'errores' => [['error' => 'No se encontró información del marketplace.']],
+            ];
+        }
+
+        $marketplaceData = $marketplace->marketplace_data;
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
+
+        $base = rtrim(config("webservice.mercadolibre_enpoint"), '/') . '/';
+        $client = self::getHttpClient();
+
+        $reporte = [];
+        $errores = [];
+
+        // para mapear índice -> venta
+        $ventas = array_values($ventas);
+
+        $requests = function () use ($ventas, $client, $base, $token) {
+            foreach ($ventas as $ventaId) {
+                $ventaIdEnc = rawurlencode((string)$ventaId);
+                $url = $base . "orders/" . $ventaIdEnc;
+
+                yield function () use ($client, $url, $token) {
+                    return $client->getAsync($url, [
+                        'headers' => [
+                            'Authorization' => 'Bearer ' . $token,
+                        ],
+                    ]);
+                };
+            }
+        };
+
+        $pool = new Pool($client, $requests(), [
+            'concurrency' => max(1, (int)$concurrency),
+
+            'fulfilled' => function ($response, $index) use (&$reporte, &$errores, $ventas) {
+                $ventaId = $ventas[$index] ?? 'N/A';
+                $code = (int)$response->getStatusCode();
+                $raw = (string)$response->getBody();
+                $json = json_decode($raw, true);
+
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    $errores[] = [
+                        'venta' => $ventaId,
+                        'error' => 'JSON inválido: ' . json_last_error_msg(),
+                        'raw' => $raw,
+                    ];
+                    return;
+                }
+
+                if ($code < 200 || $code >= 300) {
+                    $errores[] = [
+                        'venta' => $ventaId,
+                        'error' => 'HTTP ' . $code,
+                        'raw' => $json,
+                    ];
+                    return;
+                }
+
+                $status = $json['status'] ?? null;
+                $packId = $json['pack_id'] ?? ($json['id'] ?? null);
+
+                // pack_id a veces llega como float/“123.0”
+                $packIdResolved = '';
+                if (!is_null($packId)) {
+                    $packIdResolved = explode('.', (string)$packId)[0];
+                }
+
+                $reporte[] = [
+                    'venta' => (string)$ventaId,
+                    'status' => (string)$status,
+                    'es_cancelada' => ($status === 'cancelled') ? 1 : 0,
+                    'pack_id' => $packIdResolved,
+                ];
+            },
+
+            'rejected' => function ($reason, $index) use (&$errores, $ventas) {
+                $ventaId = $ventas[$index] ?? 'N/A';
+                $msg = 'Request rejected';
+
+                if ($reason instanceof RequestException) {
+                    $msg = $reason->getMessage();
+                } elseif (is_string($reason)) {
+                    $msg = $reason;
+                } elseif (is_object($reason) && method_exists($reason, 'getMessage')) {
+                    $msg = $reason->getMessage();
+                }
+
+                $errores[] = [
+                    'venta' => (string)$ventaId,
+                    'error' => $msg,
+                ];
+            },
+        ]);
+
+        // Ejecutar pool
+        $promise = $pool->promise();
+        $promise->wait();
+
+        // Ordenar reporte por venta (opcional)
+        usort($reporte, function ($a, $b) {
+            return strcmp($a['venta'], $b['venta']);
+        });
+
+        return [
+            'reporte' => $reporte,
+            'errores' => $errores,
+        ];
     }
 
     private static function logVariableLocation(): string

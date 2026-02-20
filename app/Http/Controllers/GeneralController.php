@@ -6704,29 +6704,92 @@ class GeneralController extends Controller
     public function general_reporte_venta_mercadolibre_revision_canceladas(Request $request)
     {
         set_time_limit(0);
-        $response = array();
-        $error = array();
-        $data = json_decode($request->input('data'));
-        $marketplace = json_decode($request->input('marketplace'));
 
-        foreach ($data as $venta) {
-            $info = '';
-            $info = MercadolibreService::checarCancelados($venta->id, 1, $marketplace);
-            if ($info->error == 1) {
-                $object = new \stdClass();
-                $object->id = $venta->id;
-                $object->venta = $venta->no_venta;
-                $object->error = $info->mensaje;
-                array_push($error, $object);
+        $response = [];
+        $errores = [];
+
+        // puede venir como JSON string
+        $data = $request->input('data');
+        $marketplaceReq = $request->input('marketplace');
+
+        $data = is_string($data) ? json_decode($data, true) : $data;
+        $marketplaceReq = is_string($marketplaceReq) ? json_decode($marketplaceReq) : $marketplaceReq;
+
+        // Si marketplace te llega como id o como objeto, lo normalizamos
+        $idArea = is_object($marketplaceReq) ? ($marketplaceReq->id ?? null) : $marketplaceReq;
+        $idArea = (int)$idArea;
+
+        if (!$idArea) {
+            return response()->json([
+                'reporte' => [],
+                'errores' => [['error' => 'Marketplace inválido (no viene id).']]
+            ]);
+        }
+
+        // Normalizamos lista de ventas
+        // Espera:
+        // - array de strings/ids, o
+        // - array de objetos que traen no_venta / venta / id
+        if (!is_array($data)) $data = [];
+
+        $ventas = [];
+        foreach ($data as $row) {
+            if (is_array($row)) {
+                $ventas[] = $row['no_venta'] ?? $row['venta'] ?? $row['id'] ?? null;
+            } elseif (is_object($row)) {
+                $ventas[] = $row->no_venta ?? $row->venta ?? $row->id ?? null;
             } else {
-                if ($info->cancelada) {
-                    array_push($response, $venta);
-                }
+                $ventas[] = $row;
             }
         }
+
+        $ventas = array_values(array_unique(array_filter(array_map(function ($v) {
+            $v = is_null($v) ? '' : (string)$v;
+            $v = trim($v);
+            return $v !== '' ? $v : null;
+        }, $ventas))));
+
+        if (!count($ventas)) {
+            return response()->json([
+                'reporte' => [],
+                'errores' => [['error' => 'No se recibieron ventas para revisar.']]
+            ]);
+        }
+
+        // 1) credenciales UNA vez
+        $marketplace = DB::select("
+        SELECT
+            marketplace_api.extra_2,
+            marketplace_api.app_id,
+            marketplace_api.secret
+        FROM marketplace_area
+        INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
+        WHERE marketplace_area.id = " . (int)$idArea . " LIMIT 1
+    ");
+
+        if (empty($marketplace)) {
+            return response()->json([
+                'reporte' => [],
+                'errores' => [['error' => 'No se encontraron credenciales del marketplace seleccionado.']]
+            ]);
+        }
+
+        // 2) revisar canceladas en paralelo (Pool)
+        try {
+            $resultado = MercadolibreService::revisarCanceladasPool($idArea, $ventas, 20);
+
+            // salida:
+            // $resultado['reporte'] => lista con status de cada venta
+            // $resultado['errores'] => errores de llamadas
+            $response = $resultado['reporte'] ?? [];
+            $errores = $resultado['errores'] ?? [];
+        } catch (\Throwable $e) {
+            $errores[] = ['error' => 'Error al revisar canceladas: ' . $e->getMessage()];
+        }
+
         return response()->json([
             'reporte' => $response,
-            'errores' => $error
+            'errores' => $errores
         ]);
     }
 
