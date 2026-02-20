@@ -6932,7 +6932,7 @@ class GeneralController extends Controller
                 ->setValueExplicit($venta->venta ?? 'N/A', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
             $sheet->getCellByColumnAndRow(2, $contador_fila)
-                ->setValueExplicit((string)($venta->pack_id ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                ->setValueExplicit((string)($venta->id ?? ''), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
             $sheet->setCellValue('C' . $contador_fila, $venta->fase ?? '');
             $sheet->setCellValue('D' . $contador_fila, $venta->status ?? 'Cancelada');
