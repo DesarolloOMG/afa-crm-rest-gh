@@ -3651,9 +3651,13 @@ class MercadolibreService
         );
     }
 
-    /** ====================================================
+    /**
+     * ====================================================
      *  Revisar canceladas en lote (Pool concurrente)
-     *  ==================================================== */
+     *  - Filtra ventas inválidas ANTES de pegarle a ML (evita 400 HTML => JSON inválido)
+     *  - En errores incluye id/venta + http + raw (para que Excel lo muestre bien)
+     * ====================================================
+     */
     public static function revisarCanceladasPool(int $marketplaceId, array $ventas, int $concurrency = 20): array
     {
         set_time_limit(0);
@@ -3663,7 +3667,13 @@ class MercadolibreService
         if (!$marketplace || ($marketplace->error ?? 1)) {
             return [
                 'reporte' => [],
-                'errores' => [['error' => 'No se encontró información del marketplace.']],
+                'errores' => [
+                    [
+                        'venta' => 'N/A',
+                        'id'    => '',
+                        'error' => 'No se encontró información del marketplace.',
+                    ]
+                ],
             ];
         }
 
@@ -3676,9 +3686,44 @@ class MercadolibreService
         $reporte = [];
         $errores = [];
 
-        // para mapear índice -> venta
+        // ====================================================
+        // 0) Normalizar y filtrar ventas inválidas
+        //    (evita requests con "N/A", "", textos, etc.)
+        // ====================================================
         $ventas = array_values($ventas);
 
+        $ventasValidas = [];
+        foreach ($ventas as $v) {
+            $v = trim((string)$v);
+
+            // Si no es numérico, NO lo mandes a ML => se reporta como error “venta inválida”
+            if ($v === '' || !preg_match('/^\d+$/', $v)) {
+                $errores[] = [
+                    'venta' => ($v !== '' ? $v : 'N/A'),
+                    'id'    => ($v !== '' ? $v : ''),
+                    'error' => 'VENTA INVÁLIDA (NO NUMÉRICA)',
+                    'raw'   => $v,
+                ];
+                continue;
+            }
+
+            $ventasValidas[] = $v;
+        }
+
+        // Si no hay ventas válidas, regresamos con el detalle
+        if (!count($ventasValidas)) {
+            return [
+                'reporte' => [],
+                'errores' => $errores,
+            ];
+        }
+
+        // para mapear índice -> venta (SOLO las válidas)
+        $ventas = array_values($ventasValidas);
+
+        // ====================================================
+        // 1) Requests concurrentes (Pool)
+        // ====================================================
         $requests = function () use ($ventas, $client, $base, $token) {
             foreach ($ventas as $ventaId) {
                 $ventaIdEnc = rawurlencode((string)$ventaId);
@@ -3700,28 +3745,38 @@ class MercadolibreService
             'fulfilled' => function ($response, $index) use (&$reporte, &$errores, $ventas) {
                 $ventaId = $ventas[$index] ?? 'N/A';
                 $code = (int)$response->getStatusCode();
-                $raw = (string)$response->getBody();
+                $raw  = (string)$response->getBody();
+
+                // Intentar JSON
                 $json = json_decode($raw, true);
 
+                // Si NO es JSON (ej: HTML 400), lo guardamos como error pero SIN romper nada
                 if (json_last_error() !== JSON_ERROR_NONE) {
+                    // limpiar un poco el HTML/texto para que no pese tanto
+                    $rawClean = preg_replace("/\s+/", " ", strip_tags($raw));
+                    $rawClean = mb_substr($rawClean, 0, 220);
+
                     $errores[] = [
-                        'venta' => $ventaId,
-                        'error' => 'JSON inválido: ' . json_last_error_msg(),
-                        'raw' => $raw,
+                        'venta' => (string)$ventaId,
+                        'id'    => (string)$ventaId,
+                        'error' => 'RESPUESTA NO JSON (HTTP ' . $code . '): ' . json_last_error_msg(),
+                        'raw'   => $rawClean,
                     ];
                     return;
                 }
 
+                // Si HTTP no es 2xx, guardamos el JSON como "raw" para ver mensaje/error/status
                 if ($code < 200 || $code >= 300) {
                     $errores[] = [
-                        'venta' => $ventaId,
+                        'venta' => (string)$ventaId,
+                        'id'    => (string)$ventaId,
                         'error' => 'HTTP ' . $code,
-                        'raw' => $json,
+                        'raw'   => $json,
                     ];
                     return;
                 }
 
-                $status = $json['status'] ?? null;
+                $status = $json['status'] ?? '';
                 $packId = $json['pack_id'] ?? ($json['id'] ?? null);
 
                 // pack_id a veces llega como float/“123.0”
@@ -3731,10 +3786,10 @@ class MercadolibreService
                 }
 
                 $reporte[] = [
-                    'venta' => (string)$ventaId,
-                    'status' => (string)$status,
+                    'venta'        => (string)$ventaId,
+                    'status'       => (string)$status,
                     'es_cancelada' => ($status === 'cancelled') ? 1 : 0,
-                    'pack_id' => $packIdResolved,
+                    'pack_id'      => $packIdResolved,
                 ];
             },
 
@@ -3752,6 +3807,7 @@ class MercadolibreService
 
                 $errores[] = [
                     'venta' => (string)$ventaId,
+                    'id'    => (string)$ventaId,
                     'error' => $msg,
                 ];
             },
