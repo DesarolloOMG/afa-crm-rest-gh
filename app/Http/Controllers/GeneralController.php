@@ -6630,6 +6630,7 @@ class GeneralController extends Controller
                 'documento.nota'
             )
             ->where('documento.id_marketplace_area', $marketplace)
+            ->where('id_tipo', 2)
             ->whereBetween('documento.created_at', [$fechaInicio, $fechaFinal])
             ->get();
 
