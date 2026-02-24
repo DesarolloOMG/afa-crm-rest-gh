@@ -1598,7 +1598,7 @@ class SoporteController extends Controller
             'id_cfdi'            => $docOriginal->id_cfdi,
             'id_marketplace_area' => $docOriginal->id_marketplace_area,
             'id_usuario'         => $idUsuario,
-            'id_entidad'         => 3,           // SIEMPRE 3 (como pediste)
+            'id_entidad'         => $docOriginal->id_entidad,           // SIEMPRE 3 (como pediste)
             'id_moneda'          => $docOriginal->id_moneda,
             'id_paqueteria'      => 106,         // SIEMPRE 106 (como pediste)
             'id_fase'            => 3,           // para surtir
