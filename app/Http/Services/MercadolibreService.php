@@ -1428,15 +1428,15 @@ class MercadolibreService
         $response = new stdClass();
 
         $marketplace = DB::select("SELECT
-                                        marketplace_area.id,
-                                        marketplace_api.extra_2,
-                                        marketplace_api.app_id,
-                                        marketplace_api.secret,
-                                        documento.no_venta
-                                    FROM documento
-                                    INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
-                                    INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
-                                    WHERE documento.id = " . $documento . "");
+                                    marketplace_area.id,
+                                    marketplace_api.extra_2,
+                                    marketplace_api.app_id,
+                                    marketplace_api.secret,
+                                    documento.no_venta
+                                FROM documento
+                                INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
+                                INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
+                                WHERE documento.id = " . $documento . "");
 
         if (empty($marketplace)) {
             $log = self::logVariableLocation();
@@ -1451,7 +1451,12 @@ class MercadolibreService
         $token = self::token($marketplace->app_id, $marketplace->secret);
         $seller = self::seller($marketplace->extra_2, $token);
 
-        $informacion_venta = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/search?seller=" . $seller->id . "&q=" . $marketplace->no_venta . "&sort=date_desc&access_token=" . $token));
+        $informacion_venta = @json_decode(file_get_contents(
+            config("webservice.mercadolibre_enpoint") .
+            "orders/search?seller=" . $seller->id .
+            "&q=" . $marketplace->no_venta .
+            "&sort=date_desc&access_token=" . $token
+        ));
 
         if (empty($informacion_venta)) {
             $log = self::logVariableLocation();
@@ -1472,7 +1477,10 @@ class MercadolibreService
         }
 
         $informacion_venta = $informacion_venta->results[0];
-        $informacion_venta->shipping = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . $marketplace->no_venta . "/shipments?access_token=" . $token));
+        $informacion_venta->shipping = @json_decode(file_get_contents(
+            config("webservice.mercadolibre_enpoint") .
+            "orders/" . $marketplace->no_venta . "/shipments?access_token=" . $token
+        ));
 
         if (empty($informacion_venta->shipping)) {
             $log = self::logVariableLocation();
@@ -1525,19 +1533,10 @@ class MercadolibreService
             }
         }
 
-
-        if ($cancelada) {
-            $log = self::logVariableLocation();
-
-            $response->error = 1;
-            $response->mensaje = "La venta " . $marketplace->no_venta . " se encuentra cancelada en Mercadolibre" . $log;
-
-            return $response;
-        }
-
         $pack = new stdClass();
         $pack->id = explode(".", empty($informacion_venta->pack_id) ? $informacion_venta->id : sprintf('%lf', $informacion_venta->pack_id))[0];
         $pack->error = 0;
+        $pack->cancelada = $cancelada;
         $pack->ventas = array();
         $pack->mensaje = "";
         $pack->almacen = "";
@@ -1605,7 +1604,10 @@ class MercadolibreService
 
             foreach ($ventas_pseudonimo->results as $venta_pseudonimo) {
                 if ($pack->id == $venta_pseudonimo->pack_id && $informacion_venta->id != $venta_pseudonimo->id) {
-                    $venta_pseudonimo->shipping = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "orders/" . $venta_pseudonimo->id . "/shipments?access_token=" . $token));
+                    $venta_pseudonimo->shipping = @json_decode(file_get_contents(
+                        config("webservice.mercadolibre_enpoint") .
+                        "orders/" . $venta_pseudonimo->id . "/shipments?access_token=" . $token
+                    ));
 
                     array_push($pack->ventas, $venta_pseudonimo);
                 }
@@ -1617,39 +1619,33 @@ class MercadolibreService
                 $existe = DB::select("SELECT id FROM documento WHERE no_venta = '" . $venta->id . "' AND status = 1 AND id_tipo = 2");
 
                 if (!empty($existe)) {
-
                     $pack->error = 1;
                     $pack->mensaje = "La venta " . $venta->id . " ya fue importada anteriormente con el pedido " . $existe[0]->id;
-
                     break;
                 }
             }
 
             if (empty($venta->shipping)) {
-
                 $pack->error = 1;
                 $pack->mensaje = "No se encontró información del envio en los sistemas de mercadolibre de la venta " . $venta->id;
-
                 break;
             }
 
             foreach ($venta->order_items as $item) {
                 $existe_publicacion = DB::select("SELECT 
-                                                        marketplace_publicacion.id, 
-                                                        marketplace_publicacion.id_almacen_empresa,
-                                                        marketplace_publicacion.id_almacen_empresa_fulfillment,
-                                                        empresa.bd,
-                                                        empresa_almacen.id_almacen
-                                                FROM marketplace_publicacion 
-                                                INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
-                                                INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
-                                                WHERE publicacion_id = '" . $item->item->id . "'");
+                                                    marketplace_publicacion.id, 
+                                                    marketplace_publicacion.id_almacen_empresa,
+                                                    marketplace_publicacion.id_almacen_empresa_fulfillment,
+                                                    empresa.bd,
+                                                    empresa_almacen.id_almacen
+                                            FROM marketplace_publicacion 
+                                            INNER JOIN empresa_almacen ON marketplace_publicacion.id_almacen_empresa = empresa_almacen.id
+                                            INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
+                                            WHERE publicacion_id = '" . $item->item->id . "'");
 
                 if (empty($existe_publicacion)) {
-
                     $pack->error = 1;
                     $pack->mensaje = "No se encontró la publicación de la venta " . $venta->id . " registrada en el sistema, por lo tanto, no hay relación de productos " . $item->item->id;
-
                     break 2;
                 }
 
@@ -1661,7 +1657,6 @@ class MercadolibreService
                 if (empty($productos_publicacion)) {
                     $pack->error = 1;
                     $pack->mensaje = "No hay relación entre productos y la publicación " . $item->item->id . " en la venta " . $venta->id;
-
                     break 2;
                 }
 
@@ -1672,16 +1667,15 @@ class MercadolibreService
                 }
 
                 if ($porcentaje_total != 100) {
-
                     $pack->error = 1;
                     $pack->mensaje = "Los productos de la publicación " . $item->item->id . " no suman un porcentaje total de 100%.";
-
                     break 2;
                 }
 
                 $pack->almacen = property_exists($venta->shipping, "logistic_type")
                     ? ($venta->shipping->logistic_type == 'fulfillment'
-                        ? $existe_publicacion->id_almacen_empresa_fulfillment : $existe_publicacion->id_almacen_empresa ?? 1)
+                        ? $existe_publicacion->id_almacen_empresa_fulfillment
+                        : $existe_publicacion->id_almacen_empresa ?? 1)
                     : $existe_publicacion->id_almacen_empresa ?? 1;
 
                 foreach ($productos_publicacion as $producto) {
@@ -1691,6 +1685,12 @@ class MercadolibreService
 
                 $pack->productos = array_merge($pack->productos, $productos_publicacion);
             }
+        }
+
+        if ($cancelada && $pack->error == 0) {
+            $log = self::logVariableLocation();
+            $pack->error = 2;
+            $pack->mensaje = "La venta " . $marketplace->no_venta . " se encuentra cancelada en Mercadolibre" . $log;
         }
 
         return $pack;

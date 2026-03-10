@@ -3682,382 +3682,487 @@ class VentaController extends Controller
         $auth = json_decode($request->auth);
         $documento = $request->input("venta");
 
-        $hayError = false;
+        try {
+            return DB::transaction(function () use ($auth, $documento) {
+                $hayError = false;
 
-        $venta = DB::table("documento")
-            ->select(
-                "documento.id",
-                "documento.no_venta",
-                "documento.id_modelo_proveedor",
-                "documento.fulfillment",
-                "documento.id_marketplace_area",
-                "documento_entidad.rfc",
-                "documento_entidad.razon_social",
-                "documento.mkt_publicacion",
-                "documento.created_at"
-            )
-            ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
-            ->where("documento.id", $documento)
-            ->first();
-
-        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se inicia el proceso de validar la venta");
-
-        $response = MercadolibreService::validarVenta($documento);
-
-        if ($response->error) {
-            BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Error al validar la venta en ML. Error: " . $response->mensaje);
-
-            DB::table("seguimiento")->insert([
-                'id_documento' => $documento,
-                'id_usuario' => 1,
-                'seguimiento' => "Mensaje al validar la venta -> " . $response->mensaje
-            ]);
-
-            return response()->json([
-                'code' => 500,
-                'mensaje' => "Error al validar la venta en ML: " . $response->mensaje
-            ]);
-        }
-
-        DB::table('documento')->where('id', $documento)->update([
-            'id_almacen_principal_empresa' => $response->almacen,
-            'id_paqueteria' => $response->paqueteria,
-            'comentario' => $response->id,
-        ]);
-
-        DB::table('movimiento')->where('id_documento', $documento)->delete();
-
-        $total_pago = 0;
-
-        BitacoraService::insertarBitacoraValidarVenta(
-            $documento,
-            $auth->id,
-            "Se actualiza el almacen a " . $response->almacen . " y se actualiza el paqueteria a " . $response->paqueteria . " con el id " . $response->id
-        );
-
-        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se borran los productos que tenia el pedido.");
-
-        foreach ($response->productos as $producto) {
-            $codigo = DB::table('modelo')->where('id', $producto->id_modelo)->value('sku');
-
-            if ($venta->id_modelo_proveedor != 0) {
-                $existe_relacion_btob = DB::table("modelo_proveedor_producto")
-                    ->where("id_modelo_proveedor", $venta->id_modelo_proveedor)
-                    ->where("id_modelo", $producto->id_modelo)
+                $venta = DB::table("documento")
+                    ->select(
+                        "documento.id",
+                        "documento.no_venta",
+                        "documento.id_modelo_proveedor",
+                        "documento.fulfillment",
+                        "documento.id_marketplace_area",
+                        "documento.id_entidad",
+                        "documento_entidad.rfc",
+                        "documento_entidad.razon_social",
+                        "documento.mkt_publicacion",
+                        "documento.created_at"
+                    )
+                    ->join("documento_entidad", "documento.id_entidad", "=", "documento_entidad.id")
+                    ->where("documento.id", $documento)
                     ->first();
 
-                if (!$existe_relacion_btob) {
-                    BitacoraService::insertarBitacoraValidarVenta(
-                        $documento,
-                        $auth->id,
-                        "No existe del relación del codigo " . $codigo . " con el proveedor B2B " . $documento
-                    );
-
-                    DB::table("seguimiento")->insert([
-                        'id_documento' => $venta->id,
-                        'id_usuario' => 1,
-                        'seguimiento' => "Mensaje al validar la venta -> No existe del relación del codigo " . $codigo . " con el proveedor B2B " . $venta->id
+                if (!$venta) {
+                    return response()->json([
+                        'code' => 500,
+                        'mensaje' => 'No se encontró el documento solicitado.'
                     ]);
-
-                    $hayError = true;
-                }
-            } else {
-                $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
-
-                if ($existencia->error) {
-                    BitacoraService::insertarBitacoraValidarVenta(
-                        $documento,
-                        $auth->id,
-                        "Error al consultar la existencia. Error: " . $existencia->mensaje
-                    );
-
-                    DB::table("seguimiento")->insert([
-                        'id_documento' => $venta->id,
-                        'id_usuario' => 1,
-                        'seguimiento' => "Mensaje al validar la venta -> " . $existencia->mensaje . ", error en el pedido " . $venta->id
-                    ]);
-
-                    $hayError = true;
                 }
 
-                if ($existencia->disponible < $producto->cantidad) {
-                    BitacoraService::insertarBitacoraValidarVenta(
-                        $documento,
-                        $auth->id,
-                        "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
-                    );
-
-                    DB::table("seguimiento")->insert([
-                        'id_documento' => $venta->id,
-                        'id_usuario' => 1,
-                        'seguimiento' => "Mensaje al validar la venta -> " . "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
-                    ]);
-
-                    $hayError = true;
-                }
-            }
-
-            $movimiento = DB::table('movimiento')->insertGetId([
-                'id_documento' => $venta->id,
-                'id_modelo' => $producto->id_modelo,
-                'cantidad' => $producto->cantidad,
-                'precio' => (float)($producto->precio),
-                'garantia' => $producto->garantia,
-                'modificacion' => '',
-                'regalo' => $producto->regalo
-            ]);
-
-            $total_pago += $producto->cantidad * $producto->precio;
-
-            BitacoraService::insertarBitacoraValidarVenta(
-                $documento,
-                $auth->id,
-                "Se agrega el producto con el id " . $producto->id_modelo . " con la cantidad de " . $producto->cantidad .
-                    " y el precio de " . $producto->precio . " al pedido " . $venta->id . ". El id del movimiento es " . $movimiento
-            );
-        }
-
-        // === GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO (Mercado Libre) ===
-        // === INGRESO AUTOMÁTICO CON paid_amount ===
-        // 1. Si hay ventas y existe el campo paid_amount, lo usamos como monto pagado; si no, usamos el total calculado previamente.
-        if (!empty($response->ventas) && isset($response->ventas[0]->paid_amount)) {
-            $monto_pagado = $response->ventas[0]->paid_amount;  // Monto pagado real de la venta traída de ML
-        } else {
-            $monto_pagado = $total_pago; // Si por alguna razón no está, usamos el monto que calculamos antes
-        }
-
-        // 2. Creamos el folio único para el ingreso con prefijo ML y el ID del documento de venta
-        $folio_ingreso = "ML-" . $venta->id;
-
-        // 3. Buscamos si ya existe un movimiento de ingreso con ese folio (para no duplicar ingresos si validamos más de una vez)
-        $existeIngreso = DB::table('movimiento_contable')
-            ->where('folio', $folio_ingreso)
-            ->first();
-
-        // 4. Si no existe ingreso registrado previamente...
-        if (!$existeIngreso) {
-            // 5. Buscamos la cuenta financiera destino asociada al marketplace/área de la venta
-            $cuenta_destino = DB::table('marketplace_cuenta')
-                ->where('id_marketplace_area', $venta->id_marketplace_area)
-                ->first();
-
-            // 6. Si no existe la cuenta destino, registramos el error en bitácora y en el seguimiento
-            if (!$cuenta_destino) {
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No se encontró cuenta financiera para aplicar el ingreso de ML.");
-                DB::table("seguimiento")->insert([
-                    'id_documento' => $venta->id,
-                    'id_usuario' => 1,
-                    'seguimiento' => "No se encontró cuenta financiera para aplicar el ingreso de MercadoLibre."
-                ]);
-            } else {
-                // 7. Traemos los datos de la cuenta financiera a la que se va a aplicar el ingreso
-                $datos_cuenta = DB::table('cat_entidad_financiera')
-                    ->where('id', $cuenta_destino->id_entidad_financiera)
-                    ->first();
-
-                // 8. Insertamos el ingreso en la tabla movimiento_contable
-                $id_ingreso = DB::table('movimiento_contable')->insertGetId([
-                    'folio' => $folio_ingreso,                        // Folio único para identificar el ingreso
-                    'id_tipo_afectacion' => 1,                                     // 1 = Ingreso
-                    'fecha_operacion' => date('Y-m-d'),                         // Fecha del movimiento (hoy)
-                    'id_moneda' => 3,                                     // 1 = MXN (ajusta si ocupas moneda extranjera)
-                    'tipo_cambio' => 1,                                     // Tipo de cambio (por defecto 1 si es MXN)
-                    'monto' => $monto_pagado,                         // Monto real que se pagó en ML
-                    'origen_tipo' => 1,                                     // 1 = entidad financiera (origen = cliente/ML)
-                    'entidad_origen' => $venta->id_entidad,                    // ID de la entidad (cliente) que pagó
-                    'nombre_entidad_origen' => $venta->razon_social,                  // Nombre del cliente
-                    'destino_tipo' => 2,                                     // 2 = cuenta bancaria (destino = tu cuenta financiera)
-                    'entidad_destino' => $cuenta_destino->id_entidad_financiera, // ID de la cuenta bancaria de la empresa
-                    'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',           // Nombre de la cuenta bancaria
-                    'id_forma_pago' => 21,                                    // Forma de pago (ajusta el id si tienes otro)
-                    'referencia_pago' => $venta->no_venta,                      // Referencia (no_venta) de la venta en ML
-                    'descripcion_pago' => 'Ingreso automático Mercado Libre (Validación)', // Descripción para identificar el ingreso
-                    'comentarios' => 'Ingreso creado desde validación de venta ML',   // Comentario para auditoría
-                    'creado_por' => $auth->id                              // Usuario que realizó la operación
-                ]);
-
-                // 9. Aplicamos el ingreso al documento de venta usando el Service (esto crea la relación y ajusta el saldo)
-                MovimientoContableService::aplicarADocumentos(
-                    $id_ingreso,                // ID del movimiento de ingreso recién creado
-                    [
-                        [
-                            'id_documento' => $venta->id,        // ID del documento de venta a saldar
-                            'monto_aplicado' => $monto_pagado,     // Monto aplicado (el real)
-                            'moneda' => 3,                 // Moneda (ajusta si tienes más monedas)
-                            'tipo_cambio' => 1,                 // Tipo de cambio aplicado (1 si es MXN)
-                            'parcialidad' => 1                  // Número de parcialidad (siempre 1 en este contexto)
-                        ]
-                    ],
-                    1                           // Moneda del movimiento (puede ser 1 = MXN)
+                BitacoraService::insertarBitacoraValidarVenta(
+                    $documento,
+                    $auth->id,
+                    "Se inicia el proceso de validar la venta"
                 );
 
-                // 10. Actualizamos el documento de venta para marcarlo como pagado
-                DB::table("documento")->where("id", $venta->id)->update(["pagado" => 1]);
+                $response = MercadolibreService::validarVenta($documento);
 
-                // 11. Dejamos rastro en bitácora que el ingreso fue creado y aplicado correctamente
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "Se crea ingreso y se aplica el pago al documento. Folio: $folio_ingreso");
-            }
-        }
+                /**
+                 * error = 1 -> error duro, no hay datos suficientes para continuar
+                 * error = 2 -> venta cancelada, pero sí queremos actualizar antes el documento y movimientos
+                 */
+                if ($response->error == 1) {
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "Error al validar la venta en ML. Error: " . $response->mensaje
+                    );
 
-        $validar_buffered = MercadolibreService::validarPendingBuffered($venta->id);
-
-        if ($validar_buffered->error) {
-            if ($validar_buffered->substatus == "cancelled") {
-                DB::table('seguimiento')->insert([
-                    'id_documento' => $documento,
-                    'id_usuario' => 1,
-                    'seguimiento' => "El pedido esta CANCELADO en MERCADOLIBRE"
-                ]);
-
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "El pedido esta CANCELADO en MERCADOLIBRE. Se cancela el pedido.");
-
-                return response()->json([
-                    'code' => 500,
-                    'mensaje' => "El pedido esta CANCELADO en MERCADOLIBRE. Revisar con MercadoLibre."
-                ]);
-            }
-
-            if ($validar_buffered->substatus == "delivered") {
-                DB::table('documento')->where('id', $documento)->update([
-                    'id_fase' => $venta->fulfillment ? $hayError ? 1 : 5 : 5
-                ]);
-
-//                $existe_en_inventario = DB::table('modelo_kardex')->where('id_documento', $venta->id)->first();
-//
-//                if (empty($existe_en_inventario)) {
-//                    $aplicar = InventarioService::aplicarMovimiento($venta->id);
-//
-//                    if ($aplicar->error) {
-//                        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje);
-//                        return response()->json([
-//                            'code' => 500,
-//                            'mensaje' => "No fue posible aplicar el movimiento al inventario, mensaje de error: " . $aplicar->mensaje
-//                        ]);
-//                    }
-//                }
-
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, $venta->fulfillment ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
-                    : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA.");
-
-                DB::table('seguimiento')->insert([
-                    'id_documento' => $documento,
-                    'id_usuario' => 1,
-                    'seguimiento' => $venta->fulfillment ? $hayError ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar." : "El pedido esta ENTREGADO en MERCADOLIBRE."
-                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
-                ]);
-
-                return response()->json([
-                    'code' => 500,
-                    'mensaje' => $venta->fulfillment ? $hayError ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar." : "El pedido esta ENTREGADO en MERCADOLIBRE."
-                        : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
-                ]);
-            }
-        }
-
-        if ($validar_buffered->estatus) {
-            if ($validar_buffered->substatus == "buffered") {
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "El pedido se encuentra en pending buffered, se actualiza la fase a 7");
-
-                DB::table('documento')->where('id', $documento)->update([
-                    'id_fase' => 7,
-                    'validated_at' => date("Y-m-d H:i:s")
-                ]);
-
-                DB::table("seguimiento")->insert([
-                    'id_documento' => $venta->id,
-                    'id_usuario' => 1,
-                    'seguimiento' => "Mensaje al validar la venta -> " . $validar_buffered->mensaje
-                ]);
-
-                return response()->json([
-                    'code' => 500,
-                    'mensaje' => "El pedido aun no tiene la guia de embarque se actualiza la fase del pedido."
-                ]);
-            } else {
-                DB::table('documento')->where('id', $venta->id)->update([
-                    'id_fase' => 1,
-                    'validated_at' => date("Y-m-d H:i:s")
-                ]);
-
-                BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, "El pedido se actualiza la fase a 1. Mensaje: " . $validar_buffered->mensaje);
-
-                DB::table("seguimiento")->insert([
-                    'id_documento' => $venta->id,
-                    'id_usuario' => 1,
-                    'seguimiento' => "Mensaje al validar la venta -> " . $response->mensaje
-                ]);
-
-                CorreoService::cambioDeFase($venta->id, $response->mensaje);
-
-                return response()->json([
-                    'code' => 500,
-                    'mensaje' => "El pedido se actualiza a la fase de Pedido. Mensaje: " . $validar_buffered->mensaje
-                ]);
-            }
-        }
-
-        if ($venta->fulfillment) {
-            if (!$hayError) {
-//                $factura = InventarioService::aplicarMovimiento($venta->id);
-//                if (!$factura->error) {
-//                    DB::table('documento')->where(['id' => $venta->id])->update([
-//                        'id_fase' => 6,
-//                        'validated_at' => date("Y-m-d H:i:s")
-//                    ]);
-//
-//                    BitacoraService::insertarBitacoraValidarVenta(
-//                        $documento,
-//                        $auth->id,
-//                        "Se actualiza la fase a 6 y se crea la factura con el id " . $factura->id
-//                    );
-//
-//                    return response()->json([
-//                        'code' => 200,
-//                        'mensaje' => "Documento actualizado correctamente"
-//                    ]);
-//                } else {
-                    DB::table('documento')->where('id', $venta->id)->update([
-                        'id_fase' => 6,
-                        'validated_at' => date("Y-m-d H:i:s")
+                    DB::table("seguimiento")->insert([
+                        'id_documento' => $documento,
+                        'id_usuario' => 1,
+                        'seguimiento' => "Mensaje al validar la venta -> " . $response->mensaje
                     ]);
 
                     return response()->json([
                         'code' => 500,
-                        'mensaje' => "Documento actualizado correctamente"
+                        'mensaje' => "Error al validar la venta en ML: " . $response->mensaje
                     ]);
-//                }
-            } else {
-                return response()->json([
-                    'code' => 500,
-                    'mensaje' => "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
+                }
+
+                /**
+                 * ACTUALIZAR SIEMPRE el documento base aunque después venga cancelada.
+                 */
+                DB::table('documento')
+                    ->where('id', $documento)
+                    ->update([
+                        'id_almacen_principal_empresa' => $response->almacen,
+                        'id_paqueteria' => $response->paqueteria,
+                        'comentario' => $response->id,
+                    ]);
+
+                /**
+                 * BORRAMOS movimientos actuales para reconstruirlos
+                 */
+                DB::table('movimiento')
+                    ->where('id_documento', $documento)
+                    ->delete();
+
+                $total_pago = 0;
+
+                BitacoraService::insertarBitacoraValidarVenta(
+                    $documento,
+                    $auth->id,
+                    "Se actualiza el almacen a " . $response->almacen .
+                    " y se actualiza la paqueteria a " . $response->paqueteria .
+                    " con el id " . $response->id
+                );
+
+                BitacoraService::insertarBitacoraValidarVenta(
+                    $documento,
+                    $auth->id,
+                    "Se borran los productos que tenia el pedido."
+                );
+
+                /**
+                 * REINSERTAR productos / movimientos
+                 */
+                foreach ($response->productos as $producto) {
+                    $codigo = DB::table('modelo')
+                        ->where('id', $producto->id_modelo)
+                        ->value('sku');
+
+                    if ($venta->id_modelo_proveedor != 0) {
+                        $existe_relacion_btob = DB::table("modelo_proveedor_producto")
+                            ->where("id_modelo_proveedor", $venta->id_modelo_proveedor)
+                            ->where("id_modelo", $producto->id_modelo)
+                            ->first();
+
+                        if (!$existe_relacion_btob) {
+                            BitacoraService::insertarBitacoraValidarVenta(
+                                $documento,
+                                $auth->id,
+                                "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documento
+                            );
+
+                            DB::table("seguimiento")->insert([
+                                'id_documento' => $venta->id,
+                                'id_usuario' => 1,
+                                'seguimiento' => "Mensaje al validar la venta -> No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $venta->id
+                            ]);
+
+                            $hayError = true;
+                        }
+                    } else {
+                        $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
+
+                        if ($existencia->error) {
+                            BitacoraService::insertarBitacoraValidarVenta(
+                                $documento,
+                                $auth->id,
+                                "Error al consultar la existencia. Error: " . $existencia->mensaje
+                            );
+
+                            DB::table("seguimiento")->insert([
+                                'id_documento' => $venta->id,
+                                'id_usuario' => 1,
+                                'seguimiento' => "Mensaje al validar la venta -> " . $existencia->mensaje . ", error en el pedido " . $venta->id
+                            ]);
+
+                            $hayError = true;
+                        }
+
+                        if (!$existencia->error && $existencia->disponible < $producto->cantidad) {
+                            BitacoraService::insertarBitacoraValidarVenta(
+                                $documento,
+                                $auth->id,
+                                "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
+                            );
+
+                            DB::table("seguimiento")->insert([
+                                'id_documento' => $venta->id,
+                                'id_usuario' => 1,
+                                'seguimiento' => "Mensaje al validar la venta -> No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
+                            ]);
+
+                            $hayError = true;
+                        }
+                    }
+
+                    $movimiento = DB::table('movimiento')->insertGetId([
+                        'id_documento' => $venta->id,
+                        'id_modelo' => $producto->id_modelo,
+                        'cantidad' => $producto->cantidad,
+                        'precio' => (float) $producto->precio,
+                        'garantia' => $producto->garantia,
+                        'modificacion' => '',
+                        'regalo' => $producto->regalo
+                    ]);
+
+                    $total_pago += ($producto->cantidad * $producto->precio);
+
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "Se agrega el producto con el id " . $producto->id_modelo .
+                        " con la cantidad de " . $producto->cantidad .
+                        " y el precio de " . $producto->precio .
+                        " al pedido " . $venta->id .
+                        ". El id del movimiento es " . $movimiento
+                    );
+                }
+
+                /**
+                 * GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO
+                 * Solo si NO existe previamente el ingreso
+                 */
+                if (!empty($response->ventas) && isset($response->ventas[0]->paid_amount)) {
+                    $monto_pagado = $response->ventas[0]->paid_amount;
+                } else {
+                    $monto_pagado = $total_pago;
+                }
+
+                $folio_ingreso = "ML-" . $venta->id;
+
+                $existeIngreso = DB::table('movimiento_contable')
+                    ->where('folio', $folio_ingreso)
+                    ->first();
+
+                if (!$existeIngreso) {
+                    $cuenta_destino = DB::table('marketplace_cuenta')
+                        ->where('id_marketplace_area', $venta->id_marketplace_area)
+                        ->first();
+
+                    if (!$cuenta_destino) {
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "No se encontró cuenta financiera para aplicar el ingreso de ML."
+                        );
+
+                        DB::table("seguimiento")->insert([
+                            'id_documento' => $venta->id,
+                            'id_usuario' => 1,
+                            'seguimiento' => "No se encontró cuenta financiera para aplicar el ingreso de MercadoLibre."
+                        ]);
+                    } else {
+                        $datos_cuenta = DB::table('cat_entidad_financiera')
+                            ->where('id', $cuenta_destino->id_entidad_financiera)
+                            ->first();
+
+                        $id_ingreso = DB::table('movimiento_contable')->insertGetId([
+                            'folio' => $folio_ingreso,
+                            'id_tipo_afectacion' => 1,
+                            'fecha_operacion' => date('Y-m-d'),
+                            'id_moneda' => 3,
+                            'tipo_cambio' => 1,
+                            'monto' => $monto_pagado,
+                            'origen_tipo' => 1,
+                            'entidad_origen' => $venta->id_entidad,
+                            'nombre_entidad_origen' => $venta->razon_social,
+                            'destino_tipo' => 2,
+                            'entidad_destino' => $cuenta_destino->id_entidad_financiera,
+                            'nombre_entidad_destino' => $datos_cuenta->nombre ?? '',
+                            'id_forma_pago' => 21,
+                            'referencia_pago' => $venta->no_venta,
+                            'descripcion_pago' => 'Ingreso automático Mercado Libre (Validación)',
+                            'comentarios' => 'Ingreso creado desde validación de venta ML',
+                            'creado_por' => $auth->id
+                        ]);
+
+                        MovimientoContableService::aplicarADocumentos(
+                            $id_ingreso,
+                            [
+                                [
+                                    'id_documento' => $venta->id,
+                                    'monto_aplicado' => $monto_pagado,
+                                    'moneda' => 3,
+                                    'tipo_cambio' => 1,
+                                    'parcialidad' => 1
+                                ]
+                            ],
+                            1
+                        );
+
+                        DB::table("documento")
+                            ->where("id", $venta->id)
+                            ->update(["pagado" => 1]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "Se crea ingreso y se aplica el pago al documento. Folio: $folio_ingreso"
+                        );
+                    }
+                }
+
+                /**
+                 * SI LA VENTA VIENE CANCELADA:
+                 * ya actualizamos documento y movimientos, ahora sí marcamos fase y regresamos el error.
+                 */
+                if ($response->error == 2) {
+                    DB::table('documento')
+                        ->where('id', $documento)
+                        ->update([
+                            'id_fase' => 1,
+                            'validated_at' => date("Y-m-d H:i:s")
+                        ]);
+
+                    DB::table('seguimiento')->insert([
+                        'id_documento' => $documento,
+                        'id_usuario' => 1,
+                        'seguimiento' => "El pedido esta CANCELADO en MERCADOLIBRE. Se actualizó el documento y sus productos antes de notificar la incidencia."
+                    ]);
+
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "El pedido esta CANCELADO en MERCADOLIBRE. Se actualizaron documento y movimientos antes de regresar el error."
+                    );
+
+                    return response()->json([
+                        'code' => 500,
+                        'mensaje' => $response->mensaje
+                    ]);
+                }
+
+                /**
+                 * VALIDACIÓN DE PENDING BUFFERED
+                 */
+                $validar_buffered = MercadolibreService::validarPendingBuffered($venta->id);
+
+                if ($validar_buffered->error) {
+                    if ($validar_buffered->substatus == "cancelled") {
+                        DB::table('seguimiento')->insert([
+                            'id_documento' => $documento,
+                            'id_usuario' => 1,
+                            'seguimiento' => "El pedido esta CANCELADO en MERCADOLIBRE"
+                        ]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "El pedido esta CANCELADO en MERCADOLIBRE. Se cancela el pedido."
+                        );
+
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "El pedido esta CANCELADO en MERCADOLIBRE. Revisar con MercadoLibre."
+                        ]);
+                    }
+
+                    if ($validar_buffered->substatus == "delivered") {
+                        DB::table('documento')
+                            ->where('id', $documento)
+                            ->update([
+                                'id_fase' => $venta->fulfillment ? ($hayError ? 1 : 5) : 5
+                            ]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            $venta->fulfillment
+                                ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
+                                : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
+                        );
+
+                        DB::table('seguimiento')->insert([
+                            'id_documento' => $documento,
+                            'id_usuario' => 1,
+                            'seguimiento' => $venta->fulfillment
+                                ? ($hayError
+                                    ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar."
+                                    : "El pedido esta ENTREGADO en MERCADOLIBRE.")
+                                : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
+                        ]);
+
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => $venta->fulfillment
+                                ? ($hayError
+                                    ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar."
+                                    : "El pedido esta ENTREGADO en MERCADOLIBRE.")
+                                : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
+                        ]);
+                    }
+                }
+
+                if ($validar_buffered->estatus) {
+                    if ($validar_buffered->substatus == "buffered") {
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "El pedido se encuentra en pending buffered, se actualiza la fase a 7"
+                        );
+
+                        DB::table('documento')
+                            ->where('id', $documento)
+                            ->update([
+                                'id_fase' => 7,
+                                'validated_at' => date("Y-m-d H:i:s")
+                            ]);
+
+                        DB::table("seguimiento")->insert([
+                            'id_documento' => $venta->id,
+                            'id_usuario' => 1,
+                            'seguimiento' => "Mensaje al validar la venta -> " . $validar_buffered->mensaje
+                        ]);
+
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "El pedido aun no tiene la guia de embarque se actualiza la fase del pedido."
+                        ]);
+                    } else {
+                        DB::table('documento')
+                            ->where('id', $venta->id)
+                            ->update([
+                                'id_fase' => 1,
+                                'validated_at' => date("Y-m-d H:i:s")
+                            ]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "El pedido se actualiza la fase a 1. Mensaje: " . $validar_buffered->mensaje
+                        );
+
+                        DB::table("seguimiento")->insert([
+                            'id_documento' => $venta->id,
+                            'id_usuario' => 1,
+                            'seguimiento' => "Mensaje al validar la venta -> " . $response->mensaje
+                        ]);
+
+                        CorreoService::cambioDeFase($venta->id, $response->mensaje);
+
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "El pedido se actualiza a la fase de Pedido. Mensaje: " . $validar_buffered->mensaje
+                        ]);
+                    }
+                }
+
+                if ($venta->fulfillment) {
+                    if (!$hayError) {
+                        DB::table('documento')
+                            ->where('id', $venta->id)
+                            ->update([
+                                'id_fase' => 6,
+                                'validated_at' => date("Y-m-d H:i:s")
+                            ]);
+
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "Documento actualizado correctamente"
+                        ]);
+                    } else {
+                        return response()->json([
+                            'code' => 500,
+                            'mensaje' => "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
+                        ]);
+                    }
+                }
+
+                DB::table('documento')
+                    ->where('id', $venta->id)
+                    ->update([
+                        'id_fase' => $hayError ? 1 : 3,
+                        'validated_at' => date("Y-m-d H:i:s")
+                    ]);
+
+                BitacoraService::insertarBitacoraValidarVenta(
+                    $documento,
+                    $auth->id,
+                    $hayError
+                        ? "Se actualiza el pedido a fase 1 ya que hubo errores que hacen que el pedido no este completo"
+                        : "Se actualiza la fase a 3 y se termina el proceso de validar la venta."
+                );
+
+                DB::table('seguimiento')->insertGetId([
+                    "id_documento" => $venta->id,
+                    "id_usuario" => 1,
+                    "seguimiento" => $hayError
+                        ? "Se actualiza el pedido a fase de PEDIDO ya que hubo errores que hacen que el pedido no este completo"
+                        : "Se actualiza la fase a PENDIENTE DE REMISION y se termina el proceso de validar la venta."
                 ]);
-            }
+
+                return response()->json([
+                    'code' => 200,
+                    'mensaje' => $hayError
+                        ? "Documento actualizado sin embargo hubo algunes errores, favor de ver los seguimientos en el documento"
+                        : "Documento actualizado correctamente"
+                ]);
+            });
+        } catch (\Throwable $e) {
+            BitacoraService::insertarBitacoraValidarVenta(
+                $documento,
+                $auth->id ?? 0,
+                "Excepción al validar la venta: " . $e->getMessage()
+            );
+
+            DB::table("seguimiento")->insert([
+                'id_documento' => $documento,
+                'id_usuario' => 1,
+                'seguimiento' => "Excepción al validar la venta -> " . $e->getMessage()
+            ]);
+
+            return response()->json([
+                'code' => 500,
+                'mensaje' => 'Ocurrió un error inesperado al validar la venta.',
+                'error' => $e->getMessage()
+            ]);
         }
-
-        DB::table('documento')->where('id', $venta->id)->update([
-            'id_fase' => $hayError ? 1 : 3,
-            'validated_at' => date("Y-m-d H:i:s")
-        ]);
-
-        BitacoraService::insertarBitacoraValidarVenta($documento, $auth->id, $hayError ?
-            "Se actualiza el pedido a fase 1 ya que hubo errores que hacen que el pedido no este completo"
-            : "Se actualiza la fase a 3 y se termina el proceso de validar la venta.");
-
-        DB::table('seguimiento')->insertGetId([
-            "id_documento" => $venta->id,
-            "id_usuario" => 1,
-            "seguimiento" => $hayError ?
-                "Se actualiza el pedido a fase de PEDIDO ya que hubo errores que hacen que el pedido no este completo"
-                : "Se actualiza la fase a PENDIENTE DE REMISION y se termina el proceso de validar la venta."
-        ]);
-
-        return response()->json([
-            'code' => 200,
-            'mensaje' => $hayError ? "Documento actualizado sin embargo hubo algunes errores, favor de ver los seguimientos en el documento"
-                : "Documento actualizado correctamente"
-        ]);
     }
-
     /* Rawinfo */
 
     public function venta_shopify_importar_ventas(Request $request): JsonResponse
