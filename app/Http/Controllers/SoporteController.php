@@ -636,55 +636,126 @@ class SoporteController extends Controller
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
 
-        // --- 1. VALIDAR SERIES INGRESADAS VS. VENTA ORIGINAL ---
+        // ============================================================
+        // 1. VALIDAR SERIES INGRESADAS VS. VENTA ORIGINAL
+        // ============================================================
 
+        // Saber si el documento original es fulfillment
+        $documento_original = DB::table('documento')
+            ->select('id', 'fulfillment')
+            ->where('id', $data->documento)
+            ->first();
+
+        if (!$documento_original) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No se encontró el documento original.'
+            ]);
+        }
+
+        $esFulfillment = (int) $documento_original->fulfillment === 1;
+
+        /**
+         * Obtener TODOS los SKU del documento original
+         * OJO: esto se hace desde movimiento + modelo para que funcione
+         * incluso cuando no existan series registradas en producto.
+         */
+        $skus_originales = DB::table('movimiento as m')
+            ->join('modelo as mo', 'mo.id', '=', 'm.id_modelo')
+            ->where('m.id_documento', $data->documento)
+            ->pluck('mo.sku')
+            ->map(function ($sku) {
+                return trim($sku);
+            })
+            ->unique()
+            ->toArray();
+
+        /**
+         * Obtener series originales por SKU.
+         * Esto sigue sirviendo para pedidos NO fulfillment,
+         * donde sí debemos validar que las series coincidan.
+         */
         $series_originales_raw = DB::select('CALL sp_obtenerSeriesPorDocumento(?)', [$data->documento]);
 
         $series_originales = [];
         foreach ($series_originales_raw as $serie_db) {
-            $sku = DB::table('modelo')->where('id', $serie_db->id_modelo)->value('sku');
+            $sku = trim($serie_db->sku);
+
             if (!isset($series_originales[$sku])) {
                 $series_originales[$sku] = [];
             }
-            $series_originales[$sku][] = $serie_db->serie;
+
+            $series_originales[$sku][] = trim($serie_db->serie);
         }
 
         foreach ($data->productos as $producto) {
+            $sku_producto = trim($producto->sku);
+
+            // 1) Siempre validar que el SKU exista en la venta original
+            if (!in_array($sku_producto, $skus_originales)) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => "El producto con SKU {$producto->sku} no pertenece a la venta original."
+                ]);
+            }
+
+            /**
+             * 2) Si es fulfillment:
+             *    NO validar series, porque el pedido original puede no traerlas.
+             *    Las series capturadas en garantía se toman como válidas.
+             */
+            if ($esFulfillment) {
+                continue;
+            }
+
+            /**
+             * 3) Si NO es fulfillment:
+             *    sí validar las series contra las originales.
+             */
             foreach ($producto->series as $serie_ingresada) {
                 $serie_limpia = trim($serie_ingresada);
 
-                if (!isset($series_originales[trim($producto->sku)])) {
+                if (!isset($series_originales[$sku_producto])) {
                     return response()->json([
                         'code' => 500,
-                        'message' => "El producto con SKU " . $producto->sku . " no pertenece a la venta original."
+                        'message' => "No se encontraron series originales para el producto {$producto->sku} en la venta original."
                     ]);
                 }
 
-                if (!in_array($serie_limpia, $series_originales[trim($producto->sku)])) {
+                if (!in_array($serie_limpia, $series_originales[$sku_producto])) {
                     return response()->json([
                         'code' => 500,
-                        'message' => "La serie '" . $serie_limpia . "' no corresponde al producto " . $producto->sku . " en la venta original."
+                        'message' => "La serie '{$serie_limpia}' no corresponde al producto {$producto->sku} en la venta original."
                     ]);
                 }
             }
         }
 
-        // --- 2. ACTUALIZAR DATOS DE LA GARANTÍA (GARANTIA, ARCHIVOS, SEGUIMIENTOS, SERIES) ---
+        // ============================================================
+        // 2. ACTUALIZAR DATOS DE LA GARANTÍA
+        // ============================================================
 
-        DB::table('documento_garantia')->where('id', $data->documento_garantia)->update([
-            'id_fase' => DocumentoGarantiaFase::DEVOLUCION_REVISION,
-            'asigned_to' => $data->tecnico,
-            'guia_llegada' => $data->guia,
-            'id_paqueteria_llegada' => $data->paqueteria,
-        ]);
+        DB::table('documento_garantia')
+            ->where('id', $data->documento_garantia)
+            ->update([
+                'id_fase' => DocumentoGarantiaFase::DEVOLUCION_REVISION,
+                'asigned_to' => $data->tecnico,
+                'guia_llegada' => $data->guia,
+                'id_paqueteria_llegada' => $data->paqueteria,
+            ]);
 
         $productos_garantia = DB::table('documento_garantia_producto')
             ->where('id_garantia', $data->documento_garantia)
-            ->get()->keyBy('producto');
+            ->get()
+            ->keyBy(function ($item) {
+                return trim($item->producto);
+            });
 
         foreach ($data->productos as $producto) {
-            if (isset($productos_garantia[trim($producto->sku)])) {
-                $id_documento_garantia_producto = $productos_garantia[trim($producto->sku)]->id;
+            $sku_producto = trim($producto->sku);
+
+            if (isset($productos_garantia[$sku_producto])) {
+                $id_documento_garantia_producto = $productos_garantia[$sku_producto]->id;
 
                 foreach ($producto->series as $serie_ingresada) {
                     DB::table('documento_garantia_producto_series')->insert([
@@ -698,9 +769,17 @@ class SoporteController extends Controller
         if (!empty($data->archivos)) {
             foreach ($data->archivos as $archivo) {
                 if ($archivo->nombre != "" && $archivo->data != "") {
-                    $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
+                    $archivo_data = base64_decode(
+                        preg_replace(
+                            '#^data:' . $archivo->tipo . '/\w+;base64,#i',
+                            '',
+                            $archivo->data
+                        )
+                    );
+
                     $dropboxService = new DropboxService();
                     $response = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
+
                     DB::table('documento_archivo')->insert([
                         'id_documento' => $data->documento,
                         'id_usuario' => $auth->id,
@@ -717,7 +796,10 @@ class SoporteController extends Controller
             'seguimiento' => $data->seguimiento
         ]);
 
-        // --- 3. GENERAR PDF ---
+        // ============================================================
+        // 3. GENERAR PDF
+        // ============================================================
+
         $pdf_response = self::generar_pdf_devolucion($data->documento_garantia);
         $file_data = "";
         $file_name = "";
@@ -727,7 +809,10 @@ class SoporteController extends Controller
             $file_name = $pdf_response->name;
         }
 
-        // --- 4. SE TERMINA LA FUNCIÓN Y SE DEVUELVE LA RESPUESTA ---
+        // ============================================================
+        // 4. RESPUESTA FINAL
+        // ============================================================
+
         return response()->json([
             'code' => 200,
             'message' => "Documento guardado y validado correctamente.",
