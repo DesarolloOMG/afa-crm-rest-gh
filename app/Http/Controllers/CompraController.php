@@ -614,6 +614,7 @@ class CompraController extends Controller
                                             INNER JOIN movimiento ON documento.id = movimiento.id_documento
                                             INNER JOIN documento_recepcion ON movimiento.id = documento_recepcion.id_movimiento
                                             WHERE documento.id_tipo = 0
+                                            AND documento.status = 1
                                             AND documento_recepcion.documento_erp_compra = '" . $compra->documento_extra . "'
                                             GROUP BY documento.id");
 
