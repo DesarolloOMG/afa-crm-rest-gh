@@ -3712,8 +3712,7 @@ class VentaController extends Controller
                     ]);
                 }
 
-                $esFulfillment = intval($venta->fulfillment) === 1;
-                $soloActualizarProductos = intval($venta->id_fase) === 6 || $esFulfillment;
+                $soloActualizarProductos = intval($venta->id_fase) === 6;
 
                 BitacoraService::insertarBitacoraValidarVenta(
                     $documento,
@@ -3996,13 +3995,13 @@ class VentaController extends Controller
                     BitacoraService::insertarBitacoraValidarVenta(
                         $documento,
                         $auth->id,
-                        "La venta ya se encontraba en fase 6. Solo se actualizaron documento y productos sin validar existencia ni estatus de MercadoLibre."
+                        "Se actualizaron los productos del pedido. El documento permanece en fase de factura."
                     );
 
                     DB::table('seguimiento')->insert([
                         'id_documento' => $venta->id,
                         'id_usuario' => 1,
-                        'seguimiento' => "La venta ya estaba en fase 6, se actualizaron los productos y el documento sin ejecutar validaciones adicionales."
+                        'seguimiento' => "Se actualizaron los productos del pedido y el documento permanece en fase de factura."
                     ]);
 
                     return response()->json([
@@ -4037,7 +4036,7 @@ class VentaController extends Controller
                         DB::table('documento')
                             ->where('id', $documento)
                             ->update([
-                                'id_fase' => $venta->fulfillment ? ($hayError ? 1 : 5) : 5
+                                'id_fase' => $venta->fulfillment ? ($hayError ? 1 : 6) : 5
                             ]);
 
                         BitacoraService::insertarBitacoraValidarVenta(
