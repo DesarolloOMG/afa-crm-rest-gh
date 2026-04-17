@@ -3690,6 +3690,7 @@ class VentaController extends Controller
                     ->select(
                         "documento.id",
                         "documento.no_venta",
+                        "documento.id_fase",
                         "documento.id_modelo_proveedor",
                         "documento.fulfillment",
                         "documento.id_marketplace_area",
@@ -3703,12 +3704,16 @@ class VentaController extends Controller
                     ->where("documento.id", $documento)
                     ->first();
 
+
                 if (!$venta) {
                     return response()->json([
                         'code' => 500,
                         'mensaje' => 'No se encontró el documento solicitado.'
                     ]);
                 }
+
+                $esFulfillment = intval($venta->fulfillment) === 1;
+                $soloActualizarProductos = intval($venta->id_fase) === 6 || $esFulfillment;
 
                 BitacoraService::insertarBitacoraValidarVenta(
                     $documento,
@@ -3783,7 +3788,7 @@ class VentaController extends Controller
                         ->where('id', $producto->id_modelo)
                         ->value('sku');
 
-                    if ($venta->id_modelo_proveedor != 0) {
+                    if ($venta->id_modelo_proveedor != 0 && !$soloActualizarProductos) {
                         $existe_relacion_btob = DB::table("modelo_proveedor_producto")
                             ->where("id_modelo_proveedor", $venta->id_modelo_proveedor)
                             ->where("id_modelo", $producto->id_modelo)
@@ -3804,7 +3809,7 @@ class VentaController extends Controller
 
                             $hayError = true;
                         }
-                    } else {
+                    } else if (!$soloActualizarProductos) {
                         $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
 
                         if ($existencia->error) {
@@ -3980,6 +3985,32 @@ class VentaController extends Controller
                 /**
                  * VALIDACIÓN DE PENDING BUFFERED
                  */
+                if ($soloActualizarProductos) {
+                    DB::table('documento')
+                        ->where('id', $venta->id)
+                        ->update([
+                            'id_fase' => 6,
+                            'validated_at' => date("Y-m-d H:i:s")
+                        ]);
+
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "La venta ya se encontraba en fase 6. Solo se actualizaron documento y productos sin validar existencia ni estatus de MercadoLibre."
+                    );
+
+                    DB::table('seguimiento')->insert([
+                        'id_documento' => $venta->id,
+                        'id_usuario' => 1,
+                        'seguimiento' => "La venta ya estaba en fase 6, se actualizaron los productos y el documento sin ejecutar validaciones adicionales."
+                    ]);
+
+                    return response()->json([
+                        'code' => 200,
+                        'mensaje' => "Documento actualizado correctamente"
+                    ]);
+                }
+
                 $validar_buffered = MercadolibreService::validarPendingBuffered($venta->id);
 
                 if ($validar_buffered->error) {
