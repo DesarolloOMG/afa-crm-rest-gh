@@ -3995,13 +3995,13 @@ class VentaController extends Controller
                     BitacoraService::insertarBitacoraValidarVenta(
                         $documento,
                         $auth->id,
-                        "Se actualizaron los productos del pedido. El documento permanece en fase de factura."
+                        "Se actualizaron los productos del pedido."
                     );
 
                     DB::table('seguimiento')->insert([
                         'id_documento' => $venta->id,
                         'id_usuario' => 1,
-                        'seguimiento' => "Se actualizaron los productos del pedido y el documento permanece en fase de factura."
+                        'seguimiento' => "Se actualizaron los productos del pedido."
                     ]);
 
                     return response()->json([
