@@ -1598,6 +1598,11 @@ class AlmacenController extends Controller
                 $id_almacen_salida = EmpresaAlmacen::find($data->almacen_salida);
             }
 
+            $esTraspasoSalidaMercadoLibre = $data->tipo == EnumDocumentoTipo::TRASPASO
+                && !empty($id_almacen_salida)
+                && (int)$id_almacen_salida->id_almacen === 3
+                && (empty($id_almacen_entrada) || (int)$id_almacen_entrada->id_almacen !== 3);
+
             // Verificar existencia de la entidad; si no existe, crearla
             $existe_entidad = DocumentoEntidad::where("RFC", "SISTEMAOMG")->first();
             if (!$existe_entidad) {
@@ -1703,7 +1708,12 @@ class AlmacenController extends Controller
                         }
                     } else {
                         // Para SALIDA, TRASPASO y USO_INTERNO se utiliza la función existente de validación de series
-                        $validacion = ComodinService::validar_series($producto->series, trim($producto->sku), $data->almacen_salida);
+                        $validacion = ComodinService::validar_series(
+                            $producto->series,
+                            trim($producto->sku),
+                            $data->almacen_salida,
+                            $esTraspasoSalidaMercadoLibre
+                        );
                         if ($validacion->error == 1) {
                             DB::rollBack();
                             return response()->json([

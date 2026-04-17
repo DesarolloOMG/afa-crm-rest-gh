@@ -139,7 +139,7 @@ class ComodinService
      *                - errores: (opcional) JSON con los errores encontrados.
      *                - series: Array de objetos con la serie y su estado de validación.
      */
-    public static function validar_series(array $series, string $sku, int $almacen = 0)
+    public static function validar_series(array $series, string $sku, int $almacen = 0, bool $permitirStatusCero = false)
     {
         // Inicializa un array para almacenar mensajes de error durante la validación.
         $errores = array();
@@ -205,7 +205,7 @@ class ComodinService
                             $object->status = 0;
                             $object->mensaje = "La serie " . $serie . " no pertenece a" . $sku;
                             array_push($errores, "La serie " . $serie . " no pertenece a" . $sku);
-                        } else if($existe_serie->status != 1 && $existe_serie->id_almacen != 3) {
+                        } else if(!$permitirStatusCero && $existe_serie->status != 1 && $existe_serie->id_almacen != 3) {
                             $object->status = 0;
                             $object->mensaje = "La serie " . $serie . " no está disponible para venta.";
                             array_push($errores, $object->mensaje);
