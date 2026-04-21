@@ -366,6 +366,10 @@ class MercadolibreService
         $marketplaceData = $marketplace_info->marketplace_data;
         $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
+        $publicacion_id = trim((string)($publicacion_id ?? ''));
+        $dropOrFull = filter_var($dropOrFull, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $dropOrFull = $dropOrFull ?? false;
+
         $seller = self::seller(str_replace(" ", "%20", $marketplaceData->extra_2), $token);
         $seller_id = $seller->id;
 
