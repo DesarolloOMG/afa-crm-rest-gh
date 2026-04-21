@@ -1161,7 +1161,12 @@ class MercadolibreService
         $response->mensaje = $mensaje;
         $response->documento = $documento;
 
-        file_put_contents("logs/mercadolibre/" . date("Y.m.d") . ".log", date("H:i:s") . " $mensaje, pedido: $documento" . PHP_EOL, FILE_APPEND);
+        $dir = storage_path('logs/mercadolibre');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        file_put_contents($dir . '/' . date("Y.m.d") . ".log", date("H:i:s") . " $mensaje, pedido: $documento" . PHP_EOL, FILE_APPEND | LOCK_EX);
         return $response;
     }
 
