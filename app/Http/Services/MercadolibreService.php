@@ -348,7 +348,7 @@ class MercadolibreService
         return $packs;
     }
 
-    public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = "Y-m-01\T00:00:00.000\Z", $fecha_final = "Y-m-d\T00:00:00.000\Z", $dropOrFull = false)
+    public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = null, $fecha_final = null, $dropOrFull = false)
     {
         set_time_limit(0);
         if (!file_exists("logs")) {
@@ -378,6 +378,9 @@ class MercadolibreService
             return $response;
         }
 
+
+        $fecha_inicial = $fecha_inicial ?: date("Y-m-01");
+        $fecha_final = $fecha_final ?: date("Y-m-d");
 
         $fecha_inicial = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_inicial . "-1 day"));
         $fecha_final = date("Y-m-d\T00:00:00.000\Z", strtotime($fecha_final . "+1 day"));
