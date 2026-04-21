@@ -569,23 +569,25 @@ class MercadolibreService
                     continue 2;
                 }
 
-                if (empty($venta->shipping)) {
-                    $pack->error = 1;
-                    $pack->mensaje = "No se encontró información del envío en la venta {$venta->id}";
-                    self::log_meli_error("No se encontró información del envío en la venta {$venta->id}", $publicacion_id);
-                    unset($pack->ventas);
-                    continue 2;
+                if (empty($venta->shipping) || property_exists($venta->shipping, 'error')) {
+                    if ($venta->status === "cancelled") {
+                        $pack->error = 1;
+                        $pack->mensaje = "No se importó la venta {$venta->id}: está cancelada y no se encontró información del envío";
+                        self::log_meli_error("Venta {$venta->id} cancelada sin información de envío; no se importa.", $publicacion_id);
+                        unset($pack->ventas);
+                        continue 2;
+                    }
+
+                    $venta->shipping_null = 1;
+                    $venta->shipping = new stdClass();
+                    $pack->venta_principal->seguimiento = "No se encontró información del envío en la venta {$venta->id}; se crea el documento para revisión.";
+                    $pack->venta_principal->fase = 1;
+                    $pack->venta_principal->error = 1;
+
+                    self::log_meli_error("No se encontró información del envío en la venta {$venta->id}; se creará documento para revisión.", $publicacion_id);
                 }
 
-                if (property_exists($venta->shipping, 'error')) {
-                    $pack->error = 1;
-                    $pack->mensaje = "No se encontró información del envío en la venta {$venta->id}";
-                    self::log_meli_error("No se encontró información del envío en la venta {$venta->id}", $publicacion_id);
-                    unset($pack->ventas);
-                    continue 2;
-                }
-
-                if ($venta->shipping->status == "pending") {
+                if (($venta->shipping->status ?? null) == "pending") {
                     $pack->venta_principal->fase = 1;
                 }
 
@@ -933,7 +935,10 @@ class MercadolibreService
         }
 
         if (empty($venta->shipping)) {
-            return self::logResponse(1, "Venta {$venta->id} no tiene información de envío");
+            $venta->shipping_null = 1;
+            $venta->shipping = new stdClass();
+            $venta->fase = 1;
+            $venta->error = 1;
         }
 
         if (empty($venta->productos)) {
