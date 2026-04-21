@@ -492,11 +492,15 @@ class VentaController extends Controller
 
     public function venta_venta_crear_buscar_cliente($criterio): JsonResponse
     {
+        $criterio = trim($criterio);
+        $criterioLower = mb_strtolower($criterio, 'UTF-8');
+
         $clientes = DB::table("documento_entidad")
             ->where("tipo", 1)
-            ->where("rfc", $criterio)
-            ->orWhere("razon_social", "like", "%" . $criterio . "%")
-            ->where('tipo', 1)
+            ->where(function ($query) use ($criterio, $criterioLower) {
+                $query->where("rfc", $criterio)
+                    ->orWhereRaw("LOWER(razon_social) LIKE ?", ["%" . $criterioLower . "%"]);
+            })
             ->get();
 
         return response()->json([
