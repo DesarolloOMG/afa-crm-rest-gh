@@ -158,29 +158,7 @@ class MercadolibreController extends Controller{
         fwrite($fp, "PID: " . getmypid() . "\nFECHA: " . date('Y-m-d H:i:s') . "\n");
         fflush($fp);
 
-        $payload = $request->input("data");
-        $data = null;
-
-        if (is_string($payload) && trim($payload) !== '') {
-            $data = json_decode($payload);
-        }
-
-        if (!$data) {
-            $jsonPayload = $request->json()->all();
-            if (!empty($jsonPayload)) {
-                $data = json_decode(json_encode($jsonPayload));
-            }
-        }
-
-        if (!$data || empty($data->marketplace)) {
-            flock($fp, LOCK_UN);
-            fclose($fp);
-
-            return response()->json([
-                'code' => 400,
-                'message' => 'Payload inválido. Envía el JSON dentro del campo data o como body JSON válido.'
-            ], 400);
-        }
+        $data = json_decode($request->input("data"));
 
         $cuenta = DB::table('marketplace_api')
             ->join('marketplace_area', 'marketplace_api.id_marketplace_area', '=', 'marketplace_area.id')

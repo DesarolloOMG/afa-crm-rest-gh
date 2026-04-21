@@ -22,25 +22,15 @@ class MercadolibreService
         $response = new stdClass();
         $ventas = [];
 
-        $marketplace_info = self::getMarketplaceData($marketplace_id);
-        if (!$marketplace_info || ($marketplace_info->error ?? 0)) {
-            $response->error = 1;
-            $response->mensaje = "No se encontro informacion del marketplace." . self::logVariableLocation();
-            return $response;
-        }
-
-        $marketplaceData = $marketplace_info->marketplace_data;
-        $token = self::resolveReusableToken($marketplaceData);
-
         $venta = rawurlencode($venta);
-        $paqueteData = self::callMlApi($marketplace_id, "packs/{venta}", ['{venta}' => $venta], 0, $token);
+        $paqueteData = self::callMlApi($marketplace_id, "packs/{venta}", ['{venta}' => $venta]);
         $informacion_paquete = json_decode($paqueteData->getContent());
 
         if (!isset($informacion_paquete->error) && isset($informacion_paquete->orders)) {
             foreach ($informacion_paquete->orders as $venta_paquete) {
                 $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", [
                     '{venta}' => rawurlencode($venta_paquete->id)
-                ], 0, $token);
+                ]);
                 $info = json_decode($ventaData->getContent());
 
                 if (empty($info)) {
@@ -52,7 +42,7 @@ class MercadolibreService
                 $ventas[] = $info;
             }
         } else {
-            $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", ['{venta}' => $venta], 0, $token);
+            $ventaData = self::callMlApi($marketplace_id, "orders/{venta}", ['{venta}' => $venta]);
             $info = json_decode($ventaData->getContent());
 
             if (empty($info)) {
@@ -76,7 +66,7 @@ class MercadolibreService
             if (!$estaCancelada) {
                 $envioData = self::callMlApi($marketplace_id, "orders/{ventaId}/shipments", [
                     '{ventaId}' => $venta->id
-                ], 0, $token);
+                ]);
                 $envio = json_decode($envioData->getContent());
 
                 if (!empty($envio)) {
@@ -97,9 +87,7 @@ class MercadolibreService
                         [
                             '{packId}' => $pack_id,
                             '{sellerId}' => $venta->seller->id
-                        ],
-                        0,
-                        $token
+                        ]
                     );
                     $mensajes = json_decode($mensajesData->getContent());
                     $venta->mensajes = $mensajes->messages ?? [];
@@ -111,7 +99,7 @@ class MercadolibreService
 
                         $pagoData = self::callMpApi($marketplace_id, "v1/payments/{paymentId}", [
                             '{paymentId}' => $payment->id
-                        ], 0, $token);
+                        ]);
                         $payment->more_details = json_decode($pagoData->getContent());
                     }
                 }
@@ -370,13 +358,13 @@ class MercadolibreService
         $response = new stdClass();
 
         $marketplace_info = self::getMarketplaceData($marketplace_id);
-        if (!$marketplace_info || ($marketplace_info->error ?? 0)) {
+        if (!$marketplace_info) {
             $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
             return $response;
         }
 
         $marketplaceData = $marketplace_info->marketplace_data;
-        $token = self::resolveReusableToken($marketplaceData);
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
         $publicacion_id = trim((string)($publicacion_id ?? ''));
         $dropOrFull = filter_var($dropOrFull, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
@@ -410,7 +398,7 @@ class MercadolibreService
         }
         $sellerData = self::callMlApi($marketplaceData->id, $sellerEndpoint, [
             '{seller}' => $seller_id
-        ], 0, $token);
+        ]);
 
         $ventas = json_decode($sellerData->getContent());
         $limite = $ventas->paging->limit;
@@ -422,7 +410,7 @@ class MercadolibreService
         for ($i = 0; $i < $total_ciclo + 1; $i++) {
             $sellerData = self::callMlApi($marketplaceData->id, $sellerEndpoint . "&offset=" . $offset, [
                 '{seller}' => $seller_id
-            ], 0, $token);
+            ]);
 
             $ventas = json_decode($sellerData->getContent());
 
@@ -438,7 +426,7 @@ class MercadolibreService
 
                 $shippingData = self::callMlApi($marketplaceData->id, "orders/{venta_id}/shipments", [
                     '{venta_id}' => $venta->id
-                ], 0, $token);
+                ]);
 
                 $venta->shipping = @json_decode($shippingData->getContent());
 
@@ -547,7 +535,7 @@ class MercadolibreService
 
                         $mediationData = self::callMlApi($marketplaceData->id, "post-purchase/v1/claims/{mediation_id}", [
                             '{mediation_id}' => $mediation->id
-                        ], 0, $token);
+                        ]);
 
                         $informacion_mediacion = @json_decode($mediationData->getContent());
                         if ($informacion_mediacion && !in_array($informacion_mediacion->status, ['claim_closed', 'dispute_closed'])) {
@@ -775,39 +763,20 @@ class MercadolibreService
         return $response;
     }
 
-    private static function resolveReusableToken($marketplaceData, $minimumLifetimeSeconds = 300)
-    {
-        $token = trim((string)($marketplaceData->token ?? ''));
-
-        if ($token !== '' && $token !== 'N/A') {
-            $tokenExpiredAt = strtotime((string)($marketplaceData->token_expired_at ?? ''));
-
-            if ($tokenExpiredAt !== false && $tokenExpiredAt > (time() + (int)$minimumLifetimeSeconds)) {
-                return $token;
-            }
-        }
-
-        return self::token($marketplaceData->app_id, $marketplaceData->secret);
-    }
-
-    public static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0, $tokenOverride = null)
+    public static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
     {
         set_time_limit(0);
         $response = new stdClass();
         $response->error = 1;
 
-        $token = $tokenOverride;
-
-        if ($token === null) {
         $marketplace = self::getMarketplaceData($marketplaceId);
-        if (!$marketplace || ($marketplace->error ?? 0)) {
+        if (!$marketplace) {
             $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
             return $response;
         }
 
         $marketplaceData = $marketplace->marketplace_data;
-        $token = self::resolveReusableToken($marketplaceData);
-        }
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
         $endpoint = strtr($endpointTemplate, $placeholders);
         $url = config("webservice.mercadolibre_enpoint") . $endpoint;
@@ -829,24 +798,20 @@ class MercadolibreService
         return response()->json(json_decode($raw, true));
     }
 
-    public static function callMpApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0, $tokenOverride = null)
+    public static function callMpApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)
     {
         set_time_limit(0);
         $response = new stdClass();
         $response->error = 1;
 
-        $token = $tokenOverride;
-
-        if ($token === null) {
         $marketplace = self::getMarketplaceData($marketplaceId);
-        if (!$marketplace || ($marketplace->error ?? 0)) {
+        if (!$marketplace) {
             $response->mensaje = "No se encontró información del marketplace." . self::logVariableLocation();
             return $response;
         }
 
         $marketplaceData = $marketplace->marketplace_data;
-        $token = self::resolveReusableToken($marketplaceData);
-        }
+        $token = self::token($marketplaceData->app_id, $marketplaceData->secret);
 
         $endpoint = strtr($endpointTemplate, $placeholders);
         $url = "https://api.mercadopago.com/" . $endpoint;
