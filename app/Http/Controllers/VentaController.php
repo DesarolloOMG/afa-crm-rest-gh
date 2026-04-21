@@ -153,19 +153,7 @@ class VentaController extends Controller
         try {
             DB::beginTransaction();
 
-            // 4.1) Actualiza datos del cliente
-            DB::table('documento_entidad')->where('id', $clienteId)->update([
-                'razon_social'         => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                'rfc'                  => trim(mb_strtoupper($data->cliente->rfc, 'UTF-8')),
-                'telefono'             => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                'telefono_alt'         => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                'correo'               => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                'regimen'              => property_exists($data->cliente, 'regimen') ? trim($data->cliente->regimen) : '',
-                'regimen_id'           => property_exists($data->cliente, 'regimen') ? trim($data->cliente->regimen) : '',
-                'codigo_postal_fiscal' => property_exists($data->cliente, 'cp_fiscal') ? trim($data->cliente->cp_fiscal) : '',
-            ]);
-
-            // 4.2) Documento
+            // 4.1) Documento
             $documentoId = DB::table('documento')->insertGetId([
                 'id_almacen_principal_empresa' => $idAlmacen,
                 'id_periodo'                   => $data->documento->periodo,
@@ -1099,19 +1087,20 @@ class VentaController extends Controller
 
             if ($data->cliente->rfc != 'XAXX010101000') {
                 $id_entidad = $data->cliente->select;
+
+                $existeEntidad = DB::table('documento_entidad')
+                    ->where('id', $id_entidad)
+                    ->where('tipo', 1)
+                    ->exists();
+
+                if (!$existeEntidad) {
+                    return response()->json([
+                        "code" => 500,
+                        "message" => "No se encontro ninguna entidad con la razon social o RFC proporcionado."
+                    ]);
+                }
             } else {
                 $id_entidad = $documento->id_entidad;
-
-                # Sí el cliente ya éxiste, se atualiza la información y se relaciona la venta con el cliente encontrado
-                DB::table('documento_entidad')->where(['id' => $id_entidad])->update([
-                    'razon_social' => trim(mb_strtoupper($data->cliente->razon_social, 'UTF-8')),
-                    'telefono' => trim(mb_strtoupper($data->cliente->telefono, 'UTF-8')),
-                    'telefono_alt' => trim(mb_strtoupper($data->cliente->telefono_alt, 'UTF-8')),
-                    'correo' => trim(mb_strtoupper($data->cliente->correo, 'UTF-8')),
-                    'regimen' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'regimen_id' => property_exists($data->cliente, "regimen") ? trim($data->cliente->regimen) : "",
-                    'codigo_postal_fiscal' => property_exists($data->cliente, "cp_fiscal") ? trim($data->cliente->cp_fiscal) : "",
-                ]);
             }
 
             $documento_data = $documento;
