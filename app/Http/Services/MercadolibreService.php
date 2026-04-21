@@ -694,15 +694,15 @@ class MercadolibreService
                             $pack->venta_principal->error = 1;
 
                             self::log_meli_error("Sin existencia suficiente para venta {$venta->id} en almacén {$pack->venta_principal->almacen}, producto: {$producto_sku}", $publicacion_id);
-                            unset($pack->ventas);
-                            continue 3;
                         }
                     }
 
                     $pack->venta_principal->productos = array_merge($pack->venta_principal->productos, $productos_publicacion);
-                    $pack->venta_principal->fase = property_exists($venta->shipping, 'logistic_type')
-                        ? ($venta->shipping->logistic_type === 'fulfillment' ? 6 : 3)
-                        : 3;
+                    if (!$pack->venta_principal->error) {
+                        $pack->venta_principal->fase = property_exists($venta->shipping, 'logistic_type')
+                            ? ($venta->shipping->logistic_type === 'fulfillment' ? 6 : 3)
+                            : 3;
+                    }
 
                 }
                 unset($pack->ventas);
@@ -826,6 +826,14 @@ class MercadolibreService
 
     public static function actualizarDelivered_com($existe_pack)
     {
+        if (!self::documentoTieneMovimientos($existe_pack->id)) {
+            self::sincronizarMovimientosDesdeValidacion($existe_pack->id);
+        }
+
+        if (!self::documentoTieneMovimientos($existe_pack->id)) {
+            return;
+        }
+
         DB::table('documento')->where(['id' => $existe_pack->id])->update([
             'id_fase' => 6
         ]);
@@ -862,11 +870,25 @@ class MercadolibreService
 
     public static function actualizarDelivered_doc_o($venta)
     {
-        DB::table('documento')->where('no_venta', $venta)
+        $documentos = DB::table('documento')
+            ->select('id')
+            ->where('no_venta', $venta)
             ->where('status', 1)
-            ->update([
+            ->get();
+
+        foreach ($documentos as $documento) {
+            if (!self::documentoTieneMovimientos($documento->id)) {
+                self::sincronizarMovimientosDesdeValidacion($documento->id);
+            }
+
+            if (!self::documentoTieneMovimientos($documento->id)) {
+                continue;
+            }
+
+            DB::table('documento')->where('id', $documento->id)->update([
                 'id_fase' => 6,
             ]);
+        }
     }
 
     public static function actualizarRTS_doc_o($venta)
@@ -1099,11 +1121,25 @@ class MercadolibreService
 
     public static function actualizarDelivered_doc($venta)
     {
-        DB::table('documento')->where('no_venta', $venta)
+        $documentos = DB::table('documento')
+            ->select('id')
+            ->where('no_venta', $venta)
             ->where('status', 1)
-            ->update([
+            ->get();
+
+        foreach ($documentos as $documento) {
+            if (!self::documentoTieneMovimientos($documento->id)) {
+                self::sincronizarMovimientosDesdeValidacion($documento->id);
+            }
+
+            if (!self::documentoTieneMovimientos($documento->id)) {
+                continue;
+            }
+
+            DB::table('documento')->where('id', $documento->id)->update([
                 'id_fase' => 6,
             ]);
+        }
     }
 
     private static function logResponse($error, $mensaje, $documento = 'N/A'): stdClass
@@ -1146,6 +1182,149 @@ class MercadolibreService
     private static function faseDocumento($venta): int
     {
         return $venta->is_buffered || $venta->is_creating_route || $venta->is_manufacturing ? 1 : ($venta->fase ?? 1);
+    }
+
+    public static function documentoTieneMovimientos(int $documentoId): bool
+    {
+        return DB::table('movimiento')
+            ->where('id_documento', $documentoId)
+            ->exists();
+    }
+
+    public static function sincronizarMovimientosDesdeValidacion(int $documentoId): bool
+    {
+        $response = self::validarVenta($documentoId);
+
+        if (($response->error ?? 1) !== 0 || empty($response->productos)) {
+            return false;
+        }
+
+        $documento = DB::table('documento')
+            ->select('id_fase')
+            ->where('id', $documentoId)
+            ->first();
+
+        $resultado = self::reconstruirMovimientosDesdeRespuestaValidacion(
+            $documentoId,
+            $response,
+            (int)($documento->id_fase ?? 0) === 6
+        );
+
+        if ($resultado->tiene_movimientos && !$resultado->hay_error) {
+            DB::table('seguimiento')->insert([
+                'id_documento' => $documentoId,
+                'id_usuario' => 1,
+                'seguimiento' => 'Se reconstruyeron autom�ticamente los productos del pedido antes de actualizar su fase.'
+            ]);
+
+            return true;
+        }
+
+        foreach ($resultado->incidencias as $incidencia) {
+            DB::table('seguimiento')->insert([
+                'id_documento' => $documentoId,
+                'id_usuario' => 1,
+                'seguimiento' => 'Mensaje al validar la venta -> ' . $incidencia->seguimiento
+            ]);
+        }
+
+        return false;
+    }
+
+    public static function reconstruirMovimientosDesdeRespuestaValidacion(int $documentoId, stdClass $response, bool $soloActualizarProductos = false): stdClass
+    {
+        $resultado = new stdClass();
+        $resultado->hay_error = false;
+        $resultado->total_pago = 0;
+        $resultado->tiene_movimientos = false;
+        $resultado->incidencias = [];
+        $resultado->movimientos = [];
+
+        $documento = DB::table('documento')
+            ->select('id', 'id_modelo_proveedor')
+            ->where('id', $documentoId)
+            ->first();
+
+        if (!$documento) {
+            $resultado->hay_error = true;
+            return $resultado;
+        }
+
+        DB::transaction(function () use ($documentoId, $response, $soloActualizarProductos, $documento, &$resultado) {
+            DB::table('documento')
+                ->where('id', $documentoId)
+                ->update([
+                    'id_almacen_principal_empresa' => $response->almacen,
+                    'id_paqueteria' => $response->paqueteria,
+                    'comentario' => $response->id,
+                ]);
+
+            DB::table('movimiento')
+                ->where('id_documento', $documentoId)
+                ->delete();
+
+            foreach ($response->productos as $producto) {
+                $codigo = DB::table('modelo')
+                    ->where('id', $producto->id_modelo)
+                    ->value('sku');
+
+                if ($documento->id_modelo_proveedor != 0 && !$soloActualizarProductos) {
+                    $existeRelacionBtob = DB::table('modelo_proveedor_producto')
+                        ->where('id_modelo_proveedor', $documento->id_modelo_proveedor)
+                        ->where('id_modelo', $producto->id_modelo)
+                        ->first();
+
+                    if (!$existeRelacionBtob) {
+                        $incidencia = new stdClass();
+                        $incidencia->bitacora = "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
+                        $incidencia->seguimiento = "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
+                        $resultado->incidencias[] = $incidencia;
+                        $resultado->hay_error = true;
+                    }
+                } else if (!$soloActualizarProductos) {
+                    $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
+
+                    if ($existencia->error) {
+                        $incidencia = new stdClass();
+                        $incidencia->bitacora = "Error al consultar la existencia. Error: " . $existencia->mensaje;
+                        $incidencia->seguimiento = $existencia->mensaje . ", error en el pedido " . $documentoId;
+                        $resultado->incidencias[] = $incidencia;
+                        $resultado->hay_error = true;
+                    }
+
+                    if (!$existencia->error && $existencia->disponible < $producto->cantidad) {
+                        $incidencia = new stdClass();
+                        $incidencia->bitacora = "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $documentoId;
+                        $incidencia->seguimiento = "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $documentoId;
+                        $resultado->incidencias[] = $incidencia;
+                        $resultado->hay_error = true;
+                    }
+                }
+
+                $movimiento = DB::table('movimiento')->insertGetId([
+                    'id_documento' => $documentoId,
+                    'id_modelo' => $producto->id_modelo,
+                    'cantidad' => $producto->cantidad,
+                    'precio' => (float) $producto->precio,
+                    'garantia' => $producto->garantia,
+                    'modificacion' => '',
+                    'regalo' => $producto->regalo
+                ]);
+
+                $resultado->total_pago += ($producto->cantidad * $producto->precio);
+
+                $movimientoInsertado = new stdClass();
+                $movimientoInsertado->id = $movimiento;
+                $movimientoInsertado->id_modelo = $producto->id_modelo;
+                $movimientoInsertado->cantidad = $producto->cantidad;
+                $movimientoInsertado->precio = $producto->precio;
+                $resultado->movimientos[] = $movimientoInsertado;
+            }
+
+            $resultado->tiene_movimientos = self::documentoTieneMovimientos($documentoId);
+        });
+
+        return $resultado;
     }
 
     public static function insertarDireccion($documentoId, $venta)
@@ -3838,3 +4017,4 @@ class MercadolibreService
         return ('<br> Código de Error: ' . $sis . $ini . $trace['line'] . $fin);
     }
 }
+

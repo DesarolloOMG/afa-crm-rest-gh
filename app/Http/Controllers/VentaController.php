@@ -3782,90 +3782,41 @@ class VentaController extends Controller
                 /**
                  * REINSERTAR productos / movimientos
                  */
-                foreach ($response->productos as $producto) {
-                    $codigo = DB::table('modelo')
-                        ->where('id', $producto->id_modelo)
-                        ->value('sku');
+                $resultadoMovimientos = MercadolibreService::reconstruirMovimientosDesdeRespuestaValidacion(
+                    $venta->id,
+                    $response,
+                    $soloActualizarProductos
+                );
 
-                    if ($venta->id_modelo_proveedor != 0 && !$soloActualizarProductos) {
-                        $existe_relacion_btob = DB::table("modelo_proveedor_producto")
-                            ->where("id_modelo_proveedor", $venta->id_modelo_proveedor)
-                            ->where("id_modelo", $producto->id_modelo)
-                            ->first();
-
-                        if (!$existe_relacion_btob) {
-                            BitacoraService::insertarBitacoraValidarVenta(
-                                $documento,
-                                $auth->id,
-                                "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documento
-                            );
-
-                            DB::table("seguimiento")->insert([
-                                'id_documento' => $venta->id,
-                                'id_usuario' => 1,
-                                'seguimiento' => "Mensaje al validar la venta -> No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $venta->id
-                            ]);
-
-                            $hayError = true;
-                        }
-                    } else if (!$soloActualizarProductos) {
-                        $existencia = InventarioService::existenciaProducto($codigo, $response->almacen);
-
-                        if ($existencia->error) {
-                            BitacoraService::insertarBitacoraValidarVenta(
-                                $documento,
-                                $auth->id,
-                                "Error al consultar la existencia. Error: " . $existencia->mensaje
-                            );
-
-                            DB::table("seguimiento")->insert([
-                                'id_documento' => $venta->id,
-                                'id_usuario' => 1,
-                                'seguimiento' => "Mensaje al validar la venta -> " . $existencia->mensaje . ", error en el pedido " . $venta->id
-                            ]);
-
-                            $hayError = true;
-                        }
-
-                        if (!$existencia->error && $existencia->disponible < $producto->cantidad) {
-                            BitacoraService::insertarBitacoraValidarVenta(
-                                $documento,
-                                $auth->id,
-                                "No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
-                            );
-
-                            DB::table("seguimiento")->insert([
-                                'id_documento' => $venta->id,
-                                'id_usuario' => 1,
-                                'seguimiento' => "Mensaje al validar la venta -> No hay suficiente existencia del producto " . $codigo . " para procesar el pedido " . $venta->id
-                            ]);
-
-                            $hayError = true;
-                        }
-                    }
-
-                    $movimiento = DB::table('movimiento')->insertGetId([
-                        'id_documento' => $venta->id,
-                        'id_modelo' => $producto->id_modelo,
-                        'cantidad' => $producto->cantidad,
-                        'precio' => (float) $producto->precio,
-                        'garantia' => $producto->garantia,
-                        'modificacion' => '',
-                        'regalo' => $producto->regalo
-                    ]);
-
-                    $total_pago += ($producto->cantidad * $producto->precio);
-
+                foreach ($resultadoMovimientos->incidencias as $incidencia) {
                     BitacoraService::insertarBitacoraValidarVenta(
                         $documento,
                         $auth->id,
-                        "Se agrega el producto con el id " . $producto->id_modelo .
-                        " con la cantidad de " . $producto->cantidad .
-                        " y el precio de " . $producto->precio .
+                        $incidencia->bitacora
+                    );
+
+                    DB::table("seguimiento")->insert([
+                        'id_documento' => $venta->id,
+                        'id_usuario' => 1,
+                        'seguimiento' => "Mensaje al validar la venta -> " . $incidencia->seguimiento
+                    ]);
+                }
+
+                foreach ($resultadoMovimientos->movimientos as $movimiento) {
+                    BitacoraService::insertarBitacoraValidarVenta(
+                        $documento,
+                        $auth->id,
+                        "Se agrega el producto con el id " . $movimiento->id_modelo .
+                        " con la cantidad de " . $movimiento->cantidad .
+                        " y el precio de " . $movimiento->precio .
                         " al pedido " . $venta->id .
-                        ". El id del movimiento es " . $movimiento
+                        ". El id del movimiento es " . $movimiento->id
                     );
                 }
+
+                $hayError = $hayError || $resultadoMovimientos->hay_error;
+                $total_pago = $resultadoMovimientos->total_pago;
+                $tieneMovimientos = $resultadoMovimientos->tiene_movimientos;
 
                 /**
                  * GENERACIÓN DE INGRESO Y APLICACIÓN AL DOCUMENTO
@@ -3985,6 +3936,32 @@ class VentaController extends Controller
                  * VALIDACIÓN DE PENDING BUFFERED
                  */
                 if ($soloActualizarProductos) {
+                    if (!$tieneMovimientos) {
+                        DB::table('documento')
+                            ->where('id', $venta->id)
+                            ->update([
+                                'id_fase' => 1,
+                                'validated_at' => date("Y-m-d H:i:s")
+                            ]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            "No se puede mantener la fase 6 porque el pedido no tiene movimientos."
+                        );
+
+                        DB::table('seguimiento')->insert([
+                            'id_documento' => $venta->id,
+                            'id_usuario' => 1,
+                            'seguimiento' => "Se actualizó el pedido a fase 1 porque no tiene productos capturados en movimiento."
+                        ]);
+
+                        return response()->json([
+                            'code' => 200,
+                            'mensaje' => "Documento actualizado, pero se regresó a fase 1 porque no tiene movimientos."
+                        ]);
+                    }
+
                     DB::table('documento')
                         ->where('id', $venta->id)
                         ->update([
@@ -4036,14 +4013,16 @@ class VentaController extends Controller
                         DB::table('documento')
                             ->where('id', $documento)
                             ->update([
-                                'id_fase' => $venta->fulfillment ? ($hayError ? 1 : 6) : 5
+                                'id_fase' => $venta->fulfillment ? ($hayError || !$tieneMovimientos ? 1 : 6) : 5
                             ]);
 
                         BitacoraService::insertarBitacoraValidarVenta(
                             $documento,
                             $auth->id,
                             $venta->fulfillment
-                                ? "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura."
+                                ? ($hayError || !$tieneMovimientos
+                                    ? "El pedido esta ENTREGADO en MERCADOLIBRE, pero no puede pasar a fase 6 porque tiene incidencias o no tiene movimientos."
+                                    : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura.")
                                 : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
                         );
 
@@ -4051,7 +4030,7 @@ class VentaController extends Controller
                             'id_documento' => $documento,
                             'id_usuario' => 1,
                             'seguimiento' => $venta->fulfillment
-                                ? ($hayError
+                                ? ($hayError || !$tieneMovimientos
                                     ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar."
                                     : "El pedido esta ENTREGADO en MERCADOLIBRE.")
                                 : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
@@ -4060,7 +4039,7 @@ class VentaController extends Controller
                         return response()->json([
                             'code' => 500,
                             'mensaje' => $venta->fulfillment
-                                ? ($hayError
+                                ? ($hayError || !$tieneMovimientos
                                     ? "El pedido esta ENTREGADO en MERCADOLIBRE. No se puede crear la factura. Favor de revisar."
                                     : "El pedido esta ENTREGADO en MERCADOLIBRE.")
                                 : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
@@ -4123,7 +4102,7 @@ class VentaController extends Controller
                 }
 
                 if ($venta->fulfillment) {
-                    if (!$hayError) {
+                    if (!$hayError && $tieneMovimientos) {
                         DB::table('documento')
                             ->where('id', $venta->id)
                             ->update([
@@ -4136,9 +4115,34 @@ class VentaController extends Controller
                             'mensaje' => "Documento actualizado correctamente"
                         ]);
                     } else {
+                        DB::table('documento')
+                            ->where('id', $venta->id)
+                            ->update([
+                                'id_fase' => 1,
+                                'validated_at' => date("Y-m-d H:i:s")
+                            ]);
+
+                        BitacoraService::insertarBitacoraValidarVenta(
+                            $documento,
+                            $auth->id,
+                            !$tieneMovimientos
+                                ? "El pedido fulfillment no puede pasar a fase 6 porque no tiene movimientos."
+                                : "El pedido fulfillment se mantiene en fase 1 porque tiene errores de validación."
+                        );
+
+                        DB::table('seguimiento')->insert([
+                            'id_documento' => $venta->id,
+                            'id_usuario' => 1,
+                            'seguimiento' => !$tieneMovimientos
+                                ? "El pedido fulfillment se dejó en fase 1 porque no tiene productos capturados en movimiento."
+                                : "El pedido fulfillment se dejó en fase 1 porque tiene incidencias que impiden facturarlo."
+                        ]);
+
                         return response()->json([
                             'code' => 500,
-                            'mensaje' => "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
+                            'mensaje' => !$tieneMovimientos
+                                ? "Documento actualizado correctamente, pero se dejó en fase 1 porque no tiene movimientos."
+                                : "Documento actualizado correctamente, sin embargo, hay un problema en el pedido que no deja crear la Factura, Favor de revisar el pedido."
                         ]);
                     }
                 }
@@ -5756,3 +5760,4 @@ class VentaController extends Controller
         return $this->ventaVentasService->descargar_pdf_xml($tipo, $documento);
     }
 }
+
