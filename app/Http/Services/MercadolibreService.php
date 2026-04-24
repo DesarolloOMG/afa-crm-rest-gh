@@ -588,7 +588,7 @@ class MercadolibreService
 
                     $venta->shipping_null = 1;
                     $venta->shipping = new stdClass();
-                    $pack->venta_principal->seguimiento = "No se encontró información del envío en la venta {$venta->id}; se crea el documento para revisión.";
+                    $pack->venta_principal->seguimiento = "No se encontro informacion del envio en la venta {$venta->id}; se crea el documento para revision.";
                     $pack->venta_principal->fase = 1;
                     $pack->venta_principal->error = 1;
 
@@ -615,11 +615,11 @@ class MercadolibreService
 
                     if (empty($existe_publicacion)) {
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "No se encontró la publicación de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relación de productos {$item->item->id}";
+                        $pack->venta_principal->seguimiento = "No se encontro la publicacion de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relacion de productos {$item->item->id}";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        self::log_meli_error("No se encontró la publicación de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relación de productos {$item->item->id}", $publicacion_id);
+                        self::log_meli_error("No se encontro la publicacion de la venta {$venta->id} registrada en el sistema, por lo tanto, no hay relacion de productos {$item->item->id}", $publicacion_id);
                         unset($pack->ventas);
                         continue 3;
                     }
@@ -631,11 +631,11 @@ class MercadolibreService
 
                     if (empty($productos_publicacion)) {
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}";
+                        $pack->venta_principal->seguimiento = "No hay relacion entre productos y la publicacion {$item->item->id} en la venta {$venta->id}";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        self::log_meli_error("No hay relación entre productos y la publicación {$item->item->id} en la venta {$venta->id}", $publicacion_id);
+                        self::log_meli_error("No hay relacion entre productos y la publicacion {$item->item->id} en la venta {$venta->id}", $publicacion_id);
                         unset($pack->ventas);
                         continue 3;
                     }
@@ -649,11 +649,11 @@ class MercadolibreService
                     if ($porcentaje_total != 100) {
 
                         $pack->error = 0;
-                        $pack->venta_principal->seguimiento = "Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.";
+                        $pack->venta_principal->seguimiento = "Los productos de la publicacion {$item->item->id} no suman un porcentaje total de 100%.";
                         $pack->venta_principal->fase = 1;
                         $pack->venta_principal->error = 1;
 
-                        self::log_meli_error("Los productos de la publicación {$item->item->id} no suman un porcentaje total de 100%.", $publicacion_id);
+                        self::log_meli_error("Los productos de la publicacion {$item->item->id} no suman un porcentaje total de 100%.", $publicacion_id);
                         unset($pack->ventas);
                         continue 3;
                     }
@@ -673,11 +673,11 @@ class MercadolibreService
 
                         if (!$modelo) {
                             $pack->error = 0;
-                            $pack->venta_principal->seguimiento = "No se encontró el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.";
+                            $pack->venta_principal->seguimiento = "No se encontro el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.";
                             $pack->venta_principal->fase = 1;
                             $pack->venta_principal->error = 1;
 
-                            self::log_meli_error("No se encontró el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.", $publicacion_id);
+                            self::log_meli_error("No se encontro el modelo ID {$producto->id_modelo} asociado a la venta {$venta->id}.", $publicacion_id);
                             unset($pack->ventas);
                             continue 3;
                         }
@@ -688,7 +688,7 @@ class MercadolibreService
 
                         if ($existencia->error) {
                             $pack->error = 0;
-                            $pack->venta_principal->seguimiento = "Ocurrió un error al buscar la existencia del producto {$producto_sku} en la venta {$venta->id}, mensaje: {$existencia->mensaje}";
+                            $pack->venta_principal->seguimiento = "Ocurrio un error al buscar la existencia del producto {$producto_sku} en la venta {$venta->id}, mensaje: {$existencia->mensaje}";
                             $pack->venta_principal->fase = 1;
                             $pack->venta_principal->error = 1;
 
@@ -699,7 +699,7 @@ class MercadolibreService
 
                         if ((int)$existencia->disponible < (int)$producto->cantidad) {
                             $pack->error = 0;
-                            $pack->venta_principal->seguimiento = "No hay suficiente existencia para venta {$venta->id} en almacén {$pack->venta_principal->almacen} del producto {$producto_sku}.";
+                            $pack->venta_principal->seguimiento = "No hay suficiente existencia para venta {$venta->id} en almacen {$pack->venta_principal->almacen} del producto {$producto_sku}.";
                             $pack->venta_principal->fase = 1;
                             $pack->venta_principal->error = 1;
 
@@ -1045,7 +1045,7 @@ class MercadolibreService
             DB::table('seguimiento')->insert([
                 'id_documento' => $documentoId,
                 'id_usuario' => $usuario,
-                'seguimiento' => $venta->seguimiento
+                'seguimiento' => self::limpiarTextoSeguimiento($venta->seguimiento)
             ]);
         }
 
@@ -1053,7 +1053,7 @@ class MercadolibreService
             DB::table('seguimiento')->insert([
                 'id_documento' => $documentoId,
                 'id_usuario' => $usuario,
-                'seguimiento' => "<p>Se manda a fase de pedido por falta de guía o producto. Verifique en el marketplace</p>"
+                'seguimiento' => "<p>Se manda a fase de pedido por falta de guia o producto. Verifique en el marketplace</p>"
             ]);
         }
 
@@ -1203,6 +1203,24 @@ class MercadolibreService
             ]);
     }
 
+    private static function limpiarTextoSeguimiento($mensaje): string
+    {
+        $mensaje = (string)$mensaje;
+        $mensaje = str_replace("\xEF\xBF\xBD", "", $mensaje);
+
+        if (function_exists('iconv')) {
+            $mensajeLimpio = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $mensaje);
+
+            if ($mensajeLimpio !== false) {
+                $mensaje = $mensajeLimpio;
+            }
+        }
+
+        $mensaje = preg_replace('/[^\x09\x0A\x0D\x20-\x7E]/', '', $mensaje);
+
+        return $mensaje ?? '';
+    }
+
     private static function determinarPaqueteria($venta)
     {
         $paqueterias = DB::table('paqueteria')
@@ -1255,7 +1273,7 @@ class MercadolibreService
             DB::table('seguimiento')->insert([
                 'id_documento' => $documentoId,
                 'id_usuario' => 1,
-                'seguimiento' => 'Se reconstruyeron autom�ticamente los productos del pedido antes de actualizar su fase.'
+                'seguimiento' => 'Se reconstruyeron automaticamente los productos del pedido antes de actualizar su fase.'
             ]);
 
             return true;
@@ -1265,7 +1283,7 @@ class MercadolibreService
             DB::table('seguimiento')->insert([
                 'id_documento' => $documentoId,
                 'id_usuario' => 1,
-                'seguimiento' => 'Mensaje al validar la venta -> ' . $incidencia->seguimiento
+                'seguimiento' => self::limpiarTextoSeguimiento('Mensaje al validar la venta -> ' . $incidencia->seguimiento)
             ]);
         }
 
@@ -1317,8 +1335,8 @@ class MercadolibreService
 
                     if (!$existeRelacionBtob) {
                         $incidencia = new stdClass();
-                        $incidencia->bitacora = "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
-                        $incidencia->seguimiento = "No existe la relación del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
+                        $incidencia->bitacora = "No existe la relacion del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
+                        $incidencia->seguimiento = "No existe la relacion del codigo " . $codigo . " con el proveedor B2B " . $documentoId;
                         $resultado->incidencias[] = $incidencia;
                         $resultado->hay_error = true;
                     }
