@@ -8,7 +8,9 @@ use App\Http\Services\MercadolibreService;
 use App\Http\Services\VaultService;
 use App\Models\Documento;
 use App\Models\Enums\DocumentoTipo as EnumDocumentoTipo;
+use App\Services\ErrorLoggerService;
 use Carbon\Carbon;
+use Exception;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -49,21 +51,75 @@ class DeveloperController extends Controller
     public function test(Request $request)
     {
         set_time_limit(0);
-        $stock = InventarioService::existenciaProducto(194721097927, 2);
-        dd($stock);
+
+        $merca = MercadolibreService::venta(2000012606556773, 1);
+        dd($merca);
+    }
+
+    private static function picking($documentos): void
+    {
+        foreach ($documentos as $documento) {
+            $seguimiento = [];
+
+            $info = DB::table('documento')
+                ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+                ->join('empresa', 'empresa_almacen.id_empresa', '=', 'empresa.id')
+                ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+                ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+                ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+                ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+                ->where('documento.status', 1)
+                ->where('documento.id_fase', 3)
+                ->where('documento.picking', 0)
+                ->where('documento.id', $documento->id)
+                ->select(
+                    'area.area',
+                    'documento.id',
+                    'documento.no_venta',
+                    'documento.comentario',
+                    'marketplace.marketplace',
+                    'empresa.empresa',
+                    'almacen.almacen'
+                )
+                ->first();
+            dump($info);
+            if (empty($info)) {
+                dump($info);
+                dump('No existe documento, se continua con el siguiente');
+                continue;
+            }
+
+            $productos = DB::table('movimiento')
+                ->join('modelo', 'movimiento.id_modelo', '=', 'modelo.id')
+                ->where('movimiento.id_documento', $documento->id)
+                ->select(
+                    'modelo.sku',
+                    'modelo.descripcion',
+                    'movimiento.cantidad'
+                )
+                ->get()
+                ->toArray();
+
+            dump($productos);
+
+            if (empty($productos)) {
+                dump("No existen productos, se continua con el siguiente");
+
+            }
+        }
     }
 
     public static function log_meli_error(string $mensaje, string $publicacion_id)
     {
         $publicacion_id = $publicacion_id ?: 'sin_id';
 
-        $dir = "logs/mercadolibre";
+        $dir = storage_path('logs/mercadolibre');
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir($dir, 0775, true);
         }
 
         $archivo = "{$dir}/" . date("Y.m.d") . "-{$publicacion_id}.log";
-        file_put_contents($archivo, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND);
+        file_put_contents($archivo, date("H:i:s") . " Error: {$mensaje}" . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 
     public static function callMlApi($marketplaceId, $endpointTemplate, array $placeholders = [], $opt = 0)

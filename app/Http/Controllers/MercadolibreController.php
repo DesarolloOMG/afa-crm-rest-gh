@@ -100,9 +100,22 @@ class MercadolibreController extends Controller{
     }
 
     public function rawinfo_importar_publicacion($pseudonimo, $publicacion){
-        $fp = fopen('rawinfoimportarpublicacion', 'w+');
+        $lockDir = storage_path('app/locks');
+        if (!is_dir($lockDir)) {
+            mkdir($lockDir, 0775, true);
+        }
+
+        $fp = fopen($lockDir . '/rawinfoimportarpublicacion.lock', 'c+');
+
+        if (!$fp) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No se pudo crear/abrir el archivo de lock.'
+            ]);
+        }
 
         if (!flock($fp, LOCK_SH | LOCK_NB)) {
+            fclose($fp);
             die();
         }
 

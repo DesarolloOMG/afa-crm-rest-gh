@@ -351,10 +351,11 @@ class MercadolibreService
     public static function importarVentas($marketplace_id, $publicacion_id, $fecha_inicial = null, $fecha_final = null, $dropOrFull = false)
     {
         set_time_limit(0);
-        if (!file_exists("logs")) {
-            mkdir("logs", 777);
-            mkdir("logs/mercadolibre", 777);
+        $logDir = storage_path('logs/mercadolibre');
+        if (!is_dir($logDir)) {
+            mkdir($logDir, 0775, true);
         }
+
         $response = new stdClass();
 
         $marketplace_info = self::getMarketplaceData($marketplace_id);
@@ -867,6 +868,29 @@ class MercadolibreService
         );
     }
 
+
+    private static function mercadolibreTempImageFile(string $imageName): string
+    {
+        $dir = base_path('public/img/mercadolibre_temp');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        return $dir . DIRECTORY_SEPARATOR . $imageName;
+    }
+
+    private static function mercadolibreTempImageUrl(string $imageName): string
+    {
+        return url() . "/img/mercadolibre_temp/" . $imageName;
+    }
+
+    private static function deleteMercadolibreTempImage(string $imageName): void
+    {
+        $file = self::mercadolibreTempImageFile($imageName);
+        if (is_file($file)) {
+            unlink($file);
+        }
+    }
 
     public static function actualizarRTS_com($existe_pack)
     {
@@ -2159,10 +2183,10 @@ class MercadolibreService
                 $image_type = explode(':', substr($picture->data, 0, strpos($picture->data, ';')))[1];
 
                 $image_name = uniqid() . "." . explode('/', $image_type)[1];
-                $image_path = "img/mercadolibre_temp/";
+                $image_file = self::mercadolibreTempImageFile($image_name);
 
-                if (file_put_contents($image_path . $image_name, $raw_image_data)) {
-                    array_push($request_data["pictures"], ['source' => url() . "/" . $image_path . $image_name]);
+                if (file_put_contents($image_file, $raw_image_data)) {
+                    array_push($request_data["pictures"], ['source' => self::mercadolibreTempImageUrl($image_name)]);
                     array_push($imagenes_a_borrar, $image_name);
                 }
             }
@@ -2177,11 +2201,11 @@ class MercadolibreService
                     $image_type = explode(':', substr($picture->data, 0, strpos($picture->data, ';')))[1];
 
                     $image_name = uniqid() . "." . explode('/', $image_type)[1];
-                    $image_path = "img/mercadolibre_temp/";
+                    $image_file = self::mercadolibreTempImageFile($image_name);
 
-                    if (file_put_contents($image_path . $image_name, $raw_image_data)) {
-                        array_push($request_data["pictures"], ['source' => url() . "/" . $image_path . $image_name]);
-                        array_push($variation->picture_ids, url() . "/" . $image_path . $image_name);
+                    if (file_put_contents($image_file, $raw_image_data)) {
+                        array_push($request_data["pictures"], ['source' => self::mercadolibreTempImageUrl($image_name)]);
+                        array_push($variation->picture_ids, self::mercadolibreTempImageUrl($image_name));
                         array_push($imagenes_a_borrar, $image_name);
                     }
                 }
@@ -2263,7 +2287,7 @@ class MercadolibreService
 
         /* Se borras imagenes unas vez publicadas */
         foreach ($imagenes_a_borrar as $imagen) {
-            unlink("img/mercadolibre_temp/" . $imagen);
+            self::deleteMercadolibreTempImage($imagen);
         }
 
         $publicacion_id = DB::table('marketplace_publicacion')->insertGetId([
@@ -2420,11 +2444,11 @@ class MercadolibreService
                         $image_type = explode(':', substr($picture->data, 0, strpos($picture->data, ';')))[1];
 
                         $image_name = uniqid() . "." . explode('/', $image_type)[1];
-                        $image_path = "img/mercadolibre_temp/";
+                        $image_file = self::mercadolibreTempImageFile($image_name);
 
-                        if (file_put_contents($image_path . $image_name, $raw_image_data)) {
+                        if (file_put_contents($image_file, $raw_image_data)) {
                             $image_data = array(
-                                "file" => $image_path . $image_name
+                                "file" => $image_file
                             );
 
                             $image_upload = Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
@@ -2486,11 +2510,11 @@ class MercadolibreService
                     $image_type = explode(':', substr($picture->data, 0, strpos($picture->data, ';')))[1];
 
                     $image_name = uniqid() . "." . explode('/', $image_type)[1];
-                    $image_path = "img/mercadolibre_temp/";
+                    $image_file = self::mercadolibreTempImageFile($image_name);
 
-                    if (file_put_contents($image_path . $image_name, $raw_image_data)) {
+                    if (file_put_contents($image_file, $raw_image_data)) {
                         $image_data = array(
-                            "file" => $image_path . $image_name
+                            "file" => $image_file
                         );
 
                         $image_upload = Request::post(config("webservice.mercadolibre_enpoint") . "pictures/items/upload")
@@ -2604,7 +2628,7 @@ class MercadolibreService
 
         /* Se borras imagenes unas vez publicadas */
         foreach ($imagenes_a_borrar as $imagen) {
-            unlink("img/mercadolibre_temp/" . $imagen);
+            self::deleteMercadolibreTempImage($imagen);
         }
 
         $response->mensaje = "Publicación actualizada correctamente, favor de verificar la información en la página de Mercadolibre";

@@ -13,12 +13,12 @@ use DB;
 use MP;
 
 class NotificacionesController extends Controller{
-    public function notificacion($marketplace_id){0+-
+    public function notificacion($marketplace_id){
         
         header("HTTP/1.1 200 OK");
 
         if (empty($marketplace_id)) {
-            file_put_contents("logs/mercadolibre.log", date("d/m/Y H:i:s") . " Error: No se encontro el marketplace, token vacío." . PHP_EOL, FILE_APPEND);
+            self::logMercadolibre("Error: No se encontro el marketplace, token vacío.");
 
             throw new Exception("No se encontró el marketplace, token vacío.", 1);
         }
@@ -33,7 +33,7 @@ class NotificacionesController extends Controller{
             $notificacion_data = @json_decode($notificacion);
 
             if (empty($notificacion_data)) {
-                file_put_contents("logs/mercadolibre.log", date("d/m/Y H:i:s") . " Error: Error al obtener informacion del JSON de la notificacion." . PHP_EOL, FILE_APPEND);
+                self::logMercadolibre("Error: Error al obtener informacion del JSON de la notificacion.");
 
                 throw new Exception("Error al obtener información del JSON de la notificación.", 1);
             }
@@ -54,7 +54,7 @@ class NotificacionesController extends Controller{
                 $publicacion_info = @json_decode(file_get_contents(config("webservice.mercadolibre_enpoint") . "items/" . $publicacion . "?access_token=" . $token));
 
                 if (empty($publicacion_info)) {
-                    file_put_contents("logs/mercadolibre.log", date("d/m/Y H:i:s") . " Error: No se encontro información de la publicacion " . $publicacion . "." . PHP_EOL, FILE_APPEND);
+                    self::logMercadolibre("Error: No se encontro información de la publicacion " . $publicacion . ".");
 
                     throw new Exception("No se encontró información de la publicacion " . $publicacion, 1);
                 }
@@ -165,7 +165,7 @@ class NotificacionesController extends Controller{
             }
         }
         else {
-            file_put_contents("logs/mercadolibre.log", date("d/m/Y H:i:s") . " Error: No se encontraron las credenciales de la api para el marketplace " . $marketplace_id . "." . PHP_EOL, FILE_APPEND);
+            self::logMercadolibre("Error: No se encontraron las credenciales de la api para el marketplace " . $marketplace_id . ".");
 
             throw new Exception("No se encontraron las credenciales de la api para el marketplace " . $marketplace_id . "", 1);
         }
@@ -401,7 +401,7 @@ class NotificacionesController extends Controller{
                                                                     AND producto.status = 1")[0]->cantidad;
 
                                     if ($producto->cantidad > $series_disponible) {
-                                        file_put_contents("logs/mercadolibre.log", date("d/m/Y H:i:s") . " Error: No hay suficientes series para surtir la venta, codigo del producto " . $producto_codigo->sku . ", publicacion " . $producto->ShopSku . ", venta " . $data->OrderNumber . ", creación cancelada." . PHP_EOL, FILE_APPEND);
+                                        self::logMercadolibre("Error: No hay suficientes series para surtir la venta, codigo del producto " . $producto_codigo->sku . ", publicacion " . $producto->ShopSku . ", venta " . $data->OrderNumber . ", creación cancelada.");
 
                                         throw new Exception("No hay suficientes series para surtir la venta, codigo del producto " . $producto_codigo->sku . ", publicacion " . $producto->ShopSku . ", venta " . $data->OrderNumber . ", creación cancelada.", 1);
                                     }
@@ -681,5 +681,15 @@ class NotificacionesController extends Controller{
         $access_token = $mp->get_access_token();
 
         return $access_token;
+    }
+
+    private static function logMercadolibre($mensaje)
+    {
+        $dir = storage_path('logs/mercadolibre');
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        file_put_contents($dir . '/' . date("Y.m.d") . ".log", date("H:i:s") . " " . $mensaje . PHP_EOL, FILE_APPEND | LOCK_EX);
     }
 }
