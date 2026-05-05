@@ -3134,6 +3134,7 @@ class GeneralController extends Controller
                 ->join("almacen", "empresa_almacen.id_almacen", "=", "almacen.id")
                 ->join("movimiento", "documento.id", "=", "movimiento.id_documento")
                 ->join("modelo", "movimiento.id_modelo", "=", "modelo.id")
+                ->leftJoin("documento_recepcion", "movimiento.id", "=", "documento_recepcion.id_movimiento")
                 ->where("documento.id_tipo", "0")
                 ->where("documento.id_fase", "606")
                 ->where("documento.status", "1")
@@ -3148,6 +3149,8 @@ class GeneralController extends Controller
                     "documento.id AS odc",
                     "documento.observacion AS requisiciones",
                     "documento.arrived_at",
+                    "documento_recepcion.documento_erp AS recepcion_id",
+                    "documento_recepcion.documento_erp_compra AS compra_id",
                 )
                 ->get()
                 ->toArray();
@@ -3169,8 +3172,9 @@ class GeneralController extends Controller
                 ->where("documento.id_tipo", "0")
                 ->where("documento.status", "1")
                 ->where("empresa.id", $data->empresa)
+                ->whereIn("documento.id_fase", ["606", "607"])
                 ->whereBetween("documento_recepcion.created_at", [date($data->fecha_inicial), date($data->fecha_final)])
-                ->select("modelo.sku AS codigo", "modelo.descripcion", DB::raw("ROUND(( movimiento.precio * documento.tipo_cambio), 4) AS costo"), "documento_recepcion.cantidad", "almacen.almacen", "documento.created_at", "documento.id AS odc", "documento.observacion AS requisiciones", "empresa.bd")
+                ->select("modelo.sku AS codigo", "modelo.descripcion", DB::raw("ROUND(( movimiento.precio * documento.tipo_cambio), 4) AS costo"), "documento_recepcion.cantidad", "almacen.almacen", "documento.created_at", "documento.id AS odc", "documento.observacion AS requisiciones", "documento_recepcion.documento_erp AS recepcion_id", "documento_recepcion.documento_erp_compra AS compra_id", "empresa.bd")
                 ->get()
                 ->toArray();
         }
@@ -3188,11 +3192,13 @@ class GeneralController extends Controller
         $sheet->setCellValue('E1', 'ALMACÉN');
         $sheet->setCellValue('F1', 'REQUISICIONES');
         $sheet->setCellValue('G1', 'ODC');
-        $sheet->setCellValue('H1', 'FECHA ODC');
+        $sheet->setCellValue('H1', 'RECEPCION');
+        $sheet->setCellValue('I1', 'COMPRA');
+        $sheet->setCellValue('J1', 'FECHA ODC');
 
         $sheet->freezePane("A2");
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:H1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
+        $spreadsheet->getActiveSheet()->getStyle('A1:J1')->getFont()->setBold(1)->getColor()->setARGB('DE573A'); # Cabecera en negritas con color negro
 
         foreach ($productos as $producto) {
             $sheet->setCellValue('A' . $contador_fila, $producto->codigo);
@@ -3202,7 +3208,9 @@ class GeneralController extends Controller
             $sheet->setCellValue('E' . $contador_fila, $producto->almacen);
             $sheet->setCellValue('F' . $contador_fila, $producto->requisiciones);
             $sheet->setCellValue('G' . $contador_fila, $producto->odc);
-            $sheet->setCellValue('H' . $contador_fila, $producto->created_at);
+            $sheet->setCellValue('H' . $contador_fila, $producto->recepcion_id);
+            $sheet->setCellValue('I' . $contador_fila, $producto->compra_id);
+            $sheet->setCellValue('J' . $contador_fila, $producto->created_at);
 
             $spreadsheet->getActiveSheet()->getStyle("D" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
             $sheet->getCellByColumnAndRow(1, $contador_fila)->setValueExplicit($producto->codigo, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
@@ -3210,7 +3218,7 @@ class GeneralController extends Controller
             $contador_fila++;
         }
 
-        foreach (range('A', 'H') as $columna) {
+        foreach (range('A', 'J') as $columna) {
             $spreadsheet->getActiveSheet()->getColumnDimension($columna)->setAutoSize(true);
         }
 
