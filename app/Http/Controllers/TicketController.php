@@ -55,7 +55,7 @@ class TicketController extends Controller
 
                 $response = $this->dropbox->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
-                if (!empty($response['error'])) {
+                if (!empty($response['error']) || empty($response['id'])) {
                     throw new RuntimeException('Dropbox: ' . ($response['message'] ?? 'Error'));
                 }
 

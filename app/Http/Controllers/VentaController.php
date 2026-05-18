@@ -259,6 +259,10 @@ class VentaController extends Controller
                         $archivo_data = base64_decode(preg_replace('#^data:' . $archivo->tipo . '/\w+;base64,#i', '', $archivo->data));
                         $resp = $dropboxService->uploadFile('/' . $archivo->nombre, $archivo_data, false);
 
+                        if (!empty($resp['error']) || empty($resp['id'])) {
+                            throw new \RuntimeException('Dropbox: ' . ($resp['message'] ?? 'No se obtuvo id del archivo'));
+                        }
+
                         DB::table('documento_archivo')->insert([
                             'id_documento' => $documentoId,
                             'id_usuario'   => $auth->id,

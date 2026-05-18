@@ -6,6 +6,7 @@ use Exception;
 use GuzzleHttp\Client;
 use Httpful\Exception\ConnectionErrorException;
 use Httpful\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -33,17 +34,16 @@ class DropboxService
     {
         $dropbox_token = OauthToken::where('provider', 'dropbox')->first();
 
-        if (!$dropbox_token) {
-            throw new \RuntimeException('No hay registro de tokens para Dropbox');
-        }
-
-        if ($dropbox_token->expires_at && $dropbox_token->expires_at->gt(Carbon::now()->addMinutes(5))) {
+        if ($dropbox_token && $dropbox_token->expires_at && $dropbox_token->expires_at->gt(Carbon::now()->addMinutes(5))) {
             return $dropbox_token->access_token;
         }
 
-        $token = self::refreshAccessToken();
+        if ($cached = $this->getVaultToken()) {
+            $this->persistAccessToken($cached);
+            return $cached;
+        }
 
-        return $token;
+        return $this->refreshAccessToken();
     }
 
     /**
@@ -53,12 +53,9 @@ class DropboxService
      */
     public function refreshAccessToken()
     {
-        /*
-        if ($token = $this->vault->getValid($this->clientId)) {
-            self::setEnvValue($token);
-            return $token;
+        if (!$this->clientId || !$this->clientSecret || !$this->refreshToken) {
+            throw new Exception('Faltan credenciales de Dropbox en .env');
         }
-        */
 
         $url = 'https://api.dropbox.com/oauth2/token';
         $body = http_build_query([
@@ -77,18 +74,15 @@ class DropboxService
         $data = json_decode($response->raw_body, true);
 
         if (isset($data['access_token'])) {
-            $this->vault->put($this->clientId, $data['access_token']);
             $expiresIn = isset($data['expires_in']) ? (int)$data['expires_in'] : 4 * 60 * 60;
+            $expiresAt = Carbon::now()->addSeconds($expiresIn);
 
-            OauthToken::where('provider', 'dropbox')->update([
-                "access_token" => $data['access_token'],
-                "expires_at" => Carbon::now()->addSeconds($expiresIn)
-            ]);
+            $this->persistAccessToken($data['access_token'], $expiresAt);
 
-            //self::setEnvValue($data['access_token']);
             return $data['access_token'];
         }
 
+        Log::error('Dropbox refreshAccessToken error: ' . $response->raw_body);
         throw new Exception('No se pudo renovar el access token de Dropbox');
     }
 
@@ -107,6 +101,7 @@ class DropboxService
         }
 
         File::put($envPath, $env);
+        config(['keys.dropbox' => $value]);
     }
 
     /**
@@ -173,7 +168,6 @@ class DropboxService
      */
     public function downloadFile($path): ?string
     {
-        $this->ensureValidToken();
         $token = $this->getDropboxToken();
 
         $url = 'https://content.dropboxapi.com/2/files/download';
@@ -187,6 +181,7 @@ class DropboxService
             $response = $this->client->post($url, [
                 'headers' => $headers,
                 'http_errors' => false,
+                'verify' => false,
             ]);
             if ($response->getStatusCode() === 200) {
                 return $response->getBody()->getContents();
@@ -215,56 +210,70 @@ class DropboxService
      */
     public function uploadFile($path, $fileContent, $isBase64 = true)
     {
-        $this->ensureValidToken();
-        $token = $this->getDropboxToken();
-
         $url = 'https://content.dropboxapi.com/2/files/upload';
-
-        $headers = [
-            'Authorization' => 'Bearer ' . $token,
-            'Dropbox-API-Arg' => json_encode([
-                'path' => $path,
-                'mode' => 'add',
-                'autorename' => true,
-                'mute' => false,
-            ]),
-            'Content-Type' => 'application/octet-stream',
-        ];
 
         $body = $isBase64 ? base64_decode($fileContent) : $fileContent;
 
         try {
-            $response = $this->client->post($url, [
-                'headers' => $headers,
-                'body' => $body,
-                'http_errors' => false,
-                'verify' => false,
-            ]);
-            $data = json_decode($response->getBody()->getContents(), true);
+            for ($attempt = 0; $attempt < 2; $attempt++) {
+                $token = $attempt === 0 ? $this->getDropboxToken() : $this->refreshAccessToken();
 
-            if ($response->getStatusCode() === 200 && isset($data['name'])) {
-                return $data;
-            }
+                $headers = [
+                    'Authorization' => 'Bearer ' . $token,
+                    'Dropbox-API-Arg' => json_encode([
+                        'path' => $path,
+                        'mode' => 'add',
+                        'autorename' => true,
+                        'mute' => false,
+                    ]),
+                    'Content-Type' => 'application/octet-stream',
+                ];
 
-            // Si hay error, devuelve el mensaje real
-            if (isset($data['error_summary'])) {
-                return [
-                    'error' => true,
-                    'message' => $data['error_summary'],
-                    'dropbox' => $data
-                ];
-            } elseif (isset($data['error'])) {
-                return [
-                    'error' => true,
-                    'message' => is_array($data['error']) ? json_encode($data['error']) : $data['error'],
-                    'dropbox' => $data
-                ];
-            } else {
-                return [
-                    'error' => true,
-                    'message' => 'Error desconocido de Dropbox',
-                    'dropbox' => $data
-                ];
+                $response = $this->client->post($url, [
+                    'headers' => $headers,
+                    'body' => $body,
+                    'http_errors' => false,
+                    'verify' => false,
+                ]);
+                $status = $response->getStatusCode();
+                $raw = $response->getBody()->getContents();
+                $data = json_decode($raw, true);
+
+                if ($status === 200 && isset($data['id'])) {
+                    return $data;
+                }
+
+                if ($attempt === 0 && $this->isExpiredTokenResponse($status, $data, (string)$raw)) {
+                    Log::warning('Dropbox uploadFile token expirado, reintentando con refresh', ['path' => $path]);
+                    continue;
+                }
+
+                // Si hay error, devuelve el mensaje real
+                if (is_array($data) && isset($data['error_summary'])) {
+                    return [
+                        'error' => true,
+                        'message' => $data['error_summary'],
+                        'dropbox' => $data
+                    ];
+                } elseif (is_array($data) && isset($data['error'])) {
+                    return [
+                        'error' => true,
+                        'message' => is_array($data['error']) ? json_encode($data['error']) : $data['error'],
+                        'dropbox' => $data
+                    ];
+                } else {
+                    Log::warning('Dropbox uploadFile unexpected response', [
+                        'status' => $status,
+                        'path' => $path,
+                        'body' => substr((string)$raw, 0, 1000)
+                    ]);
+
+                    return [
+                        'error' => true,
+                        'message' => 'Dropbox HTTP ' . $status . ': ' . ($raw !== '' ? substr((string)$raw, 0, 300) : 'respuesta vacia'),
+                        'dropbox' => $data ?: $raw
+                    ];
+                }
             }
         } catch (Exception $e) {
             Log::error('Dropbox uploadFile error: ' . $e->getMessage());
@@ -281,28 +290,37 @@ class DropboxService
      */
     private function requestDropbox($url, $body = [], $asJson = false)
     {
-        $this->ensureValidToken();
-        $token = $this->getDropboxToken();
-
-        $headers = [
-            'Authorization' => 'Bearer ' . $token,
-            'Content-Type' => 'application/json',
-        ];
-
         try {
-            $response = $this->client->request('POST', $url, [
-                'headers' => $headers,
-                'body' => !empty($body) ? json_encode($body) : null,
-                'http_errors' => false,
-            ]);
-            $status = $response->getStatusCode();
-            $res = $response->getBody()->getContents();
+            for ($attempt = 0; $attempt < 2; $attempt++) {
+                $token = $attempt === 0 ? $this->getDropboxToken() : $this->refreshAccessToken();
 
-            if ($status === 200) {
-                return $asJson ? json_decode($res, true) : $res;
-            } else {
+                $headers = [
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                ];
+
+                $response = $this->client->request('POST', $url, [
+                    'headers' => $headers,
+                    'body' => !empty($body) ? json_encode($body) : null,
+                    'http_errors' => false,
+                    'verify' => false,
+                ]);
+                $status = $response->getStatusCode();
+                $res = $response->getBody()->getContents();
+                $data = json_decode($res, true);
+
+                if ($status === 200) {
+                    return $asJson ? $data : $res;
+                }
+
+                if ($attempt === 0 && $this->isExpiredTokenResponse($status, $data, (string)$res)) {
+                    Log::warning('Dropbox request token expirado, reintentando con refresh', ['url' => $url]);
+                    continue;
+                }
+
                 Log::warning('Dropbox request (' . $url . ') status: ' . $status . ' | response: ' . $res);
                 sleep(1);
+                break;
             }
         } catch (Exception $e) {
             Log::error('Dropbox request error: ' . $e->getMessage());
@@ -325,14 +343,59 @@ class DropboxService
 
     public function ensureValidToken(): void
     {
-        try {
-            $validToken = $this->vault->getValid($this->clientId);
+        $this->getDropboxToken();
+    }
 
-            if (!$validToken) {
-                $this->refreshAccessToken();
-            }
-        } catch (Exception $e) {
-            $this->refreshAccessToken();
+    private function getVaultToken()
+    {
+        if (!$this->clientId) {
+            return null;
         }
+
+        try {
+            return $this->vault->getValid($this->clientId);
+        } catch (Exception $e) {
+            Log::warning('Dropbox vault getValid error: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function persistAccessToken(string $token, ?Carbon $expiresAt = null): void
+    {
+        $expiresAt = $expiresAt ?: Carbon::now()->addMinutes(210);
+
+        DB::table('oauth_tokens')->updateOrInsert(
+            ['provider' => 'dropbox'],
+            [
+                'access_token' => $token,
+                'expires_at' => $expiresAt
+            ]
+        );
+
+        try {
+            $this->vault->put($this->clientId, $token);
+        } catch (Exception $e) {
+            Log::warning('Dropbox vault put error: ' . $e->getMessage());
+        }
+
+        try {
+            self::setEnvValue($token);
+        } catch (Exception $e) {
+            Log::warning('Dropbox setEnvValue error: ' . $e->getMessage());
+            config(['keys.dropbox' => $token]);
+        }
+    }
+
+    private function isExpiredTokenResponse(int $status, $data, string $raw): bool
+    {
+        if ($status !== 401 && strpos($raw, 'expired_access_token') === false) {
+            return false;
+        }
+
+        if (is_array($data) && isset($data['error_summary']) && strpos($data['error_summary'], 'expired_access_token') !== false) {
+            return true;
+        }
+
+        return strpos($raw, 'expired_access_token') !== false;
     }
 }
