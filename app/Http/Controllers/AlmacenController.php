@@ -1734,9 +1734,13 @@ class AlmacenController extends Controller
                                     'message' => "La serie " . $serie . " no existe en la Base de Datos."
                                 ]);
                             } else {
+                                $idAlmacenDestino = $data->tipo == EnumDocumentoTipo::TRASPASO
+                                    ? $id_almacen_entrada->id_almacen
+                                    : $id_almacen_salida->id_almacen;
+
                                 Producto::where("id", $existe_serie->id)->update([
-                                    'id_almacen' => $id_almacen_salida->id_almacen,
-                                    'status' => 0
+                                    'id_almacen' => $idAlmacenDestino,
+                                    'status' => $data->tipo == EnumDocumentoTipo::TRASPASO && (int)$idAlmacenDestino !== 3 ? 1 : 0
                                 ]);
                                 $productoId = $existe_serie->id;
                                 $serie_afectada = new stdClass();
@@ -2017,9 +2021,11 @@ class AlmacenController extends Controller
                     ->select('producto.id')
                     ->get();
 
+                $nuevoStatus = (int)$tipo_documento == EnumDocumentoTipo::TRASPASO && (int)$almacen->id_almacen === 3 ? 0 : 1;
+
                 foreach ($series as $serie) {
                     DB::table('producto')->where('id', $serie->id)->update([
-                        'status' => 1,
+                        'status' => $nuevoStatus,
                         'id_almacen' => $almacen->id_almacen
                     ]);
                 }
