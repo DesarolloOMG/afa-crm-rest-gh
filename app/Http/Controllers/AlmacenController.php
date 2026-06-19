@@ -831,6 +831,99 @@ class AlmacenController extends Controller
         ]);
     }
 
+    public function almacen_picking_pendiente_data(Request $request): JsonResponse
+    {
+        $auth = json_decode($request->auth);
+        $ventas = $this->picking_pendiente_raw_data((int)$auth->id);
+
+        return response()->json([
+            'code' => 200,
+            'total' => count($ventas),
+            'ventas' => $ventas
+        ]);
+    }
+
+    public function almacen_picking_pendiente_imprimir(Request $request): JsonResponse
+    {
+        $data = json_decode($request->input('data'));
+        $auth = json_decode($request->auth);
+        $documento = (int)($data->documento ?? 0);
+
+        if ($documento <= 0) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'Documento invalido.'
+            ]);
+        }
+
+        $documento_usuario = DB::table('documento')
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('usuario_empresa', 'empresa_almacen.id_empresa', '=', 'usuario_empresa.id_empresa')
+            ->where('documento.id', $documento)
+            ->where('usuario_empresa.id_usuario', (int)$auth->id)
+            ->select('documento.id')
+            ->first();
+
+        if (empty($documento_usuario)) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No se encontro el documento o no tienes permiso para imprimir su picking.'
+            ]);
+        }
+
+        $printserver = rtrim(config('webservice.printserver'), '/');
+
+        if (empty($printserver)) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No esta configurado API_ENDPOINT_PRINTSERVER.'
+            ]);
+        }
+
+        try {
+            $impresion_raw = (new PrintController)->pickingDocumento($documento, (int)$auth->id, $request);
+            $body = @json_decode($impresion_raw->getContent());
+
+            if (empty($body)) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => 'Error desde el printserver.',
+                    'raw' => $impresion_raw->getContent()
+                ]);
+            }
+
+            if ($impresion_raw->getStatusCode() !== 200) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $body->message ?? $body->error ?? 'Error desde el printserver.',
+                    'details' => $body
+                ]);
+            }
+
+            if (empty($body) || (int)($body->code ?? 500) !== 200) {
+                return response()->json([
+                    'code' => 500,
+                    'message' => $body->message ?? 'El printserver no pudo imprimir el picking.',
+                    'raw' => $body
+                ]);
+            }
+
+            $ventas = $this->picking_pendiente_raw_data((int)$auth->id);
+
+            return response()->json([
+                'code' => 200,
+                'message' => $body->message ?? 'Picking impreso correctamente.',
+                'total' => count($ventas),
+                'ventas' => $ventas
+            ]);
+        } catch (Exception $e) {
+            return response()->json([
+                'code' => 500,
+                'message' => 'No se pudo contactar con el printserver: ' . $e->getMessage()
+            ]);
+        }
+    }
+
 
     /**
      * @throws Throwable
@@ -4201,6 +4294,65 @@ class AlmacenController extends Controller
         }
 
         return $ventas_re;
+    }
+
+    private function picking_pendiente_raw_data(int $usuario): array
+    {
+        $ventas = DB::table('documento')
+            ->distinct()
+            ->select(
+                'area.area',
+                'almacen.almacen',
+                'documento.id',
+                'documento.no_venta',
+                'documento.documento_extra',
+                'documento.referencia',
+                'documento.comentario',
+                'documento.problema',
+                'documento.pagado',
+                'documento.id_periodo',
+                'documento.picking',
+                'documento.picking_by',
+                'documento.picking_date',
+                'documento.packing_by',
+                'documento.created_at',
+                'documento_entidad.razon_social AS cliente',
+                'paqueteria.paqueteria',
+                'marketplace.marketplace',
+                'marketplace_area.publico',
+                'usuario.nombre AS usuario',
+                'impresora.nombre AS impresora_picking',
+                'impresora.ip AS impresora_ip'
+            )
+            ->join('empresa_almacen', 'documento.id_almacen_principal_empresa', '=', 'empresa_almacen.id')
+            ->join('usuario_empresa', 'empresa_almacen.id_empresa', '=', 'usuario_empresa.id_empresa')
+            ->join('almacen', 'empresa_almacen.id_almacen', '=', 'almacen.id')
+            ->join('paqueteria', 'documento.id_paqueteria', '=', 'paqueteria.id')
+            ->join('documento_entidad', 'documento_entidad.id', '=', 'documento.id_entidad')
+            ->join('usuario', 'documento.id_usuario', '=', 'usuario.id')
+            ->join('marketplace_area', 'documento.id_marketplace_area', '=', 'marketplace_area.id')
+            ->join('area', 'marketplace_area.id_area', '=', 'area.id')
+            ->join('marketplace', 'marketplace_area.id_marketplace', '=', 'marketplace.id')
+            ->leftJoin('impresora', 'empresa_almacen.id_impresora_picking', '=', 'impresora.id')
+            ->where('documento.id_fase', 3)
+            ->where('documento.status', 1)
+            ->where('documento.id_tipo', 2)
+            ->where('documento.autorizado', 1)
+            ->where('usuario_empresa.id_usuario', $usuario)
+            ->orderBy('documento.created_at', 'ASC')
+            ->get();
+
+        foreach ($ventas as $venta) {
+            $venta->picking_estado = (int)$venta->picking === 1 ? 'Impreso' : 'Pendiente';
+            $venta->puede_imprimir = (int)$venta->problema === 0
+                && (int)$venta->picking === 0
+                && (int)$venta->picking_by === 0
+                && (int)$venta->packing_by === 0
+                && !((int)$venta->publico === 0 && (int)$venta->pagado === 0 && (int)$venta->id_periodo === 1)
+                && !empty($venta->impresora_ip);
+        }
+
+        return $ventas->toArray();
     }
 
     private function prestransferencias_raw_data($fase, $fecha = ""): array

@@ -744,6 +744,11 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('venta/{documento}', 'AlmacenController@almacen_picking_venta');
         });
 
+        $router->group(['prefix' => 'picking-pendiente'], function () use ($router) {
+            $router->get('data', 'AlmacenController@almacen_picking_pendiente_data');
+            $router->post('imprimir', 'AlmacenController@almacen_picking_pendiente_imprimir');
+        });
+
         $router->group(['prefix' => 'packing'], function () use ($router) {
             $router->get('data', 'AlmacenController@almacen_packing_data');
             $router->get('empresa-almacen/{usuario}', 'AlmacenController@almacen_packing_empresa_almacen');

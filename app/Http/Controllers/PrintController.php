@@ -84,6 +84,14 @@ class PrintController extends Controller
         return $this->forwardRequest('GET', "api/guias/print/" . $documento . "/" . $impresora, $request);
     }
 
+    public function pickingDocumento($documento, $usuario, Request $request): JsonResponse
+    {
+        return $this->forwardRequest('POST', 'api/picking/documento', $request, [
+            'documento' => $documento,
+            'usuario' => $usuario
+        ]);
+    }
+
     public function manifiestoSalida($array, Request $request): JsonResponse
     {
         return $this->forwardRequest('POST', "api/manifiesto/salida", $request, $array);
