@@ -628,6 +628,12 @@ class AlmacenController extends Controller
                         "color" => "red-border-top"
                     ]);
                 }
+
+                return response()->json([
+                    "code" => 500,
+                    "message" => $validar_buffered->mensaje,
+                    "color" => "red-border-top"
+                ]);
             }
 
             if ($validar_buffered->estatus) {

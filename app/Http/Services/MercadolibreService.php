@@ -1541,16 +1541,22 @@ class MercadolibreService
     public static function validarPendingBuffered($documento)
     {
         $response = new stdClass();
+        $response->error = 0;
+        $response->estatus = false;
+        $response->mensaje = "";
+        $response->substatus = "";
 
         $marketplace = DB::select("SELECT
                                         marketplace_area.id,
                                         marketplace_api.extra_2,
                                         marketplace_api.app_id,
                                         marketplace_api.secret,
-                                        documento.no_venta
+                                        documento.no_venta,
+                                        paqueteria.paqueteria
                                     FROM documento
                                     INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                                     INNER JOIN marketplace_api ON marketplace_area.id = marketplace_api.id_marketplace_area
+                                    LEFT JOIN paqueteria ON documento.id_paqueteria = paqueteria.id
                                     WHERE documento.id = " . $documento . "");
 
         if (empty($marketplace)) {
@@ -1564,6 +1570,15 @@ class MercadolibreService
         }
 
         $marketplace = $marketplace[0];
+
+        $paqueteria = isset($marketplace->paqueteria) ? trim($marketplace->paqueteria) : "";
+        $no_venta = isset($marketplace->no_venta) ? trim($marketplace->no_venta) : "";
+
+        if (strcasecmp($paqueteria, "Soporte") === 0 && strtoupper($no_venta) === "N/A") {
+            $response->mensaje = "Se omite validacion de MercadoLibre para pedido de soporte sin venta.";
+            return $response;
+        }
+
         $token = self::token($marketplace->app_id, $marketplace->secret);
         $seller = self::seller($marketplace->extra_2, $token);
 
