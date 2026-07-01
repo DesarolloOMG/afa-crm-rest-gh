@@ -1833,13 +1833,10 @@ class AlmacenController extends Controller
                                     'message' => "La serie " . $serie . " no existe en la Base de Datos."
                                 ]);
                             } else {
-                                $idAlmacenDestino = $data->tipo == EnumDocumentoTipo::TRASPASO
-                                    ? $id_almacen_entrada->id_almacen
-                                    : $id_almacen_salida->id_almacen;
-
+                                // En traspasos, la serie queda reservada hasta afectar el documento.
                                 Producto::where("id", $existe_serie->id)->update([
-                                    'id_almacen' => $idAlmacenDestino,
-                                    'status' => $data->tipo == EnumDocumentoTipo::TRASPASO && (int)$idAlmacenDestino !== 3 ? 1 : 0
+                                    'id_almacen' => $id_almacen_salida->id_almacen,
+                                    'status' => 0
                                 ]);
                                 $productoId = $existe_serie->id;
                                 $serie_afectada = new stdClass();

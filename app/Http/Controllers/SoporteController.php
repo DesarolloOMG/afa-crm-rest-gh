@@ -27,6 +27,8 @@ use Illuminate\Support\Facades\DB;
 
 class SoporteController extends Controller
 {
+    const SOPORTE_TEST_USER_ID = 51;
+
     /*  Soporte > garantías y devoluciones */
     public function soporte_garantia_devolucion_data()
     {
@@ -2921,7 +2923,8 @@ class SoporteController extends Controller
         if (!empty($garantia_pedido)) {
             $query .= " AND (documento_garantia.id = " . $garantia_pedido . " OR documento.id = " . $garantia_pedido . ")";
         } else {
-            if ($usuario != 0) {
+            $usuario = (int)$usuario;
+            if ($usuario != 0 && $usuario !== self::SOPORTE_TEST_USER_ID) {
                 $query .= " AND documento_garantia.asigned_to = " . $usuario;
             }
 
