@@ -6634,6 +6634,7 @@ class GeneralController extends Controller
                 'documento.status',
                 'documento.id_tipo',
                 'documento.no_venta',
+                'documento.comentario',
                 'documento_fase.fase',
                 'documento.nota'
             )
@@ -6678,8 +6679,14 @@ class GeneralController extends Controller
 
         foreach ($data->ventasML as $ml) {
             foreach ($ml->ventas as $venta) {
-                $match = array_filter($data->ventasCRM, function ($crm) use ($venta) {
-                    return $crm->no_venta === strval($venta->venta);
+                $mlVenta = trim((string)$venta->venta);
+                $mlPack = trim((string)($ml->id ?? ''));
+
+                $match = array_filter($data->ventasCRM, function ($crm) use ($mlVenta, $mlPack) {
+                    $crmVenta = trim((string)($crm->no_venta ?? ''));
+                    $crmPack = trim((string)($crm->comentario ?? ''));
+
+                    return $crmVenta === $mlVenta || ($mlPack !== '' && $crmPack === $mlPack);
                 });
 
                 if (!empty($match)) {

@@ -3185,6 +3185,96 @@ class AlmacenController extends Controller
         $id_almacen_entrada = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_principal)[0];
         $id_almacen_salida = DB::select("SELECT id_almacen FROM empresa_almacen WHERE id = " . $data->id_almacen_secundario)[0];
 
+        $series_no_existen = [];
+        $series_invalidas = [];
+
+        foreach ($data->productos as $producto) {
+            if (empty($producto->serie)) {
+                continue;
+            }
+
+            $sku = trim($producto->sku);
+
+            if (empty($producto->series)) {
+                $series_invalidas[] = [
+                    "sku" => $sku,
+                    "serie" => "",
+                    "mensaje" => "No se capturaron series para el SKU " . $sku . "."
+                ];
+                continue;
+            }
+
+            $modelo_validacion = DB::table("modelo")
+                ->select("id")
+                ->where("sku", $sku)
+                ->first();
+
+            foreach ($producto->series as $serie) {
+                $serie_limpia = trim(str_replace(["'", '\\'], '', $serie));
+
+                if ($serie_limpia === "") {
+                    continue;
+                }
+
+                if (empty($modelo_validacion)) {
+                    $series_invalidas[] = [
+                        "sku" => $sku,
+                        "serie" => $serie_limpia,
+                        "mensaje" => "No existe el SKU " . $sku . " en la Base de Datos."
+                    ];
+                    continue;
+                }
+
+                $existe_serie = DB::table("producto")
+                    ->select("id", "id_modelo", "id_almacen", "status")
+                    ->where("serie", $serie_limpia)
+                    ->first();
+
+                if (empty($existe_serie)) {
+                    $series_no_existen[] = [
+                        "sku" => $sku,
+                        "serie" => $serie_limpia
+                    ];
+                    continue;
+                }
+
+                if ((int)$existe_serie->id_modelo !== (int)$modelo_validacion->id) {
+                    $series_invalidas[] = [
+                        "sku" => $sku,
+                        "serie" => $serie_limpia,
+                        "mensaje" => "La serie " . $serie_limpia . " no pertenece al SKU " . $sku . "."
+                    ];
+                    continue;
+                }
+
+                if ((int)$existe_serie->id_almacen !== (int)$id_almacen_salida->id_almacen) {
+                    $series_invalidas[] = [
+                        "sku" => $sku,
+                        "serie" => $serie_limpia,
+                        "mensaje" => "La serie " . $serie_limpia . " no pertenece al almacen de salida."
+                    ];
+                    continue;
+                }
+
+                if ((int)$existe_serie->status !== 1) {
+                    $series_invalidas[] = [
+                        "sku" => $sku,
+                        "serie" => $serie_limpia,
+                        "mensaje" => "La serie " . $serie_limpia . " no esta disponible para transferencia."
+                    ];
+                }
+            }
+        }
+
+        if (!empty($series_no_existen) || !empty($series_invalidas)) {
+            return response()->json([
+                "code" => 500,
+                "message" => "No se puede crear el traspaso porque una o mas series no son validas.",
+                "series_no_existen" => $series_no_existen,
+                "series_invalidas" => $series_invalidas
+            ], 500);
+        }
+
         $bd = DB::select("SELECT
                             empresa.bd
                         FROM empresa_almacen
@@ -3198,6 +3288,9 @@ class AlmacenController extends Controller
             ]);
         }
 
+        DB::beginTransaction();
+
+        try {
         $documento = DB::table('documento')->insertGetId([
             'id_almacen_principal_empresa'  => $data->id_almacen_principal,
             'id_almacen_secundario_empresa' => $data->id_almacen_secundario,
@@ -3270,23 +3363,21 @@ class AlmacenController extends Controller
             if ($producto->serie) {
                 foreach ($producto->series as $serie) {
                     $serie = str_replace(["'", '\\'], '', $serie);
-                    $existe_serie = DB::select("SELECT id, id_almacen FROM producto WHERE serie = '" . TRIM($serie) . "'");
+                    $existe_serie = DB::table("producto")
+                        ->select("id", "id_almacen")
+                        ->where("serie", trim($serie))
+                        ->where("id_modelo", $modelo)
+                        ->first();
 
                     if (empty($existe_serie)) {
-                        $producto_id = DB::table('producto')->insertGetId([
-                            'id_modelo' => $modelo,
-                            'id_almacen' => $id_almacen_salida->id_almacen,
-                            'serie' => TRIM($serie),
-                            'status' => 0
-                        ]);
+                        throw new Exception("La serie " . trim($serie) . " no existe en la Base de Datos.");
                     } else {
-                        DB::table('producto')->where(['id' => $existe_serie[0]->id])->update([
-                            'id_modelo' => $modelo,
+                        DB::table('producto')->where(['id' => $existe_serie->id])->update([
                             'id_almacen' => $id_almacen_entrada->id_almacen,
                             'status' => 0
                         ]);
 
-                        $producto_id = $existe_serie[0]->id;
+                        $producto_id = $existe_serie->id;
                     }
                     # Se inserta la relación de la solicitud de transferencia con la serie
                     DB::table('movimiento_producto')->insert([
@@ -3320,11 +3411,21 @@ class AlmacenController extends Controller
 
         $traspaso_message = "Documento finalizado correctamente";
 
+        DB::commit();
+
         return response()->json([
             'code'  => 200,
             'message'   => "Traspaso creado correctamente." . $traspaso_message,
             'documento' => $documento
         ]);
+        } catch (Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'code' => 500,
+                'message' => "Ocurrio un error al crear el traspaso: " . $e->getMessage() . " " . self::logVariableLocation()
+            ], 500);
+        }
     }
 
     /**
