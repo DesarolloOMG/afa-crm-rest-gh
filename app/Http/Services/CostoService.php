@@ -6,8 +6,12 @@ use DB;
 
 class CostoService
 {
-    public const ROBERTO_HERNANDEZ_ID = 160;
-    public const ROBERTO_HERNANDEZ_NOMBRE = 'ROBERTO GARCIA HERNANDEZ';
+    public const USUARIOS_RECALCULO_IDS = [160, 51, 78];
+    public const USUARIOS_RECALCULO_NOMBRES = [
+        'ROBERTO GARCIA HERNANDEZ',
+        'SAUL ADRIAN ARIAS LORETO',
+        'EFREN ZAMORA GARZA',
+    ];
     public const NIVEL_ALMACEN_ID = 7;
     public const SUBNIVEL_ADMINISTRADOR_ID = 1;
 
@@ -53,7 +57,8 @@ class CostoService
     }
 
     /**
-     * Permite Administrador de Almacen (nivel 7/subnivel 1) o Roberto Hernandez.
+     * Permite Administrador de Almacen (nivel 7/subnivel 1) o los usuarios
+     * autorizados expresamente para ejecutar el recalculo.
      * La validacion se realiza contra la BD y no depende solo del token/frontend.
      */
     public static function usuarioPuedeRecalcular(int $idUsuario): bool
@@ -69,8 +74,8 @@ class CostoService
         }
 
         $nombre = mb_strtoupper(trim((string) $usuario->nombre), 'UTF-8');
-        if ($idUsuario === self::ROBERTO_HERNANDEZ_ID
-            || $nombre === self::ROBERTO_HERNANDEZ_NOMBRE) {
+        if (in_array($idUsuario, self::USUARIOS_RECALCULO_IDS, true)
+            || in_array($nombre, self::USUARIOS_RECALCULO_NOMBRES, true)) {
             return true;
         }
 
