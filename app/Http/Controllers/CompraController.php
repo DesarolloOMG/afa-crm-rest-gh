@@ -10,6 +10,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
 use App\Http\Services\CompraService;
+use App\Http\Services\CostoService;
 use App\Http\Services\DocumentoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
@@ -58,20 +59,21 @@ class CompraController extends Controller
             ]);
         }
 
-        if (strpos(TRIM($data->proveedor->rfc), 'XEXX010101000') === false) {
-            $entidad = $data->proveedor->id;
-        } else {
-            //Preguntar
-            $entidad = DB::table('documento_entidad')->insertGetId([
-                'tipo' => 2,
-                'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
-                'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
-                'telefono' => !empty($data->proveedor->telefono) && !is_null($data->proveedor->telefono) ? $data->proveedor->telefono : "",
-                'correo' => !empty($data->proveedor->email) && !is_null($data->proveedor->email) ? $data->proveedor->email : ""
-            ]);
-        }
-
+        DB::beginTransaction();
         try {
+            if (strpos(TRIM($data->proveedor->rfc), 'XEXX010101000') === false) {
+                $entidad = $data->proveedor->id;
+            } else {
+                //Preguntar
+                $entidad = DB::table('documento_entidad')->insertGetId([
+                    'tipo' => 2,
+                    'razon_social' => mb_strtoupper($data->proveedor->razon, 'UTF-8'),
+                    'rfc' => mb_strtoupper($data->proveedor->rfc, 'UTF-8'),
+                    'telefono' => !empty($data->proveedor->telefono) && !is_null($data->proveedor->telefono) ? $data->proveedor->telefono : "",
+                    'correo' => !empty($data->proveedor->email) && !is_null($data->proveedor->email) ? $data->proveedor->email : ""
+                ]);
+            }
+
             $documento = DB::table('documento')->insertGetId([
                 'id_tipo' => 1,
                 'id_almacen_principal_empresa' => (int)$data->almacen,
@@ -116,23 +118,25 @@ class CompraController extends Controller
                 ]);
             }
 
-//            InventarioService::aplicarMovimiento($documento);
-        } catch (Exception $e) {
-            if (isset($documento)) {
-                DB::table('documento')->where(['id' => $documento])->delete();
+            /* $documento es documento.id de la COMPRA recién creada.
+               El SP vuelve a validar que id_tipo = 1 y status = 1. */
+            CostoService::recalcularPorCompra((int)$documento);
+
+            if (!empty($data->seguimiento)) {
+                DB::table("seguimiento")->insert([
+                    "id_documento" => $documento,
+                    "id_usuario" => $auth->id,
+                    "seguimiento" => $data->seguimiento
+                ]);
             }
+
+            DB::commit();
+        } catch (Throwable $e) {
+            DB::rollBack();
 
             return response()->json([
                 'code' => 500,
                 'message' => "No fue posible crear la compra, error: " . $e->getMessage()
-            ]);
-        }
-
-        if (!empty($data->seguimiento)) {
-            DB::table("seguimiento")->insert([
-                "id_documento" => $documento,
-                "id_usuario" => $auth->id,
-                "seguimiento" => $data->seguimiento
             ]);
         }
 

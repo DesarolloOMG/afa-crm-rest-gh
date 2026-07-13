@@ -145,6 +145,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('costo/{producto}', 'GeneralController@general_busqueda_producto_costo');
                 $router->get('precio/{producto}/{fecha}', 'GeneralController@general_busqueda_producto_precio');
                 $router->post('existencia', 'GeneralController@general_busqueda_producto_existencia');
+                $router->post('costo/recalcular', 'GeneralController@general_busqueda_producto_recalcular_costo');
             });
 
             $router->group(['prefix' => 'venta'], function () use ($router) {

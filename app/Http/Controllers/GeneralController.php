@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
 use App\Http\Services\DocumentoService;
+use App\Http\Services\CostoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
 use App\Http\Services\MercadolibreService;
@@ -64,6 +65,66 @@ class GeneralController extends Controller
             'empresas' => $empresas,
             'tipos_documento' => $tipos_documento
         ]);
+    }
+
+    /**
+     * Simula o aplica el recálculo general de costos.
+     * Disponible solo para Administrador de Almacén y Roberto Hernández.
+     */
+    public function general_busqueda_producto_recalcular_costo(Request $request)
+    {
+        set_time_limit(0);
+        $auth = json_decode($request->auth);
+
+        if (empty($auth->id) || !CostoService::usuarioPuedeRecalcular((int)$auth->id)) {
+            return response()->json([
+                'code' => 403,
+                'message' => 'No tienes permiso para recalcular costos.',
+            ], 403);
+        }
+
+        $aplicar = filter_var($request->input('aplicar', false), FILTER_VALIDATE_BOOLEAN);
+        $sku = trim((string)$request->input('sku', ''));
+        $idModelo = 0;
+
+        if ($sku !== '') {
+            $idModelo = (int)DB::table('modelo')->where('sku', $sku)->value('id');
+            if ($idModelo <= 0) {
+                return response()->json([
+                    'code' => 404,
+                    'message' => 'No se encontró el SKU indicado.',
+                ], 404);
+            }
+        }
+
+        try {
+            if ($aplicar) {
+                DB::beginTransaction();
+            }
+
+            $resultado = CostoService::recalcular($idModelo, 0, $aplicar);
+
+            if ($aplicar) {
+                DB::commit();
+            }
+
+            return response()->json([
+                'code' => 200,
+                'message' => $aplicar
+                    ? 'Los costos se actualizaron correctamente.'
+                    : 'Simulación de costos generada correctamente.',
+                'resultado' => $resultado,
+            ]);
+        } catch (\Throwable $e) {
+            if ($aplicar && DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'code' => 500,
+                'message' => 'No fue posible recalcular los costos: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
@@ -230,10 +291,10 @@ class GeneralController extends Controller
             ->where('id_modelo', $modelo->id)
             ->first();
 
-        $ultimo_costo_producto = 0;
+        $costo_promedio_producto = 0;
 
         if ($modelo_costo) {
-            $ultimo_costo_producto = $modelo_costo->costo_promedio;
+            $costo_promedio_producto = $modelo_costo->costo_promedio;
         }
 
         // Buscar el último precio registrado (puede ser null)
@@ -245,7 +306,7 @@ class GeneralController extends Controller
         $producto_catalogo = [
             'codigo' => $modelo->sku,
             'descripcion' => $modelo->descripcion,
-            'costo_promedio' => $ultimo_costo_producto, // o null si prefieres
+            'costo_promedio' => $costo_promedio_producto, // o null si prefieres
             'precio' => $precio,
             'tipo_producto' => $modelo->cat1,
             'marca' => $modelo->cat2,
@@ -2446,7 +2507,7 @@ class GeneralController extends Controller
 
         $sheet->setCellValue('A1', 'CODIGO');
         $sheet->setCellValue('B1', 'DESCRIPCION');
-        $sheet->setCellValue('C1', 'ULT. COSTO');
+        $sheet->setCellValue('C1', 'COSTO PROMEDIO');
         $sheet->setCellValue('D1', 'CANTIDAD DE VENTAS');
         $sheet->setCellValue('E1', 'COSTO DE VENTAS');
         $sheet->setCellValue('F1', 'PRECIO DE VENTAS');
@@ -2457,12 +2518,14 @@ class GeneralController extends Controller
                                 modelo.descripcion,
                                 COUNT(*) AS cantidad_venta,
                                 SUM(movimiento.cantidad) AS cantidad_productos,
-                                ROUND(SUM(movimiento.precio * movimiento.cantidad * documento.tipo_cambio), 2) AS precio_venta
+                                ROUND(SUM(movimiento.precio * movimiento.cantidad * documento.tipo_cambio), 2) AS precio_venta,
+                                COALESCE(NULLIF(MAX(modelo_costo.costo_promedio), 0), MAX(modelo.costo), 0) AS costo_promedio
                             FROM documento
                             INNER JOIN marketplace_area ON documento.id_marketplace_area = marketplace_area.id
                             INNER JOIN area ON marketplace_area.id_area = area.id
                             INNER JOIN movimiento ON documento.id = movimiento.id_documento
                             INNER JOIN modelo ON movimiento.id_modelo = modelo.id
+                            LEFT JOIN modelo_costo ON modelo_costo.id_modelo = modelo.id
                             INNER JOIN empresa_almacen ON documento.id_almacen_principal_empresa = empresa_almacen.id
                             INNER JOIN empresa ON empresa_almacen.id_empresa = empresa.id
                             WHERE documento.id_tipo = 2
@@ -2472,31 +2535,13 @@ class GeneralController extends Controller
                             GROUP BY modelo.id");
 
         foreach ($productos as $producto) {
-            $ultimo_costo = @json_decode(file_get_contents(config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode(trim($producto->sku))));
-
-            if (empty($ultimo_costo)) {
-                return response()->json([
-                    'code' => 500,
-                    'message' => "No se pudo obtener el ultimo costo del producto " . $producto->sku . ""
-                ]);
-            }
-
-            if (is_array($ultimo_costo)) {
-                if (count($ultimo_costo) > 1) {
-                    return response()->json([
-                        'code' => 500,
-                        'message' => "Se encontró registrado dos veces el producto " . $producto->sku . ""
-                    ]);
-                }
-            }
-
-            $producto->ultimo_costo = round($ultimo_costo[0]->ultimo_costo, 2);
-            $producto->costo_venta = round($producto->ultimo_costo * $producto->cantidad_productos, 2);
+            $producto->costo_promedio = round((float) $producto->costo_promedio, 2);
+            $producto->costo_venta = round($producto->costo_promedio * $producto->cantidad_productos, 2);
             $producto->utilidad = round((float) $producto->precio_venta - (float) $producto->costo_venta, 2);
 
             $sheet->setCellValue('A' . $fila, $producto->sku);
             $sheet->setCellValue('B' . $fila, $producto->descripcion);
-            $sheet->setCellValue('C' . $fila, (float) $producto->ultimo_costo);
+            $sheet->setCellValue('C' . $fila, (float) $producto->costo_promedio);
             $sheet->setCellValue('D' . $fila, (float) $producto->cantidad_venta);
             $sheet->setCellValue('E' . $fila, (float) $producto->costo_venta);
             $sheet->setCellValue('F' . $fila, (float) $producto->precio_venta);
@@ -2945,7 +2990,10 @@ class GeneralController extends Controller
                 $sheet->setCellValue('L' . $contador_fila, $producto->subtotal);
                 $sheet->setCellValue('M' . $contador_fila, $producto->iva);
                 $sheet->setCellValue('N' . $contador_fila, $producto->total);
-                $sheet->setCellValue('O' . $contador_fila, $producto->costoOcostopromedio);
+                $sheet->setCellValue(
+                    'O' . $contador_fila,
+                    CostoService::obtenerCostoPromedioPorSku($producto->sku)
+                );
                 $sheet->setCellValue('P' . $contador_fila, $documento->uuid);
                 $sheet->setCellValue('Q' . $contador_fila, $documento->fecha);
 
@@ -3417,7 +3465,7 @@ class GeneralController extends Controller
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
         $sheet->setCellValue('C1', 'MARCA');
         $sheet->setCellValue('D1', 'VERTICAL');
-        $sheet->setCellValue('E1', 'COSTO');
+        $sheet->setCellValue('E1', 'COSTO PROMEDIO');
         $sheet->setCellValue('F1', 'EXISTENCIA');
         $sheet->setCellValue('G1', 'FECHA ULTIMA COMPRA');
         $sheet->setCellValue('H1', 'CANTIDAD ULTIMA COMPRA');
@@ -3486,7 +3534,7 @@ class GeneralController extends Controller
         $sheet->setCellValue('B1', 'DESCRIPCIÓN');
         $sheet->setCellValue('C1', 'CANTIDAD');
         $sheet->setCellValue('D1', 'TOTAL');
-        $sheet->setCellValue('E1', 'ÚLTIMO COSTO');
+        $sheet->setCellValue('E1', 'COSTO PROMEDIO');
         $sheet->setCellValue('F1', 'ALMACENES');
         $sheet->setCellValue('G1', 'EXISTENCIAS');
 
@@ -3529,7 +3577,7 @@ class GeneralController extends Controller
 
         $modeloIds = $productos->pluck('id_modelo')->all();
 
-        // 2) Último costo por modelo: modelo_costo más reciente, si 0/null → modelo.costo
+        // 2) Costo promedio vigente por modelo; si es 0/null, usar modelo.costo.
         $costosProm = DB::table('modelo_costo as mc1')
             ->join(DB::raw('(SELECT id_modelo, MAX(id) AS max_id FROM modelo_costo GROUP BY id_modelo) t'), function ($j) {
                 $j->on('t.id_modelo', '=', 'mc1.id_modelo')->on('t.max_id', '=', 'mc1.id');
@@ -3570,7 +3618,7 @@ class GeneralController extends Controller
 
             $costoProm = isset($costosProm[$id]) ? (float)$costosProm[$id] : null;
             $costoBase = isset($costosBase[$id]) ? (float)$costosBase[$id] : 0.0;
-            $ultimoCosto = ($costoProm !== null && $costoProm > 0) ? $costoProm : $costoBase;
+            $costoPromedio = ($costoProm !== null && $costoProm > 0) ? $costoProm : $costoBase;
 
             // Almacenes con existencia ≠ 0
             $almacenesArr = $existenciasPorModelo[$id] ?? [];
@@ -3586,7 +3634,7 @@ class GeneralController extends Controller
             $existenciasTxt = $existenciasTxt !== '' ? substr($existenciasTxt, 0, -1) : '';
 
             // Añadir campos que espera el front
-            $p->ultimo_costo = round($ultimoCosto, 2);
+            $p->costo_promedio = round($costoPromedio, 2);
             $p->almacenes    = $almacenesArr;
 
             // Escribir fila en Excel
@@ -3594,7 +3642,7 @@ class GeneralController extends Controller
             $sheet->setCellValue('B' . $fila, $p->descripcion);
             $sheet->setCellValue('C' . $fila, (int)$p->cantidad);
             $sheet->setCellValue('D' . $fila, (float)$p->total);
-            $sheet->setCellValue('E' . $fila, (float)$p->ultimo_costo);
+            $sheet->setCellValue('E' . $fila, (float)$p->costo_promedio);
             $sheet->setCellValue('F' . $fila, $almacenesTxt);
             $sheet->setCellValue('G' . $fila, $existenciasTxt);
 
@@ -3621,7 +3669,7 @@ class GeneralController extends Controller
         $writer->save($file);
 
         $json['code']  = 200;
-        $json['data']  = $productos; // incluye almacenes[] y ultimo_costo
+        $json['data']  = $productos; // incluye almacenes[] y costo_promedio
         $json['excel'] = base64_encode(file_get_contents($file));
 
         @unlink($file);
@@ -4835,7 +4883,7 @@ class GeneralController extends Controller
         $sheet->setCellValue('B1', 'TITULO');
         $sheet->setCellValue('C1', 'SKU');
         $sheet->setCellValue('D1', 'DESCRIPCION');
-        $sheet->setCellValue('E1', 'COSTO');
+        $sheet->setCellValue('E1', 'COSTO PROMEDIO');
         $sheet->setCellValue('F1', 'PRECIO');
         $sheet->setCellValue('G1', 'INVENTARIO');
         $sheet->setCellValue('H1', 'ESTATUS');
@@ -4866,19 +4914,7 @@ class GeneralController extends Controller
                     $sheet->setCellValue('D' . $fila, $producto->descripcion);
                     $sheet->setCellValue('E' . $fila, 0);
 
-                    $ultimo_costo = @json_decode(file_get_contents(config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode(trim($producto->sku))));
-
-                    if (empty($ultimo_costo)) {
-                        continue;
-                    }
-
-                    if (is_array($ultimo_costo)) {
-                        if (count($ultimo_costo) > 1) {
-                            continue;
-                        }
-                    }
-
-                    $sheet->setCellValue('E' . $fila, round((float) $ultimo_costo[0]->ultimo_costo, 2));
+                    $sheet->setCellValue('E' . $fila, round(CostoService::obtenerCostoPromedioPorSku($producto->sku), 2));
 
                     $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                     $spreadsheet->getActiveSheet()->getStyle("E" . $fila . ":F" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
@@ -4930,7 +4966,7 @@ class GeneralController extends Controller
         $sheet->setCellValue('B1', 'TITULO');
         $sheet->setCellValue('C1', 'SKU');
         $sheet->setCellValue('D1', 'DESCRIPCION');
-        $sheet->setCellValue('E1', 'COSTO');
+        $sheet->setCellValue('E1', 'COSTO PROMEDIO');
         $sheet->setCellValue('F1', 'PRECIO');
         $sheet->setCellValue('G1', 'INVENTARIO');
         $sheet->setCellValue('H1', 'ESTATUS');
@@ -4961,19 +4997,7 @@ class GeneralController extends Controller
                     $sheet->setCellValue('D' . $fila, $producto->descripcion);
                     $sheet->setCellValue('E' . $fila, 0);
 
-                    $ultimo_costo = @json_decode(file_get_contents(config('webservice.url') . 'producto/Consulta/Productos/SKU/' . $data->empresa . '/' . rawurlencode(trim($producto->sku))));
-
-                    if (empty($ultimo_costo)) {
-                        continue;
-                    }
-
-                    if (is_array($ultimo_costo)) {
-                        if (count($ultimo_costo) > 1) {
-                            continue;
-                        }
-                    }
-
-                    $sheet->setCellValue('E' . $fila, round((float) $ultimo_costo[0]->ultimo_costo, 2));
+                    $sheet->setCellValue('E' . $fila, round(CostoService::obtenerCostoPromedioPorSku($producto->sku), 2));
 
                     $sheet->getCellByColumnAndRow(3, $fila)->setValueExplicit($producto->sku, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                     $spreadsheet->getActiveSheet()->getStyle("E" . $fila . ":F" . $fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "-"??_);_(@_)');
