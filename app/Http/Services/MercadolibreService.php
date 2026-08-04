@@ -894,11 +894,9 @@ class MercadolibreService
 
     public static function actualizarRTS_com($existe_pack)
     {
-
-        DB::table('documento')->where(['id' => $existe_pack->id])->update([
-            'id_fase' => 3,
+        self::actualizarReadyToShipSinRetroceso([
+            'id' => $existe_pack->id,
         ]);
-
     }
 
     public static function actualizarDelivered_doc_o($venta)
@@ -926,11 +924,9 @@ class MercadolibreService
 
     public static function actualizarRTS_doc_o($venta)
     {
-        DB::table('documento')->where('no_venta', $venta)
-            ->where('status', 1)
-            ->update([
-                'id_fase' => 3,
-            ]);
+        self::actualizarReadyToShipSinRetroceso([
+            'no_venta' => $venta,
+        ]);
     }
 
     public static function importarVenta($venta, $marketplace, $usuario): stdClass
@@ -1196,8 +1192,34 @@ class MercadolibreService
 
     public static function actualizarRTS_doc($venta)
     {
-        DB::table('documento')->where('no_venta', $venta)
+        self::actualizarReadyToShipSinRetroceso([
+            'no_venta' => $venta,
+        ]);
+    }
+
+    /**
+     * Sincroniza ready_to_ship sin degradar un pedido que ya avanzo en CRM.
+     *
+     * La condicion completa vive en el UPDATE para evitar que una importacion
+     * concurrente pueda regresar a fase 3 un documento mientras packing lo
+     * esta finalizando o despues de que ya se le asignaron series.
+     */
+    private static function actualizarReadyToShipSinRetroceso(array $criterios)
+    {
+        return DB::table('documento')
+            ->where($criterios)
             ->where('status', 1)
+            ->whereIn('id_fase', [1, 2, 7])
+            ->where(function ($query) {
+                $query->whereNull('packing_by')
+                    ->orWhere('packing_by', 0);
+            })
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('movimiento')
+                    ->join('movimiento_producto', 'movimiento_producto.id_movimiento', '=', 'movimiento.id')
+                    ->whereRaw('movimiento.id_documento = documento.id');
+            })
             ->update([
                 'id_fase' => 3,
             ]);
