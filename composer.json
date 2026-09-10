@@ -28,8 +28,7 @@
 		"nordsoftware/lumen-cors": "^3.5",
 		"http-interop/http-factory-guzzle": "^1.2",
 		"ext-json": "*",
-		"guzzlehttp/guzzle": "6.5",
-		"spomky-labs/otphp": "10.0.3"
+		"guzzlehttp/guzzle": "6.5"
 	},
 	"require-dev": {
 		"fzaninotto/faker": "~1.4",

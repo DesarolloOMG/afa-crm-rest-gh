@@ -6,8 +6,6 @@ use App\Models\Usuario;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
-use OTPHP\TOTP;
-use ParagonIE\ConstantTime\Base32;
 
 class TotpLoginService
 {
@@ -20,7 +18,13 @@ class TotpLoginService
 
     public function codeForTime(string $secret, int $timestamp): string
     {
-        return TOTP::create($secret, self::PERIOD, 'sha1', 6)->at($timestamp);
+        $counter = intdiv($timestamp, self::PERIOD);
+        $binaryCounter = pack('N2', intdiv($counter, 4294967296), $counter % 4294967296);
+        $hash = hash_hmac('sha1', $binaryCounter, $this->decodeBase32($secret), true);
+        $offset = ord($hash[strlen($hash) - 1]) & 0x0f;
+        $binary = unpack('N', substr($hash, $offset, 4))[1] & 0x7fffffff;
+
+        return str_pad((string)($binary % 1000000), 6, '0', STR_PAD_LEFT);
     }
 
     public function begin(Usuario $user): array
@@ -43,7 +47,7 @@ class TotpLoginService
 
             if (!$record || !$record->pending_expires_at
                 || Carbon::parse($record->pending_expires_at)->lessThanOrEqualTo($now)) {
-                $secret = Base32::encodeUpperUnpadded(random_bytes(20));
+                $secret = $this->encodeBase32(random_bytes(20));
                 $values = [
                     'secret' => Crypt::encryptString($secret),
                     'pending_expires_at' => $now->copy()->addSeconds(self::SETUP_TTL_SECONDS),
@@ -176,10 +180,69 @@ class TotpLoginService
 
     private function provisioningUri(string $secret, string $email): string
     {
-        $totp = TOTP::create($secret, self::PERIOD, 'sha1', 6);
-        $totp->setLabel($email);
-        $totp->setIssuer(self::ISSUER);
-        return $totp->getProvisioningUri();
+        $query = http_build_query([
+            'secret' => $secret,
+            'issuer' => self::ISSUER,
+            'algorithm' => 'SHA1',
+            'digits' => 6,
+            'period' => self::PERIOD,
+        ], '', '&', PHP_QUERY_RFC3986);
+
+        return 'otpauth://totp/' . rawurlencode(self::ISSUER . ':' . $email) . '?' . $query;
+    }
+
+    private function encodeBase32(string $value): string
+    {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        $buffer = 0;
+        $bits = 0;
+        $encoded = '';
+
+        foreach (unpack('C*', $value) as $byte) {
+            $buffer = ($buffer << 8) | $byte;
+            $bits += 8;
+            while ($bits >= 5) {
+                $bits -= 5;
+                $encoded .= $alphabet[($buffer >> $bits) & 31];
+                $buffer &= $bits === 0 ? 0 : (1 << $bits) - 1;
+            }
+        }
+
+        if ($bits > 0) {
+            $encoded .= $alphabet[($buffer << (5 - $bits)) & 31];
+        }
+
+        return $encoded;
+    }
+
+    private function decodeBase32(string $value): string
+    {
+        $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+        $value = strtoupper(rtrim($value, '='));
+        $buffer = 0;
+        $bits = 0;
+        $decoded = '';
+
+        for ($index = 0, $length = strlen($value); $index < $length; $index++) {
+            $digit = strpos($alphabet, $value[$index]);
+            if ($digit === false) {
+                throw new \InvalidArgumentException('El secreto TOTP no tiene un formato Base32 válido.');
+            }
+
+            $buffer = ($buffer << 5) | $digit;
+            $bits += 5;
+            if ($bits >= 8) {
+                $bits -= 8;
+                $decoded .= chr(($buffer >> $bits) & 255);
+                $buffer &= $bits === 0 ? 0 : (1 << $bits) - 1;
+            }
+        }
+
+        if ($decoded === '') {
+            throw new \InvalidArgumentException('El secreto TOTP está vacío.');
+        }
+
+        return $decoded;
     }
 
     private function matchingStep(string $secret, string $code, int $timestamp)
