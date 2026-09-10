@@ -8,13 +8,12 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\GeneralService;
-use App\Http\Services\WhatsAppService;
+use App\Http\Services\TotpLoginService;
 use App\Models\Generalmodel;
 use App\Models\NoficacionUsuario;
 use App\Models\Usuario;
 use App\Models\UsuarioIP;
 use App\Models\UsuarioLoginError;
-use Exception;
 use Httpful\Exception\ConnectionErrorException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,56 +31,88 @@ class AuthController extends Controller
     public function auth_login(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
+        $email = trim(strtolower((string)($data->email ?? '')));
+        $password = $data->password ?? '';
 
-        $existe = Usuario::where("email", $data->email)->first();
+        $existe = Usuario::whereRaw('LOWER(TRIM(email)) = ?', [$email])
+            ->where('status', 1)
+            ->orderBy('id', 'desc')
+            ->first();
 
         if (!$existe) {
+            $correoExiste = Usuario::withTrashed()
+                ->whereRaw('LOWER(TRIM(email)) = ?', [$email])
+                ->exists();
+
             UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => "Correo electronico no encontrado"
+                'email' => $email,
+                'password' => $password,
+                'mensaje' => $correoExiste ? 'Usuario desactivado' : 'Correo electronico no encontrado',
             ]);
 
             return response()->json([
-                "message" => "Usuario no encontrado"
+                'message' => $correoExiste ? 'Usuario desactivado' : 'Usuario no encontrado',
+            ], $correoExiste ? 403 : 404);
+        }
+
+        if (!Hash::check($password, $existe->contrasena)) {
+            UsuarioLoginError::create([
+                'email' => $email,
+                'password' => $password,
+                'mensaje' => 'Contraseña incorrecta',
+            ]);
+
+            return response()->json([
+                'message' => 'Contraseña incorrecta',
             ], 404);
         }
 
-        if (empty($data->wa_code)) {
-            if (!Hash::check($data->password, $existe->contrasena)) {
-                UsuarioLoginError::create([
-                    "email" => $data->email,
-                    "password" => $data->password,
-                    "mensaje" => "Contraseña incorrecta"
-                ]);
+        if (!$existe->api) {
+            $totp = new TotpLoginService();
+            if (!property_exists($data, 'totp_code')) {
+                $challenge = $totp->begin($existe);
+                if ($challenge['state'] === 'locked') {
+                    return response()->json([
+                        'message' => 'Demasiados intentos. Intenta de nuevo más tarde.',
+                    ], 429)->header('Cache-Control', 'no-store')
+                        ->header('Retry-After', (string)$challenge['retry_after']);
+                }
+                if ($challenge['state'] === 'setup') {
+                    return response()->json([
+                        'mfa_setup' => true,
+                        'otpauth_uri' => $challenge['otpauth_uri'],
+                        'expires_in' => $challenge['expires_in'],
+                        'message' => 'Configura tu aplicación autenticadora para continuar.',
+                    ])->header('Cache-Control', 'no-store');
+                }
 
                 return response()->json([
-                    "message" => "Contraseña incorrecta"
-                ], 404);
+                    'mfa_required' => true,
+                    'message' => 'Ingresa el código de tu aplicación autenticadora.',
+                ])->header('Cache-Control', 'no-store');
             }
 
-            return $this->checkAndSendCode($existe);
+            $verification = $totp->verify($existe, $data->totp_code);
+            if (!$verification['accepted']) {
+                UsuarioLoginError::create([
+                    'email' => $email,
+                    'password' => $password,
+                    'mensaje' => $verification['message'],
+                ]);
+                $response = response()->json([
+                    'message' => $verification['message'],
+                    'expired' => !empty($verification['expired']),
+                ], !empty($verification['locked']) ? 429 : 422)->header('Cache-Control', 'no-store');
+                if (!empty($verification['locked'])) {
+                    $response->headers->set('Retry-After', (string)$verification['retry_after']);
+                }
+                return $response;
+            }
         }
 
-        try {
-
-            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
-        } catch (Exception $e) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password,
-                "mensaje" => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'message' => $e->getMessage(),
-                "expired" => $e->getMessage() === 'Código expirado'
-            ], 500);
-        }
-
-        # No es necesario verificar la contraseña de nuevo ya que se verificó al mandar el codigo, solo si necesita rehash
+        # La contraseña ya se verificó; sólo se vuelve a cifrar si el algoritmo cambió.
         if (Hash::needsRehash($existe->contrasena)) {
-            $existe->contrasena = Hash::make($data->password);
+            $existe->contrasena = Hash::make($password);
         }
 
         $existe->last_ip = $request->ip();
@@ -108,8 +139,12 @@ class AuthController extends Controller
     public function auth_reset(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
+        $email = trim(strtolower((string)($data->email ?? '')));
 
-        $existe = Usuario::where("email", $data->email)->first();
+        $existe = Usuario::whereRaw('LOWER(TRIM(email)) = ?', [$email])
+            ->where('status', 1)
+            ->orderBy('id', 'desc')
+            ->first();
 
         if (!$existe) {
             return response()->json([
@@ -117,23 +152,41 @@ class AuthController extends Controller
             ], 404);
         }
 
-        if (empty($data->wa_code)) {
-            return $this->checkAndSendCode($existe);
-        }
-
-        try {
-            $this->validarCodigoAutenticacion($existe->id, $data->wa_code);
-        } catch (Exception $e) {
-            UsuarioLoginError::create([
-                "email" => $data->email,
-                "password" => $data->password ?? '',
-                "mensaje" => $e->getMessage(),
-            ]);
+        $totp = new TotpLoginService();
+        if (!property_exists($data, 'totp_code')) {
+            $status = $totp->authorizationStatus($existe);
+            if (!$status['ready']) {
+                $response = response()->json([
+                    'message' => $status['message'],
+                ], !empty($status['locked']) ? 429 : 409)->header('Cache-Control', 'no-store');
+                if (!empty($status['locked'])) {
+                    $response->headers->set('Retry-After', (string)$status['retry_after']);
+                }
+                return $response;
+            }
 
             return response()->json([
-                'message' => $e->getMessage(),
-                "expired" => $e->getMessage() === 'Código expirado'
-            ], 500);
+                'mfa_required' => true,
+                'message' => 'Ingresa el código de tu aplicación autenticadora.',
+            ])->header('Cache-Control', 'no-store');
+        }
+
+        $verification = $totp->verifyAuthorization($existe, $data->totp_code);
+        if (!$verification['accepted']) {
+            UsuarioLoginError::create([
+                'email' => $email,
+                'password' => '',
+                'mensaje' => $verification['message'],
+            ]);
+
+            $response = response()->json([
+                'message' => $verification['message'],
+                'expired' => !empty($verification['expired']),
+            ], !empty($verification['locked']) ? 429 : 422)->header('Cache-Control', 'no-store');
+            if (!empty($verification['locked'])) {
+                $response->headers->set('Retry-After', (string)$verification['retry_after']);
+            }
+            return $response;
         }
 
         $contrasena = GeneralService::randomString();
@@ -351,68 +404,6 @@ class AuthController extends Controller
         return $usuario;
     }
 
-    /**
-     * @param $existe
-     * @return JsonResponse
-     */
-    public function checkAndSendCode($existe): JsonResponse
-    {
-        $exits_code_user = DB::table("auth_codes")
-            ->where('user', $existe->id)
-            ->where('expires_at', '>', Carbon::now())
-            ->first();
-        try {
-            if (!$exits_code_user) {
-                $code = random_int(100000, 999999);
-
-                $code_expires_at = Carbon::now()->addMinutes(5);
-
-                DB::beginTransaction();
-
-                DB::table('auth_codes')->insert([
-                    'user' => $existe->id,
-                    'code' => $code,
-                    'expires_at' => $code_expires_at
-                ]);
-
-                DB::commit();
-            } else {
-                $code = $exits_code_user->code;
-            }
-
-            $whatsappService = new WhatsAppService();
-
-            $response_whatsapp_service = $whatsappService->send_whatsapp_verification_code($existe->celular, $code);
-
-            return response()->json([
-                'code' => 200,
-                'message' => "Se ha enviado un codigo a tu whatsapp, utilizalo para iniciar sesión",
-                'data' => $response_whatsapp_service
-            ]);
-        } catch (Exception $e) {
-            DB::rollBack();
-
-            return response()->json([
-                "message" => "Hubo un problema con la transacción " . self::logVariableLocation() . ' ' . $e->getMessage(),
-            ], 404);
-        }
-    }
-
-    /** @noinspection PhpUnusedPrivateMethodInspection */
-    private function random_string()
-    {
-        return substr(str_shuffle(str_repeat($x = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ', ceil(10 / strlen($x)))), 1, 10);
-    }
-
-    private static function logVariableLocation(): string
-    {
-        $sis = 'BE'; //Front o Back
-        $ini = 'AS'; //Primera letra del Controlador y Letra de la segunda Palabra: Controller, service
-        $fin = 'UTH'; //Últimas 3 letras del primer nombre del archivo *comPRAcontroller
-        $trace = debug_backtrace()[0];
-        return ('<br>' . $sis . $ini . $trace['line'] . $fin);
-    }
-
     private function make_json($json)
     {
         header('Content-Type: application/json');
@@ -420,28 +411,4 @@ class AuthController extends Controller
         return json_encode($json);
     }
 
-    /**
-     *
-     * @param int $userId
-     * @param int $code
-     * @return void
-     * @throws Exception
-     * //     */
-    private function validarCodigoAutenticacion(int $userId, int $code): void
-    {
-        $authCode = DB::table('auth_codes')
-            ->where('user', $userId)
-            ->where('code', $code)
-            ->first();
-
-        if (!$authCode) {
-            throw new Exception('Código inválido');
-        }
-
-        if ($authCode->expires_at < Carbon::now()) {
-            DB::table('auth_codes')->where('id', $authCode->id)->delete();
-            throw new Exception('Código expirado');
-        }
-        DB::table('auth_codes')->where('id', $authCode->id)->delete();
-    }
 }

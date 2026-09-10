@@ -4,7 +4,7 @@
     "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
     "This file is @generated automatically"
   ],
-  "content-hash": "3f1e5214033a02c7b65536bf3448da6b",
+  "content-hash": "8344fdba915c526bf1671d6bece7cfc4",
   "packages": [
     {
       "name": "authy/php",
@@ -56,6 +56,73 @@
       },
       "abandoned": "twilio/sdk",
       "time": "2019-04-09T01:57:04+00:00"
+    },
+    {
+      "name": "beberlei/assert",
+      "version": "v3.3.4",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/beberlei/assert.git",
+        "reference": "f193f4613c7d7fbcee2c05e4daff4061d49c040e"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/beberlei/assert/zipball/f193f4613c7d7fbcee2c05e4daff4061d49c040e",
+        "reference": "f193f4613c7d7fbcee2c05e4daff4061d49c040e",
+        "shasum": ""
+      },
+      "require": {
+        "ext-ctype": "*",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "ext-simplexml": "*",
+        "php": "^7.1 || ^8.0"
+      },
+      "require-dev": {
+        "friendsofphp/php-cs-fixer": "*",
+        "phpstan/phpstan": "*",
+        "phpunit/phpunit": ">=6.0.0",
+        "yoast/phpunit-polyfills": "^0.1.0"
+      },
+      "suggest": {
+        "ext-intl": "Needed to allow Assertion::count(), Assertion::isCountable(), Assertion::minCount(), and Assertion::maxCount() to operate on ResourceBundles"
+      },
+      "type": "library",
+      "autoload": {
+        "files": [
+          "lib/Assert/functions.php"
+        ],
+        "psr-4": {
+          "Assert\\": "lib/Assert"
+        }
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "BSD-2-Clause"
+      ],
+      "authors": [
+        {
+          "name": "Benjamin Eberlei",
+          "email": "kontakt@beberlei.de",
+          "role": "Lead Developer"
+        },
+        {
+          "name": "Richard Quadling",
+          "email": "rquadling@gmail.com",
+          "role": "Collaborator"
+        }
+      ],
+      "description": "Thin assertion library for input validation in business models.",
+      "keywords": [
+        "assert",
+        "assertion",
+        "validation"
+      ],
+      "support": {
+        "issues": "https://github.com/beberlei/assert/issues",
+        "source": "https://github.com/beberlei/assert/tree/v3.3.4"
+      },
+      "time": "2026-06-10T19:47:05+00:00"
     },
     {
       "name": "clue/stream-filter",
@@ -455,24 +522,23 @@
     },
     {
       "name": "guzzlehttp/guzzle",
-      "version": "6.5.8",
+      "version": "6.5.0",
       "source": {
         "type": "git",
         "url": "https://github.com/guzzle/guzzle.git",
-        "reference": "a52f0440530b54fa079ce76e8c5d196a42cad981"
+        "reference": "dbc2bc3a293ed6b1ae08a3651e2bfd213d19b6a5"
       },
       "dist": {
         "type": "zip",
-        "url": "https://api.github.com/repos/guzzle/guzzle/zipball/a52f0440530b54fa079ce76e8c5d196a42cad981",
-        "reference": "a52f0440530b54fa079ce76e8c5d196a42cad981",
+        "url": "https://api.github.com/repos/guzzle/guzzle/zipball/dbc2bc3a293ed6b1ae08a3651e2bfd213d19b6a5",
+        "reference": "dbc2bc3a293ed6b1ae08a3651e2bfd213d19b6a5",
         "shasum": ""
       },
       "require": {
         "ext-json": "*",
         "guzzlehttp/promises": "^1.0",
-        "guzzlehttp/psr7": "^1.9",
-        "php": ">=5.5",
-        "symfony/polyfill-intl-idn": "^1.17"
+        "guzzlehttp/psr7": "^1.6.1",
+        "php": ">=5.5"
       },
       "require-dev": {
         "ext-curl": "*",
@@ -480,6 +546,7 @@
         "psr/log": "^1.1"
       },
       "suggest": {
+        "ext-intl": "Required for Internationalized Domain Name (IDN) support",
         "psr/log": "Required for using the Log middleware"
       },
       "type": "library",
@@ -502,39 +569,9 @@
       ],
       "authors": [
         {
-          "name": "Graham Campbell",
-          "email": "hello@gjcampbell.co.uk",
-          "homepage": "https://github.com/GrahamCampbell"
-        },
-        {
           "name": "Michael Dowling",
           "email": "mtdowling@gmail.com",
           "homepage": "https://github.com/mtdowling"
-        },
-        {
-          "name": "Jeremy Lindblom",
-          "email": "jeremeamia@gmail.com",
-          "homepage": "https://github.com/jeremeamia"
-        },
-        {
-          "name": "George Mponos",
-          "email": "gmponos@gmail.com",
-          "homepage": "https://github.com/gmponos"
-        },
-        {
-          "name": "Tobias Nyholm",
-          "email": "tobias.nyholm@gmail.com",
-          "homepage": "https://github.com/Nyholm"
-        },
-        {
-          "name": "Márk Sági-Kazár",
-          "email": "mark.sagikazar@gmail.com",
-          "homepage": "https://github.com/sagikazarmark"
-        },
-        {
-          "name": "Tobias Schultze",
-          "email": "webmaster@tubo-world.de",
-          "homepage": "https://github.com/Tobion"
         }
       ],
       "description": "Guzzle is a PHP HTTP client library",
@@ -550,23 +587,9 @@
       ],
       "support": {
         "issues": "https://github.com/guzzle/guzzle/issues",
-        "source": "https://github.com/guzzle/guzzle/tree/6.5.8"
+        "source": "https://github.com/guzzle/guzzle/tree/master"
       },
-      "funding": [
-        {
-          "url": "https://github.com/GrahamCampbell",
-          "type": "github"
-        },
-        {
-          "url": "https://github.com/Nyholm",
-          "type": "github"
-        },
-        {
-          "url": "https://tidelift.com/funding/github/packagist/guzzlehttp/guzzle",
-          "type": "tidelift"
-        }
-      ],
-      "time": "2022-06-20T22:16:07+00:00"
+      "time": "2019-12-07T18:20:45+00:00"
     },
     {
       "name": "guzzlehttp/promises",
@@ -2985,6 +3008,73 @@
       "time": "2022-03-24T15:05:17+00:00"
     },
     {
+      "name": "paragonie/constant_time_encoding",
+      "version": "v2.8.2",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/paragonie/constant_time_encoding.git",
+        "reference": "e30811f7bc69e4b5b6d5783e712c06c8eabf0226"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/paragonie/constant_time_encoding/zipball/e30811f7bc69e4b5b6d5783e712c06c8eabf0226",
+        "reference": "e30811f7bc69e4b5b6d5783e712c06c8eabf0226",
+        "shasum": ""
+      },
+      "require": {
+        "php": "^7|^8"
+      },
+      "require-dev": {
+        "phpunit/phpunit": "^6|^7|^8|^9",
+        "vimeo/psalm": "^1|^2|^3|^4"
+      },
+      "type": "library",
+      "autoload": {
+        "psr-4": {
+          "ParagonIE\\ConstantTime\\": "src/"
+        }
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "MIT"
+      ],
+      "authors": [
+        {
+          "name": "Paragon Initiative Enterprises",
+          "email": "security@paragonie.com",
+          "homepage": "https://paragonie.com",
+          "role": "Maintainer"
+        },
+        {
+          "name": "Steve 'Sc00bz' Thomas",
+          "email": "steve@tobtu.com",
+          "homepage": "https://www.tobtu.com",
+          "role": "Original Developer"
+        }
+      ],
+      "description": "Constant-time Implementations of RFC 4648 Encoding (Base-64, Base-32, Base-16)",
+      "keywords": [
+        "base16",
+        "base32",
+        "base32_decode",
+        "base32_encode",
+        "base64",
+        "base64_decode",
+        "base64_encode",
+        "bin2hex",
+        "encoding",
+        "hex",
+        "hex2bin",
+        "rfc4648"
+      ],
+      "support": {
+        "email": "info@paragonie.com",
+        "issues": "https://github.com/paragonie/constant_time_encoding/issues",
+        "source": "https://github.com/paragonie/constant_time_encoding"
+      },
+      "time": "2025-09-24T15:12:37+00:00"
+    },
+    {
       "name": "paragonie/random_compat",
       "version": "v9.99.100",
       "source": {
@@ -4204,6 +4294,81 @@
         "source": "https://github.com/ralouphie/getallheaders/tree/develop"
       },
       "time": "2019-03-08T08:55:37+00:00"
+    },
+    {
+      "name": "spomky-labs/otphp",
+      "version": "v10.0.3",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/Spomky-Labs/otphp.git",
+        "reference": "9784d9f7c790eed26e102d6c78f12c754036c366"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/Spomky-Labs/otphp/zipball/9784d9f7c790eed26e102d6c78f12c754036c366",
+        "reference": "9784d9f7c790eed26e102d6c78f12c754036c366",
+        "shasum": ""
+      },
+      "require": {
+        "beberlei/assert": "^3.0",
+        "ext-mbstring": "*",
+        "paragonie/constant_time_encoding": "^2.0",
+        "php": "^7.2|^8.0",
+        "thecodingmachine/safe": "^0.1.14|^1.0|^2.0"
+      },
+      "require-dev": {
+        "php-coveralls/php-coveralls": "^2.0",
+        "phpstan/phpstan": "^0.12",
+        "phpstan/phpstan-beberlei-assert": "^0.12",
+        "phpstan/phpstan-deprecation-rules": "^0.12",
+        "phpstan/phpstan-phpunit": "^0.12",
+        "phpstan/phpstan-strict-rules": "^0.12",
+        "phpunit/phpunit": "^8.0",
+        "thecodingmachine/phpstan-safe-rule": "^1.0 || ^2.0"
+      },
+      "type": "library",
+      "extra": {
+        "branch-alias": {
+          "v8.3": "8.3.x-dev",
+          "v9.0": "9.0.x-dev",
+          "v10.0": "10.0.x-dev"
+        }
+      },
+      "autoload": {
+        "psr-4": {
+          "OTPHP\\": "src/"
+        }
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "MIT"
+      ],
+      "authors": [
+        {
+          "name": "Florent Morselli",
+          "homepage": "https://github.com/Spomky"
+        },
+        {
+          "name": "All contributors",
+          "homepage": "https://github.com/Spomky-Labs/otphp/contributors"
+        }
+      ],
+      "description": "A PHP library for generating one time passwords according to RFC 4226 (HOTP Algorithm) and the RFC 6238 (TOTP Algorithm) and compatible with Google Authenticator",
+      "homepage": "https://github.com/Spomky-Labs/otphp",
+      "keywords": [
+        "FreeOTP",
+        "RFC 4226",
+        "RFC 6238",
+        "google authenticator",
+        "hotp",
+        "otp",
+        "totp"
+      ],
+      "support": {
+        "issues": "https://github.com/Spomky-Labs/otphp/issues",
+        "source": "https://github.com/Spomky-Labs/otphp/tree/v10.0.3"
+      },
+      "time": "2022-03-17T08:00:35+00:00"
     },
     {
       "name": "symfony/console",
@@ -6008,6 +6173,145 @@
         }
       ],
       "time": "2024-11-08T15:21:10+00:00"
+    },
+    {
+      "name": "thecodingmachine/safe",
+      "version": "v1.3.3",
+      "source": {
+        "type": "git",
+        "url": "https://github.com/thecodingmachine/safe.git",
+        "reference": "a8ab0876305a4cdaef31b2350fcb9811b5608dbc"
+      },
+      "dist": {
+        "type": "zip",
+        "url": "https://api.github.com/repos/thecodingmachine/safe/zipball/a8ab0876305a4cdaef31b2350fcb9811b5608dbc",
+        "reference": "a8ab0876305a4cdaef31b2350fcb9811b5608dbc",
+        "shasum": ""
+      },
+      "require": {
+        "php": ">=7.2"
+      },
+      "require-dev": {
+        "phpstan/phpstan": "^0.12",
+        "squizlabs/php_codesniffer": "^3.2",
+        "thecodingmachine/phpstan-strict-rules": "^0.12"
+      },
+      "type": "library",
+      "extra": {
+        "branch-alias": {
+          "dev-master": "0.1-dev"
+        }
+      },
+      "autoload": {
+        "files": [
+          "deprecated/apc.php",
+          "deprecated/libevent.php",
+          "deprecated/mssql.php",
+          "deprecated/stats.php",
+          "lib/special_cases.php",
+          "generated/apache.php",
+          "generated/apcu.php",
+          "generated/array.php",
+          "generated/bzip2.php",
+          "generated/calendar.php",
+          "generated/classobj.php",
+          "generated/com.php",
+          "generated/cubrid.php",
+          "generated/curl.php",
+          "generated/datetime.php",
+          "generated/dir.php",
+          "generated/eio.php",
+          "generated/errorfunc.php",
+          "generated/exec.php",
+          "generated/fileinfo.php",
+          "generated/filesystem.php",
+          "generated/filter.php",
+          "generated/fpm.php",
+          "generated/ftp.php",
+          "generated/funchand.php",
+          "generated/gmp.php",
+          "generated/gnupg.php",
+          "generated/hash.php",
+          "generated/ibase.php",
+          "generated/ibmDb2.php",
+          "generated/iconv.php",
+          "generated/image.php",
+          "generated/imap.php",
+          "generated/info.php",
+          "generated/ingres-ii.php",
+          "generated/inotify.php",
+          "generated/json.php",
+          "generated/ldap.php",
+          "generated/libxml.php",
+          "generated/lzf.php",
+          "generated/mailparse.php",
+          "generated/mbstring.php",
+          "generated/misc.php",
+          "generated/msql.php",
+          "generated/mysql.php",
+          "generated/mysqli.php",
+          "generated/mysqlndMs.php",
+          "generated/mysqlndQc.php",
+          "generated/network.php",
+          "generated/oci8.php",
+          "generated/opcache.php",
+          "generated/openssl.php",
+          "generated/outcontrol.php",
+          "generated/password.php",
+          "generated/pcntl.php",
+          "generated/pcre.php",
+          "generated/pdf.php",
+          "generated/pgsql.php",
+          "generated/posix.php",
+          "generated/ps.php",
+          "generated/pspell.php",
+          "generated/readline.php",
+          "generated/rpminfo.php",
+          "generated/rrd.php",
+          "generated/sem.php",
+          "generated/session.php",
+          "generated/shmop.php",
+          "generated/simplexml.php",
+          "generated/sockets.php",
+          "generated/sodium.php",
+          "generated/solr.php",
+          "generated/spl.php",
+          "generated/sqlsrv.php",
+          "generated/ssdeep.php",
+          "generated/ssh2.php",
+          "generated/stream.php",
+          "generated/strings.php",
+          "generated/swoole.php",
+          "generated/uodbc.php",
+          "generated/uopz.php",
+          "generated/url.php",
+          "generated/var.php",
+          "generated/xdiff.php",
+          "generated/xml.php",
+          "generated/xmlrpc.php",
+          "generated/yaml.php",
+          "generated/yaz.php",
+          "generated/zip.php",
+          "generated/zlib.php"
+        ],
+        "psr-4": {
+          "Safe\\": [
+            "lib/",
+            "deprecated/",
+            "generated/"
+          ]
+        }
+      },
+      "notification-url": "https://packagist.org/downloads/",
+      "license": [
+        "MIT"
+      ],
+      "description": "PHP core functions that throw exceptions instead of returning FALSE on error",
+      "support": {
+        "issues": "https://github.com/thecodingmachine/safe/issues",
+        "source": "https://github.com/thecodingmachine/safe/tree/v1.3.3"
+      },
+      "time": "2020-10-28T17:51:34+00:00"
     },
     {
       "name": "twilio/sdk",
@@ -8038,13 +8342,13 @@
   ],
   "aliases": [],
   "minimum-stability": "dev",
-  "stability-flags": [],
+  "stability-flags": {},
   "prefer-stable": true,
   "prefer-lowest": false,
   "platform": {
     "php": ">=7.1.3",
     "ext-json": "*"
   },
-  "platform-dev": [],
-  "plugin-api-version": "2.3.0"
+  "platform-dev": {},
+  "plugin-api-version": "2.6.0"
 }

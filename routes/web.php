@@ -1175,10 +1175,18 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'whatsapp'], function () use ($router) {
+        // Alias legado para clientes anteriores a la migración TOTP.
         $router->get('sendWhatsApp', 'WhatsAppController@whatsapp_send');
         $router->get('validateWhatsApp/{code}', 'WhatsAppController@whatsapp_validate');
         $router->post('sendWhatsAppWithOption', 'WhatsAppController@whatsapp_send_with_option');
         $router->post('validateWhatsAppWithOption', 'WhatsAppController@whatsapp_validate_with_option');
+    });
+
+    $router->group(['prefix' => 'authenticator'], function () use ($router) {
+        $router->get('prepare', 'WhatsAppController@whatsapp_send');
+        $router->get('validate/{code}', 'WhatsAppController@whatsapp_validate');
+        $router->post('prepare-with-option', 'WhatsAppController@whatsapp_send_with_option');
+        $router->post('validate-with-option', 'WhatsAppController@whatsapp_validate_with_option');
     });
 
     $router->group(['prefix' => 'developer'], function () use ($router) {

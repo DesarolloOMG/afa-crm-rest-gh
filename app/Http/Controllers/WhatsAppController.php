@@ -10,8 +10,6 @@ use App\Http\Services\WhatsAppService;
 use App\Models\Usuario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class WhatsAppController extends Controller
 {
@@ -19,10 +17,10 @@ class WhatsAppController extends Controller
     {
         $auth = json_decode($request->auth);
 
-        if (!isset($auth->id, $auth->celular)) {
+        if (!isset($auth->id)) {
             return response()->json([
                 'code' => 400,
-                'message' => 'Parámetros incompletos: id y celular requeridos',
+                'message' => 'Parámetros incompletos: id de usuario requerido',
                 'data' => $auth
             ], 400);
         }
@@ -33,7 +31,20 @@ class WhatsAppController extends Controller
     public function whatsapp_send_with_option(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
-        $usuario = Usuario::where("id", $data->usuario)->first();
+        if (!isset($data->usuario)) {
+            return response()->json([
+                'code' => 400,
+                'message' => 'Selecciona el usuario que autorizará la operación.',
+            ], 400);
+        }
+
+        $usuario = Usuario::where('id', $data->usuario)->where('status', 1)->first();
+        if (!$usuario) {
+            return response()->json([
+                'code' => 404,
+                'message' => 'Usuario no encontrado o desactivado.',
+            ], 404);
+        }
 
         return $this->callToServiceSend($usuario);
     }
@@ -42,24 +53,25 @@ class WhatsAppController extends Controller
     {
         $auth = json_decode($request->auth);
 
-        $authCode = DB::table('auth_codes')
-            ->where('user', $auth->id)
-            ->where('code', $code)
-            ->first();
+        $verification = WhatsAppService::validateCode($auth->id, (string)$code);
 
-        return $this->callToServiceValidate($authCode);
+        return $this->callToServiceValidate($verification);
     }
 
     public function whatsapp_validate_with_option(Request $request): JsonResponse
     {
         $data = json_decode($request->input("data"));
 
-        $authCode = DB::table('auth_codes')
-            ->where('user', $data->usuario)
-            ->where('code', $data->token)
-            ->first();
+        if (!isset($data->usuario, $data->token)) {
+            return response()->json([
+                'code' => 400,
+                'message' => 'Usuario y código de autenticador son requeridos.',
+            ], 400);
+        }
 
-        return $this->callToServiceValidate($authCode);
+        $verification = WhatsAppService::validateCode($data->usuario, (string)$data->token);
+
+        return $this->callToServiceValidate($verification);
     }
 
     public static function logVariableLocation(): string
@@ -78,54 +90,38 @@ class WhatsAppController extends Controller
     public function callToServiceSend($auth): JsonResponse
     {
         $whatsappService = new WhatsAppService();
-        $response_whatsapp_service = $whatsappService->sendCode($auth->id, $auth->celular);
+        $response_whatsapp_service = $whatsappService->sendCode($auth->id, $auth->celular ?? '');
 
         $status = $response_whatsapp_service->getStatusCode();
         $responseData = $response_whatsapp_service->getData();
 
         return response()->json([
             'code' => $status,
-            'message' => $responseData->message ?? 'Error al enviar el código',
+            'message' => $responseData->message ?? 'No fue posible preparar la autorización',
             'data' => $responseData
         ], $status);
     }
 
     /**
-     * @param $authCode
+     * @param $verification
      * @return JsonResponse
      */
-    public function callToServiceValidate($authCode): JsonResponse
+    public function callToServiceValidate($verification): JsonResponse
     {
-        if (!$authCode) {
+        if ($verification->error) {
             return response()->json([
-                'code' => 500,
-                'message' => 'Código inválido',
-                "data" => $authCode
-            ], 500);
+                'code' => 422,
+                'message' => $verification->mensaje,
+                'expired' => !empty($verification->expired),
+                'locked' => !empty($verification->locked),
+            ], !empty($verification->locked) ? 429 : 422)
+                ->header('Cache-Control', 'no-store');
         }
-
-        if ($authCode->expires_at < Carbon::now()) {
-            DB::table('auth_codes')
-                ->where('id', $authCode->id)
-                ->delete();
-
-            return response()->json([
-                'code' => 500,
-                'message' => 'Código expirado, vuelve a intentarlo',
-                "data" => $authCode,
-                "expired" => true
-            ], 500);
-        }
-
-        DB::table('auth_codes')
-            ->where('id', $authCode->id)
-            ->delete();
 
         return response()->json([
             'code' => 200,
-            'message' => 'Código correcto',
-            "data" => $authCode,
-        ]);
+            'message' => $verification->mensaje,
+        ])->header('Cache-Control', 'no-store');
     }
 
 }
