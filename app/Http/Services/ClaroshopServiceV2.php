@@ -399,7 +399,7 @@ class ClaroshopServiceV2
                     'id_usuario' => $usuario,
                     'id_moneda' => 3,
                     'id_paqueteria' => $paqueteriaVenta->id ?? 2,
-                    'id_fase' => $fulfillment ? 6 : 1,
+                    'id_fase' => $fulfillment ? 5 : 1,
                     'id_modelo_proveedor' => 0,
                     'id_entidad' => $entidad,
                     'no_venta' => $pedido->orderid,

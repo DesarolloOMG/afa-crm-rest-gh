@@ -899,7 +899,7 @@ class LinioService
 
             if (($venta_data->Proveedor != 0 && $venta_data->fase != 1) || ($producto_fulfillment && $venta_data->fase != 1)) {
                 $venta_data->fulfillment = true;
-                $venta_data->fase = 6;
+                $venta_data->fase = 5;
             }
 
             $venta_data->OrderNumber = $venta_data->fulfillment ? $venta_data->OrderNumber . "F" : $venta_data->OrderNumber;
@@ -952,7 +952,7 @@ class LinioService
 
             if ($venta_data->Proveedor != 0 && $venta_data->fase != 1) {
                 $venta_data->fulfillment = 1;
-                $venta_data->fase = 6;
+                $venta_data->fase = 5;
             }
 
             $existe_venta = DB::table("documento")
@@ -971,7 +971,7 @@ class LinioService
             $venta_data->fulfillment = true;
 
             if ($venta_data->fase != 1) {
-                $venta_data->fase = 6;
+                $venta_data->fase = 5;
             }
 
             foreach ($venta_data->ProductosPublicacion as $producto) {
@@ -1435,7 +1435,7 @@ class LinioService
 
         if ($informacion_documento->fulfillment) {
             $paqueteria_id = 9;
-            $fase = 6;
+            $fase = 5;
         } else {
             foreach ($paqueterias as $paqueteria) {
                 if (strtolower($paqu6teria->paqueteria) === strtolower(explode(" ", $productos[0]->ShipmentProvider)[0])) {

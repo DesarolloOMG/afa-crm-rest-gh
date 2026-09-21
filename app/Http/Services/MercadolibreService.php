@@ -845,7 +845,7 @@ class MercadolibreService
         }
 
         DB::table('documento')->where(['id' => $existe_pack->id])->update([
-            'id_fase' => 6
+            'id_fase' => 5
         ]);
     }
 
@@ -917,7 +917,7 @@ class MercadolibreService
             }
 
             DB::table('documento')->where('id', $documento->id)->update([
-                'id_fase' => 6,
+                'id_fase' => 5,
             ]);
         }
     }
@@ -993,7 +993,7 @@ class MercadolibreService
 
         if ($venta->proveedor != 0) {
             $fulfillment = 1;
-            $venta->fase = 6;
+            $venta->fase = 5;
         }
 
         foreach ($venta->payments ?? [] as $payment) {
@@ -1169,7 +1169,7 @@ class MercadolibreService
             }
 
             DB::table('documento')->where('id', $documento->id)->update([
-                'id_fase' => 6,
+                'id_fase' => 5,
             ]);
         }
     }
@@ -1288,7 +1288,7 @@ class MercadolibreService
         $resultado = self::reconstruirMovimientosDesdeRespuestaValidacion(
             $documentoId,
             $response,
-            (int)($documento->id_fase ?? 0) === 6
+            in_array((int)($documento->id_fase ?? 0), [5, 6], true)
         );
 
         if ($resultado->tiene_movimientos && !$resultado->hay_error) {

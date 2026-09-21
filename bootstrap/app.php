@@ -137,5 +137,6 @@ $app->configure('keys');
 $app->configure('mailgun');
 $app->configure('cors');
 $app->configure('queue');
+$app->configure('nexfira');
 
 return $app;

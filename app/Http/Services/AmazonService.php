@@ -208,7 +208,7 @@ class AmazonService
                     'id_usuario' => $usuario,
                     'id_moneda' => 3,
                     'id_paqueteria' => $venta->paqueteria,
-                    'id_fase' => $venta->fulfillment ? 6 : 1,
+                    'id_fase' => $venta->fulfillment ? 5 : 1,
                     'no_venta' => $venta->venta,
                     'tipo_cambio' => 1,
                     'id_entidad' => $entidad,

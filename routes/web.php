@@ -495,6 +495,15 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->post('relacionar-pdf-xml', 'VentaController@venta_venta_relacionar_pdf_xml');
             $router->get('descargar-pdf-xml/{type}/{document}', 'VentaController@venta_venta_descargar_pdf_xml');
 
+            $router->group(['prefix' => 'facturacion'], function () use ($router) {
+                $router->get('pendientes', 'FacturacionController@pendientes');
+                $router->get('previsualizar/{documento}', 'FacturacionController@previsualizar');
+                $router->post('individual/{documento}', 'FacturacionController@individual');
+                $router->post('global', 'FacturacionController@global');
+                $router->post('solicitud/{solicitud}/actualizar', 'FacturacionController@actualizar');
+                $router->post('externa', 'FacturacionController@externa');
+            });
+
             $router->group(['prefix' => 'importacion'], function () use ($router) {
                 $router->post('', 'VentaController@venta_venta_importacion');
                 $router->get('data', 'VentaController@venta_venta_importacion_data');

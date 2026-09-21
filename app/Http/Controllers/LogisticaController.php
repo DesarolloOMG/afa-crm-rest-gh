@@ -372,7 +372,7 @@ class LogisticaController extends Controller
 //        }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_fase' => in_array($info_documento->id_marketplace_area, [14, 53, 4, 5]) ? 5 : 6, # ahora todas las ventas se pasan a facturas
+            'id_fase' => 5, # todas las ventas se pasan a facturación
             'shipping_date' => date('Y-m-d H:i:s')
         ]);
 
@@ -543,7 +543,7 @@ class LogisticaController extends Controller
 //                }
 
                 DB::table('documento')->where(['id' => $documento])->update([
-                    'id_fase' => 6,
+                    'id_fase' => 5,
                     'shipping_date' => date('Y-m-d H:i:s')
                 ]);
             }

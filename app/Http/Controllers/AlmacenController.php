@@ -427,18 +427,18 @@ class AlmacenController extends Controller
         if ($documento_info->packing_by != 0) {
             //El pedido ya fue surtido y tiene series asignadas
             if ($tiene_series->isNotEmpty()) {
-                //El pedido se manda a fase de Terminado porque ya fue surtido, ya tiene series y documento en comercial
-                DB::table('documento')->where('id', $documento)->update(['id_fase' => 6]);
+                //El pedido queda pendiente de facturación después de surtirse.
+                DB::table('documento')->where('id', $documento)->update(['id_fase' => 5]);
 
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documento,
                     'id_usuario' => 1,
-                    'seguimiento' => "Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas."
+                    'seguimiento' => "Pedido mandado a fase pendiente de factura porque ya fue surtido y tiene series asignadas."
                 ]);
 
                 return response()->json([
                     "code" => 500,
-                    "message" => "El documento " . $documento . " ya fue remisionado. Pedido mandado a fase terminado porque ya fue surtido y tiene series asignadas." . " " . self::logVariableLocation(),
+                    "message" => "El documento " . $documento . " ya fue remisionado. Pedido mandado a fase pendiente de factura porque ya fue surtido y tiene series asignadas." . " " . self::logVariableLocation(),
                     "color" => "red-border-top"
                 ]);
             } else {
@@ -462,18 +462,18 @@ class AlmacenController extends Controller
 
                 if ($debe_tener_serie == 0) {
                     DB::table('documento')->where('id', $documento)->update([
-                        'id_fase' => 6,
+                        'id_fase' => 5,
                     ]);
 
                     DB::table('seguimiento')->insert([
                         'id_documento' => $documento,
                         'id_usuario' => 1,
-                        'seguimiento' => "El pedido ya fue surtido. Se manda a fase de Terminado."
+                        'seguimiento' => "El pedido ya fue surtido. Se manda a fase pendiente de factura."
                     ]);
 
                     return response()->json([
                         "code" => 500,
-                        "message" => "El documento " . $documento . " ya fue surtido. Se manda a fase de Terminado." . " " . self::logVariableLocation(),
+                        "message" => "El documento " . $documento . " ya fue surtido. Se manda a fase pendiente de factura." . " " . self::logVariableLocation(),
                         "color" => "red-border-top"
                     ]);
                 } else {
@@ -613,7 +613,7 @@ class AlmacenController extends Controller
 
                 if ($validar_buffered->substatus == "delivered") {
                     DB::table('documento')->where('id', $documento)->update([
-                        'id_fase' => $informacion->documento_extra != "N/A" ? 6 : 5
+                        'id_fase' => 5
                     ]);
 
                     DB::table('seguimiento')->insert([
@@ -1161,7 +1161,7 @@ class AlmacenController extends Controller
         }
 
         DB::table('documento')->where(['id' => $data->documento])->update([
-            'id_fase' => 6,
+            'id_fase' => 5,
             'packing_by' => $auth->id,
             'packing_date' => date('Y-m-d H:i:s'),
             'shipping_date' => date('Y-m-d H:i:s'),
@@ -1304,7 +1304,7 @@ class AlmacenController extends Controller
         }
 
         DB::table('documento')->where('id', $data->documento)->update([
-            'id_fase' => 6,
+            'id_fase' => 5,
             'packing_by' => $auth->id,
             'packing_date' => date('Y-m-d H:i:s'),
             'shipping_date' => date('Y-m-d H:i:s'),

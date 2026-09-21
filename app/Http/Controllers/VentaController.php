@@ -1335,7 +1335,7 @@ class VentaController extends Controller
 //                    }
 
                     DB::table('documento')->where(['id' => $data->documento->documento])->update([
-                        'id_fase' => 6
+                        'id_fase' => 5
                     ]);
                 }
             }
@@ -2399,7 +2399,7 @@ class VentaController extends Controller
 
         DB::table('documento')->where(['id' => $documento])->update([
             'id_usuario' => $auth->id,
-            'id_fase' => $informacion_documento->fulfillment ? 6 : ($informacion_documento->modificacion ? 2 : 3),
+            'id_fase' => $informacion_documento->fulfillment ? 5 : ($informacion_documento->modificacion ? 2 : 3),
             'validated_at' => date("Y-m-d H:i:s")
         ]);
 
@@ -3709,7 +3709,7 @@ class VentaController extends Controller
                     ]);
                 }
 
-                $soloActualizarProductos = intval($venta->id_fase) === 6;
+                $soloActualizarProductos = in_array(intval($venta->id_fase), [5, 6], true);
 
                 BitacoraService::insertarBitacoraValidarVenta(
                     $documento,
@@ -3944,7 +3944,7 @@ class VentaController extends Controller
                         BitacoraService::insertarBitacoraValidarVenta(
                             $documento,
                             $auth->id,
-                            "No se puede mantener la fase 6 porque el pedido no tiene movimientos."
+                            "No se puede mantener la fase pendiente de factura porque el pedido no tiene movimientos."
                         );
 
                         DB::table('seguimiento')->insert([
@@ -3962,7 +3962,7 @@ class VentaController extends Controller
                     DB::table('documento')
                         ->where('id', $venta->id)
                         ->update([
-                            'id_fase' => 6,
+                            'id_fase' => 5,
                             'validated_at' => date("Y-m-d H:i:s")
                         ]);
 
@@ -4010,7 +4010,7 @@ class VentaController extends Controller
                         DB::table('documento')
                             ->where('id', $documento)
                             ->update([
-                                'id_fase' => $venta->fulfillment ? ($hayError || !$tieneMovimientos ? 1 : 6) : 5
+                                'id_fase' => $hayError || !$tieneMovimientos ? 1 : 5
                             ]);
 
                         BitacoraService::insertarBitacoraValidarVenta(
@@ -4018,7 +4018,7 @@ class VentaController extends Controller
                             $auth->id,
                             $venta->fulfillment
                                 ? ($hayError || !$tieneMovimientos
-                                    ? "El pedido esta ENTREGADO en MERCADOLIBRE, pero no puede pasar a fase 6 porque tiene incidencias o no tiene movimientos."
+                                    ? "El pedido esta ENTREGADO en MERCADOLIBRE, pero no puede pasar a fase 5 porque tiene incidencias o no tiene movimientos."
                                     : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a Factura.")
                                 : "El pedido esta ENTREGADO en MERCADOLIBRE. Se cambia la fase a FACTURA."
                         );
@@ -4103,7 +4103,7 @@ class VentaController extends Controller
                         DB::table('documento')
                             ->where('id', $venta->id)
                             ->update([
-                                'id_fase' => 6,
+                                'id_fase' => 5,
                                 'validated_at' => date("Y-m-d H:i:s")
                             ]);
 
@@ -4123,7 +4123,7 @@ class VentaController extends Controller
                             $documento,
                             $auth->id,
                             !$tieneMovimientos
-                                ? "El pedido fulfillment no puede pasar a fase 6 porque no tiene movimientos."
+                                ? "El pedido fulfillment no puede pasar a fase 5 porque no tiene movimientos."
                                 : "El pedido fulfillment se mantiene en fase 1 porque tiene errores de validación."
                         );
 

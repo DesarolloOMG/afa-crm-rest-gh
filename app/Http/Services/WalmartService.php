@@ -578,7 +578,7 @@ class WalmartService
             'id_marketplace_area' => $marketplace_area,
             'id_usuario' => 1,
             'id_paqueteria' => $paqueteria_id,
-            'id_fase' => $fullfilment ? 6 : 1,
+            'id_fase' => $fullfilment ? 5 : 1,
             'id_modelo_proveedor' => 0,
             'no_venta' => $fullfilment ? $venta->customerOrderId ?? "N/A" : $venta->purchaseOrderId ?? "N/A",
             'referencia' => isset($venta->shipments[$index]) ? $venta->shipments[$index]->trackingNumber ?? "Sin informacion de la guía" : "N/A",
