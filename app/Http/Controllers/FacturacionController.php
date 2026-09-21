@@ -77,7 +77,10 @@ class FacturacionController extends Controller
             $result = $this->service->createGlobal(
                 isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
                 $userId,
-                isset($data['agrupacion']) ? $data['agrupacion'] : 'ventas'
+                isset($data['agrupacion']) ? $data['agrupacion'] : 'ventas',
+                isset($data['informacionGlobal']) && is_array($data['informacionGlobal'])
+                    ? $data['informacionGlobal']
+                    : []
             );
 
             return [

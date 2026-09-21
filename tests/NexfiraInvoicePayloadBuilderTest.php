@@ -62,7 +62,35 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('Venta', $payload['content']['items'][0]['description']);
         $this->assertSame('PUE', $payload['content']['paymentMethod']);
         $this->assertSame('31', $payload['content']['paymentForm']);
+        $this->assertSame('04', $payload['content']['globalInformation']['periodicity']);
+        $this->assertSame(date('m'), $payload['content']['globalInformation']['months']);
+        $this->assertSame((int) date('Y'), $payload['content']['globalInformation']['year']);
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testBuildsGlobalInvoiceWithSelectedSatPeriod()
+    {
+        $first = $this->insertDocument('FOLIO-PERIODO-A', 116.00, 1);
+        $second = $this->insertDocument('FOLIO-PERIODO-B', 116.00, 1);
+        $this->insertMovement($first, 1, 116.00);
+        $this->insertMovement($second, 1, 116.00);
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal(
+            [$first, $second],
+            'afa-global-period',
+            InvoicePayloadBuilder::GLOBAL_GROUP_SALES,
+            [
+                'periodicity' => '04',
+                'months' => '09',
+                'year' => 2026,
+            ]
+        );
+
+        $this->assertSame([
+            'periodicity' => '04',
+            'months' => '09',
+            'year' => 2026,
+        ], $payload['content']['globalInformation']);
     }
 
     public function testGlobalInvoiceUsesInternalIdsEvenWhenMarketplaceFoliosAreDuplicated()
@@ -123,6 +151,29 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('100', $payload['content']['items'][0]['unitPrice']);
         $this->assertSame('200', $payload['content']['items'][1]['unitPrice']);
         $this->assertSame('348.00', $payload['content']['expectedTotals']['total']);
+        $this->assertArrayNotHasKey('globalInformation', $payload['content']);
+    }
+
+    public function testRejectsInvalidBimesterForGlobalSale()
+    {
+        $first = $this->insertDocument('FOLIO-BIMESTRE-A', 116.00, 1);
+        $second = $this->insertDocument('FOLIO-BIMESTRE-B', 116.00, 1);
+        $this->insertMovement($first, 1, 116.00);
+        $this->insertMovement($second, 1, 116.00);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('bimestre SAT del 13 al 18');
+
+        (new InvoicePayloadBuilder())->buildGlobal(
+            [$first, $second],
+            'afa-global-invalid-bimester',
+            InvoicePayloadBuilder::GLOBAL_GROUP_SALES,
+            [
+                'periodicity' => '05',
+                'months' => '09',
+                'year' => 2026,
+            ]
+        );
     }
 
     public function testRejectsProductGlobalForDifferentFiscalReceivers()

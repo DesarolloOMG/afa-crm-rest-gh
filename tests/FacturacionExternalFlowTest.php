@@ -367,7 +367,7 @@ class FacturacionExternalFlowTest extends TestCase
         $service = Mockery::mock(FacturacionService::class);
         $service->shouldReceive('createGlobal')
             ->once()
-            ->with([41, 42], 9, 'productos')
+            ->with([41, 42], 9, 'productos', [])
             ->andReturn(['status' => 'pending_approval']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
@@ -394,7 +394,7 @@ class FacturacionExternalFlowTest extends TestCase
         $builder = Mockery::mock(InvoicePayloadBuilder::class);
         $builder->shouldReceive('buildGlobal')
             ->once()
-            ->with([$first, $second], Mockery::type('string'), 'productos')
+            ->with([$first, $second], Mockery::type('string'), 'productos', [])
             ->andReturn($payload);
         $client = Mockery::mock(NexfiraClient::class);
         $client->shouldReceive('createDocumentRequest')
@@ -416,6 +416,47 @@ class FacturacionExternalFlowTest extends TestCase
 
         $this->assertSame('global_productos', $result['mode']);
         $this->assertSame('global_productos', DB::table('facturacion_solicitud')->value('modo'));
+    }
+
+    public function testBillingEndpointPassesGlobalSatInformationToService()
+    {
+        DB::table('subnivel')->insert([
+            'id' => 36,
+            'subnivel' => 'FACTURACION Y TIMBRADO',
+            'status' => 1,
+        ]);
+        DB::table('subnivel_nivel')->insert([
+            'id' => 75,
+            'id_nivel' => 11,
+            'id_subnivel' => 36,
+        ]);
+        DB::table('usuario_subnivel_nivel')->insert([
+            'id_usuario' => 9,
+            'id_subnivel_nivel' => 75,
+        ]);
+
+        $globalInformation = [
+            'periodicity' => '04',
+            'months' => '09',
+            'year' => 2026,
+        ];
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('createGlobal')
+            ->once()
+            ->with([41, 42], 9, 'ventas', $globalInformation)
+            ->andReturn(['status' => 'pending_approval']);
+        $controller = new FacturacionController($service);
+        $request = Request::create('/venta/venta/facturacion/global', 'POST', [
+            'documentos' => [41, 42],
+            'agrupacion' => 'ventas',
+            'informacionGlobal' => $globalInformation,
+        ]);
+        $request->auth = (object) ['id' => 9];
+
+        $response = $controller->global($request);
+
+        $this->assertSame(202, $response->getStatusCode());
+        $this->assertSame('pending_approval', json_decode($response->getContent(), true)['request']['status']);
     }
 
     private function insertDocument($folio, $total, $fulfillment = 1)

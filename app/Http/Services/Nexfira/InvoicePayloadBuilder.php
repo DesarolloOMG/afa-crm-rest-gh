@@ -31,7 +31,8 @@ class InvoicePayloadBuilder
     public function buildGlobal(
         array $documentIds,
         $externalReference,
-        $grouping = self::GLOBAL_GROUP_SALES
+        $grouping = self::GLOBAL_GROUP_SALES,
+        array $globalInformation = []
     )
     {
         $grouping = $this->validatedGlobalGrouping($grouping);
@@ -64,12 +65,13 @@ class InvoicePayloadBuilder
         } else {
             $receiver = $this->publicReceiver();
             $items = $this->buildGlobalSaleItems($documents);
+            $globalInformation = $this->validatedGlobalInformation($globalInformation);
         }
 
         $totals = $this->totalsFromItems($items);
         $first = $documents[0];
 
-        return $this->basePayload($first, $externalReference, [
+        $content = [
             'paymentMethod' => $this->validatedPaymentMethod(
                 config('nexfira.global.payment_method', 'PUE')
             ),
@@ -79,7 +81,12 @@ class InvoicePayloadBuilder
             'receiver' => $receiver,
             'items' => $items,
             'expectedTotals' => $totals,
-        ]);
+        ];
+        if ($grouping === self::GLOBAL_GROUP_SALES) {
+            $content['globalInformation'] = $globalInformation;
+        }
+
+        return $this->basePayload($first, $externalReference, $content);
     }
 
     public function preview($documentId)
@@ -112,25 +119,30 @@ class InvoicePayloadBuilder
             throw new InvalidArgumentException('Falta configurar NEXFIRA_EXPEDITION_POSTAL_CODE.');
         }
 
+        $payloadContent = [
+            'cfdiVersion' => '4.0',
+            'issuedAtLocal' => Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'))->format('Y-m-d\TH:i:s'),
+            'fiscalTimeZone' => (string) config('nexfira.fiscal_timezone', 'America/Mexico_City'),
+            'expeditionPostalCode' => $expeditionPostalCode,
+            'currency' => $document->currency,
+            'paymentMethod' => $content['paymentMethod'],
+            'paymentForm' => $content['paymentForm'],
+            'exportCode' => '01',
+            'receiver' => $content['receiver'],
+            'items' => $content['items'],
+            'expectedTotals' => $content['expectedTotals'],
+        ];
+        if (isset($content['globalInformation'])) {
+            $payloadContent['globalInformation'] = $content['globalInformation'];
+        }
+
         return [
             'schemaVersion' => '1.0',
             'issuerId' => $issuerId,
             'externalReference' => substr((string) $externalReference, 0, 100),
             'kind' => 'CFDI_I',
             'subtype' => 'sale',
-            'content' => [
-                'cfdiVersion' => '4.0',
-                'issuedAtLocal' => Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'))->format('Y-m-d\TH:i:s'),
-                'fiscalTimeZone' => (string) config('nexfira.fiscal_timezone', 'America/Mexico_City'),
-                'expeditionPostalCode' => $expeditionPostalCode,
-                'currency' => $document->currency,
-                'paymentMethod' => $content['paymentMethod'],
-                'paymentForm' => $content['paymentForm'],
-                'exportCode' => '01',
-                'receiver' => $content['receiver'],
-                'items' => $content['items'],
-                'expectedTotals' => $content['expectedTotals'],
-            ],
+            'content' => $payloadContent,
         ];
     }
 
@@ -449,6 +461,38 @@ class InvoicePayloadBuilder
         }
 
         return $value;
+    }
+
+    private function validatedGlobalInformation(array $value)
+    {
+        $now = Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'));
+        $periodicity = str_pad(trim((string) ($value['periodicity'] ?? '04')), 2, '0', STR_PAD_LEFT);
+        $months = str_pad(trim((string) ($value['months'] ?? $now->format('m'))), 2, '0', STR_PAD_LEFT);
+        $year = isset($value['year']) ? (int) $value['year'] : (int) $now->format('Y');
+
+        if (!in_array($periodicity, ['01', '02', '03', '04', '05'], true)) {
+            throw new InvalidArgumentException('La periodicidad global debe ser una clave SAT del 01 al 05.');
+        }
+
+        $allowedMonths = $periodicity === '05'
+            ? ['13', '14', '15', '16', '17', '18']
+            : ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+        if (!in_array($months, $allowedMonths, true)) {
+            throw new InvalidArgumentException(
+                $periodicity === '05'
+                    ? 'Para periodicidad bimestral selecciona un bimestre SAT del 13 al 18.'
+                    : 'Selecciona un mes SAT válido del 01 al 12.'
+            );
+        }
+        if ($year < 2021 || $year > (int) $now->format('Y')) {
+            throw new InvalidArgumentException('El año de la factura global no es válido.');
+        }
+
+        return [
+            'periodicity' => $periodicity,
+            'months' => $months,
+            'year' => $year,
+        ];
     }
 
     private function paymentMethod($document, array $overrides)

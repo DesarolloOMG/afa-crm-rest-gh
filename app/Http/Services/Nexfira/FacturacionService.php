@@ -145,7 +145,8 @@ class FacturacionService
     public function createGlobal(
         array $documentIds,
         $userId,
-        $grouping = InvoicePayloadBuilder::GLOBAL_GROUP_SALES
+        $grouping = InvoicePayloadBuilder::GLOBAL_GROUP_SALES,
+        array $globalInformation = []
     )
     {
         $grouping = strtolower(trim((string) $grouping));
@@ -176,7 +177,12 @@ class FacturacionService
         $groupHash = substr(hash('sha256', $grouping . ':' . implode('-', $documentIds)), 0, 20);
         $externalReference = 'afa-global-' . $grouping . '-' . $groupHash . '-v' . $attempt;
         $idempotencyKey = 'afa-global-' . $grouping . '-' . $groupHash . '-v' . $attempt;
-        $payload = $this->builder->buildGlobal($documentIds, $externalReference, $grouping);
+        $payload = $this->builder->buildGlobal(
+            $documentIds,
+            $externalReference,
+            $grouping,
+            $globalInformation
+        );
         $requestMode = $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
             ? 'global_productos'
             : 'global_ventas';
