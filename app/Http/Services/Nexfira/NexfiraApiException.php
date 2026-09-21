@@ -10,14 +10,23 @@ class NexfiraApiException extends RuntimeException
     private $apiCode;
     private $correlationId;
     private $validationErrors;
+    private $responsePayload;
 
-    public function __construct($message, $httpStatus = 502, $apiCode = null, $correlationId = null, array $validationErrors = [])
+    public function __construct(
+        $message,
+        $httpStatus = 502,
+        $apiCode = null,
+        $correlationId = null,
+        array $validationErrors = [],
+        array $responsePayload = []
+    )
     {
         parent::__construct($message);
         $this->httpStatus = (int) $httpStatus;
         $this->apiCode = $apiCode;
         $this->correlationId = $correlationId;
         $this->validationErrors = $validationErrors;
+        $this->responsePayload = $responsePayload;
     }
 
     public function getHttpStatus()
@@ -38,5 +47,10 @@ class NexfiraApiException extends RuntimeException
     public function getValidationErrors()
     {
         return $this->validationErrors;
+    }
+
+    public function getResponsePayload()
+    {
+        return $this->responsePayload;
     }
 }

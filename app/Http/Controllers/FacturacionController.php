@@ -77,7 +77,7 @@ class FacturacionController extends Controller
             $result = $this->service->createGlobal(
                 isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
                 $userId,
-                $this->paymentOverrides($data)
+                isset($data['agrupacion']) ? $data['agrupacion'] : 'ventas'
             );
 
             return [

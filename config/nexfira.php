@@ -16,7 +16,9 @@ return [
         'cfdi_use' => env('NEXFIRA_GLOBAL_CFDI_USE', 'S01'),
         'product_code' => env('NEXFIRA_GLOBAL_PRODUCT_CODE', '01010101'),
         'unit_code' => env('NEXFIRA_GLOBAL_UNIT_CODE', 'ACT'),
-        'payment_method' => env('NEXFIRA_GLOBAL_PAYMENT_METHOD', 'PUE'),
-        'payment_form' => env('NEXFIRA_GLOBAL_PAYMENT_FORM', '01'),
+        // Contrato fiscal fijo para ventas globales de marketplaces.
+        // No debe depender de valores heredados del facturador anterior.
+        'payment_method' => 'PUE',
+        'payment_form' => '31',
     ],
 ];

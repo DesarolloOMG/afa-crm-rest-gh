@@ -106,7 +106,8 @@ class NexfiraClient
             $status,
             is_array($error) ? ($error['code'] ?? null) : null,
             is_array($error) ? ($error['correlationId'] ?? null) : null,
-            is_array($error) && is_array($error['errors'] ?? null) ? $error['errors'] : []
+            is_array($error) && is_array($error['errors'] ?? null) ? $error['errors'] : [],
+            is_array($error) ? $error : []
         );
     }
 }

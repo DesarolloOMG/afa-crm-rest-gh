@@ -9,6 +9,8 @@ use InvalidArgumentException;
 class InvoicePayloadBuilder
 {
     const PHASE_PENDING_INVOICE = 5;
+    const GLOBAL_GROUP_SALES = 'ventas';
+    const GLOBAL_GROUP_PRODUCTS = 'productos';
 
     public function buildIndividual($documentId, $externalReference, array $overrides = [])
     {
@@ -26,8 +28,13 @@ class InvoicePayloadBuilder
         ]);
     }
 
-    public function buildGlobal(array $documentIds, $externalReference, array $overrides = [])
+    public function buildGlobal(
+        array $documentIds,
+        $externalReference,
+        $grouping = self::GLOBAL_GROUP_SALES
+    )
     {
+        $grouping = $this->validatedGlobalGrouping($grouping);
         $documentIds = array_values(array_unique(array_map('intval', $documentIds)));
         sort($documentIds, SORT_NUMERIC);
         if (count($documentIds) < 2) {
@@ -35,30 +42,8 @@ class InvoicePayloadBuilder
         }
 
         $documents = [];
-        $items = [];
         foreach ($documentIds as $documentId) {
-            $document = $this->getDocument($documentId);
-            $documents[] = $document;
-            $totals = $this->calculateDocumentTotals($document);
-            $this->assertStoredTotal($document, $totals['total']);
-
-            $base = (float) $totals['subtotal'] - (float) $totals['discount'];
-            $tax = (float) $totals['transfers'];
-            $descriptionReference = trim((string) $document->no_venta) !== ''
-                ? trim((string) $document->no_venta)
-                : (string) $document->id;
-
-            $items[] = [
-                'lineId' => 'documento-' . $document->id,
-                'productCode' => (string) config('nexfira.global.product_code', '01010101'),
-                'unitCode' => (string) config('nexfira.global.unit_code', 'ACT'),
-                'description' => 'Folio ' . $descriptionReference,
-                'quantity' => '1',
-                'unitPrice' => $this->decimal($base, 2),
-                'discount' => '0.00',
-                'taxObject' => '02',
-                'taxes' => [$this->transferTax($base, $tax)],
-            ];
+            $documents[] = $this->getDocument($documentId);
         }
 
         $currency = $documents[0]->currency;
@@ -68,17 +53,30 @@ class InvoicePayloadBuilder
             }
         }
 
+        if ($grouping === self::GLOBAL_GROUP_PRODUCTS) {
+            $receiver = $this->sharedReceiver($documents);
+            $items = [];
+            foreach ($documents as $document) {
+                $documentItems = $this->buildProductItems($document, true);
+                $this->assertStoredTotal($document, $this->totalsFromItems($documentItems)['total']);
+                $items = array_merge($items, $documentItems);
+            }
+        } else {
+            $receiver = $this->publicReceiver();
+            $items = $this->buildGlobalSaleItems($documents);
+        }
+
         $totals = $this->totalsFromItems($items);
         $first = $documents[0];
 
         return $this->basePayload($first, $externalReference, [
             'paymentMethod' => $this->validatedPaymentMethod(
-                isset($overrides['paymentMethod']) ? $overrides['paymentMethod'] : config('nexfira.global.payment_method', 'PUE')
+                config('nexfira.global.payment_method', 'PUE')
             ),
             'paymentForm' => $this->validatedPaymentForm(
-                isset($overrides['paymentForm']) ? $overrides['paymentForm'] : config('nexfira.global.payment_form', '01')
+                config('nexfira.global.payment_form', '31')
             ),
-            'receiver' => $this->publicReceiver(),
+            'receiver' => $receiver,
             'items' => $items,
             'expectedTotals' => $totals,
         ]);
@@ -149,10 +147,10 @@ class InvoicePayloadBuilder
             ->where('d.status', 1)
             ->whereNull('d.deleted_at')
             ->select([
-                'd.id', 'd.id_fase', 'd.id_periodo', 'd.fulfillment', 'd.no_venta', 'd.total',
+                'd.id', 'd.id_fase', 'd.id_periodo', 'd.id_entidad', 'd.fulfillment', 'd.no_venta', 'd.total',
                 'd.id_marketplace_area', 'ma.publico', 'mk.marketplace', 'mn.moneda as currency',
                 'uc.codigo as cfdi_use', 'de.rfc', 'de.razon_social', 'de.regimen_id',
-                'de.codigo_postal_fiscal',
+                'de.regimen', 'de.regimen_letra', 'de.codigo_postal_fiscal',
             ])
             ->first();
 
@@ -178,13 +176,37 @@ class InvoicePayloadBuilder
         $receiver = [
             'rfc' => strtoupper(trim((string) $document->rfc)),
             'name' => trim((string) $document->razon_social),
-            'fiscalRegime' => trim((string) $document->regimen_id),
+            'fiscalRegime' => $this->receiverFiscalRegime($document),
             'postalCode' => trim((string) $document->codigo_postal_fiscal),
             'cfdiUse' => trim((string) $document->cfdi_use),
         ];
         $this->assertReceiver($receiver, $document->id);
 
         return $receiver;
+    }
+
+    private function receiverFiscalRegime($document)
+    {
+        $values = [
+            $document->regimen_id ?? null,
+            $document->regimen ?? null,
+            $document->regimen_letra ?? null,
+        ];
+
+        foreach ($values as $value) {
+            $value = trim((string) $value);
+            if (preg_match('/^[0-9]{3}$/', $value)) {
+                return $value;
+            }
+        }
+
+        foreach ($values as $value) {
+            if (preg_match('/^\s*([0-9]{3})(?:\s|$|-)/', (string) $value, $matches)) {
+                return $matches[1];
+            }
+        }
+
+        return '';
     }
 
     private function publicReceiver()
@@ -202,6 +224,24 @@ class InvoicePayloadBuilder
             'cfdiUse' => trim((string) config('nexfira.global.cfdi_use', 'S01')),
         ];
         $this->assertReceiver($receiver, 'global');
+
+        return $receiver;
+    }
+
+    private function sharedReceiver(array $documents)
+    {
+        $receiver = $this->receiver($documents[0]);
+        $receiverKey = json_encode($receiver, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        foreach (array_slice($documents, 1) as $document) {
+            $candidate = $this->receiver($document);
+            $candidateKey = json_encode($candidate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($candidateKey !== $receiverKey) {
+                throw new InvalidArgumentException(
+                    'La global por productos sólo puede incluir ventas del mismo receptor fiscal.'
+                );
+            }
+        }
 
         return $receiver;
     }
@@ -225,7 +265,32 @@ class InvoicePayloadBuilder
         }
     }
 
-    private function buildProductItems($document)
+    private function buildGlobalSaleItems(array $documents)
+    {
+        $items = [];
+        foreach ($documents as $document) {
+            $totals = $this->calculateDocumentTotals($document);
+            $this->assertStoredTotal($document, $totals['total']);
+
+            $base = round((float) $totals['subtotal'] - (float) $totals['discount'], 6);
+            $tax = round($base * $this->taxRate(), 6);
+            $items[] = [
+                'lineId' => (string) $document->id,
+                'productCode' => (string) config('nexfira.global.product_code', '01010101'),
+                'unitCode' => (string) config('nexfira.global.unit_code', 'ACT'),
+                'description' => 'Venta',
+                'quantity' => '1',
+                'unitPrice' => $this->decimal($base, 6, true),
+                'discount' => '0.00',
+                'taxObject' => '02',
+                'taxes' => [$this->transferTax($base, $tax)],
+            ];
+        }
+
+        return $items;
+    }
+
+    private function buildProductItems($document, $includeDocumentInLineId = false)
     {
         $movements = $this->movements($document->id);
         $items = [];
@@ -239,33 +304,25 @@ class InvoicePayloadBuilder
             if (!preg_match('/^[A-Z0-9]{2,3}$/', trim((string) $movement->clave_unidad))) {
                 throw new InvalidArgumentException('La partida ' . $movement->id . ' no tiene clave de unidad SAT válida.');
             }
-
-            $quantity = (float) $movement->cantidad;
-            $grossUnitPrice = (float) $movement->precio;
-            $grossDiscount = (float) $movement->descuento;
-            if ($quantity <= 0 || $grossUnitPrice < 0 || $grossDiscount < 0) {
-                throw new InvalidArgumentException('La partida ' . $movement->id . ' tiene cantidades o importes inválidos.');
+            if (trim((string) $movement->descripcion) === '') {
+                throw new InvalidArgumentException('La partida ' . $movement->id . ' no tiene descripción de producto.');
             }
 
-            $divisor = 1 + $this->taxRate();
-            $unitPrice = round($grossUnitPrice / $divisor, 6);
-            $discount = round($grossDiscount / $divisor, 2);
-            $base = round(($quantity * $unitPrice) - $discount, 2);
-            if ($base < 0) {
-                throw new InvalidArgumentException('El descuento de la partida ' . $movement->id . ' excede su importe.');
-            }
-            $tax = round($base * $this->taxRate(), 2);
+            $amounts = $this->movementAmounts($movement);
+            $lineId = $includeDocumentInLineId
+                ? 'pedido-' . $document->id . '-partida-' . $movement->id
+                : 'movimiento-' . $movement->id;
 
             $items[] = [
-                'lineId' => 'movimiento-' . $movement->id,
+                'lineId' => $lineId,
                 'productCode' => trim((string) $movement->clave_sat),
                 'unitCode' => trim((string) $movement->clave_unidad),
                 'description' => mb_substr(trim((string) $movement->descripcion), 0, 1000, 'UTF-8'),
-                'quantity' => $this->decimal($quantity, 6, true),
-                'unitPrice' => $this->decimal($unitPrice, 6, true),
-                'discount' => $this->decimal($discount, 2),
+                'quantity' => $this->decimal($amounts['quantity'], 6, true),
+                'unitPrice' => $this->decimal($amounts['unitPrice'], 6, true),
+                'discount' => $this->itemDiscount($amounts['discount']),
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($base, $tax)],
+                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'])],
             ];
         }
 
@@ -298,20 +355,42 @@ class InvoicePayloadBuilder
             if ((int) $movement->retencion === 1) {
                 throw new InvalidArgumentException('La venta ' . $document->id . ' tiene retenciones sin mapeo definido para Nexfira.');
             }
-            $divisor = 1 + $this->taxRate();
-            $unitPrice = round((float) $movement->precio / $divisor, 6);
-            $discount = round((float) $movement->descuento / $divisor, 2);
-            $base = round(((float) $movement->cantidad * $unitPrice) - $discount, 2);
-            $tax = round($base * $this->taxRate(), 2);
+            $amounts = $this->movementAmounts($movement);
             $items[] = [
-                'quantity' => $this->decimal((float) $movement->cantidad, 6, true),
-                'unitPrice' => $this->decimal($unitPrice, 6, true),
-                'discount' => $this->decimal($discount, 2),
-                'taxes' => [$this->transferTax($base, $tax)],
+                'quantity' => $this->decimal($amounts['quantity'], 6, true),
+                'unitPrice' => $this->decimal($amounts['unitPrice'], 6, true),
+                'discount' => $this->itemDiscount($amounts['discount']),
+                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'])],
             ];
         }
 
         return $this->totalsFromItems($items);
+    }
+
+    private function movementAmounts($movement)
+    {
+        $quantity = (float) $movement->cantidad;
+        $grossUnitPrice = (float) $movement->precio;
+        $grossDiscount = (float) $movement->descuento;
+        if ($quantity <= 0 || $grossUnitPrice < 0 || $grossDiscount < 0) {
+            throw new InvalidArgumentException('La partida ' . $movement->id . ' tiene cantidades o importes inválidos.');
+        }
+
+        $divisor = 1 + $this->taxRate();
+        $unitPrice = round($grossUnitPrice / $divisor, 6);
+        $discount = round($grossDiscount / $divisor, 6);
+        $base = round(($quantity * $unitPrice) - $discount, 6);
+        if ($base < 0) {
+            throw new InvalidArgumentException('El descuento de la partida ' . $movement->id . ' excede su importe.');
+        }
+
+        return [
+            'quantity' => $quantity,
+            'unitPrice' => $unitPrice,
+            'discount' => $discount,
+            'base' => $base,
+            'tax' => round($base * $this->taxRate(), 6),
+        ];
     }
 
     private function totalsFromItems(array $items)
@@ -320,7 +399,7 @@ class InvoicePayloadBuilder
         $discount = 0.0;
         $transfers = 0.0;
         foreach ($items as $item) {
-            $subtotal += round((float) $item['quantity'] * (float) $item['unitPrice'], 2);
+            $subtotal += (float) $item['quantity'] * (float) $item['unitPrice'];
             $discount += isset($item['discount']) ? (float) $item['discount'] : 0.0;
             foreach ($item['taxes'] as $tax) {
                 if ($tax['direction'] === 'transfer') {
@@ -349,10 +428,27 @@ class InvoicePayloadBuilder
             'direction' => 'transfer',
             'taxCode' => '002',
             'factor' => 'Tasa',
-            'base' => $this->decimal($base, 2),
+            'base' => $this->decimal($base, 6, true),
             'rateOrQuota' => $this->decimal($this->taxRate(), 6),
-            'amount' => $this->decimal($amount, 2),
+            'amount' => $this->decimal($amount, 6, true),
         ];
+    }
+
+    private function itemDiscount($value)
+    {
+        return abs((float) $value) < 0.0000005
+            ? '0.00'
+            : $this->decimal($value, 6, true);
+    }
+
+    private function validatedGlobalGrouping($value)
+    {
+        $value = strtolower(trim((string) $value));
+        if (!in_array($value, [self::GLOBAL_GROUP_SALES, self::GLOBAL_GROUP_PRODUCTS], true)) {
+            throw new InvalidArgumentException('La agrupación global debe ser por ventas o por productos.');
+        }
+
+        return $value;
     }
 
     private function paymentMethod($document, array $overrides)

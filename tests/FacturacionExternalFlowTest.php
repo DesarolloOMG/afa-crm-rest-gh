@@ -5,6 +5,7 @@ use App\Http\Controllers\FacturacionController;
 use App\Http\Services\Nexfira\CfdiAttachmentValidator;
 use App\Http\Services\Nexfira\FacturacionService;
 use App\Http\Services\Nexfira\InvoicePayloadBuilder;
+use App\Http\Services\Nexfira\NexfiraApiException;
 use App\Http\Services\Nexfira\NexfiraClient;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
@@ -242,6 +243,61 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame([], $pending['documents'][0]['blockers']);
     }
 
+    public function testNexfiraValidationErrorsArePersistedAndReturned()
+    {
+        $document = $this->insertDocument('DROP-INVALID', 116.00, 0);
+        DB::table('movimiento')->insert([
+            'id_documento' => $document,
+            'id_modelo' => 1,
+            'cantidad' => 1,
+            'precio' => 116.00,
+            'descuento' => 0,
+            'retencion' => 0,
+        ]);
+
+        $validationErrors = [[
+            'path' => 'content.paymentMethod',
+            'code' => 'invalid_combination',
+            'message' => 'La combinación de método y forma de pago no es válida.',
+        ]];
+        $handler = new MockHandler([
+            new Response(422, ['Content-Type' => 'application/json'], json_encode([
+                'code' => 'validation_failed',
+                'message' => 'La solicitud no cumple el contrato del documento.',
+                'correlationId' => '623e4567-e89b-42d3-a456-426614174000',
+                'errors' => $validationErrors,
+                'providerTrace' => 'trace-preserved-for-audit',
+            ])),
+        ]);
+        $service = new FacturacionService(
+            new NexfiraClient(new Client(['handler' => HandlerStack::create($handler)])),
+            new InvoicePayloadBuilder(),
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        try {
+            $service->createIndividual($document, 9);
+            $this->fail('NexfiraApiException was not thrown.');
+        } catch (NexfiraApiException $exception) {
+            $this->assertSame('validation_failed', $exception->getApiCode());
+        }
+
+        $stored = DB::table('facturacion_solicitud')->first();
+        $this->assertSame('rejected', $stored->status);
+        $this->assertSame($validationErrors, json_decode($stored->validation_errors, true));
+        $storedResponse = json_decode($stored->response_payload, true);
+        $this->assertSame($validationErrors, $storedResponse['errors']);
+        $this->assertSame('trace-preserved-for-audit', $storedResponse['providerTrace']);
+
+        $pending = $service->pendingDocuments(false);
+        $this->assertSame($validationErrors, $pending['documents'][0]['request']['errors']);
+        $this->assertSame(
+            '623e4567-e89b-42d3-a456-426614174000',
+            $pending['documents'][0]['request']['correlation_id']
+        );
+    }
+
     public function testBillingEndpointRejectsUserWithoutDedicatedPermission()
     {
         $service = Mockery::mock(FacturacionService::class);
@@ -289,6 +345,77 @@ class FacturacionExternalFlowTest extends TestCase
         $response = $controller->pendientes($request);
 
         $this->assertSame(200, $response->getStatusCode());
+    }
+
+    public function testBillingEndpointPassesProductGroupingToService()
+    {
+        DB::table('subnivel')->insert([
+            'id' => 36,
+            'subnivel' => 'FACTURACION Y TIMBRADO',
+            'status' => 1,
+        ]);
+        DB::table('subnivel_nivel')->insert([
+            'id' => 75,
+            'id_nivel' => 11,
+            'id_subnivel' => 36,
+        ]);
+        DB::table('usuario_subnivel_nivel')->insert([
+            'id_usuario' => 9,
+            'id_subnivel_nivel' => 75,
+        ]);
+
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('createGlobal')
+            ->once()
+            ->with([41, 42], 9, 'productos')
+            ->andReturn(['status' => 'pending_approval']);
+        $controller = new FacturacionController($service);
+        $request = Request::create('/venta/venta/facturacion/global', 'POST', [
+            'documentos' => [41, 42],
+            'agrupacion' => 'productos',
+        ]);
+        $request->auth = (object) ['id' => 9];
+
+        $response = $controller->global($request);
+
+        $this->assertSame(202, $response->getStatusCode());
+        $this->assertSame('pending_approval', json_decode($response->getContent(), true)['request']['status']);
+    }
+
+    public function testProductGlobalModeIsPersistedForAudit()
+    {
+        $first = $this->insertDocument('DROP-PRODUCT-1', 116.00, 0);
+        $second = $this->insertDocument('DROP-PRODUCT-2', 232.00, 0);
+        $payload = [
+            'content' => [
+                'expectedTotals' => ['total' => '348.00'],
+            ],
+        ];
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('buildGlobal')
+            ->once()
+            ->with([$first, $second], Mockery::type('string'), 'productos')
+            ->andReturn($payload);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')
+            ->once()
+            ->with($payload, Mockery::type('string'))
+            ->andReturn([
+                'requestId' => '723e4567-e89b-42d3-a456-426614174000',
+                'status' => 'pending_approval',
+                'version' => 1,
+            ]);
+        $service = new FacturacionService(
+            $client,
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $result = $service->createGlobal([$second, $first], 9, 'productos');
+
+        $this->assertSame('global_productos', $result['mode']);
+        $this->assertSame('global_productos', DB::table('facturacion_solicitud')->value('modo'));
     }
 
     private function insertDocument($folio, $total, $fulfillment = 1)
@@ -358,6 +485,8 @@ class FacturacionExternalFlowTest extends TestCase
             $table->string('rfc')->nullable();
             $table->string('razon_social')->nullable();
             $table->string('regimen_id')->nullable();
+            $table->string('regimen')->nullable();
+            $table->string('regimen_letra')->nullable();
             $table->string('codigo_postal_fiscal')->nullable();
         });
         Schema::create('documento', function ($table) {
@@ -418,6 +547,7 @@ class FacturacionExternalFlowTest extends TestCase
             $table->string('error_code')->nullable();
             $table->string('correlation_id')->nullable();
             $table->text('error_message')->nullable();
+            $table->text('validation_errors')->nullable();
             $table->text('request_payload')->nullable();
             $table->text('response_payload')->nullable();
             $table->integer('updated_by');

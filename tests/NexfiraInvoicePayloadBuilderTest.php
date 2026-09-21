@@ -20,6 +20,8 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
             'nexfira.issuer_id' => '123e4567-e89b-42d3-a456-426614174000',
             'nexfira.expedition_postal_code' => '44100',
             'nexfira.global.receiver_postal_code' => '44100',
+            'nexfira.global.payment_method' => 'PUE',
+            'nexfira.global.payment_form' => '31',
             'nexfira.tax_rate' => '0.160000',
         ]);
 
@@ -43,7 +45,7 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
     }
 
-    public function testBuildsGlobalInvoiceWithOneFolioPerLine()
+    public function testBuildsGlobalInvoiceUsingPublicSaleContract()
     {
         $first = $this->insertDocument('FOLIO-A', 116.00, 1);
         $second = $this->insertDocument('FOLIO-B', 116.00, 1);
@@ -53,9 +55,100 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $payload = (new InvoicePayloadBuilder())->buildGlobal([$second, $first], 'afa-global-test');
 
         $this->assertCount(2, $payload['content']['items']);
-        $this->assertSame('Folio FOLIO-A', $payload['content']['items'][0]['description']);
-        $this->assertSame('Folio FOLIO-B', $payload['content']['items'][1]['description']);
+        $this->assertSame((string) $first, $payload['content']['items'][0]['lineId']);
+        $this->assertSame((string) $second, $payload['content']['items'][1]['lineId']);
+        $this->assertSame('01010101', $payload['content']['items'][0]['productCode']);
+        $this->assertSame('ACT', $payload['content']['items'][0]['unitCode']);
+        $this->assertSame('Venta', $payload['content']['items'][0]['description']);
+        $this->assertSame('PUE', $payload['content']['paymentMethod']);
+        $this->assertSame('31', $payload['content']['paymentForm']);
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testGlobalInvoiceUsesInternalIdsEvenWhenMarketplaceFoliosAreDuplicated()
+    {
+        $first = $this->insertDocument('FOLIO-DUPLICADO', 116.00, 1);
+        $second = $this->insertDocument('FOLIO-DUPLICADO', 116.00, 1);
+        $this->insertMovement($first, 1, 116.00);
+        $this->insertMovement($second, 1, 116.00);
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'afa-global-duplicate');
+
+        $this->assertSame((string) $first, $payload['content']['items'][0]['lineId']);
+        $this->assertSame((string) $second, $payload['content']['items'][1]['lineId']);
+    }
+
+    public function testGlobalSaleTaxesKeepSixDecimalPrecisionBeforeTotalsAreRounded()
+    {
+        $first = $this->insertDocument('MARKETPLACE-7999', 7999.00, 1);
+        $second = $this->insertDocument('MARKETPLACE-3249', 3249.00, 1);
+        $this->insertMovement($first, 1, 7999.00);
+        $this->insertMovement($second, 1, 3249.00);
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'afa-global-decimals');
+
+        $this->assertSame('1103.3104', $payload['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('448.1376', $payload['content']['items'][1]['taxes'][0]['amount']);
+        $this->assertSame('1551.45', $payload['content']['expectedTotals']['transfers']);
+        $this->assertSame('11248.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testBuildsGlobalInvoiceByProductsWithoutMergingRepeatedProducts()
+    {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'MLG100224TC1',
+            'razon_social' => 'MASTER LOYALTY GROUP',
+            'regimen_id' => '601',
+            'regimen' => '601',
+            'regimen_letra' => '601 - General de Ley Personas Morales',
+            'codigo_postal_fiscal' => '11700',
+        ]);
+        $first = $this->insertDocument('MLG-UNO', 116.00, 0);
+        $second = $this->insertDocument('MLG-DOS', 232.00, 0);
+        $this->insertMovement($first, 1, 116.00);
+        $this->insertMovement($second, 1, 232.00);
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal(
+            [$first, $second],
+            'afa-global-products',
+            InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
+        );
+
+        $this->assertSame('MLG100224TC1', $payload['content']['receiver']['rfc']);
+        $this->assertCount(2, $payload['content']['items']);
+        $this->assertStringStartsWith('pedido-' . $first . '-partida-', $payload['content']['items'][0]['lineId']);
+        $this->assertStringStartsWith('pedido-' . $second . '-partida-', $payload['content']['items'][1]['lineId']);
+        $this->assertSame('43211503', $payload['content']['items'][0]['productCode']);
+        $this->assertSame('43211503', $payload['content']['items'][1]['productCode']);
+        $this->assertSame('100', $payload['content']['items'][0]['unitPrice']);
+        $this->assertSame('200', $payload['content']['items'][1]['unitPrice']);
+        $this->assertSame('348.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testRejectsProductGlobalForDifferentFiscalReceivers()
+    {
+        DB::table('marketplace_area')->where('id', 1)->update(['publico' => 0]);
+        DB::table('documento_entidad')->insert([
+            'id' => 2,
+            'rfc' => 'AAA010101AAA',
+            'razon_social' => 'CLIENTE DIFERENTE',
+            'regimen_id' => '601',
+            'regimen' => '601',
+            'regimen_letra' => '601 - General de Ley Personas Morales',
+            'codigo_postal_fiscal' => '44100',
+        ]);
+        $first = $this->insertDocument('CLIENTE-UNO', 116.00, 0);
+        $second = $this->insertDocument('CLIENTE-DOS', 116.00, 0);
+        DB::table('documento')->where('id', $second)->update(['id_entidad' => 2]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('mismo receptor fiscal');
+
+        (new InvoicePayloadBuilder())->buildGlobal(
+            [$first, $second],
+            'afa-global-different-receivers',
+            InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
+        );
     }
 
     public function testRejectsDocumentWhoseStoredTotalDoesNotMatchCfdi()
@@ -66,6 +159,25 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('no cuadra');
         (new InvoicePayloadBuilder())->buildIndividual($document, 'afa-' . $document);
+    }
+
+    public function testResolvesFiscalRegimeFromLegacyCatalogLabel()
+    {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'MLG100224TC1',
+            'razon_social' => 'MASTER LOYALTY GROUP',
+            'regimen_id' => '1',
+            'regimen' => '1',
+            'regimen_letra' => '601 - General de Ley Personas Morales',
+            'codigo_postal_fiscal' => '11700',
+        ]);
+        $document = $this->insertDocument('VENTA-LEGACY', 116.00, 0);
+        $this->insertMovement($document, 1, 116.00);
+
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($document, 'afa-' . $document);
+
+        $this->assertSame('601', $payload['content']['receiver']['fiscalRegime']);
+        $this->assertSame('11700', $payload['content']['receiver']['postalCode']);
     }
 
     private function createSchema()
@@ -92,6 +204,8 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
             $table->string('rfc')->nullable();
             $table->string('razon_social')->nullable();
             $table->string('regimen_id')->nullable();
+            $table->string('regimen')->nullable();
+            $table->string('regimen_letra')->nullable();
             $table->string('codigo_postal_fiscal')->nullable();
         });
         Schema::create('documento', function ($table) {
@@ -146,6 +260,8 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
             'rfc' => 'XAXX010101000',
             'razon_social' => 'PUBLICO EN GENERAL',
             'regimen_id' => '616',
+            'regimen' => '616',
+            'regimen_letra' => '616 - Sin obligaciones fiscales',
             'codigo_postal_fiscal' => '44100',
         ]);
         DB::table('modelo')->insert([

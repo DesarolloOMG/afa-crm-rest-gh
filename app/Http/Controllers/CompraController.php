@@ -4486,7 +4486,7 @@ class CompraController extends Controller
             'telefono_alt' => "max:20",
             'condicion' => "required|numeric",
             'limite' => "required|numeric",
-            'codigo_postal_fiscal' => "required|numeric"
+            'codigo_postal_fiscal' => ['required', 'regex:/^[0-9]{5}$/']
         ]);
 
         if (!$validator->passes()) {
@@ -4496,10 +4496,21 @@ class CompraController extends Controller
             ]);
         }
 
+        $regimen_fiscal = $this->resolveRegimenFiscal($data->regimen);
+        if (!$regimen_fiscal) {
+            return response()->json([
+                'code' => 422,
+                'message' => 'Selecciona un régimen fiscal válido del catálogo SAT.'
+            ], 422);
+        }
+
+        $regimen_codigo = trim((string) $regimen_fiscal->codigo);
+        $regimen_descripcion = trim((string) $regimen_fiscal->regimen);
+
         $info_extra = new stdClass();
         $info_extra->pais = $data->pais;
-        $info_extra->regimen = $data->regimen;
-        $info_extra->fiscal = $data->fiscal;
+        $info_extra->regimen = $regimen_codigo;
+        $info_extra->fiscal = $regimen_descripcion;
 
         if ($data->id == 0) {
             $existe_cliente = DocumentoEntidad::where("rfc", trim($data->rfc))
@@ -4511,8 +4522,8 @@ class CompraController extends Controller
                 $entidad_id = DocumentoEntidad::insertGetId([
                     'tipo' => $data->alt ? 3 : 1,
                     'id_erp' => 0,
-                    'regimen_id' => $data->regimen,
-                    'regimen' => $data->regimen,
+                    'regimen_id' => $regimen_codigo,
+                    'regimen' => $regimen_codigo,
                     'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                     'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
                     'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
@@ -4523,7 +4534,7 @@ class CompraController extends Controller
                     'condicion' => $data->condicion,
                     'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
                     'pais' => $data->pais,
-                    'regimen_letra' => $data->fiscal ?? '',
+                    'regimen_letra' => $regimen_descripcion,
                     'created_by_user' => $auth->id
                 ]);
 
@@ -4533,8 +4544,8 @@ class CompraController extends Controller
 
                 DocumentoEntidad::where(['id' => $existe_cliente->id])->update([
                     'tipo' => $data->alt ? 3 : 1,
-                    'regimen_id' => $data->regimen,
-                    'regimen' => $data->regimen,
+                    'regimen_id' => $regimen_codigo,
+                    'regimen' => $regimen_codigo,
                     'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                     'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
                     'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
@@ -4545,7 +4556,7 @@ class CompraController extends Controller
                     'condicion' => $data->condicion,
                     'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
                     'pais' => $data->pais,
-                    'regimen_letra' => $data->fiscal ?? '',
+                    'regimen_letra' => $regimen_descripcion,
                     'updated_by_user' => $auth->id
                 ]);
 
@@ -4555,8 +4566,8 @@ class CompraController extends Controller
             $old_data = DocumentoEntidad::find($data->id);
 
             DocumentoEntidad::where(['id' => $data->id])->update([
-                'regimen_id' => $data->regimen,
-                'regimen' => $data->regimen,
+                'regimen_id' => $regimen_codigo,
+                'regimen' => $regimen_codigo,
                 'razon_social' => mb_strtoupper(trim($data->razon_social), 'UTF-8'),
                 'rfc' => mb_strtoupper(trim($data->rfc), 'UTF-8'),
                 'telefono' => mb_strtoupper(trim($data->telefono), 'UTF-8'),
@@ -4567,7 +4578,7 @@ class CompraController extends Controller
                 'condicion' => $data->condicion,
                 'codigo_postal_fiscal' => $data->codigo_postal_fiscal,
                 'pais' => $data->pais,
-                'regimen_letra' => $data->fiscal ?? '',
+                'regimen_letra' => $regimen_descripcion,
                 'updated_by_user' => $auth->id
             ]);
 
@@ -4587,6 +4598,19 @@ class CompraController extends Controller
             'code' => 200,
             'message' => $data->id == 0 ? "Entidad creada correctamente" : "Entidad actualizada correctamente"
         ]);
+    }
+
+    private function resolveRegimenFiscal($value)
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        return DB::table('cat_regimen')
+            ->where('codigo', $value)
+            ->orWhere('id', (int) $value)
+            ->first();
     }
 
     /** @noinspection PhpParamsInspection */

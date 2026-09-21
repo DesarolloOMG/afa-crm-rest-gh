@@ -142,8 +142,20 @@ class FacturacionService
         return $this->submit('individual', [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId);
     }
 
-    public function createGlobal(array $documentIds, $userId, array $overrides = [])
+    public function createGlobal(
+        array $documentIds,
+        $userId,
+        $grouping = InvoicePayloadBuilder::GLOBAL_GROUP_SALES
+    )
     {
+        $grouping = strtolower(trim((string) $grouping));
+        if (!in_array($grouping, [
+            InvoicePayloadBuilder::GLOBAL_GROUP_SALES,
+            InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS,
+        ], true)) {
+            throw new InvalidArgumentException('La agrupación global debe ser por ventas o por productos.');
+        }
+
         $documentIds = $this->normalizeDocumentIds($documentIds, 2);
         foreach ($documentIds as $documentId) {
             $summary = $this->saleSummary($documentId);
@@ -161,12 +173,15 @@ class FacturacionService
         }
 
         $attempt = $this->nextAttempt($documentIds);
-        $groupHash = substr(hash('sha256', implode('-', $documentIds)), 0, 20);
-        $externalReference = 'afa-global-' . $groupHash . '-v' . $attempt;
-        $idempotencyKey = 'afa-global-' . $groupHash . '-v' . $attempt;
-        $payload = $this->builder->buildGlobal($documentIds, $externalReference, $overrides);
+        $groupHash = substr(hash('sha256', $grouping . ':' . implode('-', $documentIds)), 0, 20);
+        $externalReference = 'afa-global-' . $grouping . '-' . $groupHash . '-v' . $attempt;
+        $idempotencyKey = 'afa-global-' . $grouping . '-' . $groupHash . '-v' . $attempt;
+        $payload = $this->builder->buildGlobal($documentIds, $externalReference, $grouping);
+        $requestMode = $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
+            ? 'global_productos'
+            : 'global_ventas';
 
-        return $this->submit('global', $documentIds, $payload, $externalReference, $idempotencyKey, $userId);
+        return $this->submit($requestMode, $documentIds, $payload, $externalReference, $idempotencyKey, $userId);
     }
 
     public function sync($requestId, $userId)
@@ -185,23 +200,28 @@ class FacturacionService
             throw new InvalidArgumentException('La solicitud no tiene identificador remoto de Nexfira.');
         }
 
-        $remote = $this->client->getDocumentRequest($request->remote_request_id);
-        $this->updateFromRemote($request->id, $remote, $userId);
-        $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
+        try {
+            $remote = $this->client->getDocumentRequest($request->remote_request_id);
+            $this->updateFromRemote($request->id, $remote, $userId);
+            $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
 
-        if ($request->status === 'stamped' && $request->documents_status === 'retrieved') {
-            if (!$this->alreadyFinalized($request)) {
-                $xml = $this->client->downloadDocument($request->remote_request_id, 'xml');
-                $pdf = $this->client->downloadDocument($request->remote_request_id, 'pdf');
-                $this->assertRemoteHash($xml, $request->xml_sha256, 'XML');
-                $this->assertRemoteHash($pdf, $request->pdf_sha256, 'PDF');
+            if ($request->status === 'stamped' && $request->documents_status === 'retrieved') {
+                if (!$this->alreadyFinalized($request)) {
+                    $xml = $this->client->downloadDocument($request->remote_request_id, 'xml');
+                    $pdf = $this->client->downloadDocument($request->remote_request_id, 'pdf');
+                    $this->assertRemoteHash($xml, $request->xml_sha256, 'XML');
+                    $this->assertRemoteHash($pdf, $request->pdf_sha256, 'PDF');
 
-                $payload = json_decode((string) $request->request_payload, true);
-                $expectedTotal = $payload['content']['expectedTotals']['total'] ?? null;
-                $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
-                $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId);
-                $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
+                    $payload = json_decode((string) $request->request_payload, true);
+                    $expectedTotal = $payload['content']['expectedTotals']['total'] ?? null;
+                    $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
+                    $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId);
+                    $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
+                }
             }
+        } catch (NexfiraApiException $e) {
+            $this->storeNexfiraError($request->id, $e);
+            throw $e;
         }
 
         return $this->publicRequest($request);
@@ -297,14 +317,7 @@ class FacturacionService
             $remote = $this->client->createDocumentRequest($payload, $request->idempotency_key);
             $this->updateFromRemote($request->id, $remote, $request->updated_by);
         } catch (NexfiraApiException $e) {
-            $recoverable = in_array($e->getApiCode(), ['nexfira_unavailable'], true) || $e->getHttpStatus() >= 500;
-            DB::table('facturacion_solicitud')->where('id', $request->id)->update([
-                'status' => $recoverable ? 'uncertain' : 'rejected',
-                'error_code' => $e->getApiCode(),
-                'correlation_id' => $e->getCorrelationId(),
-                'error_message' => $e->getMessage(),
-                'updated_at' => date('Y-m-d H:i:s'),
-            ]);
+            $this->storeNexfiraError($request->id, $e);
             throw $e;
         }
 
@@ -329,6 +342,7 @@ class FacturacionService
             'error_code' => null,
             'correlation_id' => null,
             'error_message' => null,
+            'validation_errors' => null,
             'updated_by' => (int) $userId,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
@@ -447,8 +461,51 @@ class FacturacionService
             'documents_status' => $request->documents_status,
             'error_code' => $request->error_code,
             'error_message' => $request->error_message,
+            'correlation_id' => $request->correlation_id,
+            'errors' => $this->decodeValidationErrors(
+                isset($request->validation_errors) ? $request->validation_errors : null
+            ),
             'updated_at' => $request->updated_at,
         ];
+    }
+
+    private function storeNexfiraError($requestId, NexfiraApiException $exception)
+    {
+        $recoverable = in_array($exception->getApiCode(), ['nexfira_unavailable'], true)
+            || $exception->getHttpStatus() >= 500;
+        $errors = $exception->getValidationErrors();
+        $response = $exception->getResponsePayload();
+        if (empty($response)) {
+            $response = [
+                'code' => $exception->getApiCode(),
+                'message' => $exception->getMessage(),
+                'correlationId' => $exception->getCorrelationId(),
+                'errors' => $errors,
+            ];
+        }
+
+        DB::table('facturacion_solicitud')->where('id', (int) $requestId)->update([
+            'status' => $recoverable ? 'uncertain' : 'rejected',
+            'error_code' => $exception->getApiCode(),
+            'correlation_id' => $exception->getCorrelationId(),
+            'error_message' => $exception->getMessage(),
+            'validation_errors' => empty($errors)
+                ? null
+                : json_encode($errors, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'response_payload' => json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+    }
+
+    private function decodeValidationErrors($value)
+    {
+        if ($value === null || trim((string) $value) === '') {
+            return [];
+        }
+
+        $errors = json_decode((string) $value, true);
+
+        return is_array($errors) ? $errors : [];
     }
 
     private function activeRequestForDocuments(array $documentIds)
