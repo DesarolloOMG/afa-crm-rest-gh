@@ -492,7 +492,9 @@ class FacturacionService
 
     private function hasExistingInvoice($document)
     {
-        return trim((string) $document->uuid) !== '';
+        $uuid = strtoupper(trim((string) $document->uuid));
+
+        return $uuid !== '' && !in_array($uuid, ['N/A', 'NA', 'N.A.', 'NO APLICA'], true);
     }
 
     private function assertNotAlreadyInvoiced($document)

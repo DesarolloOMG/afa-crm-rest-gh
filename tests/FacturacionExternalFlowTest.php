@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Services\DropboxService;
+use App\Http\Controllers\FacturacionController;
 use App\Http\Services\Nexfira\CfdiAttachmentValidator;
 use App\Http\Services\Nexfira\FacturacionService;
 use App\Http\Services\Nexfira\InvoicePayloadBuilder;
@@ -11,6 +12,7 @@ use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Http\Request;
 
 class FacturacionExternalFlowTest extends TestCase
 {
@@ -215,6 +217,80 @@ class FacturacionExternalFlowTest extends TestCase
         $service->createIndividual($document, 9);
     }
 
+    public function testNAUuidIsTreatedAsNotInvoiced()
+    {
+        $document = $this->insertDocument('DROP-NOT-INVOICED', 116.00, 0);
+        DB::table('documento')->where('id', $document)->update(['uuid' => 'N/A']);
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('preview')->once()->with($document)->andReturn([
+            'valid' => true,
+            'blockers' => [],
+        ]);
+
+        $service = new FacturacionService(
+            Mockery::mock(NexfiraClient::class),
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $pending = $service->pendingDocuments(false);
+        $this->assertCount(1, $pending['documents']);
+        $this->assertFalse($pending['documents'][0]['already_invoiced']);
+        $this->assertTrue($pending['documents'][0]['can_hub']);
+        $this->assertSame([], $pending['documents'][0]['blockers']);
+    }
+
+    public function testBillingEndpointRejectsUserWithoutDedicatedPermission()
+    {
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldNotReceive('pendingDocuments');
+        $controller = new FacturacionController($service);
+        $request = Request::create('/venta/venta/facturacion/pendientes', 'GET');
+        $request->auth = (object) ['id' => 9];
+
+        $response = $controller->pendientes($request);
+
+        $this->assertSame(403, $response->getStatusCode());
+        $this->assertSame(
+            'No tienes el permiso de Contabilidad: Facturación y Timbrado.',
+            json_decode($response->getContent(), true)['message']
+        );
+    }
+
+    public function testBillingEndpointAllowsUserWithDedicatedPermission()
+    {
+        DB::table('subnivel')->insert([
+            'id' => 36,
+            'subnivel' => 'FACTURACION Y TIMBRADO',
+            'status' => 1,
+        ]);
+        DB::table('subnivel_nivel')->insert([
+            'id' => 75,
+            'id_nivel' => 11,
+            'id_subnivel' => 36,
+        ]);
+        DB::table('usuario_subnivel_nivel')->insert([
+            'id_usuario' => 9,
+            'id_subnivel_nivel' => 75,
+        ]);
+
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('pendingDocuments')->once()->with(null)->andReturn([
+            'documents' => [],
+            'counts' => ['drop' => 0, 'full' => 0],
+            'configured' => true,
+        ]);
+        $controller = new FacturacionController($service);
+        $request = Request::create('/venta/venta/facturacion/pendientes', 'GET');
+        $request->auth = (object) ['id' => 9];
+
+        $response = $controller->pendientes($request);
+
+        $this->assertSame(200, $response->getStatusCode());
+    }
+
     private function insertDocument($folio, $total, $fulfillment = 1)
     {
         return DB::table('documento')->insertGetId([
@@ -365,6 +441,21 @@ class FacturacionExternalFlowTest extends TestCase
             $table->increments('id');
             $table->integer('id_documento');
             $table->integer('id_usuario');
+        });
+        Schema::create('subnivel', function ($table) {
+            $table->increments('id');
+            $table->string('subnivel');
+            $table->integer('status')->default(1);
+        });
+        Schema::create('subnivel_nivel', function ($table) {
+            $table->increments('id');
+            $table->integer('id_nivel');
+            $table->integer('id_subnivel');
+        });
+        Schema::create('usuario_subnivel_nivel', function ($table) {
+            $table->increments('id');
+            $table->integer('id_usuario');
+            $table->integer('id_subnivel_nivel');
         });
         Schema::create('seguimiento', function ($table) {
             $table->increments('id');

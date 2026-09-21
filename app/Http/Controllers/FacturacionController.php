@@ -4,14 +4,19 @@ namespace App\Http\Controllers;
 
 use App\Http\Services\Nexfira\FacturacionService;
 use App\Http\Services\Nexfira\NexfiraApiException;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
 
 class FacturacionController extends Controller
 {
+    private const ACCOUNTING_LEVEL_ID = 11;
+    private const BILLING_SUBLEVEL_ID = 36;
+
     private $service;
 
     public function __construct(FacturacionService $service)
@@ -22,6 +27,7 @@ class FacturacionController extends Controller
     public function pendientes(Request $request): JsonResponse
     {
         return $this->handle(function () use ($request) {
+            $this->authorizedUserId($request);
             $fulfillment = $request->has('fulfillment')
                 ? filter_var($request->input('fulfillment'), FILTER_VALIDATE_BOOLEAN)
                 : null;
@@ -33,9 +39,10 @@ class FacturacionController extends Controller
         });
     }
 
-    public function previsualizar($documento): JsonResponse
+    public function previsualizar(Request $request, $documento): JsonResponse
     {
-        return $this->handle(function () use ($documento) {
+        return $this->handle(function () use ($request, $documento) {
+            $this->authorizedUserId($request);
             return [
                 'code' => 200,
                 'data' => $this->service->preview((int) $documento),
@@ -46,10 +53,11 @@ class FacturacionController extends Controller
     public function individual(Request $request, $documento): JsonResponse
     {
         return $this->handle(function () use ($request, $documento) {
+            $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
             $result = $this->service->createIndividual(
                 (int) $documento,
-                $this->authId($request),
+                $userId,
                 $this->paymentOverrides($data)
             );
 
@@ -64,10 +72,11 @@ class FacturacionController extends Controller
     public function global(Request $request): JsonResponse
     {
         return $this->handle(function () use ($request) {
+            $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
             $result = $this->service->createGlobal(
                 isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
-                $this->authId($request),
+                $userId,
                 $this->paymentOverrides($data)
             );
 
@@ -82,7 +91,8 @@ class FacturacionController extends Controller
     public function actualizar(Request $request, $solicitud): JsonResponse
     {
         return $this->handle(function () use ($request, $solicitud) {
-            $result = $this->service->sync((int) $solicitud, $this->authId($request));
+            $userId = $this->authorizedUserId($request);
+            $result = $this->service->sync((int) $solicitud, $userId);
             $completed = $result['status'] === 'stamped' && $result['documents_status'] === 'retrieved';
 
             return [
@@ -98,13 +108,14 @@ class FacturacionController extends Controller
     public function externa(Request $request): JsonResponse
     {
         return $this->handle(function () use ($request) {
+            $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
             $result = $this->service->attachExternal(
                 isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
                 isset($data['uuid']) ? $data['uuid'] : '',
                 isset($data['pdf']) ? $data['pdf'] : '',
                 isset($data['xml']) ? $data['xml'] : '',
-                $this->authId($request)
+                $userId
             );
 
             return [
@@ -122,6 +133,11 @@ class FacturacionController extends Controller
             $status = isset($result['code']) && (int) $result['code'] === 202 ? 202 : 200;
 
             return response()->json($result, $status);
+        } catch (AuthorizationException $e) {
+            return response()->json([
+                'code' => 403,
+                'message' => $e->getMessage(),
+            ], 403);
         } catch (InvalidArgumentException $e) {
             return response()->json([
                 'code' => 422,
@@ -184,5 +200,26 @@ class FacturacionController extends Controller
         }
 
         return (int) $auth->id;
+    }
+
+    private function authorizedUserId(Request $request)
+    {
+        $userId = $this->authId($request);
+        $authorized = DB::table('usuario_subnivel_nivel as usn')
+            ->join('subnivel_nivel as snn', 'snn.id', '=', 'usn.id_subnivel_nivel')
+            ->join('subnivel as sn', 'sn.id', '=', 'snn.id_subnivel')
+            ->where('usn.id_usuario', $userId)
+            ->where('snn.id_nivel', self::ACCOUNTING_LEVEL_ID)
+            ->where('snn.id_subnivel', self::BILLING_SUBLEVEL_ID)
+            ->where('sn.status', 1)
+            ->exists();
+
+        if (!$authorized) {
+            throw new AuthorizationException(
+                'No tienes el permiso de Contabilidad: Facturación y Timbrado.'
+            );
+        }
+
+        return $userId;
     }
 }
