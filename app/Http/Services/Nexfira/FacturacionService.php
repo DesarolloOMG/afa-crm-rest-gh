@@ -51,11 +51,22 @@ class FacturacionService
         $requestMap = $this->latestRequestsForDocuments($documents->pluck('id')->toArray());
         $items = [];
         foreach ($documents as $document) {
+            $alreadyInvoiced = $this->hasExistingInvoice($document);
             $requiresExternal = (int) $document->fulfillment === 1
                 && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
-            $preview = $requiresExternal
-                ? ['valid' => false, 'blockers' => ['Las ventas FULL de Mercado Libre se facturan fuera del Hub.']]
-                : $this->builder->preview($document->id);
+            if ($alreadyInvoiced) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $document->uuid) . '.'],
+                ];
+            } elseif ($requiresExternal) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => ['Las ventas FULL de Mercado Libre se facturan fuera del Hub.'],
+                ];
+            } else {
+                $preview = $this->builder->preview($document->id);
+            }
 
             $items[] = [
                 'id' => (int) $document->id,
@@ -67,8 +78,9 @@ class FacturacionService
                 'created_at' => $document->created_at,
                 'cliente' => $document->razon_social,
                 'rfc' => $document->rfc,
+                'already_invoiced' => $alreadyInvoiced,
                 'requires_external' => $requiresExternal,
-                'can_hub' => !$requiresExternal && $preview['valid'],
+                'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
                 'blockers' => $preview['blockers'],
                 'request' => isset($requestMap[$document->id]) ? $requestMap[$document->id] : null,
             ];
@@ -87,6 +99,13 @@ class FacturacionService
     public function preview($documentId)
     {
         $summary = $this->saleSummary($documentId);
+        if ($this->hasExistingInvoice($summary)) {
+            return [
+                'valid' => false,
+                'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $summary->uuid) . '.'],
+                'payload' => null,
+            ];
+        }
         if ($this->isMeliFull($summary)) {
             return [
                 'valid' => false,
@@ -101,6 +120,7 @@ class FacturacionService
     public function createIndividual($documentId, $userId, array $overrides = [])
     {
         $summary = $this->saleSummary($documentId);
+        $this->assertNotAlreadyInvoiced($summary);
         if ($this->isMeliFull($summary)) {
             throw new InvalidArgumentException('Las ventas FULL de Mercado Libre no se envían a Nexfira.');
         }
@@ -126,7 +146,9 @@ class FacturacionService
     {
         $documentIds = $this->normalizeDocumentIds($documentIds, 2);
         foreach ($documentIds as $documentId) {
-            if ($this->isMeliFull($this->saleSummary($documentId))) {
+            $summary = $this->saleSummary($documentId);
+            $this->assertNotAlreadyInvoiced($summary);
+            if ($this->isMeliFull($summary)) {
                 throw new InvalidArgumentException('Las ventas FULL de Mercado Libre no pueden incluirse en una factura global del Hub.');
             }
         }
@@ -197,7 +219,13 @@ class FacturacionService
         }
 
         foreach ($documentIds as $documentId) {
-            $this->saleSummary($documentId);
+            $summary = $this->saleSummary($documentId);
+            if ($this->hasExistingInvoice($summary)
+                && strtoupper((string) $summary->uuid) !== $normalizedUuid) {
+                throw new InvalidArgumentException(
+                    'La venta ' . $summary->id . ' ya está facturada con un UUID diferente.'
+                );
+            }
         }
         if ($this->activeRequestForDocuments($documentIds)) {
             throw new InvalidArgumentException('Al menos una venta seleccionada ya tiene una solicitud de facturación activa.');
@@ -460,6 +488,21 @@ class FacturacionService
     {
         return (int) $document->fulfillment === 1
             && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
+    }
+
+    private function hasExistingInvoice($document)
+    {
+        return trim((string) $document->uuid) !== '';
+    }
+
+    private function assertNotAlreadyInvoiced($document)
+    {
+        if ($this->hasExistingInvoice($document)) {
+            throw new InvalidArgumentException(
+                'La venta ' . $document->id . ' ya está facturada con UUID '
+                . strtoupper((string) $document->uuid) . '.'
+            );
+        }
     }
 
     private function countPendingByFulfillment($fulfillment)

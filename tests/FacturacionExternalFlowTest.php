@@ -186,6 +186,35 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('id:xml-nexfira', DB::table('documento_factura')->where('id_documento', $document)->value('xml'));
     }
 
+    public function testSaleWithExistingUuidCannotBeSentToNexfiraAgain()
+    {
+        $document = $this->insertDocument('DROP-ALREADY-INVOICED', 116.00, 0);
+        $uuid = '523E4567-E89B-42D3-A456-426614174000';
+        DB::table('documento')->where('id', $document)->update(['uuid' => $uuid]);
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldNotReceive('preview');
+        $builder->shouldNotReceive('buildIndividual');
+
+        $service = new FacturacionService(
+            Mockery::mock(NexfiraClient::class),
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $pending = $service->pendingDocuments(false);
+        $this->assertCount(1, $pending['documents']);
+        $this->assertTrue($pending['documents'][0]['already_invoiced']);
+        $this->assertFalse($pending['documents'][0]['can_hub']);
+        $this->assertContains($uuid, $pending['documents'][0]['blockers'][0]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('ya está facturada con UUID ' . $uuid);
+
+        $service->createIndividual($document, 9);
+    }
+
     private function insertDocument($folio, $total, $fulfillment = 1)
     {
         return DB::table('documento')->insertGetId([
