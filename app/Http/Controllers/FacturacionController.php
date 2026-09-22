@@ -63,7 +63,9 @@ class FacturacionController extends Controller
 
             return [
                 'code' => 202,
-                'message' => 'Solicitud individual enviada. La venta permanecerá en fase 5 hasta recuperar XML y PDF.',
+                'message' => 'Solicitud individual enviada con serie ' . $result['series']
+                    . ' y folio ' . $result['folio']
+                    . '. La venta permanecerá en fase 5 hasta recuperar XML y PDF.',
                 'request' => $result,
             ];
         });
@@ -85,7 +87,9 @@ class FacturacionController extends Controller
 
             return [
                 'code' => 202,
-                'message' => 'Solicitud global enviada. Las ventas permanecerán en fase 5 hasta recuperar XML y PDF.',
+                'message' => 'Solicitud global enviada con serie ' . $result['series']
+                    . ' y folio ' . $result['folio']
+                    . '. Las ventas permanecerán en fase 5 hasta recuperar XML y PDF.',
                 'request' => $result,
             ];
         });
@@ -101,7 +105,7 @@ class FacturacionController extends Controller
             return [
                 'code' => 200,
                 'message' => $completed
-                    ? 'Factura recuperada y ventas movidas a fase 6.'
+                    ? 'Factura timbrada; folio, UUID, XML y PDF guardados. Ventas movidas a fase 6.'
                     : 'Estado de Nexfira actualizado: ' . $result['status'] . '.',
                 'request' => $result,
             ];
@@ -123,7 +127,9 @@ class FacturacionController extends Controller
 
             return [
                 'code' => 200,
-                'message' => 'CFDI externo validado, relacionado y ventas movidas a fase 6.',
+                'message' => 'CFDI externo timbrado; serie ' . $result['series']
+                    . ', folio ' . $result['folio']
+                    . ', UUID, XML y PDF guardados. Ventas movidas a fase 6.',
                 'request' => $result,
             ];
         });

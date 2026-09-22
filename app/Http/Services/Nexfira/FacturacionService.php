@@ -54,6 +54,15 @@ class FacturacionService
             $alreadyInvoiced = $this->hasExistingInvoice($document);
             $requiresExternal = (int) $document->fulfillment === 1
                 && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
+            $billingSeries = null;
+            $seriesError = null;
+            if (!$requiresExternal) {
+                try {
+                    $billingSeries = $this->billingSeriesForMarketplace($document->marketplace);
+                } catch (InvalidArgumentException $e) {
+                    $seriesError = $e->getMessage();
+                }
+            }
             if ($alreadyInvoiced) {
                 $preview = [
                     'valid' => false,
@@ -64,6 +73,11 @@ class FacturacionService
                     'valid' => false,
                     'blockers' => ['Las ventas FULL de Mercado Libre se facturan fuera del Hub.'],
                 ];
+            } elseif ($seriesError !== null) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => [$seriesError],
+                ];
             } else {
                 $preview = $this->builder->preview($document->id);
             }
@@ -72,6 +86,7 @@ class FacturacionService
                 'id' => (int) $document->id,
                 'folio' => $document->no_venta,
                 'marketplace' => $document->marketplace,
+                'billing_series' => $billingSeries,
                 'fulfillment' => (bool) $document->fulfillment,
                 'tipo_logistica' => (int) $document->fulfillment === 1 ? 'FULL' : 'DROP',
                 'total' => $document->total === null ? null : (float) $document->total,
@@ -192,6 +207,20 @@ class FacturacionService
 
     public function sync($requestId, $userId)
     {
+        $lockName = 'nexfira_sync_' . (int) $requestId;
+        if (!$this->acquireSyncLock($lockName)) {
+            throw new InvalidArgumentException('La solicitud Nexfira está siendo actualizada por otro proceso.');
+        }
+
+        try {
+            return $this->syncLocked($requestId, $userId);
+        } finally {
+            $this->releaseSyncLock($lockName);
+        }
+    }
+
+    private function syncLocked($requestId, $userId)
+    {
         $request = DB::table('facturacion_solicitud')->where('id', (int) $requestId)->first();
         if (!$request) {
             throw new InvalidArgumentException('No se encontró la solicitud de facturación.');
@@ -221,6 +250,7 @@ class FacturacionService
                     $payload = json_decode((string) $request->request_payload, true);
                     $expectedTotal = $payload['content']['expectedTotals']['total'] ?? null;
                     $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
+                    $this->assertRequestedFiscalIdentity($request, $validated);
                     $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId);
                     $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
                 }
@@ -231,6 +261,26 @@ class FacturacionService
         }
 
         return $this->publicRequest($request);
+    }
+
+    private function acquireSyncLock($lockName)
+    {
+        $connection = DB::connection();
+        if ($connection->getDriverName() !== 'mysql') {
+            return true;
+        }
+
+        $result = $connection->select('SELECT GET_LOCK(?, 0) AS acquired', [$lockName]);
+
+        return !empty($result) && (int) $result[0]->acquired === 1;
+    }
+
+    private function releaseSyncLock($lockName)
+    {
+        $connection = DB::connection();
+        if ($connection->getDriverName() === 'mysql') {
+            $connection->select('SELECT RELEASE_LOCK(?)', [$lockName]);
+        }
     }
 
     public function attachExternal(array $documentIds, $uuid, $pdfData, $xmlData, $userId)
@@ -261,11 +311,16 @@ class FacturacionService
         $xml = $this->validator->decodeDataUrl($xmlData, 'xml');
         $expectedTotal = $this->expectedTotalForDocuments($documentIds);
         $validated = $this->validator->validate($pdf, $xml, $normalizedUuid, $expectedTotal);
+        if (empty($validated['serie']) || empty($validated['folio'])) {
+            throw new InvalidArgumentException('El XML externo debe contener Serie y Folio fiscales.');
+        }
 
         $now = date('Y-m-d H:i:s');
         $requestId = DB::table('facturacion_solicitud')->insertGetId([
             'proveedor' => 'external',
             'modo' => count($documentIds) > 1 ? 'global' : 'individual',
+            'serie' => $validated['serie'],
+            'folio' => $validated['folio'],
             'idempotency_key' => $key,
             'external_reference' => substr('afa-external-' . strtolower($validated['uuid']) . '-' . $groupHash, 0, 100),
             'status' => 'processing',
@@ -289,20 +344,41 @@ class FacturacionService
     private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId)
     {
         $now = date('Y-m-d H:i:s');
-        $requestId = DB::table('facturacion_solicitud')->insertGetId([
-            'proveedor' => 'nexfira',
-            'modo' => $mode,
-            'idempotency_key' => $idempotencyKey,
-            'external_reference' => $externalReference,
-            'status' => 'sending',
-            'version' => 1,
-            'request_payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            'updated_by' => (int) $userId,
-            'created_at' => $now,
-            'updated_at' => $now,
-        ]);
-        $this->linkDocuments($requestId, $documentIds, $now);
-        $request = DB::table('facturacion_solicitud')->where('id', $requestId)->first();
+        $request = DB::transaction(function () use (
+            $mode,
+            $documentIds,
+            $payload,
+            $externalReference,
+            $idempotencyKey,
+            $userId,
+            $now
+        ) {
+            $series = $this->billingSeriesForDocuments($documentIds);
+            $folio = $this->reserveNextInvoiceFolio();
+            if (!isset($payload['content']) || !is_array($payload['content'])) {
+                throw new InvalidArgumentException('No fue posible asignar serie y folio al CFDI.');
+            }
+            $payload['content']['series'] = $series;
+            $payload['content']['folio'] = (string) $folio;
+
+            $requestId = DB::table('facturacion_solicitud')->insertGetId([
+                'proveedor' => 'nexfira',
+                'modo' => $mode,
+                'serie' => $series,
+                'folio' => (string) $folio,
+                'idempotency_key' => $idempotencyKey,
+                'external_reference' => $externalReference,
+                'status' => 'sending',
+                'version' => 1,
+                'request_payload' => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'updated_by' => (int) $userId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            $this->linkDocuments($requestId, $documentIds, $now);
+
+            return DB::table('facturacion_solicitud')->where('id', $requestId)->first();
+        });
 
         return $this->sendStoredRequest($request);
     }
@@ -357,8 +433,9 @@ class FacturacionService
     private function finalizeDocuments($request, $pdf, $xml, array $validated, $userId)
     {
         $path = '/facturacion/' . strtolower($validated['uuid']);
-        $pdfResponse = $this->dropbox->uploadFile($path . '/factura.pdf', $pdf, false);
-        $xmlResponse = $this->dropbox->uploadFile($path . '/factura.xml', $xml, false);
+        $fileBaseName = $this->fiscalFileBaseName($validated);
+        $pdfResponse = $this->dropbox->uploadFile($path . '/' . $fileBaseName . '.pdf', $pdf, false);
+        $xmlResponse = $this->dropbox->uploadFile($path . '/' . $fileBaseName . '.xml', $xml, false);
         if (!is_array($pdfResponse) || !isset($pdfResponse['id']) || isset($pdfResponse['error'])) {
             throw new InvalidArgumentException('Dropbox no pudo guardar el PDF fiscal.');
         }
@@ -398,6 +475,8 @@ class FacturacionService
 
                 DB::table('documento')->where('id', $documentId)->update([
                     'uuid' => $validated['uuid'],
+                    'factura_serie' => isset($validated['serie']) ? $validated['serie'] : '',
+                    'factura_folio' => !empty($validated['folio']) ? $validated['folio'] : 'N/A',
                     'id_fase' => 6,
                     'invoice_date' => date('Y-m-d H:i:s'),
                     'updated_at' => date('Y-m-d H:i:s'),
@@ -427,6 +506,15 @@ class FacturacionService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    private function fiscalFileBaseName(array $validated)
+    {
+        $candidate = !empty($validated['folio']) ? $validated['folio'] : $validated['uuid'];
+        $safe = preg_replace('/[^A-Za-z0-9._-]+/', '-', trim((string) $candidate));
+        $safe = trim((string) $safe, '.-_');
+
+        return $safe !== '' ? $safe : strtolower((string) $validated['uuid']);
     }
 
     private function latestRequestsForDocuments(array $documentIds)
@@ -459,6 +547,8 @@ class FacturacionService
             'id' => (int) $request->id,
             'provider' => $request->proveedor,
             'mode' => $request->modo,
+            'series' => isset($request->serie) ? $request->serie : null,
+            'folio' => isset($request->folio) ? $request->folio : null,
             'remote_request_id' => $request->remote_request_id,
             'external_reference' => $request->external_reference,
             'status' => $request->status,
@@ -551,6 +641,89 @@ class FacturacionService
     {
         return (int) $document->fulfillment === 1
             && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
+    }
+
+    private function billingSeriesForDocuments(array $documentIds)
+    {
+        $documents = DB::table('documento as d')
+            ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
+            ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
+            ->whereIn('d.id', $documentIds)
+            ->where('d.id_tipo', 2)
+            ->where('d.status', 1)
+            ->whereNull('d.deleted_at')
+            ->select('d.id', 'mk.marketplace')
+            ->get();
+
+        if ($documents->count() !== count($documentIds)) {
+            throw new InvalidArgumentException('No fue posible resolver la serie fiscal de todas las ventas seleccionadas.');
+        }
+
+        $series = [];
+        foreach ($documents as $document) {
+            $series[$this->billingSeriesForMarketplace($document->marketplace)] = true;
+        }
+        $values = array_keys($series);
+        if (count($values) !== 1) {
+            throw new InvalidArgumentException(
+                'Una factura sólo puede incluir ventas de un mismo marketplace y serie fiscal.'
+            );
+        }
+
+        return $values[0];
+    }
+
+    private function billingSeriesForMarketplace($marketplace)
+    {
+        $name = strtoupper(trim((string) $marketplace));
+        $series = (array) config('nexfira.series', []);
+        if (!isset($series[$name]) || !preg_match('/^[A-Za-z0-9_-]{1,25}$/', (string) $series[$name])) {
+            throw new InvalidArgumentException(
+                'El marketplace ' . ($name !== '' ? $name : '(sin nombre)') . ' no tiene serie fiscal configurada.'
+            );
+        }
+
+        return (string) $series[$name];
+    }
+
+    private function reserveNextInvoiceFolio()
+    {
+        $key = (string) config('nexfira.folio.sequence_key', 'nexfira_cfdi_ingreso');
+        $initial = (int) config('nexfira.folio.initial', 40000);
+        $sequence = DB::table('facturacion_folio_consecutivo')
+            ->where('clave', $key)
+            ->lockForUpdate()
+            ->first();
+        if (!$sequence || (int) $sequence->siguiente_folio < $initial) {
+            throw new InvalidArgumentException(
+                'No está inicializado el consecutivo fiscal de Nexfira en ' . $initial . '.'
+            );
+        }
+
+        $folio = (int) $sequence->siguiente_folio;
+        DB::table('facturacion_folio_consecutivo')->where('clave', $key)->update([
+            'siguiente_folio' => $folio + 1,
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+
+        return $folio;
+    }
+
+    private function assertRequestedFiscalIdentity($request, array $validated)
+    {
+        $expectedSeries = isset($request->serie) ? trim((string) $request->serie) : '';
+        $expectedFolio = isset($request->folio) ? trim((string) $request->folio) : '';
+        if ($expectedSeries === '' && $expectedFolio === '') {
+            return;
+        }
+        if ($expectedSeries !== (string) ($validated['serie'] ?? '')
+            || $expectedFolio !== (string) ($validated['folio'] ?? '')) {
+            throw new NexfiraApiException(
+                'La Serie o el Folio del XML recuperado no coincide con lo solicitado a Nexfira.',
+                503,
+                'fiscal_identity_mismatch'
+            );
+        }
     }
 
     private function hasExistingInvoice($document)

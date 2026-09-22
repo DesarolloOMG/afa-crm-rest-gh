@@ -1424,6 +1424,10 @@ class GeneralController extends Controller
                 ->where('id_documento', $venta->id)
                 ->select('xml', 'pdf')
                 ->first();
+            $venta->timbrado = $this->uuidFiscalValido($venta->uuid)
+                && $venta->archivos_factura
+                && !empty($venta->archivos_factura->xml)
+                && !empty($venta->archivos_factura->pdf);
         }
 
         return response()->json([
@@ -1447,6 +1451,12 @@ class GeneralController extends Controller
         }
 
         return $fase;
+    }
+
+    private function uuidFiscalValido($uuid)
+    {
+        return is_string($uuid)
+            && preg_match('/^[0-9A-F]{8}-[0-9A-F]{4}-[1-5][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i', trim($uuid)) === 1;
     }
 
     public function general_busqueda_venta_borrar($dropbox)

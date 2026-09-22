@@ -2,6 +2,7 @@
 
 namespace App\Console;
 
+use App\Console\Commands\SyncNexfiraInvoices;
 use Illuminate\Console\Scheduling\Schedule;
 use Laravel\Lumen\Console\Kernel as ConsoleKernel;
 
@@ -13,7 +14,7 @@ class Kernel extends ConsoleKernel
      * @var array
      */
     protected $commands = [
-        //
+        SyncNexfiraInvoices::class,
     ];
 
     /**
@@ -24,6 +25,10 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        //
+        if (config('nexfira.polling.enabled', true)) {
+            $schedule->command('nexfira:sync-active')
+                ->everyMinute()
+                ->withoutOverlapping(10);
+        }
     }
 }

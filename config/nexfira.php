@@ -8,6 +8,21 @@ return [
     'fiscal_timezone' => env('NEXFIRA_FISCAL_TIMEZONE', 'America/Mexico_City'),
     'tax_rate' => env('NEXFIRA_TAX_RATE', '0.160000'),
     'request_timeout' => (int) env('NEXFIRA_REQUEST_TIMEOUT', 30),
+    'polling' => [
+        'enabled' => filter_var(env('NEXFIRA_POLLING_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'batch_size' => max(1, (int) env('NEXFIRA_POLLING_BATCH_SIZE', 25)),
+    ],
+    'folio' => [
+        'sequence_key' => 'nexfira_cfdi_ingreso',
+        'initial' => 40000,
+    ],
+    'series' => [
+        'ELEKTRA' => 'ELK',
+        'MLG' => 'MLG',
+        'PISO DE VENTA' => 'PV',
+        'MERCADOLIBRE' => 'F-ML',
+        'CYBERPUERTA' => 'C',
+    ],
     'global' => [
         'receiver_rfc' => env('NEXFIRA_GLOBAL_RECEIVER_RFC', 'XAXX010101000'),
         'receiver_name' => env('NEXFIRA_GLOBAL_RECEIVER_NAME', 'PUBLICO EN GENERAL'),

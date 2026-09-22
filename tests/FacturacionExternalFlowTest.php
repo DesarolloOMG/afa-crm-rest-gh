@@ -7,6 +7,7 @@ use App\Http\Services\Nexfira\FacturacionService;
 use App\Http\Services\Nexfira\InvoicePayloadBuilder;
 use App\Http\Services\Nexfira\NexfiraApiException;
 use App\Http\Services\Nexfira\NexfiraClient;
+use App\Console\Commands\SyncNexfiraInvoices;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\MockHandler;
 use GuzzleHttp\HandlerStack;
@@ -14,6 +15,7 @@ use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\Request;
+use Symfony\Component\Console\Tester\CommandTester;
 
 class FacturacionExternalFlowTest extends TestCase
 {
@@ -33,6 +35,15 @@ class FacturacionExternalFlowTest extends TestCase
             'nexfira.issuer_id' => '223e4567-e89b-42d3-a456-426614174000',
             'nexfira.expedition_postal_code' => '44100',
             'nexfira.global.receiver_postal_code' => '44100',
+            'nexfira.folio.sequence_key' => 'nexfira_cfdi_ingreso',
+            'nexfira.folio.initial' => 40000,
+            'nexfira.series' => [
+                'ELEKTRA' => 'ELK',
+                'MLG' => 'MLG',
+                'PISO DE VENTA' => 'PV',
+                'MERCADOLIBRE' => 'F-ML',
+                'CYBERPUERTA' => 'C',
+            ],
         ]);
 
         DB::purge();
@@ -53,7 +64,7 @@ class FacturacionExternalFlowTest extends TestCase
 
         $uuid = '123E4567-E89B-42D3-A456-426614174000';
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Total="348.00">'
+            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Serie="AFA" Folio="9001" Total="348.00">'
             . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $uuid . '" /></cfdi:Complemento>'
             . '</cfdi:Comprobante>';
         $pdf = "%PDF-1.4\nCFDI de prueba";
@@ -61,11 +72,11 @@ class FacturacionExternalFlowTest extends TestCase
         $dropbox = Mockery::mock(DropboxService::class);
         $dropbox->shouldReceive('uploadFile')
             ->once()
-            ->with('/facturacion/' . strtolower($uuid) . '/factura.pdf', $pdf, false)
+            ->with('/facturacion/' . strtolower($uuid) . '/9001.pdf', $pdf, false)
             ->andReturn(['id' => 'id:pdf-global']);
         $dropbox->shouldReceive('uploadFile')
             ->once()
-            ->with('/facturacion/' . strtolower($uuid) . '/factura.xml', $xml, false)
+            ->with('/facturacion/' . strtolower($uuid) . '/9001.xml', $xml, false)
             ->andReturn(['id' => 'id:xml-global']);
 
         $service = new FacturacionService(
@@ -84,6 +95,8 @@ class FacturacionExternalFlowTest extends TestCase
         );
 
         $this->assertSame('stamped', $result['status']);
+        $this->assertSame('AFA', $result['series']);
+        $this->assertSame('9001', $result['folio']);
         $this->assertSame($uuid, $result['fiscal_uuid']);
         $this->assertSame('retrieved', $result['documents_status']);
 
@@ -92,6 +105,8 @@ class FacturacionExternalFlowTest extends TestCase
         foreach ($documents as $document) {
             $this->assertSame(6, (int) $document->id_fase);
             $this->assertSame($uuid, $document->uuid);
+            $this->assertSame('AFA', $document->factura_serie);
+            $this->assertSame('9001', $document->factura_folio);
             $this->assertNotNull($document->invoice_date);
         }
 
@@ -132,7 +147,7 @@ class FacturacionExternalFlowTest extends TestCase
         $remoteRequestId = '323e4567-e89b-42d3-a456-426614174000';
         $fiscalUuid = '423E4567-E89B-42D3-A456-426614174000';
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Total="116.00">'
+            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Serie="F-ML" Folio="40000" Total="116.00">'
             . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $fiscalUuid . '" /></cfdi:Complemento>'
             . '</cfdi:Comprobante>';
         $pdf = "%PDF-1.4\nCFDI Nexfira de prueba";
@@ -158,12 +173,12 @@ class FacturacionExternalFlowTest extends TestCase
 
         $dropbox = Mockery::mock(DropboxService::class);
         $dropbox->shouldReceive('uploadFile')->once()->with(
-            '/facturacion/' . strtolower($fiscalUuid) . '/factura.pdf',
+            '/facturacion/' . strtolower($fiscalUuid) . '/40000.pdf',
             $pdf,
             false
         )->andReturn(['id' => 'id:pdf-nexfira']);
         $dropbox->shouldReceive('uploadFile')->once()->with(
-            '/facturacion/' . strtolower($fiscalUuid) . '/factura.xml',
+            '/facturacion/' . strtolower($fiscalUuid) . '/40000.xml',
             $xml,
             false
         )->andReturn(['id' => 'id:xml-nexfira']);
@@ -177,6 +192,12 @@ class FacturacionExternalFlowTest extends TestCase
 
         $accepted = $service->createIndividual($document, 9);
         $this->assertSame('pending_approval', $accepted['status']);
+        $this->assertSame('F-ML', $accepted['series']);
+        $this->assertSame('40000', $accepted['folio']);
+        $storedPayload = json_decode(DB::table('facturacion_solicitud')->value('request_payload'), true);
+        $this->assertSame('F-ML', $storedPayload['content']['series']);
+        $this->assertSame('40000', $storedPayload['content']['folio']);
+        $this->assertSame(40001, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
         $this->assertSame(5, (int) DB::table('documento')->where('id', $document)->value('id_fase'));
         $this->assertNull(DB::table('documento')->where('id', $document)->value('uuid'));
 
@@ -240,6 +261,7 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertCount(1, $pending['documents']);
         $this->assertFalse($pending['documents'][0]['already_invoiced']);
         $this->assertTrue($pending['documents'][0]['can_hub']);
+        $this->assertSame('F-ML', $pending['documents'][0]['billing_series']);
         $this->assertSame([], $pending['documents'][0]['blockers']);
     }
 
@@ -368,7 +390,7 @@ class FacturacionExternalFlowTest extends TestCase
         $service->shouldReceive('createGlobal')
             ->once()
             ->with([41, 42], 9, 'productos', [])
-            ->andReturn(['status' => 'pending_approval']);
+            ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
             'documentos' => [41, 42],
@@ -399,7 +421,10 @@ class FacturacionExternalFlowTest extends TestCase
         $client = Mockery::mock(NexfiraClient::class);
         $client->shouldReceive('createDocumentRequest')
             ->once()
-            ->with($payload, Mockery::type('string'))
+            ->with(Mockery::on(function ($sentPayload) {
+                return $sentPayload['content']['series'] === 'F-ML'
+                    && $sentPayload['content']['folio'] === '40000';
+            }), Mockery::type('string'))
             ->andReturn([
                 'requestId' => '723e4567-e89b-42d3-a456-426614174000',
                 'status' => 'pending_approval',
@@ -415,7 +440,45 @@ class FacturacionExternalFlowTest extends TestCase
         $result = $service->createGlobal([$second, $first], 9, 'productos');
 
         $this->assertSame('global_productos', $result['mode']);
+        $this->assertSame('F-ML', $result['series']);
+        $this->assertSame('40000', $result['folio']);
         $this->assertSame('global_productos', DB::table('facturacion_solicitud')->value('modo'));
+    }
+
+    public function testGlobalInvoiceRejectsMixedFiscalSeriesWithoutConsumingFolio()
+    {
+        $first = $this->insertDocument('DROP-MELI', 116.00, 0);
+        $second = $this->insertDocument('DROP-ELEKTRA', 232.00, 0);
+        DB::table('marketplace')->insert(['id' => 2, 'marketplace' => 'ELEKTRA']);
+        DB::table('marketplace_area')->insert([
+            'id' => 2,
+            'id_marketplace' => 2,
+            'publico' => 1,
+        ]);
+        DB::table('documento')->where('id', $second)->update(['id_marketplace_area' => 2]);
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('buildGlobal')->once()->andReturn([
+            'content' => ['expectedTotals' => ['total' => '348.00']],
+        ]);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $service = new FacturacionService(
+            $client,
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        try {
+            $service->createGlobal([$first, $second], 9, 'productos');
+            $this->fail('La factura global mezcló series fiscales distintas.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('mismo marketplace y serie fiscal', $exception->getMessage());
+        }
+
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
     }
 
     public function testBillingEndpointPassesGlobalSatInformationToService()
@@ -444,7 +507,7 @@ class FacturacionExternalFlowTest extends TestCase
         $service->shouldReceive('createGlobal')
             ->once()
             ->with([41, 42], 9, 'ventas', $globalInformation)
-            ->andReturn(['status' => 'pending_approval']);
+            ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
             'documentos' => [41, 42],
@@ -457,6 +520,71 @@ class FacturacionExternalFlowTest extends TestCase
 
         $this->assertSame(202, $response->getStatusCode());
         $this->assertSame('pending_approval', json_decode($response->getContent(), true)['request']['status']);
+    }
+
+    public function testScheduledCommandSynchronizesOnlyActiveNexfiraRequestsWithPhaseFiveSales()
+    {
+        $pendingDocument = $this->insertDocument('DROP-AUTO-PENDING', 116.00, 0);
+        $completedDocument = $this->insertDocument('DROP-AUTO-COMPLETED', 232.00, 0);
+        DB::table('documento')->where('id', $completedDocument)->update(['id_fase' => 6]);
+
+        $pendingRequest = DB::table('facturacion_solicitud')->insertGetId([
+            'proveedor' => 'nexfira',
+            'modo' => 'global_ventas',
+            'remote_request_id' => '823e4567-e89b-42d3-a456-426614174000',
+            'idempotency_key' => 'auto-pending-key',
+            'external_reference' => 'auto-pending-reference',
+            'status' => 'pending_approval',
+            'version' => 1,
+            'updated_by' => 9,
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+        $completedRequest = DB::table('facturacion_solicitud')->insertGetId([
+            'proveedor' => 'nexfira',
+            'modo' => 'individual',
+            'remote_request_id' => '923e4567-e89b-42d3-a456-426614174000',
+            'idempotency_key' => 'auto-completed-key',
+            'external_reference' => 'auto-completed-reference',
+            'status' => 'stamped',
+            'version' => 1,
+            'documents_status' => 'retrieved',
+            'updated_by' => 9,
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
+        DB::table('facturacion_solicitud_documento')->insert([
+            [
+                'id_solicitud' => $pendingRequest,
+                'id_documento' => $pendingDocument,
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ],
+            [
+                'id_solicitud' => $completedRequest,
+                'id_documento' => $completedDocument,
+                'created_at' => date('Y-m-d H:i:s'),
+                'updated_at' => date('Y-m-d H:i:s'),
+            ],
+        ]);
+
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('sync')
+            ->once()
+            ->with($pendingRequest, 9)
+            ->andReturn([
+                'status' => 'pending_approval',
+                'documents_status' => null,
+            ]);
+
+        $command = new SyncNexfiraInvoices($service);
+        $command->setLaravel($this->app);
+        $tester = new CommandTester($command);
+        $exitCode = $tester->execute([]);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertStringContainsString('1 procesada(s)', $tester->getDisplay());
+        $this->assertStringContainsString('1 pendiente(s)', $tester->getDisplay());
     }
 
     private function insertDocument($folio, $total, $fulfillment = 1)
@@ -544,6 +672,8 @@ class FacturacionExternalFlowTest extends TestCase
             $table->string('no_venta');
             $table->decimal('total', 20, 4)->nullable();
             $table->string('uuid')->nullable();
+            $table->string('factura_serie')->nullable();
+            $table->string('factura_folio')->nullable();
             $table->timestamp('invoice_date')->nullable();
             $table->timestamp('deleted_at')->nullable();
             $table->timestamps();
@@ -576,6 +706,8 @@ class FacturacionExternalFlowTest extends TestCase
             $table->increments('id');
             $table->string('proveedor');
             $table->string('modo');
+            $table->string('serie')->nullable();
+            $table->string('folio')->nullable();
             $table->string('remote_request_id')->nullable();
             $table->string('idempotency_key')->unique();
             $table->string('external_reference')->unique();
@@ -600,6 +732,17 @@ class FacturacionExternalFlowTest extends TestCase
             $table->integer('id_documento');
             $table->timestamps();
         });
+        Schema::create('facturacion_folio_consecutivo', function ($table) {
+            $table->string('clave')->primary();
+            $table->integer('siguiente_folio');
+            $table->timestamps();
+        });
+        DB::table('facturacion_folio_consecutivo')->insert([
+            'clave' => 'nexfira_cfdi_ingreso',
+            'siguiente_folio' => 40000,
+            'created_at' => date('Y-m-d H:i:s'),
+            'updated_at' => date('Y-m-d H:i:s'),
+        ]);
         Schema::create('documento_factura', function ($table) {
             $table->increments('id');
             $table->integer('id_documento');

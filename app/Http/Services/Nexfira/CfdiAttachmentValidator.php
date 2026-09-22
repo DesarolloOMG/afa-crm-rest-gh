@@ -79,6 +79,8 @@ class CfdiAttachmentValidator
 
         return [
             'uuid' => $uuid,
+            'serie' => trim((string) $comprobante->getAttribute('Serie')),
+            'folio' => trim((string) $comprobante->getAttribute('Folio')),
             'total' => number_format((float) $total, 2, '.', ''),
             'xml_sha256' => hash('sha256', $xml),
             'pdf_sha256' => hash('sha256', $pdf),
