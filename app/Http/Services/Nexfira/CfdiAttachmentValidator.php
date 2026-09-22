@@ -77,8 +77,18 @@ class CfdiAttachmentValidator
             );
         }
 
+        $related = [];
+        foreach ($xpath->query('/*[local-name()="Comprobante"]/*[local-name()="CfdiRelacionados"]/*[local-name()="CfdiRelacionado"]') as $node) {
+            $related[] = strtoupper(trim($node->getAttribute('UUID')));
+        }
+        $receiver = $xpath->query('/*[local-name()="Comprobante"]/*[local-name()="Receptor"]')->item(0);
+
         return [
             'uuid' => $uuid,
+            'type' => strtoupper(trim($comprobante->getAttribute('TipoDeComprobante'))),
+            'currency' => strtoupper(trim($comprobante->getAttribute('Moneda'))),
+            'receiver_rfc' => $receiver ? strtoupper(trim($receiver->getAttribute('Rfc'))) : '',
+            'related_uuids' => $related,
             'serie' => trim((string) $comprobante->getAttribute('Serie')),
             'folio' => trim((string) $comprobante->getAttribute('Folio')),
             'total' => number_format((float) $total, 2, '.', ''),

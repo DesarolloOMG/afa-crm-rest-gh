@@ -176,6 +176,36 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         );
     }
 
+    public function testGlobalProductInvoiceKeepsUserSelectedPaymentMethodAndForm()
+    {
+        $first = $this->insertDocument('PAGO-1', 116, 0);
+        $second = $this->insertDocument('PAGO-2', 116, 0);
+        $this->insertMovement($first, 1, 116);
+        $this->insertMovement($second, 1, 116);
+        $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pagos-productos', 'productos', [], [
+            'paymentMethod' => 'PPD', 'paymentForm' => '99',
+        ]);
+        $this->assertSame('PPD', $payload['content']['paymentMethod']);
+        $this->assertSame('99', $payload['content']['paymentForm']);
+        $salesPayload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pagos-ventas', 'ventas', [], [
+            'paymentMethod' => 'PUE', 'paymentForm' => '03',
+        ]);
+        $this->assertSame('03', $salesPayload['content']['paymentForm']);
+    }
+
+    public function testGlobalSalesRejectsUnsupportedPaymentInsteadOfSilentlyOverwritingIt()
+    {
+        $first = $this->insertDocument('PAGO-1', 116, 1);
+        $second = $this->insertDocument('PAGO-2', 116, 1);
+        $this->insertMovement($first, 1, 116);
+        $this->insertMovement($second, 1, 116);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Revisa tu selección');
+        (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pago-no-permitido', 'ventas', [], [
+            'paymentMethod' => 'PPD', 'paymentForm' => '99',
+        ]);
+    }
+
     public function testRejectsProductGlobalForDifferentFiscalReceivers()
     {
         DB::table('marketplace_area')->where('id', 1)->update(['publico' => 0]);

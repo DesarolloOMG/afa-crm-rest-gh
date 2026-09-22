@@ -37,7 +37,7 @@ class FacturacionController extends Controller
 
             return [
                 'code' => 200,
-                'data' => $this->service->pendingDocuments($fulfillment, $page, $perPage, $search),
+                'data' => $this->service->pendingDocuments($fulfillment, $page, $perPage, $search, (int) $request->input('document_type', 2)),
             ];
         });
     }
@@ -55,7 +55,8 @@ class FacturacionController extends Controller
                 'code' => 200,
                 'data' => $this->service->pendingDocumentsByIds(
                     isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
-                    $fulfillment
+                    $fulfillment,
+                    (int) ($data['document_type'] ?? 2)
                 ),
             ];
         });
@@ -87,7 +88,7 @@ class FacturacionController extends Controller
                 'code' => 202,
                 'message' => 'Solicitud individual enviada con serie ' . $result['series']
                     . ' y folio ' . $result['folio']
-                    . '. La venta permanecerá en fase 5 hasta recuperar XML y PDF.',
+                    . '. El documento quedará pendiente de timbrado hasta recuperar UUID, XML y PDF.',
                 'request' => $result,
             ];
         });
@@ -104,7 +105,8 @@ class FacturacionController extends Controller
                 isset($data['agrupacion']) ? $data['agrupacion'] : 'ventas',
                 isset($data['informacionGlobal']) && is_array($data['informacionGlobal'])
                     ? $data['informacionGlobal']
-                    : []
+                    : [],
+                $this->paymentOverrides($data)
             );
 
             return [
@@ -127,7 +129,7 @@ class FacturacionController extends Controller
             return [
                 'code' => 200,
                 'message' => $completed
-                    ? 'Factura timbrada; folio, UUID, XML y PDF guardados. Ventas movidas a fase 6.'
+                    ? 'CFDI timbrado; folio, UUID, XML y PDF guardados en los documentos relacionados.'
                     : 'Estado de Nexfira actualizado: ' . $result['status'] . '.',
                 'request' => $result,
             ];
@@ -151,7 +153,7 @@ class FacturacionController extends Controller
                 'code' => 200,
                 'message' => 'CFDI externo timbrado; serie ' . $result['series']
                     . ', folio ' . $result['folio']
-                    . ', UUID, XML y PDF guardados. Ventas movidas a fase 6.',
+                    . ', UUID, XML y PDF guardados en los documentos seleccionados.',
                 'request' => $result,
             ];
         });
@@ -213,6 +215,9 @@ class FacturacionController extends Controller
     private function paymentOverrides(array $data)
     {
         $overrides = [];
+        if (isset($data['relationshipCode'])) {
+            $overrides['relationshipCode'] = $data['relationshipCode'];
+        }
         if (isset($data['paymentMethod']) && $data['paymentMethod'] !== '') {
             $overrides['paymentMethod'] = $data['paymentMethod'];
         }

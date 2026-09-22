@@ -4,6 +4,7 @@ namespace App\Http\Services\Nexfira;
 
 use App\Http\Services\DropboxService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use Throwable;
 
@@ -13,6 +14,7 @@ class FacturacionService
     private $builder;
     private $dropbox;
     private $validator;
+    private $creditNoteIds;
 
     public function __construct(
         NexfiraClient $client,
@@ -26,13 +28,14 @@ class FacturacionService
         $this->validator = $validator;
     }
 
-    public function pendingDocuments($fulfillment = null, $page = 1, $perPage = 25, $search = '')
+    public function pendingDocuments($fulfillment = null, $page = 1, $perPage = 25, $search = '', $documentType = 2)
     {
+        $this->creditNoteIds = null;
         $page = max(1, (int) $page);
         $perPage = in_array((int) $perPage, [10, 25, 50, 100], true) ? (int) $perPage : 25;
-        $query = $this->pendingDocumentsQuery();
+        $query = $this->pendingDocumentsQuery($documentType);
 
-        if ($fulfillment !== null) {
+        if ((int) $documentType === 2 && $fulfillment !== null) {
             $query->where('d.fulfillment', (int) ((bool) $fulfillment));
         }
         $this->applyPendingSearch($query, $search);
@@ -57,6 +60,7 @@ class FacturacionService
             'counts' => [
                 'drop' => $this->countPendingByFulfillment(0),
                 'full' => $this->countPendingByFulfillment(1),
+                'credit_notes' => $this->pendingDocumentsQuery(6)->count('d.id'),
             ],
             'pagination' => [
                 'page' => $page,
@@ -70,8 +74,9 @@ class FacturacionService
         ];
     }
 
-    public function pendingDocumentsByIds(array $documentIds, $fulfillment = null)
+    public function pendingDocumentsByIds(array $documentIds, $fulfillment = null, $documentType = 2)
     {
+        $this->creditNoteIds = null;
         $documentIds = array_values(array_filter(array_unique(array_map('intval', $documentIds)), function ($id) {
             return $id > 0;
         }));
@@ -82,8 +87,8 @@ class FacturacionService
             throw new InvalidArgumentException('La carga rápida admite hasta 500 documentos por operación.');
         }
 
-        $query = $this->pendingDocumentsQuery()->whereIn('d.id', $documentIds);
-        if ($fulfillment !== null) {
+        $query = $this->pendingDocumentsQuery($documentType)->whereIn('d.id', $documentIds);
+        if ((int) $documentType === 2 && $fulfillment !== null) {
             $query->where('d.fulfillment', (int) ((bool) $fulfillment));
         }
 
@@ -154,15 +159,32 @@ class FacturacionService
         $externalReference = 'afa-' . (int) $documentId . '-v' . $attempt;
         $idempotencyKey = 'afa-individual-' . (int) $documentId . '-v' . $attempt;
         $payload = $this->builder->buildIndividual($documentId, $externalReference, $overrides);
+        if ((int) $summary->id_tipo === 6) {
+            try {
+                $payload = (new CreditNoteBalanceAllocator($this->client))->apply($documentId, $payload);
+            } catch (NexfiraApiException $exception) {
+                // La consulta de saldo ocurre antes de reservar folio y crear la solicitud.
+                Log::warning('Nexfira: no se pudo consultar el saldo para una NC.', [
+                    'documento_id' => (int) $documentId,
+                    'http_status' => $exception->getHttpStatus(),
+                    'code' => $exception->getApiCode(),
+                    'correlation_id' => $exception->getCorrelationId(),
+                    'errors' => $exception->getValidationErrors(),
+                ]);
+                throw $exception;
+            }
+        }
 
-        return $this->submit('individual', [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId);
+        return $this->submit((int) $summary->id_tipo === 6 ? 'nota_credito' : 'individual',
+            [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId);
     }
 
     public function createGlobal(
         array $documentIds,
         $userId,
         $grouping = InvoicePayloadBuilder::GLOBAL_GROUP_SALES,
-        array $globalInformation = []
+        array $globalInformation = [],
+        array $overrides = []
     )
     {
         $grouping = strtolower(trim((string) $grouping));
@@ -176,6 +198,9 @@ class FacturacionService
         $documentIds = $this->normalizeDocumentIds($documentIds, 2);
         foreach ($documentIds as $documentId) {
             $summary = $this->saleSummary($documentId);
+            if ((int) $summary->id_tipo !== 2) {
+                throw new InvalidArgumentException('Las notas de crédito sólo se timbran individualmente; no pueden incluirse en globales.');
+            }
             $this->assertNotAlreadyInvoiced($summary);
             if ($this->isMeliFull($summary)) {
                 throw new InvalidArgumentException('Las ventas FULL de Mercado Libre no pueden incluirse en una factura global del Hub.');
@@ -197,7 +222,8 @@ class FacturacionService
             $documentIds,
             $externalReference,
             $grouping,
-            $globalInformation
+            $globalInformation,
+            $overrides
         );
         $requestMode = $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
             ? 'global_productos'
@@ -251,6 +277,11 @@ class FacturacionService
                     $payload = json_decode((string) $request->request_payload, true);
                     $expectedTotal = $payload['content']['expectedTotals']['total'] ?? null;
                     $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
+                    if (($payload['kind'] ?? null) === 'CFDI_E') {
+                        $this->assertCreditNoteAttachments($this->linkedDocumentIds($request->id), $validated);
+                    } elseif ($validated['type'] !== '' && $validated['type'] !== 'I') {
+                        throw new InvalidArgumentException('Se esperaba un CFDI de ingreso para las ventas.');
+                    }
                     $this->assertRequestedFiscalIdentity($request, $validated);
                     $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId);
                     $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
@@ -295,8 +326,10 @@ class FacturacionService
             return $this->publicRequest($existing);
         }
 
+        $documentTypes = [];
         foreach ($documentIds as $documentId) {
             $summary = $this->saleSummary($documentId);
+            $documentTypes[(int) $summary->id_tipo] = true;
             if ($this->hasExistingInvoice($summary)
                 && strtoupper((string) $summary->uuid) !== $normalizedUuid) {
                 throw new InvalidArgumentException(
@@ -304,6 +337,10 @@ class FacturacionService
                 );
             }
         }
+        if (count($documentTypes) !== 1) {
+            throw new InvalidArgumentException('No puedes mezclar ventas y notas de crédito en un mismo CFDI externo.');
+        }
+        $isCreditNote = isset($documentTypes[6]);
         if ($this->activeRequestForDocuments($documentIds)) {
             throw new InvalidArgumentException('Al menos una venta seleccionada ya tiene una solicitud de facturación activa.');
         }
@@ -312,6 +349,11 @@ class FacturacionService
         $xml = $this->validator->decodeDataUrl($xmlData, 'xml');
         $expectedTotal = $this->expectedTotalForDocuments($documentIds);
         $validated = $this->validator->validate($pdf, $xml, $normalizedUuid, $expectedTotal);
+        if ($isCreditNote) {
+            $this->assertCreditNoteAttachments($documentIds, $validated);
+        } elseif ($validated['type'] !== '' && $validated['type'] !== 'I') {
+            throw new InvalidArgumentException('Seleccionaste ventas; carga un CFDI de ingreso, no de egreso.');
+        }
         if (empty($validated['serie']) || empty($validated['folio'])) {
             throw new InvalidArgumentException('El XML externo debe contener Serie y Folio fiscales.');
         }
@@ -319,7 +361,7 @@ class FacturacionService
         $now = date('Y-m-d H:i:s');
         $requestId = DB::table('facturacion_solicitud')->insertGetId([
             'proveedor' => 'external',
-            'modo' => count($documentIds) > 1 ? 'global' : 'individual',
+            'modo' => $isCreditNote ? 'nota_credito' : (count($documentIds) > 1 ? 'global' : 'individual'),
             'serie' => $validated['serie'],
             'folio' => $validated['folio'],
             'idempotency_key' => $key,
@@ -449,14 +491,18 @@ class FacturacionService
         try {
             foreach ($documentIds as $documentId) {
                 $document = DB::table('documento')->where('id', $documentId)->lockForUpdate()->first();
-                if (!$document || (int) $document->status !== 1) {
+                if (!$document || (int) $document->status !== 1 || $document->deleted_at !== null) {
                     throw new InvalidArgumentException('La venta ' . $documentId . ' ya no está activa.');
                 }
                 if ((int) $document->id_fase === 6 && strtoupper((string) $document->uuid) === $validated['uuid']) {
                     continue;
                 }
-                if ((int) $document->id_fase !== 5) {
+                if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== 5) {
                     throw new InvalidArgumentException('La venta ' . $documentId . ' dejó de estar en fase 5.');
+                }
+                if (!in_array((int) $document->id_tipo, [2, 6], true)
+                    || ($this->hasExistingInvoice($document) && strtoupper((string) $document->uuid) !== $validated['uuid'])) {
+                    throw new InvalidArgumentException('El documento ' . $documentId . ' ya tiene otro CFDI o no es facturable.');
                 }
 
                 $relation = DB::table('documento_factura')->where('id_documento', $documentId)->first();
@@ -489,7 +535,8 @@ class FacturacionService
                 DB::table('seguimiento')->insert([
                     'id_documento' => $documentId,
                     'id_usuario' => (int) $userId,
-                    'seguimiento' => 'Venta facturada. UUID: ' . $validated['uuid'] . '.',
+                    'seguimiento' => ((int) $document->id_tipo === 6 ? 'Nota de crédito timbrada.' : 'Venta facturada.')
+                        . ' UUID: ' . $validated['uuid'] . '.',
                 ]);
             }
 
@@ -622,16 +669,16 @@ class FacturacionService
             ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
             ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
             ->where('d.id', (int) $documentId)
-            ->where('d.id_tipo', 2)
+            ->whereIn('d.id_tipo', [2, 6])
             ->where('d.status', 1)
             ->whereNull('d.deleted_at')
-            ->select('d.id', 'd.id_fase', 'd.fulfillment', 'd.total', 'd.uuid', 'mk.marketplace')
+            ->select('d.id', 'd.id_tipo', 'd.id_fase', 'd.fulfillment', 'd.total', 'd.uuid', 'mk.marketplace')
             ->first();
 
         if (!$document) {
             throw new InvalidArgumentException('No se encontró la venta activa ' . (int) $documentId . '.');
         }
-        if ((int) $document->id_fase !== 5) {
+        if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== 5) {
             throw new InvalidArgumentException('La venta ' . $document->id . ' no está en fase 5 pendiente de factura.');
         }
 
@@ -640,7 +687,7 @@ class FacturacionService
 
     private function isMeliFull($document)
     {
-        return (int) $document->fulfillment === 1
+        return (int) $document->id_tipo === 2 && (int) $document->fulfillment === 1
             && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
     }
 
@@ -650,7 +697,7 @@ class FacturacionService
             ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
             ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
             ->whereIn('d.id', $documentIds)
-            ->where('d.id_tipo', 2)
+            ->whereIn('d.id_tipo', [2, 6])
             ->where('d.status', 1)
             ->whereNull('d.deleted_at')
             ->select('d.id', 'mk.marketplace')
@@ -744,22 +791,48 @@ class FacturacionService
         }
     }
 
-    private function pendingDocumentsQuery()
+    private function pendingDocumentsQuery($documentType = 2)
     {
-        return DB::table('documento as d')
+        if (!in_array((int) $documentType, [2, 6], true)) {
+            throw new InvalidArgumentException('Tipo de documento no válido para facturación.');
+        }
+        $query = DB::table('documento as d')
             ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
             ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
             ->leftJoin('documento_entidad as de', 'de.id', '=', 'd.id_entidad')
-            ->where('d.id_tipo', 2)
-            ->where('d.id_fase', 5)
+            ->where('d.id_tipo', (int) $documentType)
             ->where('d.status', 1)
             ->whereNull('d.deleted_at');
+        if ((int) $documentType === 2) {
+            return $query->where('d.id_fase', 5);
+        }
+        // Las NC heredan la fase operativa de la venta; pendiente fiscal se determina por UUID.
+        return $query->whereRaw("UPPER(TRIM(COALESCE(d.uuid, ''))) IN ('', 'N/A', 'NA', 'N.A.', 'NO APLICA')")
+            ->whereIn('d.id', $this->linkedCreditNoteIds());
+    }
+
+    private function linkedCreditNoteIds()
+    {
+        if ($this->creditNoteIds === null) {
+            // Evita comparar texto con la PK en un subquery correlacionado por cada NC.
+            $references = DB::table('documento')->where('id_tipo', 2)->whereNull('deleted_at')
+                ->whereNotNull('nota')->whereNotIn('nota', ['', '0', 'N/A', 'NA', 'N.A.', 'NO APLICA'])->pluck('nota');
+            $ids = [];
+            foreach ($references as $reference) {
+                $reference = trim((string) $reference);
+                if (ctype_digit($reference) && (int) $reference > 0) {
+                    $ids[(int) $reference] = (int) $reference;
+                }
+            }
+            $this->creditNoteIds = array_values($ids);
+        }
+        return $this->creditNoteIds;
     }
 
     private function pendingDocumentColumns()
     {
         return [
-            'd.id', 'd.no_venta', 'd.fulfillment', 'd.total', 'd.created_at', 'd.uuid',
+            'd.id', 'd.id_tipo', 'd.no_venta', 'd.fulfillment', 'd.total', 'd.created_at', 'd.uuid',
             'mk.marketplace', 'ma.publico', 'de.razon_social', 'de.rfc',
         ];
     }
@@ -810,8 +883,7 @@ class FacturacionService
         $items = [];
         foreach ($documents as $document) {
             $alreadyInvoiced = $this->hasExistingInvoice($document);
-            $requiresExternal = (int) $document->fulfillment === 1
-                && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
+            $requiresExternal = $this->isMeliFull($document);
             $billingSeries = null;
             $seriesError = null;
             if (!$requiresExternal) {
@@ -839,21 +911,33 @@ class FacturacionService
             } else {
                 $preview = $this->builder->preview($document->id);
             }
+            $externalBlockers = $alreadyInvoiced ? ['El documento ya tiene un CFDI registrado.'] : [];
+            if ((int) $document->id_tipo === 6 && !$alreadyInvoiced) {
+                try {
+                    (new CreditNoteContext())->resolve($document->id);
+                } catch (InvalidArgumentException $exception) {
+                    $externalBlockers[] = $exception->getMessage();
+                }
+            }
 
             $items[] = [
                 'id' => (int) $document->id,
+                'document_type' => (int) $document->id_tipo,
                 'folio' => $document->no_venta,
                 'marketplace' => $document->marketplace,
                 'billing_series' => $billingSeries,
                 'fulfillment' => (bool) $document->fulfillment,
-                'tipo_logistica' => (int) $document->fulfillment === 1 ? 'FULL' : 'DROP',
-                'total' => $document->total === null ? null : (float) $document->total,
+                'tipo_logistica' => (int) $document->id_tipo === 6 ? 'NC' : ((int) $document->fulfillment === 1 ? 'FULL' : 'DROP'),
+                'total' => (int) $document->id_tipo === 6 ? $this->expectedTotalForDocuments([(int) $document->id])
+                    : ($document->total === null ? null : (float) $document->total),
                 'created_at' => $document->created_at,
                 'cliente' => $document->razon_social,
                 'rfc' => $document->rfc,
                 'already_invoiced' => $alreadyInvoiced,
                 'requires_external' => $requiresExternal,
                 'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
+                'can_external' => empty($externalBlockers),
+                'external_blockers' => $externalBlockers,
                 'blockers' => $preview['blockers'],
                 'request' => isset($requestMap[$document->id]) ? $requestMap[$document->id] : null,
             ];
@@ -935,7 +1019,7 @@ class FacturacionService
         $total = 0.0;
         foreach ($documentIds as $documentId) {
             $document = $this->saleSummary($documentId);
-            if ($document->total !== null) {
+            if ((int) $document->id_tipo === 2 && $document->total !== null) {
                 $total += (float) $document->total;
                 continue;
             }
@@ -947,6 +1031,29 @@ class FacturacionService
         }
 
         return round($total, 2);
+    }
+
+    private function assertCreditNoteAttachments(array $documentIds, array $validated)
+    {
+        if ($validated['type'] !== 'E') {
+            throw new InvalidArgumentException('Las notas de crédito requieren un XML tipo E (egreso).');
+        }
+        $expectedRelations = [];
+        foreach ($documentIds as $documentId) {
+            $context = (new CreditNoteContext())->resolve($documentId);
+            if ($context['currency'] !== $validated['currency']
+                || strtoupper($context['receiver_rfc']) !== $validated['receiver_rfc']) {
+                throw new InvalidArgumentException('El receptor o moneda del XML no coincide con la NC ' . $documentId . '.');
+            }
+            $expectedRelations[] = $context['source_uuid'];
+        }
+        $expectedRelations = array_values(array_unique($expectedRelations));
+        $actualRelations = array_values(array_unique($validated['related_uuids']));
+        sort($expectedRelations);
+        sort($actualRelations);
+        if ($expectedRelations !== $actualRelations) {
+            throw new InvalidArgumentException('Los UUID relacionados del XML deben corresponder a las facturas origen de las NC seleccionadas.');
+        }
     }
 
     private function alreadyFinalized($request)

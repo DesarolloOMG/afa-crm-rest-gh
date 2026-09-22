@@ -47,8 +47,15 @@ class SyncNexfiraInvoices extends Command
                     ->from('facturacion_solicitud_documento as fsd')
                     ->join('documento as d', 'd.id', '=', 'fsd.id_documento')
                     ->whereRaw('fsd.id_solicitud = fs.id')
-                    ->where('d.id_fase', 5)
-                    ->where('d.status', 1);
+                    ->where(function ($pending) {
+                        $pending->where(function ($sale) {
+                            $sale->where('d.id_tipo', 2)->where('d.id_fase', 5);
+                        })->orWhere(function ($note) {
+                            $note->where('d.id_tipo', 6)
+                                ->whereRaw("UPPER(TRIM(COALESCE(d.uuid, ''))) IN ('', 'N/A', 'NA', 'N.A.', 'NO APLICA')");
+                        });
+                    })
+                    ->whereNull('d.deleted_at')->where('d.status', 1);
             })
             ->orderBy('fs.id')
             ->limit($limit)

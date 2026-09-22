@@ -48,6 +48,12 @@ class NexfiraClient
         return (string) $response->getBody();
     }
 
+    public function getPaymentBalance($requestId, $fiscal = false)
+    {
+        return $this->jsonRequest('GET', '/api/v1/integration/document-requests/'
+            . rawurlencode($requestId) . ($fiscal ? '/payment-fiscal-balance' : '/payment-balance'), [], [200]);
+    }
+
     private function jsonRequest($method, $path, array $options, array $successStatuses)
     {
         $response = $this->request($method, $path, $options, $successStatuses);

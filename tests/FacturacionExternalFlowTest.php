@@ -57,6 +57,241 @@ class FacturacionExternalFlowTest extends TestCase
         parent::tearDown();
     }
 
+    public function testCreditNoteTabIncludesActivePhaseSixNotesAndDoesNotRemoveTheirSales()
+    {
+        $sale = $this->insertDocument('ORIGEN-NC', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $service = $this->creditNoteService();
+        $notes = $service->pendingDocuments(null, 1, 25, '', 6);
+        $this->assertSame([$note], array_column($notes['documents'], 'id'));
+        $this->assertSame(116.0, $notes['documents'][0]['total']);
+        $this->assertSame('NC', $notes['documents'][0]['tipo_logistica']);
+        $this->assertFalse($notes['documents'][0]['can_hub']);
+        $this->assertStringContainsString('Primero registra el UUID', $notes['documents'][0]['blockers'][0]);
+        $this->assertSame([$sale], array_column($service->pendingDocuments(false)['documents'], 'id'));
+        $this->assertSame([$note], array_column($service->pendingDocumentsByIds([$sale, $note], true, 6)['documents'], 'id'));
+        $this->assertSame(1, $notes['counts']['credit_notes']);
+        DB::table('documento')->where('id', $note)->update(['status' => 0]);
+        $this->assertSame(0, $service->pendingDocuments(null, 1, 25, '', 6)['pagination']['total']);
+    }
+
+    public function testCreditNoteIsSentAsIndividualEgressAndSyncedWithoutOverwritingOriginalSale()
+    {
+        $sale = $this->insertDocument('ORIGEN-TIMBRADO', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $source = $this->storeCreditNoteAntecedent($sale);
+        $uuid = '923E4567-E89B-42D3-A456-426614174000';
+        $remoteId = '823e4567-e89b-42d3-a456-426614174000';
+        $xml = $this->creditXml($uuid, [$source['uuid']], '116.00', '40000');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'])
+            ->andThrow(new NexfiraApiException('Sin saldo administrado', 404, 'not_found'));
+        $client->shouldReceive('createDocumentRequest')->once()
+            ->with(Mockery::on(function ($payload) use ($source) {
+                return $payload['kind'] === 'CFDI_E' && $payload['subtype'] === 'return_credit'
+                    && $payload['content']['relations'] === [['antecedentId' => $source['request_id'], 'relationshipCode' => '03']]
+                    && $payload['content']['receiver']['cfdiUse'] === 'G02'
+                    && $payload['content']['paymentMethod'] === 'PUE'
+                    && $payload['content']['paymentForm'] === '03'
+                    && $payload['content']['expectedTotals']['total'] === '116.00'
+                    && $payload['content']['series'] === 'F-ML'
+                    && $payload['content']['folio'] === '40000';
+            }), Mockery::type('string'))->andReturn(['requestId' => $remoteId, 'status' => 'queued']);
+        $client->shouldReceive('getDocumentRequest')->once()->with($remoteId)->andReturn([
+            'requestId' => $remoteId, 'status' => 'stamped', 'fiscalUuid' => $uuid, 'documentsStatus' => 'retrieved',
+        ]);
+        $client->shouldReceive('downloadDocument')->once()->with($remoteId, 'xml')->andReturn($xml);
+        $client->shouldReceive('downloadDocument')->once()->with($remoteId, 'pdf')->andReturn('%PDF-1.4 NC');
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:archivo-nc']);
+        $service = $this->creditNoteService($client, $dropbox);
+        $result = $service->createIndividual($note, 9, ['paymentMethod' => 'PUE', 'paymentForm' => '03']);
+        $this->assertSame('nota_credito', $result['mode']);
+        $this->assertSame('N/A', DB::table('documento')->where('id', $note)->value('uuid'));
+        $service->sync($result['id'], 9);
+        $this->assertSame($uuid, DB::table('documento')->where('id', $note)->value('uuid'));
+        $this->assertSame('40000', DB::table('documento')->where('id', $note)->value('factura_folio'));
+        $this->assertSame($source['uuid'], DB::table('documento')->where('id', $sale)->value('uuid'));
+        $this->assertSame(0, DB::table('documento_factura')->where('id_documento', $sale)->count());
+        $this->assertSame(0, $service->pendingDocuments(null, 1, 25, '', 6)['pagination']['total']);
+    }
+
+    public function testExternalEgressCanRelateSeveralCreditNotesAndLeavesOriginalSalesUntouched()
+    {
+        $saleA = $this->insertDocument('ORIGEN-A', 116, 0);
+        $saleB = $this->insertDocument('ORIGEN-B', 116, 0);
+        $noteA = $this->insertCreditNote($saleA, 116);
+        $noteB = $this->insertCreditNote($saleB, 116);
+        $sourceUuid = '123E4567-E89B-42D3-A456-426614174000';
+        DB::table('documento')->whereIn('id', [$saleA, $saleB])->update(['uuid' => $sourceUuid, 'id_fase' => 6]);
+        $uuid = '923E4567-E89B-42D3-A456-426614174000';
+        $xml = $this->creditXml($uuid, [$sourceUuid], '232.00');
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:egreso']);
+        $service = $this->creditNoteService(null, $dropbox);
+        $result = $service->attachExternal([$noteA, $noteB], $uuid, base64_encode('%PDF-1.4'), base64_encode($xml), 9);
+        $this->assertSame('nota_credito', $result['mode']);
+        $this->assertSame(2, DB::table('documento')->whereIn('id', [$noteA, $noteB])->where('uuid', $uuid)->count());
+        $this->assertSame(2, DB::table('documento')->whereIn('id', [$saleA, $saleB])->where('uuid', $sourceUuid)->count());
+        $this->assertSame(2, DB::table('documento_factura')->count());
+    }
+
+    public function testExternalCreditNoteRejectsWrongXmlTypeReceiverOrRelationBeforeUploading()
+    {
+        $sale = $this->insertDocument('ORIGEN', 116, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $sourceUuid = '123E4567-E89B-42D3-A456-426614174000';
+        DB::table('documento')->where('id', $sale)->update(['uuid' => $sourceUuid]);
+        $uuid = '923E4567-E89B-42D3-A456-426614174000';
+        $xml = $this->creditXml($uuid, [$sourceUuid], '116.00');
+        $invalid = [
+            str_replace('TipoDeComprobante="E"', 'TipoDeComprobante="I"', $xml),
+            str_replace('Rfc="XAXX010101000"', 'Rfc="AAA010101AAA"', $xml),
+            str_replace($sourceUuid, '223E4567-E89B-42D3-A456-426614174000', $xml),
+            str_replace('Total="116.00"', 'Total="232.00"', $xml),
+        ];
+        foreach ($invalid as $candidate) {
+            try {
+                $this->creditNoteService()->attachExternal([$note], $uuid, base64_encode('%PDF-1.4'), base64_encode($candidate), 9);
+                $this->fail('Se aceptó un XML incorrecto para la NC.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertNotEmpty($exception->getMessage());
+            }
+        }
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
+    }
+
+    public function testNotesCannotBeGlobalizedOrMixedWithSalesExternally()
+    {
+        $sale = $this->insertDocument('ORIGEN', 116, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        foreach (['global', 'external'] as $operation) {
+            try {
+                $service = $this->creditNoteService();
+                if ($operation === 'global') {
+                    $service->createGlobal([$sale, $note], 9);
+                } else {
+                    $service->attachExternal([$sale, $note], '', '', '', 9);
+                }
+                $this->fail('Se aceptó una selección mixta.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertNotEmpty($exception->getMessage());
+            }
+        }
+    }
+
+    public function testCreditNoteRejectsExternalAntecedentForHubAndPpdWithoutConsumingFolio()
+    {
+        $sale = $this->insertDocument('ORIGEN', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        DB::table('documento')->where('id', $sale)->update(['uuid' => '123E4567-E89B-42D3-A456-426614174000']);
+        $preview = $this->creditNoteService()->preview($note);
+        $this->assertFalse($preview['valid']);
+        $this->assertStringContainsString('Fuera del Hub', $preview['blockers'][0]);
+        $this->storeCreditNoteAntecedent($sale);
+        try {
+            $this->creditNoteService()->createIndividual($note, 9, ['paymentMethod' => 'PPD']);
+            $this->fail('Se aceptó PPD para una NC.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('exige PUE', $exception->getMessage());
+        }
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function testCreditNoteUsesFreshBalanceVersionAndOriginalTaxedLine()
+    {
+        $sale = $this->insertDocument('ORIGEN-PPD', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $source = $this->storeCreditNoteAntecedent($sale, 'PPD');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'])->andReturn([
+            'antecedentId' => $source['request_id'], 'currency' => 'MXN', 'version' => 3,
+            'availableBalance' => '232.00', 'reservedAmount' => '0.00',
+        ]);
+        $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'], true)->andReturn([
+            'antecedentId' => $source['request_id'], 'version' => 3,
+            'components' => [['lineId' => $source['line_id'], 'netAmount' => '200.000000']],
+        ]);
+        $client->shouldReceive('createDocumentRequest')->once()->with(Mockery::on(function ($payload) use ($source) {
+            $adjustment = $payload['content']['balanceAdjustments'][0];
+            return $adjustment['expectedBalanceVersion'] === 3 && $adjustment['amount'] === '116.00'
+                && $adjustment['lineAdjustments'][0]['antecedentLineId'] === $source['line_id']
+                && $adjustment['lineAdjustments'][0]['netAmount'] === '100.000000';
+        }), Mockery::type('string'))->andReturn([
+            'requestId' => '823e4567-e89b-42d3-a456-426614174000', 'status' => 'queued',
+        ]);
+        $result = $this->creditNoteService($client)->createIndividual($note, 9, ['paymentMethod' => 'PUE', 'paymentForm' => '03']);
+        $this->assertSame('queued', $result['status']);
+    }
+
+    public function testSchedulerRetrievesCreditNoteArtifactsEvenWhenItsOperationalPhaseIsSix()
+    {
+        $sale = $this->insertDocument('ORIGEN-AUTO', 116, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $request = DB::table('facturacion_solicitud')->insertGetId([
+            'proveedor' => 'nexfira', 'modo' => 'nota_credito', 'idempotency_key' => 'nc-auto',
+            'external_reference' => 'nc-auto', 'status' => 'queued', 'version' => 1, 'updated_by' => 9,
+        ]);
+        DB::table('facturacion_solicitud_documento')->insert(['id_documento' => $note, 'id_solicitud' => $request]);
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('sync')->once()->with($request, 9)->andReturn([
+            'status' => 'stamped', 'documents_status' => 'retrieved',
+        ]);
+        $command = new SyncNexfiraInvoices($service);
+        $command->setLaravel($this->app);
+        $tester = new CommandTester($command);
+        $this->assertSame(0, $tester->execute([]));
+        $this->assertStringContainsString('1 completada', $tester->getDisplay());
+    }
+
+    private function creditNoteService($client = null, $dropbox = null)
+    {
+        return new FacturacionService($client ?: Mockery::mock(NexfiraClient::class), new InvoicePayloadBuilder(),
+            $dropbox ?: Mockery::mock(DropboxService::class), new CfdiAttachmentValidator());
+    }
+
+    private function insertCreditNote($sale, $amount)
+    {
+        $note = $this->insertDocument('NC-' . $sale, 0, 0);
+        DB::table('documento')->where('id', $note)->update(['id_tipo' => 6, 'id_fase' => 6, 'uuid' => 'N/A']);
+        DB::table('documento')->where('id', $sale)->update(['nota' => (string) $note]);
+        DB::table('movimiento')->insert([
+            'id_documento' => $note, 'id_modelo' => 1, 'cantidad' => 1, 'precio' => $amount, 'descuento' => 0, 'retencion' => 0,
+        ]);
+        return $note;
+    }
+
+    private function storeCreditNoteAntecedent($sale, $method = 'PUE')
+    {
+        DB::table('movimiento')->insert([
+            'id_documento' => $sale, 'id_modelo' => 1, 'cantidad' => 2, 'precio' => 116, 'descuento' => 0, 'retencion' => 0,
+        ]);
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($sale, 'origen-' . $sale, ['paymentMethod' => $method]);
+        $uuid = '123E4567-E89B-42D3-A456-426614174000';
+        $requestId = '723e4567-e89b-42d3-a456-426614174000';
+        $id = DB::table('facturacion_solicitud')->insertGetId([
+            'proveedor' => 'nexfira', 'modo' => 'individual', 'remote_request_id' => $requestId,
+            'idempotency_key' => 'origen-' . $sale, 'external_reference' => 'origen-' . $sale, 'status' => 'stamped',
+            'fiscal_uuid' => $uuid, 'version' => 1, 'updated_by' => 9, 'request_payload' => json_encode($payload),
+        ]);
+        DB::table('facturacion_solicitud_documento')->insert(['id_solicitud' => $id, 'id_documento' => $sale]);
+        DB::table('documento')->where('id', $sale)->update(['uuid' => $uuid, 'id_fase' => 6]);
+        return ['uuid' => $uuid, 'request_id' => $requestId, 'line_id' => $payload['content']['items'][0]['lineId']];
+    }
+
+    private function creditXml($uuid, array $related, $total, $folio = '356')
+    {
+        $relations = '';
+        foreach ($related as $id) {
+            $relations .= '<cfdi:CfdiRelacionado UUID="' . $id . '"/>';
+        }
+        return '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="E" Moneda="MXN" Serie="F-ML" Folio="'
+            . $folio . '" Total="' . $total . '"><cfdi:CfdiRelacionados TipoRelacion="03">' . $relations
+            . '</cfdi:CfdiRelacionados><cfdi:Receptor Rfc="XAXX010101000"/>'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'
+            . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
+    }
+
     public function testExternalGlobalCfdiFinalizesEveryLinkedSaleWithSameArtifacts()
     {
         $first = $this->insertDocument('FULL-100', 116.00);
@@ -434,7 +669,7 @@ class FacturacionExternalFlowTest extends TestCase
         ]);
 
         $service = Mockery::mock(FacturacionService::class);
-        $service->shouldReceive('pendingDocuments')->once()->with(null, 1, 25, '')->andReturn([
+        $service->shouldReceive('pendingDocuments')->once()->with(null, 1, 25, '', 2)->andReturn([
             'documents' => [],
             'counts' => ['drop' => 0, 'full' => 0],
             'configured' => true,
@@ -468,12 +703,14 @@ class FacturacionExternalFlowTest extends TestCase
         $service = Mockery::mock(FacturacionService::class);
         $service->shouldReceive('createGlobal')
             ->once()
-            ->with([41, 42], 9, 'productos', [])
+            ->with([41, 42], 9, 'productos', [], ['paymentMethod' => 'PPD', 'paymentForm' => '99'])
             ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
             'documentos' => [41, 42],
             'agrupacion' => 'productos',
+            'paymentMethod' => 'PPD',
+            'paymentForm' => '99',
         ]);
         $request->auth = (object) ['id' => 9];
 
@@ -495,7 +732,7 @@ class FacturacionExternalFlowTest extends TestCase
         $builder = Mockery::mock(InvoicePayloadBuilder::class);
         $builder->shouldReceive('buildGlobal')
             ->once()
-            ->with([$first, $second], Mockery::type('string'), 'productos', [])
+            ->with([$first, $second], Mockery::type('string'), 'productos', [], [])
             ->andReturn($payload);
         $client = Mockery::mock(NexfiraClient::class);
         $client->shouldReceive('createDocumentRequest')
@@ -585,7 +822,7 @@ class FacturacionExternalFlowTest extends TestCase
         $service = Mockery::mock(FacturacionService::class);
         $service->shouldReceive('createGlobal')
             ->once()
-            ->with([41, 42], 9, 'ventas', $globalInformation)
+            ->with([41, 42], 9, 'ventas', $globalInformation, [])
             ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
@@ -751,6 +988,7 @@ class FacturacionExternalFlowTest extends TestCase
             $table->string('no_venta');
             $table->decimal('total', 20, 4)->nullable();
             $table->string('uuid')->nullable();
+            $table->string('nota')->nullable();
             $table->string('factura_serie')->nullable();
             $table->string('factura_folio')->nullable();
             $table->timestamp('invoice_date')->nullable();

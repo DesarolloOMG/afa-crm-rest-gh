@@ -15,6 +15,9 @@ class InvoicePayloadBuilder
     public function buildIndividual($documentId, $externalReference, array $overrides = [])
     {
         $document = $this->getDocument($documentId);
+        if ((int) $document->id_tipo === 6) {
+            return $this->buildCreditNote($document, $externalReference, $overrides);
+        }
         $items = $this->buildProductItems($document);
         $totals = $this->totalsFromItems($items);
         $this->assertStoredTotal($document, $totals['total']);
@@ -32,7 +35,8 @@ class InvoicePayloadBuilder
         array $documentIds,
         $externalReference,
         $grouping = self::GLOBAL_GROUP_SALES,
-        array $globalInformation = []
+        array $globalInformation = [],
+        array $overrides = []
     )
     {
         $grouping = $this->validatedGlobalGrouping($grouping);
@@ -44,7 +48,11 @@ class InvoicePayloadBuilder
 
         $documents = [];
         foreach ($documentIds as $documentId) {
-            $documents[] = $this->getDocument($documentId);
+            $document = $this->getDocument($documentId);
+            if ((int) $document->id_tipo !== 2) {
+                throw new InvalidArgumentException('Las notas de crédito sólo se timbran individualmente.');
+            }
+            $documents[] = $document;
         }
 
         $currency = $documents[0]->currency;
@@ -73,16 +81,22 @@ class InvoicePayloadBuilder
 
         $content = [
             'paymentMethod' => $this->validatedPaymentMethod(
-                config('nexfira.global.payment_method', 'PUE')
+                $overrides['paymentMethod'] ?? config('nexfira.global.payment_method', 'PUE')
             ),
             'paymentForm' => $this->validatedPaymentForm(
-                config('nexfira.global.payment_form', '31')
+                $overrides['paymentForm'] ?? config('nexfira.global.payment_form', '31')
             ),
             'receiver' => $receiver,
             'items' => $items,
             'expectedTotals' => $totals,
         ];
         if ($grouping === self::GLOBAL_GROUP_SALES) {
+            if ($content['paymentMethod'] !== 'PUE' || !in_array($content['paymentForm'], [
+                '01', '02', '03', '04', '05', '06', '08', '12', '13', '14', '15', '17',
+                '23', '24', '25', '26', '27', '28', '29', '30', '31',
+            ], true)) {
+                throw new InvalidArgumentException('Nexfira exige PUE y una forma de pago distinta de 99 para la global por ventas. Revisa tu selección.');
+            }
             $content['globalInformation'] = $globalInformation;
         }
 
@@ -106,6 +120,53 @@ class InvoicePayloadBuilder
                 'payload' => null,
             ];
         }
+    }
+
+    private function buildCreditNote($document, $externalReference, array $overrides)
+    {
+        $context = (new CreditNoteContext())->resolve($document->id, true);
+        $items = $this->buildProductItems($document);
+        $totals = $this->totalsFromItems($items);
+        if ((float) $totals['total'] <= 0) {
+            throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');
+        }
+        // Las NC históricas no guardaban documento.total; sus movimientos son el importe real.
+        if ($document->total !== null && (float) $document->total > 0) {
+            $this->assertStoredTotal($document, $totals['total']);
+        }
+        $method = $this->validatedPaymentMethod($overrides['paymentMethod'] ?? 'PUE');
+        if ($method !== 'PUE') {
+            throw new InvalidArgumentException('Nexfira exige PUE para las notas de crédito. Revisa el método seleccionado.');
+        }
+        $relationship = (string) ($overrides['relationshipCode'] ?? '03');
+        if (!in_array($relationship, ['01', '03'], true)) {
+            throw new InvalidArgumentException('Selecciona relación 01 (descuento/bonificación) o 03 (devolución).');
+        }
+        $receiver = $context['source_payload']['content']['receiver'];
+        $receiver['cfdiUse'] = 'G02';
+        $this->assertReceiver($receiver, $document->id);
+        $payload = $this->basePayload($document, $externalReference, [
+            'paymentMethod' => $method,
+            'paymentForm' => $this->paymentForm($document, $overrides),
+            'receiver' => $receiver,
+            'items' => $items,
+            'expectedTotals' => $totals,
+        ]);
+        $payload['kind'] = 'CFDI_E';
+        $payload['subtype'] = $relationship === '03' ? 'return_credit' : 'discount_credit';
+        $payload['content']['relations'] = [[
+            'antecedentId' => $context['request_id'],
+            'relationshipCode' => $relationship,
+        ]];
+        if ($document->currency !== 'MXN') {
+            $rate = $context['source_payload']['content']['exchangeRateToMxn'] ?? null;
+            if (!$rate || (float) $rate <= 0) {
+                throw new InvalidArgumentException('La factura origen no contiene tipo de cambio fiscal para la NC.');
+            }
+            $payload['content']['exchangeRateToMxn'] = $rate;
+        }
+
+        return $payload;
     }
 
     private function basePayload($document, $externalReference, array $content)
@@ -155,11 +216,11 @@ class InvoicePayloadBuilder
             ->join('moneda as mn', 'mn.id', '=', 'd.id_moneda')
             ->leftJoin('documento_entidad as de', 'de.id', '=', 'd.id_entidad')
             ->where('d.id', (int) $documentId)
-            ->where('d.id_tipo', 2)
+            ->whereIn('d.id_tipo', [2, 6])
             ->where('d.status', 1)
             ->whereNull('d.deleted_at')
             ->select([
-                'd.id', 'd.id_fase', 'd.id_periodo', 'd.id_entidad', 'd.fulfillment', 'd.no_venta', 'd.total',
+                'd.id', 'd.id_tipo', 'd.id_fase', 'd.id_periodo', 'd.id_entidad', 'd.fulfillment', 'd.no_venta', 'd.total',
                 'd.id_marketplace_area', 'ma.publico', 'mk.marketplace', 'mn.moneda as currency',
                 'uc.codigo as cfdi_use', 'de.rfc', 'de.razon_social', 'de.regimen_id',
                 'de.regimen', 'de.regimen_letra', 'de.codigo_postal_fiscal',
@@ -169,7 +230,7 @@ class InvoicePayloadBuilder
         if (!$document) {
             throw new InvalidArgumentException('No se encontró la venta activa ' . (int) $documentId . '.');
         }
-        if ((int) $document->id_fase !== self::PHASE_PENDING_INVOICE) {
+        if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== self::PHASE_PENDING_INVOICE) {
             throw new InvalidArgumentException('La venta ' . $document->id . ' no está en fase 5 pendiente de factura.');
         }
         if (!preg_match('/^[A-Z]{3}$/', (string) $document->currency)) {
