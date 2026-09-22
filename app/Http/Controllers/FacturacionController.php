@@ -31,10 +31,32 @@ class FacturacionController extends Controller
             $fulfillment = $request->has('fulfillment')
                 ? filter_var($request->input('fulfillment'), FILTER_VALIDATE_BOOLEAN)
                 : null;
+            $page = max(1, (int) $request->input('page', 1));
+            $perPage = (int) $request->input('per_page', 25);
+            $search = trim((string) $request->input('search', ''));
 
             return [
                 'code' => 200,
-                'data' => $this->service->pendingDocuments($fulfillment),
+                'data' => $this->service->pendingDocuments($fulfillment, $page, $perPage, $search),
+            ];
+        });
+    }
+
+    public function seleccion(Request $request): JsonResponse
+    {
+        return $this->handle(function () use ($request) {
+            $this->authorizedUserId($request);
+            $data = $this->payload($request);
+            $fulfillment = array_key_exists('fulfillment', $data)
+                ? filter_var($data['fulfillment'], FILTER_VALIDATE_BOOLEAN)
+                : null;
+
+            return [
+                'code' => 200,
+                'data' => $this->service->pendingDocumentsByIds(
+                    isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
+                    $fulfillment
+                ),
             ];
         });
     }

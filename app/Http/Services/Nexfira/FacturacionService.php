@@ -26,80 +26,31 @@ class FacturacionService
         $this->validator = $validator;
     }
 
-    public function pendingDocuments($fulfillment = null)
+    public function pendingDocuments($fulfillment = null, $page = 1, $perPage = 25, $search = '')
     {
-        $query = DB::table('documento as d')
-            ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
-            ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
-            ->leftJoin('documento_entidad as de', 'de.id', '=', 'd.id_entidad')
-            ->where('d.id_tipo', 2)
-            ->where('d.id_fase', 5)
-            ->where('d.status', 1)
-            ->whereNull('d.deleted_at')
-            ->orderBy('d.id', 'desc')
-            ->limit(500)
-            ->select([
-                'd.id', 'd.no_venta', 'd.fulfillment', 'd.total', 'd.created_at', 'd.uuid',
-                'mk.marketplace', 'ma.publico', 'de.razon_social', 'de.rfc',
-            ]);
+        $page = max(1, (int) $page);
+        $perPage = in_array((int) $perPage, [10, 25, 50, 100], true) ? (int) $perPage : 25;
+        $query = $this->pendingDocumentsQuery();
 
         if ($fulfillment !== null) {
             $query->where('d.fulfillment', (int) ((bool) $fulfillment));
         }
+        $this->applyPendingSearch($query, $search);
 
-        $documents = $query->get();
-        $requestMap = $this->latestRequestsForDocuments($documents->pluck('id')->toArray());
-        $items = [];
-        foreach ($documents as $document) {
-            $alreadyInvoiced = $this->hasExistingInvoice($document);
-            $requiresExternal = (int) $document->fulfillment === 1
-                && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
-            $billingSeries = null;
-            $seriesError = null;
-            if (!$requiresExternal) {
-                try {
-                    $billingSeries = $this->billingSeriesForMarketplace($document->marketplace);
-                } catch (InvalidArgumentException $e) {
-                    $seriesError = $e->getMessage();
-                }
-            }
-            if ($alreadyInvoiced) {
-                $preview = [
-                    'valid' => false,
-                    'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $document->uuid) . '.'],
-                ];
-            } elseif ($requiresExternal) {
-                $preview = [
-                    'valid' => false,
-                    'blockers' => ['Las ventas FULL de Mercado Libre se facturan fuera del Hub.'],
-                ];
-            } elseif ($seriesError !== null) {
-                $preview = [
-                    'valid' => false,
-                    'blockers' => [$seriesError],
-                ];
-            } else {
-                $preview = $this->builder->preview($document->id);
-            }
-
-            $items[] = [
-                'id' => (int) $document->id,
-                'folio' => $document->no_venta,
-                'marketplace' => $document->marketplace,
-                'billing_series' => $billingSeries,
-                'fulfillment' => (bool) $document->fulfillment,
-                'tipo_logistica' => (int) $document->fulfillment === 1 ? 'FULL' : 'DROP',
-                'total' => $document->total === null ? null : (float) $document->total,
-                'created_at' => $document->created_at,
-                'cliente' => $document->razon_social,
-                'rfc' => $document->rfc,
-                'already_invoiced' => $alreadyInvoiced,
-                'requires_external' => $requiresExternal,
-                'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
-                'blockers' => $preview['blockers'],
-                'request' => isset($requestMap[$document->id]) ? $requestMap[$document->id] : null,
-            ];
+        $total = (int) (clone $query)->count('d.id');
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+        $normalizedSearch = substr(trim((string) $search), 0, 100);
+        if (ctype_digit($normalizedSearch)) {
+            $query->orderByRaw('CASE WHEN d.id = ? THEN 0 ELSE 1 END', [(int) $normalizedSearch]);
         }
+        $documents = $query
+            ->orderBy('d.id', 'desc')
+            ->forPage($page, $perPage)
+            ->select($this->pendingDocumentColumns())
+            ->get();
+
+        $items = $this->pendingDocumentItems($documents);
 
         return [
             'documents' => $items,
@@ -107,7 +58,57 @@ class FacturacionService
                 'drop' => $this->countPendingByFulfillment(0),
                 'full' => $this->countPendingByFulfillment(1),
             ],
+            'pagination' => [
+                'page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'last_page' => $lastPage,
+                'from' => $total > 0 ? (($page - 1) * $perPage) + 1 : 0,
+                'to' => $total > 0 ? min($page * $perPage, $total) : 0,
+            ],
             'configured' => $this->isConfigured(),
+        ];
+    }
+
+    public function pendingDocumentsByIds(array $documentIds, $fulfillment = null)
+    {
+        $documentIds = array_values(array_filter(array_unique(array_map('intval', $documentIds)), function ($id) {
+            return $id > 0;
+        }));
+        if (empty($documentIds)) {
+            throw new InvalidArgumentException('Selecciona al menos una venta.');
+        }
+        if (count($documentIds) > 500) {
+            throw new InvalidArgumentException('La carga rápida admite hasta 500 documentos por operación.');
+        }
+
+        $query = $this->pendingDocumentsQuery()->whereIn('d.id', $documentIds);
+        if ($fulfillment !== null) {
+            $query->where('d.fulfillment', (int) ((bool) $fulfillment));
+        }
+
+        $items = $this->pendingDocumentItems(
+            $query->select($this->pendingDocumentColumns())->get()
+        );
+        $itemsById = [];
+        foreach ($items as $item) {
+            $itemsById[(int) $item['id']] = $item;
+        }
+
+        $orderedItems = [];
+        $notAvailable = [];
+        foreach ($documentIds as $documentId) {
+            if (isset($itemsById[$documentId])) {
+                $orderedItems[] = $itemsById[$documentId];
+            } else {
+                $notAvailable[] = $documentId;
+            }
+        }
+
+        return [
+            'documents' => $orderedItems,
+            'requested_ids' => $documentIds,
+            'not_available' => $notAvailable,
         ];
     }
 
@@ -741,6 +742,124 @@ class FacturacionService
                 . strtoupper((string) $document->uuid) . '.'
             );
         }
+    }
+
+    private function pendingDocumentsQuery()
+    {
+        return DB::table('documento as d')
+            ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
+            ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
+            ->leftJoin('documento_entidad as de', 'de.id', '=', 'd.id_entidad')
+            ->where('d.id_tipo', 2)
+            ->where('d.id_fase', 5)
+            ->where('d.status', 1)
+            ->whereNull('d.deleted_at');
+    }
+
+    private function pendingDocumentColumns()
+    {
+        return [
+            'd.id', 'd.no_venta', 'd.fulfillment', 'd.total', 'd.created_at', 'd.uuid',
+            'mk.marketplace', 'ma.publico', 'de.razon_social', 'de.rfc',
+        ];
+    }
+
+    private function applyPendingSearch($query, $search)
+    {
+        $search = substr(trim((string) $search), 0, 100);
+        if ($search === '') {
+            return;
+        }
+
+        $like = '%' . $search . '%';
+        $query->where(function ($filter) use ($search, $like) {
+            if (ctype_digit($search)) {
+                $filter->orWhere('d.id', (int) $search);
+            }
+            $filter
+                ->orWhere('d.no_venta', 'like', $like)
+                ->orWhere('mk.marketplace', 'like', $like)
+                ->orWhere('de.razon_social', 'like', $like)
+                ->orWhere('de.rfc', 'like', $like)
+                ->orWhere('d.uuid', 'like', $like)
+                ->orWhereRaw('CAST(d.total AS CHAR) LIKE ?', [$like])
+                ->orWhereExists(function ($requestQuery) use ($like) {
+                    $requestQuery
+                        ->select(DB::raw(1))
+                        ->from('facturacion_solicitud_documento as fsd_search')
+                        ->join(
+                            'facturacion_solicitud as fs_search',
+                            'fs_search.id',
+                            '=',
+                            'fsd_search.id_solicitud'
+                        )
+                        ->whereRaw('fsd_search.id_documento = d.id')
+                        ->where(function ($requestFilter) use ($like) {
+                            $requestFilter
+                                ->where('fs_search.status', 'like', $like)
+                                ->orWhere('fs_search.error_message', 'like', $like)
+                                ->orWhere('fs_search.correlation_id', 'like', $like);
+                        });
+                });
+        });
+    }
+
+    private function pendingDocumentItems($documents)
+    {
+        $requestMap = $this->latestRequestsForDocuments($documents->pluck('id')->toArray());
+        $items = [];
+        foreach ($documents as $document) {
+            $alreadyInvoiced = $this->hasExistingInvoice($document);
+            $requiresExternal = (int) $document->fulfillment === 1
+                && strtoupper((string) $document->marketplace) === 'MERCADOLIBRE';
+            $billingSeries = null;
+            $seriesError = null;
+            if (!$requiresExternal) {
+                try {
+                    $billingSeries = $this->billingSeriesForMarketplace($document->marketplace);
+                } catch (InvalidArgumentException $e) {
+                    $seriesError = $e->getMessage();
+                }
+            }
+            if ($alreadyInvoiced) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $document->uuid) . '.'],
+                ];
+            } elseif ($requiresExternal) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => ['Las ventas FULL de Mercado Libre se facturan fuera del Hub.'],
+                ];
+            } elseif ($seriesError !== null) {
+                $preview = [
+                    'valid' => false,
+                    'blockers' => [$seriesError],
+                ];
+            } else {
+                $preview = $this->builder->preview($document->id);
+            }
+
+            $items[] = [
+                'id' => (int) $document->id,
+                'folio' => $document->no_venta,
+                'marketplace' => $document->marketplace,
+                'billing_series' => $billingSeries,
+                'fulfillment' => (bool) $document->fulfillment,
+                'tipo_logistica' => (int) $document->fulfillment === 1 ? 'FULL' : 'DROP',
+                'total' => $document->total === null ? null : (float) $document->total,
+                'created_at' => $document->created_at,
+                'cliente' => $document->razon_social,
+                'rfc' => $document->rfc,
+                'already_invoiced' => $alreadyInvoiced,
+                'requires_external' => $requiresExternal,
+                'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
+                'blockers' => $preview['blockers'],
+                'request' => isset($requestMap[$document->id]) ? $requestMap[$document->id] : null,
+            ];
+        }
+
+        return $items;
     }
 
     private function countPendingByFulfillment($fulfillment)

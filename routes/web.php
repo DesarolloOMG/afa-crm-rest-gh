@@ -497,6 +497,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
 
             $router->group(['prefix' => 'facturacion'], function () use ($router) {
                 $router->get('pendientes', 'FacturacionController@pendientes');
+                $router->post('seleccion', 'FacturacionController@seleccion');
                 $router->get('previsualizar/{documento}', 'FacturacionController@previsualizar');
                 $router->post('individual/{documento}', 'FacturacionController@individual');
                 $router->post('global', 'FacturacionController@global');

@@ -265,6 +265,85 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame([], $pending['documents'][0]['blockers']);
     }
 
+    public function testPendingDocumentsArePaginatedOnTheServer()
+    {
+        $documentIds = [];
+        for ($index = 1; $index <= 30; $index++) {
+            $documentIds[] = $this->insertDocument('DROP-PAGE-' . $index, 116.00, 0);
+        }
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('preview')->times(10)->andReturn([
+            'valid' => true,
+            'blockers' => [],
+        ]);
+        $service = new FacturacionService(
+            Mockery::mock(NexfiraClient::class),
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $pending = $service->pendingDocuments(false, 2, 10, '');
+
+        $this->assertSame(30, $pending['pagination']['total']);
+        $this->assertSame(2, $pending['pagination']['page']);
+        $this->assertSame(10, $pending['pagination']['per_page']);
+        $this->assertSame(3, $pending['pagination']['last_page']);
+        $this->assertSame(
+            array_reverse(array_slice($documentIds, 10, 10)),
+            array_column($pending['documents'], 'id')
+        );
+    }
+
+    public function testPendingSearchFindsAnOlderDocumentOutsideTheFirstPage()
+    {
+        $target = $this->insertDocument('TARGET-OLD', 116.00, 0);
+        for ($index = 1; $index <= 30; $index++) {
+            $this->insertDocument('DROP-NEW-' . $index, 116.00, 0);
+        }
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('preview')->atLeast()->once()->andReturn([
+            'valid' => true,
+            'blockers' => [],
+        ]);
+        $service = new FacturacionService(
+            Mockery::mock(NexfiraClient::class),
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $pending = $service->pendingDocuments(false, 1, 25, (string) $target);
+
+        $this->assertGreaterThanOrEqual(1, $pending['pagination']['total']);
+        $this->assertSame($target, $pending['documents'][0]['id']);
+    }
+
+    public function testQuickSelectionResolvesDocumentsInRequestedOrder()
+    {
+        $first = $this->insertDocument('DROP-QUICK-1', 116.00, 0);
+        $second = $this->insertDocument('DROP-QUICK-2', 232.00, 0);
+
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('preview')->twice()->andReturn([
+            'valid' => true,
+            'blockers' => [],
+        ]);
+        $service = new FacturacionService(
+            Mockery::mock(NexfiraClient::class),
+            $builder,
+            Mockery::mock(DropboxService::class),
+            new CfdiAttachmentValidator()
+        );
+
+        $selection = $service->pendingDocumentsByIds([$second, 999999, $first], false);
+
+        $this->assertSame([$second, $first], array_column($selection['documents'], 'id'));
+        $this->assertSame([999999], $selection['not_available']);
+    }
+
     public function testNexfiraValidationErrorsArePersistedAndReturned()
     {
         $document = $this->insertDocument('DROP-INVALID', 116.00, 0);
@@ -355,7 +434,7 @@ class FacturacionExternalFlowTest extends TestCase
         ]);
 
         $service = Mockery::mock(FacturacionService::class);
-        $service->shouldReceive('pendingDocuments')->once()->with(null)->andReturn([
+        $service->shouldReceive('pendingDocuments')->once()->with(null, 1, 25, '')->andReturn([
             'documents' => [],
             'counts' => ['drop' => 0, 'full' => 0],
             'configured' => true,
