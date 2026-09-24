@@ -351,12 +351,11 @@ class FacturacionService
         $validated = $this->validator->validate($pdf, $xml, $normalizedUuid, $expectedTotal);
         if ($isCreditNote) {
             $this->assertCreditNoteAttachments($documentIds, $validated);
-        } elseif ($validated['type'] !== '' && $validated['type'] !== 'I') {
+        } elseif ($validated['type'] !== 'I') {
             throw new InvalidArgumentException('Seleccionaste ventas; carga un CFDI de ingreso, no de egreso.');
         }
-        if (empty($validated['serie']) || empty($validated['folio'])) {
-            throw new InvalidArgumentException('El XML externo debe contener Serie y Folio fiscales.');
-        }
+        // Serie y Folio son opcionales en CFDI externos: conservar el XML,
+        // sin completar su identidad fiscal con datos del pedido/marketplace.
 
         $now = date('Y-m-d H:i:s');
         $requestId = DB::table('facturacion_solicitud')->insertGetId([
@@ -523,7 +522,7 @@ class FacturacionService
                 DB::table('documento')->where('id', $documentId)->update([
                     'uuid' => $validated['uuid'],
                     'factura_serie' => isset($validated['serie']) ? $validated['serie'] : '',
-                    'factura_folio' => !empty($validated['folio']) ? $validated['folio'] : 'N/A',
+                    'factura_folio' => isset($validated['folio']) ? $validated['folio'] : '',
                     'id_fase' => 6,
                     'invoice_date' => date('Y-m-d H:i:s'),
                     'updated_at' => date('Y-m-d H:i:s'),
@@ -558,7 +557,8 @@ class FacturacionService
 
     private function fiscalFileBaseName(array $validated)
     {
-        $candidate = !empty($validated['folio']) ? $validated['folio'] : $validated['uuid'];
+        $candidate = isset($validated['folio']) && $validated['folio'] !== ''
+            ? $validated['folio'] : $validated['uuid'];
         $safe = preg_replace('/[^A-Za-z0-9._-]+/', '-', trim((string) $candidate));
         $safe = trim((string) $safe, '.-_');
 

@@ -292,6 +292,88 @@ class FacturacionExternalFlowTest extends TestCase
             . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
     }
 
+    /** @dataProvider externalFiscalIdentities */
+    public function testExternalCfdiPreservesOptionalIdentityWithoutIssuingAnotherInvoice($series, $folio)
+    {
+        $documentId = $this->insertDocument('PEDIDO-37027', 9006.89, 0);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        $identity = ($series !== '' ? ' Serie="' . $series . '"' : '')
+            . ($folio !== '' ? ' Folio="' . $folio . '"' : '');
+        $xml = '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0"'
+            . ' TipoDeComprobante="I" Moneda="MXN" MetodoPago="PPD" FormaPago="99" Total="9006.89"' . $identity . '>'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'
+            . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
+        $pdf = '%PDF-1.4 external fixture';
+        $baseName = $folio !== '' ? $folio : $uuid;
+        $path = '/facturacion/' . strtolower($uuid) . '/' . $baseName;
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->once()->with($path . '.pdf', $pdf, false)->andReturn(['id' => 'id:pdf']);
+        $dropbox->shouldReceive('uploadFile')->once()->with($path . '.xml', $xml, false)->andReturn(['id' => 'id:xml']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $service = $this->creditNoteService($client, $dropbox);
+
+        $result = $service->attachExternal([$documentId], $uuid, base64_encode($pdf), base64_encode($xml), 9);
+
+        $this->assertSame('stamped', $result['status']);
+        $this->assertSame($series, $result['series']);
+        $this->assertSame($folio, $result['folio']);
+        $document = DB::table('documento')->where('id', $documentId)->first();
+        $this->assertSame(6, (int) $document->id_fase);
+        $this->assertSame($uuid, $document->uuid);
+        $this->assertSame($series, $document->factura_serie);
+        $this->assertSame($folio, $document->factura_folio);
+        $this->assertSame('PEDIDO-37027', $document->no_venta);
+        $request = DB::table('facturacion_solicitud')->where('id', $result['id'])->first();
+        $this->assertSame('external', $request->proveedor);
+        $this->assertNull($request->remote_request_id);
+        $this->assertSame(hash('sha256', $xml), $request->xml_sha256);
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+        $retry = $service->attachExternal([$documentId], $uuid, base64_encode($pdf), base64_encode($xml), 9);
+        $this->assertSame($result['id'], $retry['id']);
+        $this->assertSame(1, DB::table('documento_factura')->count());
+    }
+
+    public function externalFiscalIdentities()
+    {
+        return [
+            'folio sin serie (37027)' => ['', '37027'],
+            'sin serie ni folio' => ['', ''],
+            'serie sin folio' => ['C', ''],
+            'serie y folio' => ['C', '37027'],
+            'folio cero no es ausente' => ['', '0'],
+        ];
+    }
+
+    public function testExternalWithoutSeriesStillRejectsInvalidAttachments()
+    {
+        $documentId = $this->insertDocument('PEDIDO-37027', 9006.89, 0);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        $xml = '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" TipoDeComprobante="I" Folio="37027" Total="9006.89">'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'
+            . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
+        $cases = [
+            ['not a PDF', $xml],
+            ['%PDF-1.4', '<invalid>'],
+            ['%PDF-1.4', str_replace('TipoDeComprobante="I"', 'TipoDeComprobante="E"', $xml)],
+            ['%PDF-1.4', str_replace('TipoDeComprobante="I"', '', $xml)],
+            ['%PDF-1.4', str_replace('Total="9006.89"', 'Total="1.00"', $xml)],
+            ['%PDF-1.4', str_replace($uuid, 'N/A', $xml)],
+            ['%PDF-1.4', str_replace($uuid, '123E4567-E89B-42D3-A456-426614174000', $xml)],
+            ['%PDF-1.4', preg_replace('/<cfdi:Complemento>.*<\/cfdi:Complemento>/', '', $xml)],
+        ];
+        foreach ($cases as $case) {
+            try {
+                $this->creditNoteService()->attachExternal([$documentId], $uuid, base64_encode($case[0]), base64_encode($case[1]), 9);
+                $this->fail('Se aceptaron adjuntos inválidos al hacer opcional la serie.');
+            } catch (InvalidArgumentException $exception) {
+                $this->assertNotEmpty($exception->getMessage());
+            }
+        }
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(5, (int) DB::table('documento')->where('id', $documentId)->value('id_fase'));
+    }
+
     public function testExternalGlobalCfdiFinalizesEveryLinkedSaleWithSameArtifacts()
     {
         $first = $this->insertDocument('FULL-100', 116.00);
@@ -299,7 +381,7 @@ class FacturacionExternalFlowTest extends TestCase
 
         $uuid = '123E4567-E89B-42D3-A456-426614174000';
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Serie="AFA" Folio="9001" Total="348.00">'
+            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="I" Serie="AFA" Folio="9001" Total="348.00">'
             . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $uuid . '" /></cfdi:Complemento>'
             . '</cfdi:Comprobante>';
         $pdf = "%PDF-1.4\nCFDI de prueba";
