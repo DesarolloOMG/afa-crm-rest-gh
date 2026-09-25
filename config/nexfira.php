@@ -20,7 +20,7 @@ return [
         'ELEKTRA' => 'ELK',
         'MLG' => 'MLG',
         'PISO DE VENTA' => 'PV',
-        'MERCADOLIBRE' => 'F-ML',
+        'MERCADOLIBRE' => 'FML',
         'CYBERPUERTA' => 'C',
     ],
     'global' => [

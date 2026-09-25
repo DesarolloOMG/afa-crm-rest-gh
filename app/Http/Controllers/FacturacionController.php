@@ -81,7 +81,7 @@ class FacturacionController extends Controller
             $result = $this->service->createIndividual(
                 (int) $documento,
                 $userId,
-                $this->paymentOverrides($data)
+                $this->invoiceOverrides($data)
             );
 
             return [
@@ -106,7 +106,7 @@ class FacturacionController extends Controller
                 isset($data['informacionGlobal']) && is_array($data['informacionGlobal'])
                     ? $data['informacionGlobal']
                     : [],
-                $this->paymentOverrides($data)
+                $this->invoiceOverrides($data)
             );
 
             return [
@@ -212,9 +212,14 @@ class FacturacionController extends Controller
         return is_array($data) ? $data : [];
     }
 
-    private function paymentOverrides(array $data)
+    private function invoiceOverrides(array $data)
     {
         $overrides = [];
+        foreach (['series', 'folio'] as $field) {
+            if (isset($data[$field]) && $data[$field] !== '') {
+                $overrides[$field] = $data[$field];
+            }
+        }
         if (isset($data['relationshipCode'])) {
             $overrides['relationshipCode'] = $data['relationshipCode'];
         }

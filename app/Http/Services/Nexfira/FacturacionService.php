@@ -148,6 +148,13 @@ class FacturacionService
 
         $existing = $this->activeRequestForDocuments([(int) $documentId]);
         if ($existing) {
+            $stored = json_decode((string) $existing->request_payload, true);
+            foreach (['series', 'folio', 'paymentMethod', 'paymentForm'] as $field) {
+                if (isset($overrides[$field]) && $overrides[$field] !== ''
+                    && (string) $overrides[$field] !== (string) ($stored['content'][$field] ?? '')) {
+                    throw new InvalidArgumentException('La solicitud existente sigue activa o requiere conciliación. Actualiza su estado; no se pueden cambiar sus datos ni crear otra factura hasta confirmar el resultado.');
+                }
+            }
             if (in_array($existing->status, ['sending', 'uncertain'], true) && !$existing->remote_request_id) {
                 return $this->resumeSubmission($existing);
             }
@@ -176,7 +183,7 @@ class FacturacionService
         }
 
         return $this->submit((int) $summary->id_tipo === 6 ? 'nota_credito' : 'individual',
-            [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId);
+            [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId, $overrides);
     }
 
     public function createGlobal(
@@ -229,7 +236,7 @@ class FacturacionService
             ? 'global_productos'
             : 'global_ventas';
 
-        return $this->submit($requestMode, $documentIds, $payload, $externalReference, $idempotencyKey, $userId);
+        return $this->submit($requestMode, $documentIds, $payload, $externalReference, $idempotencyKey, $userId, $overrides);
     }
 
     public function sync($requestId, $userId)
@@ -383,7 +390,7 @@ class FacturacionService
         return $this->publicRequest(DB::table('facturacion_solicitud')->where('id', $requestId)->first());
     }
 
-    private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId)
+    private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId, array $overrides = [])
     {
         $now = date('Y-m-d H:i:s');
         $request = DB::transaction(function () use (
@@ -393,10 +400,21 @@ class FacturacionService
             $externalReference,
             $idempotencyKey,
             $userId,
+            $overrides,
             $now
         ) {
-            $series = $this->billingSeriesForDocuments($documentIds);
-            $folio = $this->reserveNextInvoiceFolio();
+            $defaultSeries = $this->billingSeriesForDocuments($documentIds);
+            $series = isset($overrides['series']) && $overrides['series'] !== ''
+                ? $overrides['series'] : $defaultSeries;
+            if (!is_string($series) || !preg_match('/^[A-Za-z0-9]{1,25}$/D', $series)) {
+                throw new InvalidArgumentException('La serie fiscal debe tener de 1 a 25 letras o números, sin guiones ni espacios.');
+            }
+            $folio = $this->reserveInvoiceFolio($series, $mode, $overrides['folio'] ?? null);
+            // El bloqueo del consecutivo también serializa las reservas manuales.
+            // Revalidar después de adquirirlo evita dos solicitudes para la misma venta.
+            if ($this->activeRequestForDocuments($documentIds)) {
+                throw new InvalidArgumentException('Una venta seleccionada ya tiene una solicitud activa o pendiente de conciliación. Actualiza su estado antes de volver a facturar.');
+            }
             if (!isset($payload['content']) || !is_array($payload['content'])) {
                 throw new InvalidArgumentException('No fue posible asignar serie y folio al CFDI.');
             }
@@ -725,7 +743,7 @@ class FacturacionService
     {
         $name = strtoupper(trim((string) $marketplace));
         $series = (array) config('nexfira.series', []);
-        if (!isset($series[$name]) || !preg_match('/^[A-Za-z0-9_-]{1,25}$/', (string) $series[$name])) {
+        if (!isset($series[$name]) || !preg_match('/^[A-Za-z0-9]{1,25}$/D', (string) $series[$name])) {
             throw new InvalidArgumentException(
                 'El marketplace ' . ($name !== '' ? $name : '(sin nombre)') . ' no tiene serie fiscal configurada.'
             );
@@ -734,8 +752,13 @@ class FacturacionService
         return (string) $series[$name];
     }
 
-    private function reserveNextInvoiceFolio()
+    private function reserveInvoiceFolio($series, $mode, $requestedFolio = null)
     {
+        $manual = $requestedFolio !== null && $requestedFolio !== '';
+        if ($manual && ((!is_string($requestedFolio) && !is_int($requestedFolio))
+            || !preg_match('/^[A-Za-z0-9_-]{1,40}$/D', (string) $requestedFolio))) {
+            throw new InvalidArgumentException('El folio debe tener de 1 a 40 letras, números, guiones o guiones bajos, sin espacios.');
+        }
         $key = (string) config('nexfira.folio.sequence_key', 'nexfira_cfdi_ingreso');
         $initial = (int) config('nexfira.folio.initial', 40000);
         $sequence = DB::table('facturacion_folio_consecutivo')
@@ -748,13 +771,42 @@ class FacturacionService
             );
         }
 
-        $folio = (int) $sequence->siguiente_folio;
+        $next = (int) $sequence->siguiente_folio;
+        $folio = $manual ? (string) $requestedFolio : (string) $next;
+        while ($this->fiscalIdentityExists($series, $folio, $mode)) {
+            if ($manual) {
+                throw new InvalidArgumentException('La serie ' . $series . ' y el folio ' . $folio . ' ya están reservados o registrados en el CRM. Elige otro folio o revisa la solicitud existente.');
+            }
+            if ($next >= PHP_INT_MAX - 1) {
+                throw new InvalidArgumentException('Se agotó el consecutivo fiscal automático.');
+            }
+            $folio = (string) ++$next;
+        }
+        // Respetar ceros iniciales y folios alfanuméricos; nunca retroceder el contador.
+        $numericFolio = ctype_digit($folio)
+            ? filter_var(ltrim($folio, '0') ?: '0', FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 0, 'max_range' => PHP_INT_MAX - 1],
+            ]) : false;
+        if ($numericFolio !== false) {
+            $next = max($next, $numericFolio + 1);
+        } elseif (!$manual) {
+            throw new InvalidArgumentException('Se agotó el consecutivo fiscal automático.');
+        }
         DB::table('facturacion_folio_consecutivo')->where('clave', $key)->update([
-            'siguiente_folio' => $folio + 1,
+            'siguiente_folio' => $next,
             'updated_at' => date('Y-m-d H:i:s'),
         ]);
 
         return $folio;
+    }
+
+    private function fiscalIdentityExists($series, $folio, $mode)
+    {
+        return DB::table('facturacion_solicitud')
+            ->whereRaw('UPPER(serie) = ?', [strtoupper($series)])
+            ->whereRaw('UPPER(folio) = ?', [strtoupper($folio)])
+            ->where('modo', $mode === 'nota_credito' ? '=' : '<>', 'nota_credito')
+            ->exists();
     }
 
     private function assertRequestedFiscalIdentity($request, array $validated)

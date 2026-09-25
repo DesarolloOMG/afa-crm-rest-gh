@@ -41,7 +41,7 @@ class FacturacionExternalFlowTest extends TestCase
                 'ELEKTRA' => 'ELK',
                 'MLG' => 'MLG',
                 'PISO DE VENTA' => 'PV',
-                'MERCADOLIBRE' => 'F-ML',
+                'MERCADOLIBRE' => 'FML',
                 'CYBERPUERTA' => 'C',
             ],
         ]);
@@ -94,7 +94,7 @@ class FacturacionExternalFlowTest extends TestCase
                     && $payload['content']['paymentMethod'] === 'PUE'
                     && $payload['content']['paymentForm'] === '03'
                     && $payload['content']['expectedTotals']['total'] === '116.00'
-                    && $payload['content']['series'] === 'F-ML'
+                    && $payload['content']['series'] === 'FML'
                     && $payload['content']['folio'] === '40000';
             }), Mockery::type('string'))->andReturn(['requestId' => $remoteId, 'status' => 'queued']);
         $client->shouldReceive('getDocumentRequest')->once()->with($remoteId)->andReturn([
@@ -285,7 +285,7 @@ class FacturacionExternalFlowTest extends TestCase
         foreach ($related as $id) {
             $relations .= '<cfdi:CfdiRelacionado UUID="' . $id . '"/>';
         }
-        return '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="E" Moneda="MXN" Serie="F-ML" Folio="'
+        return '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="E" Moneda="MXN" Serie="FML" Folio="'
             . $folio . '" Total="' . $total . '"><cfdi:CfdiRelacionados TipoRelacion="03">' . $relations
             . '</cfdi:CfdiRelacionados><cfdi:Receptor Rfc="XAXX010101000"/>'
             . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'
@@ -464,7 +464,7 @@ class FacturacionExternalFlowTest extends TestCase
         $remoteRequestId = '323e4567-e89b-42d3-a456-426614174000';
         $fiscalUuid = '423E4567-E89B-42D3-A456-426614174000';
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'
-            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Serie="F-ML" Folio="40000" Total="116.00">'
+            . '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" Serie="FML" Folio="40000" Total="116.00">'
             . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $fiscalUuid . '" /></cfdi:Complemento>'
             . '</cfdi:Comprobante>';
         $pdf = "%PDF-1.4\nCFDI Nexfira de prueba";
@@ -509,10 +509,10 @@ class FacturacionExternalFlowTest extends TestCase
 
         $accepted = $service->createIndividual($document, 9);
         $this->assertSame('pending_approval', $accepted['status']);
-        $this->assertSame('F-ML', $accepted['series']);
+        $this->assertSame('FML', $accepted['series']);
         $this->assertSame('40000', $accepted['folio']);
         $storedPayload = json_decode(DB::table('facturacion_solicitud')->value('request_payload'), true);
-        $this->assertSame('F-ML', $storedPayload['content']['series']);
+        $this->assertSame('FML', $storedPayload['content']['series']);
         $this->assertSame('40000', $storedPayload['content']['folio']);
         $this->assertSame(40001, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
         $this->assertSame(5, (int) DB::table('documento')->where('id', $document)->value('id_fase'));
@@ -578,7 +578,7 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertCount(1, $pending['documents']);
         $this->assertFalse($pending['documents'][0]['already_invoiced']);
         $this->assertTrue($pending['documents'][0]['can_hub']);
-        $this->assertSame('F-ML', $pending['documents'][0]['billing_series']);
+        $this->assertSame('FML', $pending['documents'][0]['billing_series']);
         $this->assertSame([], $pending['documents'][0]['blockers']);
     }
 
@@ -785,12 +785,14 @@ class FacturacionExternalFlowTest extends TestCase
         $service = Mockery::mock(FacturacionService::class);
         $service->shouldReceive('createGlobal')
             ->once()
-            ->with([41, 42], 9, 'productos', [], ['paymentMethod' => 'PPD', 'paymentForm' => '99'])
-            ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
+            ->with([41, 42], 9, 'productos', [], ['series' => 'FML2', 'folio' => '0040034', 'paymentMethod' => 'PPD', 'paymentForm' => '99'])
+            ->andReturn(['status' => 'pending_approval', 'series' => 'FML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
             'documentos' => [41, 42],
             'agrupacion' => 'productos',
+            'series' => 'FML2',
+            'folio' => '0040034',
             'paymentMethod' => 'PPD',
             'paymentForm' => '99',
         ]);
@@ -820,7 +822,7 @@ class FacturacionExternalFlowTest extends TestCase
         $client->shouldReceive('createDocumentRequest')
             ->once()
             ->with(Mockery::on(function ($sentPayload) {
-                return $sentPayload['content']['series'] === 'F-ML'
+                return $sentPayload['content']['series'] === 'FML'
                     && $sentPayload['content']['folio'] === '40000';
             }), Mockery::type('string'))
             ->andReturn([
@@ -838,7 +840,7 @@ class FacturacionExternalFlowTest extends TestCase
         $result = $service->createGlobal([$second, $first], 9, 'productos');
 
         $this->assertSame('global_productos', $result['mode']);
-        $this->assertSame('F-ML', $result['series']);
+        $this->assertSame('FML', $result['series']);
         $this->assertSame('40000', $result['folio']);
         $this->assertSame('global_productos', DB::table('facturacion_solicitud')->value('modo'));
     }
@@ -905,7 +907,7 @@ class FacturacionExternalFlowTest extends TestCase
         $service->shouldReceive('createGlobal')
             ->once()
             ->with([41, 42], 9, 'ventas', $globalInformation, [])
-            ->andReturn(['status' => 'pending_approval', 'series' => 'F-ML', 'folio' => '40000']);
+            ->andReturn(['status' => 'pending_approval', 'series' => 'FML', 'folio' => '40000']);
         $controller = new FacturacionController($service);
         $request = Request::create('/venta/venta/facturacion/global', 'POST', [
             'documentos' => [41, 42],
@@ -983,6 +985,121 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame(0, $exitCode);
         $this->assertStringContainsString('1 procesada(s)', $tester->getDisplay());
         $this->assertStringContainsString('1 pendiente(s)', $tester->getDisplay());
+    }
+
+    /** @dataProvider editableIdentityModes */
+    public function testSendsEditedFiscalIdentityAndAdvancesNumericSequence($mode)
+    {
+        $first = $this->insertNumberingSale('NUMERO-1');
+        $second = $this->insertNumberingSale('NUMERO-2');
+        $third = $this->insertNumberingSale('NUMERO-3');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()
+            ->with(Mockery::on(function ($payload) use ($mode) {
+                return $payload['content']['series'] === 'FML2'
+                    && $payload['content']['folio'] === '040123'
+                    && ($mode === 'individual' || $payload['content']['globalInformation']['periodicity'] === '01');
+            }), Mockery::type('string'))
+            ->andReturn(['requestId' => '723e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval']);
+        $client->shouldReceive('createDocumentRequest')->once()
+            ->with(Mockery::on(function ($payload) {
+                return $payload['content']['series'] === 'FML' && $payload['content']['folio'] === '40124';
+            }), Mockery::type('string'))
+            ->andReturn(['requestId' => '823e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval']);
+        $service = $this->creditNoteService($client);
+        $overrides = ['series' => 'FML2', 'folio' => '040123'];
+        $result = $mode === 'individual'
+            ? $service->createIndividual($first, 9, $overrides)
+            : $service->createGlobal([$first, $second], 9, $mode, [], $overrides);
+
+        $this->assertSame('FML2', $result['series']);
+        $this->assertSame('040123', $result['folio']);
+        $this->assertSame('040123', DB::table('facturacion_solicitud')->where('id', $result['id'])->value('folio'));
+        $this->assertSame(40124, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+        $this->assertSame('40124', $service->createIndividual($third, 9)['folio']);
+    }
+
+    public function editableIdentityModes()
+    {
+        return [['individual'], ['ventas'], ['productos']];
+    }
+
+    public function testRejectsDuplicateManualIdentityIgnoringCaseWithoutConsumingFolio()
+    {
+        $first = $this->insertNumberingSale('NUMERO-UNO');
+        $second = $this->insertNumberingSale('NUMERO-DOS');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()->andReturn([
+            'requestId' => '723e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval',
+        ]);
+        $service = $this->creditNoteService($client);
+        $service->createIndividual($first, 9, ['series' => 'FML', 'folio' => 'A009']);
+        try {
+            $service->createIndividual($second, 9, ['series' => 'fml', 'folio' => 'a009']);
+            $this->fail('Se permitió reservar dos veces la misma identidad fiscal.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('ya están reservados', $e->getMessage());
+        }
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function testManualLowerNumberDoesNotRewindSequence()
+    {
+        $document = $this->insertNumberingSale('NUMERO-BAJO');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()->andReturn([
+            'requestId' => '723e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval',
+        ]);
+        $result = $this->creditNoteService($client)->createIndividual($document, 9, ['series' => 'FML', 'folio' => '00007']);
+        $this->assertSame('00007', $result['folio']);
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function testInvalidSeriesCannotBeSentOrReserveANumber()
+    {
+        $document = $this->insertNumberingSale('SERIE-INVALIDA');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        try {
+            $this->creditNoteService($client)->createIndividual($document, 9, ['series' => 'F-ML', 'folio' => '40034']);
+            $this->fail('Se envió una serie con guion.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('sin guiones ni espacios', $e->getMessage());
+        }
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function testEditingCannotResubmitAnUncertainRemoteRequest()
+    {
+        $document = $this->insertNumberingSale('CONCILIACION');
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()->andReturn([
+            'requestId' => '723e4567-e89b-42d3-a456-426614174000', 'status' => 'uncertain',
+        ]);
+        $service = $this->creditNoteService($client);
+        $existing = $service->createIndividual($document, 9);
+        try {
+            $service->createIndividual($document, 9, ['series' => 'OTRA', 'folio' => '40034']);
+            $this->fail('Se reenvió una solicitud pendiente de conciliación.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('requiere conciliación', $e->getMessage());
+        }
+        $this->assertTrue($existing['is_active']);
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame('FML', DB::table('facturacion_solicitud')->value('serie'));
+        $this->assertSame(40001, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    private function insertNumberingSale($folio)
+    {
+        $document = $this->insertDocument($folio, 116, 0);
+        DB::table('movimiento')->insert([
+            'id_documento' => $document, 'id_modelo' => 1, 'cantidad' => 1,
+            'precio' => 116, 'descuento' => 0, 'retencion' => 0,
+        ]);
+        return $document;
     }
 
     private function insertDocument($folio, $total, $fulfillment = 1)
