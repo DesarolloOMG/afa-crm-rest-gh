@@ -933,6 +933,7 @@ class FacturacionService
                 'created_at' => $document->created_at,
                 'cliente' => $document->razon_social,
                 'rfc' => $document->rfc,
+                'publico' => (int) $document->publico === 1,
                 'already_invoiced' => $alreadyInvoiced,
                 'requires_external' => $requiresExternal,
                 'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],

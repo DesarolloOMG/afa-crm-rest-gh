@@ -62,7 +62,7 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('Venta', $payload['content']['items'][0]['description']);
         $this->assertSame('PUE', $payload['content']['paymentMethod']);
         $this->assertSame('31', $payload['content']['paymentForm']);
-        $this->assertSame('04', $payload['content']['globalInformation']['periodicity']);
+        $this->assertSame('01', $payload['content']['globalInformation']['periodicity']);
         $this->assertSame(date('m'), $payload['content']['globalInformation']['months']);
         $this->assertSame((int) date('Y'), $payload['content']['globalInformation']['year']);
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
@@ -178,6 +178,11 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
 
     public function testGlobalProductInvoiceKeepsUserSelectedPaymentMethodAndForm()
     {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'MLG100224TC1',
+            'razon_social' => 'MASTER LOYALTY GROUP',
+            'regimen_id' => '601',
+        ]);
         $first = $this->insertDocument('PAGO-1', 116, 0);
         $second = $this->insertDocument('PAGO-2', 116, 0);
         $this->insertMovement($first, 1, 116);
@@ -187,23 +192,61 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         ]);
         $this->assertSame('PPD', $payload['content']['paymentMethod']);
         $this->assertSame('99', $payload['content']['paymentForm']);
+        $this->assertArrayNotHasKey('globalInformation', $payload['content']);
         $salesPayload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pagos-ventas', 'ventas', [], [
             'paymentMethod' => 'PUE', 'paymentForm' => '03',
         ]);
         $this->assertSame('03', $salesPayload['content']['paymentForm']);
     }
 
-    public function testGlobalSalesRejectsUnsupportedPaymentInsteadOfSilentlyOverwritingIt()
+    public function testGlobalSalesKeepsConfirmedPaymentInsteadOfBlockingOrOverwritingIt()
     {
         $first = $this->insertDocument('PAGO-1', 116, 1);
         $second = $this->insertDocument('PAGO-2', 116, 1);
         $this->insertMovement($first, 1, 116);
         $this->insertMovement($second, 1, 116);
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Revisa tu selección');
-        (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pago-no-permitido', 'ventas', [], [
+        $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'pago-confirmado', 'ventas', [], [
             'paymentMethod' => 'PPD', 'paymentForm' => '99',
         ]);
+        $this->assertSame('PPD', $payload['content']['paymentMethod']);
+        $this->assertSame('99', $payload['content']['paymentForm']);
+        $this->assertSame('01', $payload['content']['globalInformation']['periodicity']);
+    }
+
+    public function testPublicProductGlobalSendsSelectedPeriodAndConfirmedPayment()
+    {
+        $first = $this->insertDocument('PUBLICO-PRODUCTO-1', 116, 1);
+        $second = $this->insertDocument('PUBLICO-PRODUCTO-2', 232, 1);
+        $this->insertMovement($first, 1, 116);
+        $this->insertMovement($second, 1, 232);
+        $period = ['periodicity' => '02', 'months' => '08', 'year' => 2025];
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal(
+            [$first, $second], 'productos-publico-periodo', 'productos', $period,
+            ['paymentMethod' => 'PPD', 'paymentForm' => '99']
+        );
+
+        $this->assertSame($period, $payload['content']['globalInformation']);
+        $this->assertSame('PPD', $payload['content']['paymentMethod']);
+        $this->assertSame('99', $payload['content']['paymentForm']);
+        $this->assertSame('XAXX010101000', $payload['content']['receiver']['rfc']);
+        $this->assertSame('43211503', $payload['content']['items'][0]['productCode']);
+        $this->assertCount(2, $payload['content']['items']);
+        $this->assertSame('348.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testProductGlobalDefaultsToDailyEvenWithoutPublicMarketplaceFlag()
+    {
+        $first = $this->insertDocument('PUBLICO-RFC-1', 116, 0);
+        $second = $this->insertDocument('PUBLICO-RFC-2', 116, 0);
+        $this->insertMovement($first, 1, 116);
+        $this->insertMovement($second, 1, 116);
+
+        $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'publico-rfc', 'productos');
+
+        $this->assertSame('01', $payload['content']['globalInformation']['periodicity']);
+        $this->assertSame(date('m'), $payload['content']['globalInformation']['months']);
+        $this->assertSame((int) date('Y'), $payload['content']['globalInformation']['year']);
     }
 
     public function testRejectsProductGlobalForDifferentFiscalReceivers()

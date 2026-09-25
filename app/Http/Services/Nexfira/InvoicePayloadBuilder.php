@@ -73,7 +73,6 @@ class InvoicePayloadBuilder
         } else {
             $receiver = $this->publicReceiver();
             $items = $this->buildGlobalSaleItems($documents);
-            $globalInformation = $this->validatedGlobalInformation($globalInformation);
         }
 
         $totals = $this->totalsFromItems($items);
@@ -90,13 +89,11 @@ class InvoicePayloadBuilder
             'items' => $items,
             'expectedTotals' => $totals,
         ];
-        if ($grouping === self::GLOBAL_GROUP_SALES) {
-            if ($content['paymentMethod'] !== 'PUE' || !in_array($content['paymentForm'], [
-                '01', '02', '03', '04', '05', '06', '08', '12', '13', '14', '15', '17',
-                '23', '24', '25', '26', '27', '28', '29', '30', '31',
-            ], true)) {
-                throw new InvalidArgumentException('Nexfira exige PUE y una forma de pago distinta de 99 para la global por ventas. Revisa tu selección.');
-            }
+        // El periodo depende del receptor fiscal, no de cómo se agrupan las partidas.
+        if ($receiver['rfc'] === 'XAXX010101000') {
+            $globalInformation = $this->validatedGlobalInformation($globalInformation);
+            // La pantalla advierte incompatibilidades de pago y permite confirmar;
+            // Nexfira decide la aceptación sin reemplazar la selección del usuario.
             $content['globalInformation'] = $globalInformation;
         }
 
@@ -527,7 +524,7 @@ class InvoicePayloadBuilder
     private function validatedGlobalInformation(array $value)
     {
         $now = Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'));
-        $periodicity = str_pad(trim((string) ($value['periodicity'] ?? '04')), 2, '0', STR_PAD_LEFT);
+        $periodicity = str_pad(trim((string) ($value['periodicity'] ?? '01')), 2, '0', STR_PAD_LEFT);
         $months = str_pad(trim((string) ($value['months'] ?? $now->format('m'))), 2, '0', STR_PAD_LEFT);
         $year = isset($value['year']) ? (int) $value['year'] : (int) $now->format('Y');
 
