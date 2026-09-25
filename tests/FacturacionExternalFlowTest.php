@@ -293,7 +293,7 @@ class FacturacionExternalFlowTest extends TestCase
     }
 
     /** @dataProvider externalFiscalIdentities */
-    public function testExternalCfdiPreservesOptionalIdentityWithoutIssuingAnotherInvoice($series, $folio)
+    public function testExternalCfdiUsesMarketplaceOnlyForMissingSeriesWithoutChangingXml($series, $folio)
     {
         $documentId = $this->insertDocument('PEDIDO-37027', 9006.89, 0);
         $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
@@ -316,18 +316,22 @@ class FacturacionExternalFlowTest extends TestCase
         $result = $service->attachExternal([$documentId], $uuid, base64_encode($pdf), base64_encode($xml), 9);
 
         $this->assertSame('stamped', $result['status']);
-        $this->assertSame($series, $result['series']);
+        $expectedSeries = $series !== '' ? $series : 'FML';
+        $this->assertSame($expectedSeries, $result['series']);
         $this->assertSame($folio, $result['folio']);
         $document = DB::table('documento')->where('id', $documentId)->first();
         $this->assertSame(6, (int) $document->id_fase);
         $this->assertSame($uuid, $document->uuid);
-        $this->assertSame($series, $document->factura_serie);
+        $this->assertSame($expectedSeries, $document->factura_serie);
         $this->assertSame($folio, $document->factura_folio);
         $this->assertSame('PEDIDO-37027', $document->no_venta);
         $request = DB::table('facturacion_solicitud')->where('id', $result['id'])->first();
         $this->assertSame('external', $request->proveedor);
         $this->assertNull($request->remote_request_id);
         $this->assertSame(hash('sha256', $xml), $request->xml_sha256);
+        $metadata = json_decode($request->response_payload, true);
+        $this->assertSame($series, $metadata['xml_identity']['serie']);
+        $this->assertSame($series !== '' ? 'xml' : 'marketplace', $metadata['series_source']);
         $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
         $retry = $service->attachExternal([$documentId], $uuid, base64_encode($pdf), base64_encode($xml), 9);
         $this->assertSame($result['id'], $retry['id']);
@@ -343,6 +347,98 @@ class FacturacionExternalFlowTest extends TestCase
             'serie y folio' => ['C', '37027'],
             'folio cero no es ausente' => ['', '0'],
         ];
+    }
+
+    public function testExternalRetryRepairsSeriesAndFolioWithoutDuplicateRequestsOrChangedXml()
+    {
+        $document = $this->insertDocument('PEDIDO-37027', 116, 0);
+        DB::table('marketplace')->where('id', 1)->update(['marketplace' => 'CYBERPUERTA']);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        $xml = $this->externalIncomeXml($uuid, '37027', 116);
+        $pdf = '%PDF-1.4 fixture';
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->with('/facturacion/' . strtolower($uuid) . '/37027.xml', $xml, false)->andReturn(['id' => 'id:xml']);
+        $dropbox->shouldReceive('uploadFile')->twice()->with('/facturacion/' . strtolower($uuid) . '/37027.pdf', $pdf, false)->andReturn(['id' => 'id:pdf']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $service = $this->creditNoteService($client, $dropbox);
+        $first = $service->attachExternal([$document], $uuid, base64_encode($pdf), base64_encode($xml), 9);
+        DB::table('documento')->where('id', $document)->update(['factura_serie' => 'N/A', 'factura_folio' => 'incorrecto']);
+        // Una importación anterior a este ajuste no tenía estos metadatos ni serie.
+        DB::table('facturacion_solicitud')->where('id', $first['id'])->update(['serie' => '', 'response_payload' => null]);
+        $again = $service->attachExternal([$document], $uuid, base64_encode($pdf), base64_encode($xml), 9);
+        $this->assertSame($first['id'], $again['id']);
+        $this->assertSame('C', $again['series']);
+        $this->assertSame('C', DB::table('documento')->value('factura_serie'));
+        $this->assertSame('37027', DB::table('documento')->value('factura_folio'));
+        $this->assertSame('PEDIDO-37027', DB::table('documento')->value('no_venta'));
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(1, DB::table('documento_factura')->count());
+        $this->assertSame(hash('sha256', $xml), DB::table('facturacion_solicitud')->value('xml_sha256'));
+    }
+
+    public function testExternalSyncRecoversFiscalMetadataFromSavedAttachmentsWithoutHub()
+    {
+        $document = $this->insertDocument('MP-EXTERNAL', 116, 0);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        $xml = $this->externalIncomeXml($uuid, '00901', 116, 'EXT');
+        $pdf = '%PDF-1.4 fixture';
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->times(4)->andReturn(['id' => 'id:saved']);
+        $dropbox->shouldReceive('downloadFile')->once()->with('id:saved')->andReturn($xml);
+        $dropbox->shouldReceive('downloadFile')->once()->with('id:saved')->andReturn($pdf);
+        $service = $this->creditNoteService(Mockery::mock(NexfiraClient::class), $dropbox);
+        $request = $service->attachExternal([$document], $uuid, base64_encode($pdf), base64_encode($xml), 9);
+        DB::table('documento')->where('id', $document)->update(['factura_folio' => 'N/A']);
+        $repaired = $service->sync($request['id'], 9);
+        $this->assertSame($request['id'], $repaired['id']);
+        $this->assertSame('00901', DB::table('documento')->value('factura_folio'));
+        $this->assertSame('EXT', DB::table('documento')->value('factura_serie'));
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+    }
+
+    public function testExternalWithoutSeriesResolvesEachMarketplaceAndKeepsSharedFolio()
+    {
+        $first = $this->insertDocument('MELI', 116);
+        $second = $this->insertDocument('MLG', 116, 0);
+        DB::table('marketplace')->insert(['id' => 2, 'marketplace' => 'MLG']);
+        DB::table('marketplace_area')->insert(['id' => 2, 'id_marketplace' => 2, 'publico' => 1]);
+        DB::table('documento')->where('id', $second)->update(['id_marketplace_area' => 2]);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        $xml = $this->externalIncomeXml($uuid, '00456', 232);
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:shared']);
+        $service = $this->creditNoteService(null, $dropbox);
+        $result = $service->attachExternal([$first, $second], $uuid, base64_encode('%PDF-1.4'), base64_encode($xml), 9);
+        $this->assertSame('FML', DB::table('documento')->where('id', $first)->value('factura_serie'));
+        $this->assertSame('MLG', DB::table('documento')->where('id', $second)->value('factura_serie'));
+        $this->assertSame(2, DB::table('documento')->where('factura_folio', '00456')->where('uuid', $uuid)->count());
+        $retry = $service->attachExternal([$first, $second], $uuid, base64_encode('%PDF-1.4'), base64_encode($xml), 9);
+        $this->assertSame($result['id'], $retry['id']);
+    }
+
+    public function testExternalMissingSeriesForUnconfiguredMarketplaceFailsBeforeWriting()
+    {
+        $document = $this->insertDocument('OTHER', 116, 0);
+        DB::table('marketplace')->where('id', 1)->update(['marketplace' => 'SIN CONFIGURAR']);
+        $uuid = 'E12DC57C-BB3A-46D1-B80E-26F2341E2D85';
+        try {
+            $this->creditNoteService()->attachExternal([$document], $uuid,
+                base64_encode('%PDF-1.4'), base64_encode($this->externalIncomeXml($uuid, '901', 116)), 9);
+            $this->fail('No se debe inventar una serie para un marketplace sin configurar.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertContains('no tiene serie fiscal configurada', $e->getMessage());
+        }
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(5, (int) DB::table('documento')->value('id_fase'));
+    }
+
+    private function externalIncomeXml($uuid, $folio, $total, $series = '')
+    {
+        return '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="I"'
+            . ($series !== '' ? ' Serie="' . $series . '"' : '') . ' Folio="' . $folio . '" Total="' . $total . '">'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="'
+            . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
     }
 
     public function testExternalWithoutSeriesStillRejectsInvalidAttachments()
@@ -547,7 +643,10 @@ class FacturacionExternalFlowTest extends TestCase
         $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:recovered']);
         $service = $this->creditNoteService($client, $dropbox);
         $request = $service->createGlobal([$a, $b], 9);
-        DB::table('documento')->whereIn('id', [$a, $b])->update(['uuid' => $uuid, 'id_fase' => 6, 'factura_serie' => 'N/A']);
+        DB::table('documento')->whereIn('id', [$a, $b])->update(['uuid' => $uuid, 'id_fase' => 6, 'factura_serie' => 'INCORRECTA', 'factura_folio' => '123']);
+        foreach ([$a, $b] as $id) {
+            DB::table('documento_factura')->insert(['id_documento' => $id, 'xml' => 'id:old-xml', 'pdf' => 'id:old-pdf', 'updated_by' => 9]);
+        }
         DB::table('facturacion_solicitud')->where('id', $request['id'])->update(['status' => 'stamped', 'fiscal_uuid' => $uuid, 'documents_status' => 'retrieved']);
         $command = new SyncNexfiraInvoices($service); $command->setLaravel($this->app);
         $this->assertSame(0, (new CommandTester($command))->execute([]));
@@ -560,6 +659,9 @@ class FacturacionExternalFlowTest extends TestCase
 
     public function testRefacturationDocumentsCanBeStampedIndividuallyAndNeverAsGlobal()
     {
+        Schema::table('documento', function ($table) {
+            $table->decimal('saldo', 20, 4)->default(0); $table->integer('pagado')->default(1);
+        });
         require_once __DIR__ . '/../database/migrations/2026_09_25_120000_create_documento_refacturacion_table.php';
         (new CreateDocumentoRefacturacionTable())->up();
         $source = $this->insertDocument('MP-ORIGINAL', 232, 0);
@@ -567,7 +669,7 @@ class FacturacionExternalFlowTest extends TestCase
         $note = $this->insertCreditNote($source, 232);
         $replacement = $this->insertDocument('REF-' . $source, 232, 0);
         DB::table('documento_entidad')->insert(['id' => 2, 'rfc' => 'CNU010101AB1', 'razon_social' => 'CLIENTE NUEVO', 'regimen_id' => '601', 'codigo_postal_fiscal' => '45010']);
-        DB::table('documento')->where('id', $replacement)->update(['id_entidad' => 2]);
+        DB::table('documento')->where('id', $replacement)->update(['id_entidad' => 2, 'saldo' => 232, 'pagado' => 0]);
         DB::table('documento')->whereIn('id', [$note, $replacement])->update(['es_refactura' => 1]);
         DB::table('movimiento')->insert(['id_documento' => $replacement, 'id_modelo' => 1, 'cantidad' => 2, 'precio' => 116]);
         DB::table('documento_refacturacion')->insert([
@@ -582,10 +684,12 @@ class FacturacionExternalFlowTest extends TestCase
             $sent[] = $payload;
             return ['requestId' => $payload['kind'] === 'CFDI_E' ? '923e4567-e89b-42d3-a456-426614174000' : '823e4567-e89b-42d3-a456-426614174000', 'status' => 'queued'];
         });
-        $service = $this->creditNoteService($client);
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->times(4)->andReturn(['id' => 'id:refactura']);
+        $service = $this->creditNoteService($client, $dropbox);
         $noteRequest = $service->createIndividual($note, 9, ['paymentMethod' => 'PUE', 'paymentForm' => '17']);
         $this->assertSame($noteRequest['id'], $service->createIndividual($note, 9)['id']);
-        $service->createIndividual($replacement, 9, ['paymentMethod' => 'PPD', 'paymentForm' => '99']);
+        $saleRequest = $service->createIndividual($replacement, 9, ['paymentMethod' => 'PPD', 'paymentForm' => '99']);
         $this->assertSame('CFDI_E', $sent[0]['kind']);
         $this->assertSame([['antecedentId' => $antecedent['request_id'], 'relationshipCode' => '01']], $sent[0]['content']['relations']);
         $this->assertSame('XAXX010101000', $sent[0]['content']['receiver']['rfc']);
@@ -595,6 +699,29 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame($antecedent['uuid'], DB::table('documento')->where('id', $source)->value('uuid'));
         $this->assertNotEmpty(App\Http\Services\RefacturacionService::fiscalBlocks([$replacement], true));
         $this->assertSame(5, (int) DB::table('documento')->where('id', $replacement)->value('id_fase'));
+        $noteUuid = 'A23E4567-E89B-42D3-A456-426614174000';
+        $saleUuid = 'B23E4567-E89B-42D3-A456-426614174000';
+        foreach ([[$noteRequest, $noteUuid], [$saleRequest, $saleUuid]] as $pair) {
+            $client->shouldReceive('getDocumentRequest')->once()->with($pair[0]['remote_request_id'])->andReturn([
+                'requestId' => $pair[0]['remote_request_id'], 'status' => 'stamped',
+                'fiscalUuid' => $pair[1], 'documentsStatus' => 'retrieved',
+            ]);
+            $client->shouldReceive('downloadDocument')->once()->with($pair[0]['remote_request_id'], 'pdf')->andReturn('%PDF-1.4');
+        }
+        $client->shouldReceive('downloadDocument')->once()->with($noteRequest['remote_request_id'], 'xml')->andReturn(
+            str_replace('TipoRelacion="03"', 'TipoRelacion="01"', $this->creditXml($noteUuid, [$antecedent['uuid']], 232, $noteRequest['folio'])));
+        $client->shouldReceive('downloadDocument')->once()->with($saleRequest['remote_request_id'], 'xml')->andReturn(
+            $this->externalIncomeXml($saleUuid, $saleRequest['folio'], 232, $saleRequest['series']));
+        $service->sync($noteRequest['id'], 9);
+        $service->sync($saleRequest['id'], 9);
+        $this->assertSame('timbradas', DB::table('documento_refacturacion')->value('estado_fiscal'));
+        $this->assertSame(6, (int) DB::table('documento')->where('id', $replacement)->value('id_fase'));
+        $this->assertEquals(232, DB::table('documento')->where('id', $replacement)->value('saldo'));
+        $this->assertSame(0, (int) DB::table('documento')->where('id', $replacement)->value('pagado'));
+        foreach ([[$note, $noteRequest], [$replacement, $saleRequest]] as $pair) {
+            $this->assertSame($pair[1]['series'], DB::table('documento')->where('id', $pair[0])->value('factura_serie'));
+            $this->assertSame($pair[1]['folio'], DB::table('documento')->where('id', $pair[0])->value('factura_folio'));
+        }
     }
 
     public function testExplicitPendingReceiverIsNotReplacedByMarketplacePublicReceiver()

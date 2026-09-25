@@ -18,9 +18,14 @@ class RefacturacionService
         $document = $this->document($documentId);
         $existing = DB::table(self::TABLE)->where('id_documento_original', $documentId)->first();
         $blockers = [];
+        $accounting = null;
         try {
             $this->eligible($document);
-            $this->applications($document);
+            $applications = $this->applications($document);
+            $accounting = [
+                'sin_ingresos' => $applications->isEmpty(),
+                'saldo_nuevo' => $applications->isEmpty() ? $document->total : '0.0000',
+            ];
             $this->creditNoteEntity($document, 0, '', true);
         } catch (InvalidArgumentException $e) {
             $blockers[] = $e->getMessage();
@@ -37,6 +42,7 @@ class RefacturacionService
             'requiere_token' => $this->requiresToken($document),
             'puede_refacturar' => !$existing && empty($blockers),
             'bloqueos' => $blockers,
+            'contabilidad' => $accounting,
             'resultado' => $existing ? $this->result($existing, true) : null,
             'regimenes' => DB::table('cat_regimen')->orderBy('codigo')->get(['codigo', 'regimen', 'condicion']),
             'usos_cfdi' => DB::table('documento_uso_cfdi')->whereNotIn('codigo', ['P01', 'CP01'])->orderBy('codigo')->get(['id', 'codigo', 'descripcion']),
@@ -122,6 +128,11 @@ class RefacturacionService
                     'ingreso' => $application->id_movimiento_contable, 'monto' => $application->monto_aplicado,
                     'nombre_origen_anterior' => $previousOrigin->nombre_entidad_origen];
             }
+            // Sin ingresos no hay nada que trasladar: conservar la cuenta por cobrar.
+            // No confiar en el flag pagado del origen, que puede ser histórico/inconsistente.
+            DB::table('documento')->where('id', $newId)->update([
+                'saldo' => $this->decimal($remaining), 'pagado' => $remaining === 0 ? 1 : 0,
+            ]);
             // Una NC contable, no un egreso de banco ni un nuevo ingreso.
             $noteMovement = DB::table('movimiento_contable')->insertGetId([
                 'folio' => 'NC-' . $noteId, 'id_tipo_afectacion' => 4,
@@ -151,6 +162,7 @@ class RefacturacionService
                 'auditoria' => json_encode(['uuid_original' => $source->uuid, 'total' => $source->total,
                     'entidad_original' => $source->id_entidad, 'entidad_nota' => $noteEntity,
                     'receptor_nuevo' => $recipient,
+                    'sin_ingresos' => $applications->isEmpty(), 'saldo_nuevo_inicial' => $this->decimal($remaining),
                     'aplicaciones' => $transfers], JSON_UNESCAPED_UNICODE),
                 'created_at' => $now, 'updated_at' => $now,
             ]);
@@ -378,8 +390,9 @@ class RefacturacionService
                 throw new InvalidArgumentException('Un ingreso tiene importe no aplicado o inconsistente. Concílialo antes de cambiar su cliente.');
             }
         }
-        if ($sum > $this->units($document->total) || ($requireSettled && $sum !== $this->units($document->total))) {
-            throw new InvalidArgumentException('La venta debe estar totalmente saldada con ingresos activos, sin faltantes ni excedentes.');
+        if ($sum > $this->units($document->total)
+            || ($requireSettled && $rows->isNotEmpty() && $sum !== $this->units($document->total))) {
+            throw new InvalidArgumentException('La venta debe estar sin ingresos aplicados o totalmente saldada con ingresos activos. Los pagos parciales o excedentes requieren conciliación antes de refacturar.');
         }
         return $rows;
     }
@@ -488,7 +501,8 @@ class RefacturacionService
         ]));
         return DB::table('documento')->insertGetId($fields + [
             'id_tipo' => $type, 'id_entidad' => $entityId, 'id_cfdi' => $cfdi, 'id_usuario' => $userId,
-            'id_fase' => $type === 2 ? 5 : 6, 'status' => 1, 'saldo' => '0.0000', 'pagado' => 1,
+            'id_fase' => $type === 2 ? 5 : 6, 'status' => 1,
+            'saldo' => $type === 2 ? $source->total : '0.0000', 'pagado' => $type === 2 ? 0 : 1,
             'es_refactura' => 1,
             'nota' => 'N/A', 'uuid' => 'N/A', 'factura_serie' => '', 'factura_folio' => '',
             'no_venta' => ($type === 6 ? 'NC-REF-' : 'REF-') . $source->id, 'refacturado' => 0,
@@ -501,8 +515,12 @@ class RefacturacionService
 
     private function result($row, $reused)
     {
+        $new = DB::table('documento')->where('id', $row->id_documento_nuevo)->first();
+        $audit = json_decode((string) $row->auditoria, true) ?: [];
         return ['id' => (int) $row->id, 'documento_original' => (int) $row->id_documento_original,
             'documento_nuevo' => (int) $row->id_documento_nuevo, 'nota_credito' => (int) $row->id_nota_credito,
+            'contabilidad' => ['sin_ingresos' => (bool) ($audit['sin_ingresos'] ?? false),
+                'saldo_nuevo' => $new ? $new->saldo : null, 'pagado' => $new ? (int) $new->pagado : null],
             'entidad_nueva' => (int) $row->id_entidad_nueva, 'estado_fiscal' => $row->estado_fiscal, 'reutilizada' => $reused];
     }
 

@@ -278,6 +278,20 @@ class FacturacionService
             throw new InvalidArgumentException('No se encontró la solicitud de facturación.');
         }
         if ($request->proveedor !== 'nexfira') {
+            if ($request->proveedor === 'external' && !$this->alreadyFinalized($request)) {
+                $ids = $this->linkedDocumentIds($request->id);
+                $files = DB::table('documento_factura')->whereIn('id_documento', $ids)
+                    ->whereNotNull('xml')->whereNotNull('pdf')->first();
+                if (!$files || !$files->xml || !$files->pdf) {
+                    throw new InvalidArgumentException('Vuelve a relacionar el mismo XML y PDF externos para recuperar los datos de la factura.');
+                }
+                $xml = $this->dropbox->downloadFile($files->xml);
+                $pdf = $this->dropbox->downloadFile($files->pdf);
+                if (!$xml || !$pdf) {
+                    throw new InvalidArgumentException('No se pudieron recuperar los adjuntos externos. Vuelve a relacionar el mismo XML y PDF.');
+                }
+                return $this->attachExternal($ids, $request->fiscal_uuid, base64_encode($pdf), base64_encode($xml), $userId);
+            }
             return $this->publicRequest($request);
         }
         if (!$request->remote_request_id) {
@@ -347,7 +361,7 @@ class FacturacionService
         $groupHash = substr(hash('sha256', implode('-', $documentIds)), 0, 20);
         $key = 'external-' . strtolower($normalizedUuid) . '-' . $groupHash;
         $existing = DB::table('facturacion_solicitud')->where('idempotency_key', $key)->first();
-        if ($existing) {
+        if ($existing && $this->alreadyFinalized($existing)) {
             return $this->publicRequest($existing);
         }
 
@@ -366,7 +380,8 @@ class FacturacionService
             throw new InvalidArgumentException('No puedes mezclar ventas y notas de crédito en un mismo CFDI externo.');
         }
         $isCreditNote = isset($documentTypes[6]);
-        if ($this->activeRequestForDocuments($documentIds)) {
+        $active = $this->activeRequestForDocuments($documentIds);
+        if ($active && (!$existing || (int) $active->id !== (int) $existing->id)) {
             throw new InvalidArgumentException('Al menos una venta seleccionada ya tiene una solicitud de facturación activa.');
         }
 
@@ -379,8 +394,17 @@ class FacturacionService
         } elseif ($validated['type'] !== 'I') {
             throw new InvalidArgumentException('Seleccionaste ventas; carga un CFDI de ingreso, no de egreso.');
         }
-        // Serie y Folio son opcionales en CFDI externos: conservar el XML,
-        // sin completar su identidad fiscal con datos del pedido/marketplace.
+        // Completar sólo la referencia local de serie; nunca modificar el XML firmado.
+        $this->documentInvoiceSeries('external', $documentIds, $validated);
+        if ($existing) {
+            foreach (['xml_sha256', 'pdf_sha256'] as $hash) {
+                if (!empty($existing->$hash) && $existing->$hash !== $validated[$hash]) {
+                    throw new InvalidArgumentException('Para recuperar los datos usa los mismos archivos ya relacionados al CFDI.');
+                }
+            }
+            $this->finalizeDocuments($existing, $pdf, $xml, $validated, $userId);
+            return $this->publicRequest(DB::table('facturacion_solicitud')->where('id', $existing->id)->first());
+        }
 
         $now = date('Y-m-d H:i:s');
         $requestId = DB::table('facturacion_solicitud')->insertGetId([
@@ -521,6 +545,8 @@ class FacturacionService
 
     private function finalizeDocuments($request, $pdf, $xml, array $validated, $userId)
     {
+        $documentIds = $this->linkedDocumentIds($request->id);
+        $documentSeries = $this->documentInvoiceSeries($request->proveedor, $documentIds, $validated);
         $path = '/facturacion/' . strtolower($validated['uuid']);
         $fileBaseName = $this->fiscalFileBaseName($validated);
         $pdfResponse = $this->dropbox->uploadFile($path . '/' . $fileBaseName . '.pdf', $pdf, false);
@@ -532,7 +558,6 @@ class FacturacionService
             throw new InvalidArgumentException('Dropbox no pudo guardar el XML fiscal.');
         }
 
-        $documentIds = $this->linkedDocumentIds($request->id);
         DB::beginTransaction();
         try {
             foreach ($documentIds as $documentId) {
@@ -566,7 +591,7 @@ class FacturacionService
 
                 DB::table('documento')->where('id', $documentId)->update([
                     'uuid' => $validated['uuid'],
-                    'factura_serie' => isset($validated['serie']) ? $validated['serie'] : '',
+                    'factura_serie' => $documentSeries[$documentId],
                     'factura_folio' => isset($validated['folio']) ? $validated['folio'] : '',
                     'id_fase' => 6,
                     'invoice_date' => date('Y-m-d H:i:s'),
@@ -580,11 +605,17 @@ class FacturacionService
                     'id_documento' => $documentId,
                     'id_usuario' => (int) $userId,
                     'seguimiento' => ((int) $document->id_tipo === 6 ? 'Nota de crédito timbrada.' : 'Venta facturada.')
-                        . ' UUID: ' . $validated['uuid'] . '.',
+                        . ' UUID: ' . $validated['uuid'] . '. Serie: ' . $documentSeries[$documentId]
+                        . '; folio XML: ' . ($validated['folio'] !== '' ? $validated['folio'] : '(sin folio)') . '.'
+                        . ($request->proveedor === 'external' && $validated['serie'] === ''
+                            ? ' Serie de referencia tomada del marketplace; el XML original no contiene Serie y se conserva sin cambios.' : ''),
                 ]);
             }
 
-            DB::table('facturacion_solicitud')->where('id', $request->id)->update([
+            $series = array_values(array_unique($documentSeries));
+            $requestData = [
+                'serie' => count($series) === 1 ? $series[0] : '',
+                'folio' => $validated['folio'],
                 'status' => 'stamped',
                 'fiscal_uuid' => $validated['uuid'],
                 'documents_status' => 'retrieved',
@@ -592,13 +623,42 @@ class FacturacionService
                 'pdf_sha256' => $validated['pdf_sha256'],
                 'updated_by' => (int) $userId,
                 'updated_at' => date('Y-m-d H:i:s'),
-            ]);
+            ];
+            if ($request->proveedor === 'external') {
+                $requestData['response_payload'] = json_encode([
+                    'xml_identity' => ['serie' => $validated['serie'], 'folio' => $validated['folio']],
+                    'series_source' => $validated['serie'] === '' ? 'marketplace' : 'xml',
+                    'document_series' => $documentSeries,
+                ], JSON_UNESCAPED_UNICODE);
+            }
+            DB::table('facturacion_solicitud')->where('id', $request->id)->update($requestData);
             RefacturacionService::markFiscalCompleted($documentIds);
             DB::commit();
         } catch (Throwable $e) {
             DB::rollBack();
             throw $e;
         }
+    }
+
+    private function documentInvoiceSeries($provider, array $documentIds, array $validated)
+    {
+        $result = array_fill_keys($documentIds, (string) ($validated['serie'] ?? ''));
+        if ($provider !== 'external' || ($validated['serie'] ?? '') !== '') {
+            return $result;
+        }
+        // Un CFDI externo puede abarcar marketplaces diferentes: resolver por pedido,
+        // en una consulta para no penalizar las cargas de cientos de documentos.
+        $documents = DB::table('documento as d')
+            ->join('marketplace_area as ma', 'ma.id', '=', 'd.id_marketplace_area')
+            ->join('marketplace as mk', 'mk.id', '=', 'ma.id_marketplace')
+            ->whereIn('d.id', $documentIds)->get(['d.id', 'mk.marketplace']);
+        if ($documents->count() !== count($documentIds)) {
+            throw new InvalidArgumentException('No fue posible resolver la serie de todos los documentos del CFDI externo.');
+        }
+        foreach ($documents as $document) {
+            $result[$document->id] = $this->billingSeriesForMarketplace($document->marketplace);
+        }
+        return $result;
     }
 
     private function fiscalFileBaseName(array $validated)
@@ -839,8 +899,11 @@ class FacturacionService
 
     private function assertRequestedFiscalIdentity($request, array $validated)
     {
-        $expectedSeries = isset($request->serie) ? trim((string) $request->serie) : '';
-        $expectedFolio = isset($request->folio) ? trim((string) $request->folio) : '';
+        // Comparar con lo enviado, no con metadatos recuperados después del timbrado.
+        $payload = json_decode((string) $request->request_payload, true);
+        $content = $payload['content'] ?? ['series' => $request->serie ?? '', 'folio' => $request->folio ?? ''];
+        $expectedSeries = trim((string) ($content['series'] ?? ''));
+        $expectedFolio = trim((string) ($content['folio'] ?? ''));
         if ($expectedSeries === '' && $expectedFolio === '') {
             return;
         }
@@ -1143,29 +1206,48 @@ class FacturacionService
     private function alreadyFinalized($request)
     {
         $documentIds = $this->linkedDocumentIds($request->id);
-        if (empty($documentIds) || !$request->fiscal_uuid) {
+        if (empty($documentIds) || !$request->fiscal_uuid || $request->status !== 'stamped') {
+            return false;
+        }
+        $metadata = json_decode((string) ($request->response_payload ?? ''), true) ?: [];
+        if ($request->proveedor === 'external' && !isset($metadata['xml_identity'], $metadata['document_series'])) {
+            // Revisar una vez el XML legado: no asumir que la identidad histórica sea correcta.
             return false;
         }
 
-        $count = DB::table('documento as d')
+        $documents = DB::table('documento as d')
             ->whereIn('d.id', $documentIds)
             ->where('d.id_fase', 6)
             ->where('d.uuid', strtoupper((string) $request->fiscal_uuid))
-            ->when(trim((string) ($request->serie ?? '')) !== '', function ($query) {
-                $query->whereRaw("UPPER(TRIM(COALESCE(d.factura_serie, ''))) NOT IN ('', 'N/A')");
-            })
-            ->when(trim((string) ($request->folio ?? '')) !== '', function ($query) {
-                $query->whereRaw("UPPER(TRIM(COALESCE(d.factura_folio, ''))) NOT IN ('', 'N/A')");
-            })
+            ->where('d.status', 1)->whereNull('d.deleted_at')
             ->whereExists(function ($query) {
                 $query->select(DB::raw(1))->from('documento_factura as df')
                     ->whereColumn('df.id_documento', 'd.id')
                     ->whereRaw("TRIM(COALESCE(df.xml, '')) <> ''")
                     ->whereRaw("TRIM(COALESCE(df.pdf, '')) <> ''");
             })
-            ->count();
+            ->get(['d.id', 'd.factura_serie', 'd.factura_folio']);
 
-        return $count === count($documentIds);
+        if ($documents->count() !== count($documentIds)) {
+            return false;
+        }
+        foreach ($documents as $document) {
+            $series = trim((string) ($request->serie ?? ''));
+            if ($request->proveedor === 'external') {
+                $series = $metadata['document_series'][$document->id] ?? $series;
+                if ($series === '') {
+                    $series = $this->billingSeriesForDocuments([(int) $document->id]);
+                }
+            }
+            if ($series !== '' && $series !== trim((string) $document->factura_serie)) {
+                return false;
+            }
+            $folio = trim((string) ($request->folio ?? ''));
+            if (($folio !== '' || $request->proveedor === 'external') && $folio !== trim((string) $document->factura_folio)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private function assertRemoteHash($contents, $expectedHash, $label)

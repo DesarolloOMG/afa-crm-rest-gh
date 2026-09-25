@@ -57,8 +57,8 @@ class SyncNexfiraInvoices extends Command
                             $incomplete->where('fs.status', 'stamped')->where('d.id_fase', 6)
                                 ->whereColumn('d.uuid', 'fs.fiscal_uuid')
                                 ->where(function ($missing) {
-                                    $missing->whereRaw("TRIM(COALESCE(fs.serie, '')) <> '' AND UPPER(TRIM(COALESCE(d.factura_serie, ''))) IN ('', 'N/A')")
-                                        ->orWhereRaw("TRIM(COALESCE(fs.folio, '')) <> '' AND UPPER(TRIM(COALESCE(d.factura_folio, ''))) IN ('', 'N/A')")
+                                    $missing->whereRaw("TRIM(COALESCE(fs.serie, '')) <> '' AND TRIM(COALESCE(d.factura_serie, '')) <> TRIM(fs.serie)")
+                                        ->orWhereRaw("TRIM(COALESCE(fs.folio, '')) <> '' AND TRIM(COALESCE(d.factura_folio, '')) <> TRIM(fs.folio)")
                                         ->orWhereNotExists(function ($files) {
                                             $files->select(DB::raw(1))->from('documento_factura as df')
                                                 ->whereColumn('df.id_documento', 'd.id')
