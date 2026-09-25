@@ -48,6 +48,14 @@ class InventarioService
             return $response;
         }
 
+        // Los documentos fiscales de refacturación no representan salida ni devolución física.
+        if (!empty($documento->es_refactura)) {
+            $response->code = 200;
+            $response->message = 'Refacturación fiscal: sin movimiento de inventario ni kardex.';
+            $response->mensaje = $response->message;
+            return $response;
+        }
+
         // 2. Obtenemos el tipo de documento para determinar la operación.
         $docTipo = DB::table('documento_tipo')->where('id', $documento->id_tipo)->first();
         if (!$docTipo) {

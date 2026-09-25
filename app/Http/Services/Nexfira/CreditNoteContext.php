@@ -27,16 +27,21 @@ class CreditNoteContext
         if (!preg_match('/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/', $uuid)) {
             throw new InvalidArgumentException('Primero registra el UUID de la factura de la venta origen ' . $source->id . ' para relacionar la NC.');
         }
-        if ((int) $note->id_entidad !== (int) $source->id_entidad
-            || (int) $note->id_moneda !== (int) $source->id_moneda) {
-            throw new InvalidArgumentException('La NC y su venta origen deben tener el mismo cliente y moneda.');
-        }
         $request = DB::table('facturacion_solicitud as fs')
             ->join('facturacion_solicitud_documento as fsd', 'fsd.id_solicitud', '=', 'fs.id')
             ->where('fsd.id_documento', $source->id)->where('fs.proveedor', 'nexfira')
-            ->where('fs.status', 'stamped')->where('fs.fiscal_uuid', $uuid)
+            ->where('fs.status', 'stamped')->whereRaw('UPPER(fs.fiscal_uuid) = ?', [$uuid])
             ->orderBy('fs.id', 'desc')->select('fs.*')->first();
         $payload = $request ? json_decode((string) $request->request_payload, true) : null;
+        $sameEntity = (int) $note->id_entidad === (int) $source->id_entidad;
+        if (!$sameEntity && isset($note->es_refactura) && (int) $note->es_refactura === 1) {
+            $noteRfc = DB::table('documento_entidad')->where('id', $note->id_entidad)->value('rfc');
+            $sameEntity = strtoupper(trim((string) $noteRfc)) === 'XAXX010101000'
+                && strtoupper(trim((string) ($payload['content']['receiver']['rfc'] ?? ''))) === 'XAXX010101000';
+        }
+        if (!$sameEntity || (int) $note->id_moneda !== (int) $source->id_moneda) {
+            throw new InvalidArgumentException('La NC debe corresponder al receptor y moneda de la factura origen.');
+        }
         if ($requireHub && (!$request || !$request->remote_request_id
             || ($payload['kind'] ?? null) !== 'CFDI_I' || empty($payload['content']['receiver']))) {
             throw new InvalidArgumentException('Nexfira sólo acepta NC sobre una factura origen timbrada en el Hub. La venta '

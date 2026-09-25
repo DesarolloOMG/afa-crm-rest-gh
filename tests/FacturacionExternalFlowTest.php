@@ -527,6 +527,110 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('id:xml-nexfira', DB::table('documento_factura')->where('id_documento', $document)->value('xml'));
     }
 
+    public function testSynchronizationRepairsGlobalIdentityAndFilesEvenIfSalesAlreadyHavePhaseSixAndUuid()
+    {
+        $a = $this->insertDocument('MP-38216', 116, 0);
+        $b = $this->insertDocument('MP-38217', 232, 0);
+        foreach ([$a => 1, $b => 2] as $id => $quantity) {
+            DB::table('movimiento')->insert(['id_documento' => $id, 'id_modelo' => 1, 'cantidad' => $quantity, 'precio' => 116]);
+        }
+        $uuid = '423E4567-E89B-42D3-A456-426614174000';
+        $remote = '323e4567-e89b-42d3-a456-426614174000';
+        $xml = '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" TipoDeComprobante="I" Serie="FML" Folio="40000" Total="348.00">'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()->andReturn(['requestId' => $remote, 'status' => 'queued']);
+        $client->shouldReceive('getDocumentRequest')->twice()->andReturn(['requestId' => $remote, 'status' => 'stamped', 'fiscalUuid' => $uuid, 'documentsStatus' => 'retrieved']);
+        $client->shouldReceive('downloadDocument')->once()->with($remote, 'xml')->andReturn($xml);
+        $client->shouldReceive('downloadDocument')->once()->with($remote, 'pdf')->andReturn('%PDF-1.4');
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:recovered']);
+        $service = $this->creditNoteService($client, $dropbox);
+        $request = $service->createGlobal([$a, $b], 9);
+        DB::table('documento')->whereIn('id', [$a, $b])->update(['uuid' => $uuid, 'id_fase' => 6, 'factura_serie' => 'N/A']);
+        DB::table('facturacion_solicitud')->where('id', $request['id'])->update(['status' => 'stamped', 'fiscal_uuid' => $uuid, 'documents_status' => 'retrieved']);
+        $command = new SyncNexfiraInvoices($service); $command->setLaravel($this->app);
+        $this->assertSame(0, (new CommandTester($command))->execute([]));
+        $this->assertSame(2, DB::table('documento')->where('factura_serie', 'FML')->where('factura_folio', '40000')->count());
+        $this->assertSame(2, DB::table('documento_factura')->count());
+        $this->assertSame('MP-38216', DB::table('documento')->where('id', $a)->value('no_venta'));
+        $service->sync($request['id'], 9);
+        $this->assertSame(2, DB::table('documento_factura')->count());
+    }
+
+    public function testRefacturationDocumentsCanBeStampedIndividuallyAndNeverAsGlobal()
+    {
+        require_once __DIR__ . '/../database/migrations/2026_09_25_120000_create_documento_refacturacion_table.php';
+        (new CreateDocumentoRefacturacionTable())->up();
+        $source = $this->insertDocument('MP-ORIGINAL', 232, 0);
+        $antecedent = $this->storeCreditNoteAntecedent($source);
+        $note = $this->insertCreditNote($source, 232);
+        $replacement = $this->insertDocument('REF-' . $source, 232, 0);
+        DB::table('documento_entidad')->insert(['id' => 2, 'rfc' => 'CNU010101AB1', 'razon_social' => 'CLIENTE NUEVO', 'regimen_id' => '601', 'codigo_postal_fiscal' => '45010']);
+        DB::table('documento')->where('id', $replacement)->update(['id_entidad' => 2]);
+        DB::table('documento')->whereIn('id', [$note, $replacement])->update(['es_refactura' => 1]);
+        DB::table('movimiento')->insert(['id_documento' => $replacement, 'id_modelo' => 1, 'cantidad' => 2, 'precio' => 116]);
+        DB::table('documento_refacturacion')->insert([
+            'id_documento_original' => $source, 'id_documento_nuevo' => $replacement, 'id_nota_credito' => $note,
+            'id_entidad_nueva' => 2, 'id_movimiento_nota' => 99, 'created_by' => 9,
+            'estado_fiscal' => 'pendiente_timbrado', 'request_hash' => 'test', 'auditoria' => '{}',
+        ]);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('getPaymentBalance')->once()->andThrow(new NexfiraApiException('Sin saldo', 404, 'not_found'));
+        $sent = [];
+        $client->shouldReceive('createDocumentRequest')->twice()->andReturnUsing(function ($payload) use (&$sent) {
+            $sent[] = $payload;
+            return ['requestId' => $payload['kind'] === 'CFDI_E' ? '923e4567-e89b-42d3-a456-426614174000' : '823e4567-e89b-42d3-a456-426614174000', 'status' => 'queued'];
+        });
+        $service = $this->creditNoteService($client);
+        $noteRequest = $service->createIndividual($note, 9, ['paymentMethod' => 'PUE', 'paymentForm' => '17']);
+        $this->assertSame($noteRequest['id'], $service->createIndividual($note, 9)['id']);
+        $service->createIndividual($replacement, 9, ['paymentMethod' => 'PPD', 'paymentForm' => '99']);
+        $this->assertSame('CFDI_E', $sent[0]['kind']);
+        $this->assertSame([['antecedentId' => $antecedent['request_id'], 'relationshipCode' => '01']], $sent[0]['content']['relations']);
+        $this->assertSame('XAXX010101000', $sent[0]['content']['receiver']['rfc']);
+        $this->assertSame('CNU010101AB1', $sent[1]['content']['receiver']['rfc']);
+        $this->assertSame('PPD', $sent[1]['content']['paymentMethod']);
+        $this->assertNotEquals($sent[0]['content']['folio'], $sent[1]['content']['folio']);
+        $this->assertSame($antecedent['uuid'], DB::table('documento')->where('id', $source)->value('uuid'));
+        $this->assertNotEmpty(App\Http\Services\RefacturacionService::fiscalBlocks([$replacement], true));
+        $this->assertSame(5, (int) DB::table('documento')->where('id', $replacement)->value('id_fase'));
+    }
+
+    public function testExplicitPendingReceiverIsNotReplacedByMarketplacePublicReceiver()
+    {
+        Schema::table('documento_entidad', function ($table) { $table->text('info_extra')->nullable(); });
+        $id = $this->insertDocument('MP-CLIENTE-EDITADO', 116, 0);
+        DB::table('movimiento')->insert(['id_documento' => $id, 'id_modelo' => 1, 'cantidad' => 1, 'precio' => 116]);
+        DB::table('documento_entidad')->insert(['id' => 2, 'rfc' => 'CNU010101AB1', 'razon_social' => 'CLIENTE NUEVO',
+            'regimen_id' => '601', 'codigo_postal_fiscal' => '45010', 'info_extra' => json_encode(['receptor_fiscal_documento' => $id])]);
+        DB::table('documento')->where('id', $id)->update(['id_entidad' => 2]);
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($id, 'client-edit');
+        $this->assertSame('CNU010101AB1', $payload['content']['receiver']['rfc']);
+        $this->assertSame('45010', $payload['content']['receiver']['postalCode']);
+        $this->assertSame(1, (int) DB::table('marketplace_area')->value('publico'));
+        $this->assertSame('XAXX010101000', DB::table('documento_entidad')->where('id', 1)->value('rfc'));
+    }
+
+    public function testConcurrentRecipientChangeAbortsBeforeReservingFolioOrSendingInvoice()
+    {
+        $id = $this->insertDocument('MP-CONCURRENT', 116, 0);
+        DB::table('movimiento')->insert(['id_documento' => $id, 'id_modelo' => 1, 'cantidad' => 1, 'precio' => 116]);
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($id, 'before-edit');
+        $builder = Mockery::mock(InvoicePayloadBuilder::class);
+        $builder->shouldReceive('buildIndividual')->once()->andReturnUsing(function () use ($id, $payload) {
+            DB::table('documento')->where('id', $id)->update(['id_entidad' => 99]);
+            return $payload;
+        });
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $service = new FacturacionService($client, $builder, Mockery::mock(DropboxService::class), new CfdiAttachmentValidator());
+        try { $service->createIndividual($id, 9); $this->fail('Se envió un payload con receptor obsoleto.'); }
+        catch (InvalidArgumentException $e) { $this->assertContains('cambió', $e->getMessage()); }
+        $this->assertSame(0, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
     public function testSaleWithExistingUuidCannotBeSentToNexfiraAgain()
     {
         $document = $this->insertDocument('DROP-ALREADY-INVOICED', 116.00, 0);

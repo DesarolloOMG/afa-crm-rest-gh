@@ -4,6 +4,7 @@
 namespace App\Http\Controllers;
 
 use App\Events\PusherEvent;
+use App\Http\Services\BusquedaNotaCreditoService;
 use App\Http\Services\DocumentoService;
 use App\Http\Services\CostoService;
 use App\Http\Services\DropboxService;
@@ -761,6 +762,17 @@ class GeneralController extends Controller
     public function general_busqueda_venta_nota_informacion(Request $request)
     {
         $data = json_decode($request->input("data"));
+        $id = $data->documento ?? null;
+        if (!is_scalar($id) || !ctype_digit((string) $id) || (int) $id < 1) {
+            return response()->json(['code' => 422, 'message' => 'Indica una nota de crédito válida.'], 422);
+        }
+
+        $nota = (new BusquedaNotaCreditoService())->detalle((int) $id);
+        if (!$nota) {
+            return response()->json(['code' => 404, 'message' => 'Nota de crédito no encontrada.'], 404);
+        }
+
+        return response()->json(['code' => 200, 'nota' => $nota]);
     }
 
     public function general_busqueda_venta_informacion_descargar_nota($nota) {
@@ -1265,6 +1277,7 @@ class GeneralController extends Controller
 
         $ventas = $query->select(
             'documento.id',
+            'documento.id_tipo',
             'documento.id_fase',
             'documento.id_periodo',
             'documento.nota',
@@ -1432,7 +1445,10 @@ class GeneralController extends Controller
 
         return response()->json([
             'code' => 200,
-            'ventas' => $ventas
+            'ventas' => $ventas,
+            'notas_credito' => $data->campo === 'nota'
+                ? (new BusquedaNotaCreditoService())->buscar($criterio)
+                : []
         ]);
     }
 
@@ -2166,9 +2182,13 @@ class GeneralController extends Controller
         $sheet->setCellValue('AH1', 'SOLICITADO POR');
         $sheet->setCellValue('AI1', 'COMENTARIO');
         $sheet->setCellValue('AJ1', 'DESCUENTO');
+        $sheet->setCellValue('AK1', 'SERIE FACTURA');
+        $sheet->setCellValue('AL1', 'FOLIO FACTURA');
 
-        $spreadsheet->getActiveSheet()->getStyle('A1:AI1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
-        $spreadsheet->getActiveSheet()->getStyle('A1:AI1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $spreadsheet->getActiveSheet()->getStyle('A1:AL1')->getFont()->setBold(1)->getColor()->setARGB('000000'); # Cabecera en negritas con color negro
+        $spreadsheet->getActiveSheet()->getStyle('A1:AL1')->getFill()->setFillType(\PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID)->getStartColor()->setARGB('4CB9CD');
+        $sheet->getColumnDimension('AK')->setAutoSize(true);
+        $sheet->getColumnDimension('AL')->setAutoSize(true);
 
         $ventas = DB::select("SELECT 
                                 documento.id, 
@@ -2266,7 +2286,7 @@ class GeneralController extends Controller
             foreach ($productos as $index => $producto) {
 
                 $total += round($producto->cantidad * $producto->precio, 2);
-                $sheet->setCellValue('A' . $contador_fila, ($venta->factura_serie == 'N/A') ? $venta->id : $venta->factura_folio);
+                $sheet->setCellValue('A' . $contador_fila, $venta->id);
                 $sheet->getCellByColumnAndRow(2, $contador_fila)->setValueExplicit($venta->no_venta, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                 $sheet->setCellValue('C' . $contador_fila, $venta->empresa);
                 $sheet->setCellValue('D' . $contador_fila, $venta->area);
@@ -2302,6 +2322,8 @@ class GeneralController extends Controller
                 $sheet->setCellValue('AH' . $contador_fila, $venta->usuario_agro ? $venta->usuario_agro : 'N/A');
                 $sheet->getCellByColumnAndRow(35, $contador_fila)->setValueExplicit($venta->comentario, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
                 $sheet->setCellValue('AJ' . $contador_fila, $venta->mkt_coupon);
+                $sheet->getCell('AK' . $contador_fila)->setValueExplicit($venta->factura_serie, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+                $sheet->getCell('AL' . $contador_fila)->setValueExplicit($venta->factura_folio, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 
                 $spreadsheet->getActiveSheet()->getStyle("L" . $contador_fila . ":M" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
                 $spreadsheet->getActiveSheet()->getStyle("AF" . $contador_fila . ":AF" . $contador_fila)->getNumberFormat()->setFormatCode('_("$"* #,##0.00_);_("$"* \(#,##0.00\);_("$"* "0"??_);_(@_)');
@@ -3982,6 +4004,27 @@ class GeneralController extends Controller
                 DB::raw('COALESCE(deo.razon_social, cefo.nombre, mc.nombre_entidad_origen) as egreso_entidad_origen_nombre'),
                 DB::raw('COALESCE(ded.razon_social, cefd.nombre, mc.nombre_entidad_destino) as egreso_entidad_destino_nombre'),
             ]);
+
+        // Las NC de refacturación compensan la venta original, no originan un egreso bancario.
+        // Mostrar su única aplicación también bajo la NC sin duplicarla en el libro contable.
+        if (\Illuminate\Support\Facades\Schema::hasTable('documento_refacturacion')) {
+            $compensaciones = DB::table('documento_refacturacion as rf')
+                ->join('movimiento_contable as mc', 'mc.id', '=', 'rf.id_movimiento_nota')
+                ->join('movimiento_contable_documento as mcd', function ($join) {
+                    $join->on('mcd.id_movimiento_contable', '=', 'mc.id')
+                        ->on('mcd.id_documento', '=', 'rf.id_documento_original');
+                })
+                ->leftJoin('moneda as mon', 'mon.id', '=', 'mc.id_moneda')
+                ->leftJoin('documento_entidad as de', 'de.id', '=', 'mc.entidad_origen')
+                ->whereIn('rf.id_nota_credito', $ncIds)->where('mc.status', 1)->where('mcd.status', 1)
+                ->get(['rf.id_nota_credito as nc_id', 'mcd.monto_aplicado', 'mcd.tipo_cambio as mcd_tc',
+                    'mcd.parcialidad', 'mcd.saldo_documento', 'mcd.created_at as mcd_fecha',
+                    'mc.id as egreso_id', 'mc.fecha_operacion', 'mc.fecha_afectacion', 'mc.id_moneda as egreso_id_moneda',
+                    'mon.moneda as egreso_moneda', 'mc.tipo_cambio as egreso_tc', 'mc.monto as egreso_monto',
+                    'mc.id_forma_pago', 'mc.referencia_pago', 'mc.descripcion_pago', 'mc.comentarios',
+                    'de.razon_social as egreso_entidad_origen_nombre', 'de.razon_social as egreso_entidad_destino_nombre']);
+            $egresos = $egresos->concat($compensaciones);
+        }
 
         // Sumas por NC para pagado/balance
         $aplicadoPorNc = [];

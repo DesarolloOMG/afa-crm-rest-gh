@@ -157,7 +157,10 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->post('nota/informacion/canceladas', 'GeneralController@general_busqueda_venta_nota_informacion_canceladas');
                 $router->get('borrar/{dropbox}', 'GeneralController@general_busqueda_venta_borrar');
                 $router->post('guardar', 'GeneralController@general_busqueda_venta_guardar');
-                $router->post('refacturacion', 'GeneralController@general_busqueda_venta_refacturacion');
+                $router->get('refacturacion/{documento}', 'RefacturacionController@preview');
+                $router->post('refacturacion', 'RefacturacionController@crear');
+                $router->get('cliente-fiscal/{documento}', 'RefacturacionController@cliente');
+                $router->post('cliente-fiscal/{documento}', 'RefacturacionController@cliente');
                 $router->get('nota/{documento}', 'GeneralController@general_busqueda_venta_nota');
                 $router->post('nota-credito', 'GeneralController@general_busqueda_venta_crear_nota');
                 $router->post('autorizar-sin-venta', 'GeneralController@general_busqueda_sin_venta_autorizar_nota');

@@ -3,6 +3,7 @@
 namespace App\Http\Services\Nexfira;
 
 use App\Http\Services\DropboxService;
+use App\Http\Services\RefacturacionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
@@ -120,26 +121,40 @@ class FacturacionService
     public function preview($documentId)
     {
         $summary = $this->saleSummary($documentId);
+        $requests = $this->latestRequestsForDocuments([(int) $documentId]);
+        $files = DB::table('documento_factura')->where('id_documento', $documentId)->first();
+        $state = [
+            'request' => $requests[$documentId] ?? null,
+            'completed' => $this->hasExistingInvoice($summary) && $files && !empty($files->xml) && !empty($files->pdf),
+            'uuid' => $summary->uuid,
+            'series' => $summary->factura_serie ?? '', 'folio' => $summary->factura_folio ?? '',
+            'billing_series' => config('nexfira.series.' . strtoupper(trim($summary->marketplace)), ''),
+        ];
+        $blocks = RefacturacionService::fiscalBlocks([(int) $documentId]);
+        if ($blocks) {
+            return $state + ['valid' => false, 'blockers' => array_values(array_unique($blocks)), 'payload' => null];
+        }
         if ($this->hasExistingInvoice($summary)) {
-            return [
+            return $state + [
                 'valid' => false,
                 'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $summary->uuid) . '.'],
                 'payload' => null,
             ];
         }
         if ($this->isMeliFull($summary)) {
-            return [
+            return $state + [
                 'valid' => false,
                 'blockers' => ['Las ventas FULL de Mercado Libre deben cargar el CFDI emitido por Mercado Libre.'],
                 'payload' => null,
             ];
         }
 
-        return $this->builder->preview($documentId);
+        return $state + $this->builder->preview($documentId);
     }
 
     public function createIndividual($documentId, $userId, array $overrides = [])
     {
+        RefacturacionService::assertFiscalReady([(int) $documentId]);
         $summary = $this->saleSummary($documentId);
         $this->assertNotAlreadyInvoiced($summary);
         if ($this->isMeliFull($summary)) {
@@ -162,6 +177,7 @@ class FacturacionService
             return $this->publicRequest($existing);
         }
 
+        $recipientVersion = $this->recipientVersion([(int) $documentId]);
         $attempt = $this->nextAttempt([(int) $documentId]);
         $externalReference = 'afa-' . (int) $documentId . '-v' . $attempt;
         $idempotencyKey = 'afa-individual-' . (int) $documentId . '-v' . $attempt;
@@ -183,7 +199,7 @@ class FacturacionService
         }
 
         return $this->submit((int) $summary->id_tipo === 6 ? 'nota_credito' : 'individual',
-            [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId, $overrides);
+            [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId, $overrides, $recipientVersion);
     }
 
     public function createGlobal(
@@ -203,6 +219,7 @@ class FacturacionService
         }
 
         $documentIds = $this->normalizeDocumentIds($documentIds, 2);
+        RefacturacionService::assertFiscalReady($documentIds, true);
         foreach ($documentIds as $documentId) {
             $summary = $this->saleSummary($documentId);
             if ((int) $summary->id_tipo !== 2) {
@@ -221,6 +238,7 @@ class FacturacionService
             );
         }
 
+        $recipientVersion = $this->recipientVersion($documentIds);
         $attempt = $this->nextAttempt($documentIds);
         $groupHash = substr(hash('sha256', $grouping . ':' . implode('-', $documentIds)), 0, 20);
         $externalReference = 'afa-global-' . $grouping . '-' . $groupHash . '-v' . $attempt;
@@ -236,7 +254,7 @@ class FacturacionService
             ? 'global_productos'
             : 'global_ventas';
 
-        return $this->submit($requestMode, $documentIds, $payload, $externalReference, $idempotencyKey, $userId, $overrides);
+        return $this->submit($requestMode, $documentIds, $payload, $externalReference, $idempotencyKey, $userId, $overrides, $recipientVersion);
     }
 
     public function sync($requestId, $userId)
@@ -390,7 +408,14 @@ class FacturacionService
         return $this->publicRequest(DB::table('facturacion_solicitud')->where('id', $requestId)->first());
     }
 
-    private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId, array $overrides = [])
+    private function recipientVersion(array $documentIds, $lock = false)
+    {
+        $query = DB::table('documento')->whereIn('id', $documentIds)->orderBy('id');
+        return ($lock ? $query->lockForUpdate() : $query)->get(['id', 'id_entidad', 'id_cfdi', 'uuid', 'id_fase'])
+            ->map(function ($row) { return array_map('strval', (array) $row); })->toJson();
+    }
+
+    private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId, array $overrides = [], $recipientVersion = null)
     {
         $now = date('Y-m-d H:i:s');
         $request = DB::transaction(function () use (
@@ -401,8 +426,12 @@ class FacturacionService
             $idempotencyKey,
             $userId,
             $overrides,
+            $recipientVersion,
             $now
         ) {
+            if ($this->recipientVersion($documentIds, true) !== $recipientVersion) {
+                throw new InvalidArgumentException('El cliente o estado del pedido cambió mientras se preparaba la factura. Actualiza los datos y vuelve a solicitarla.');
+            }
             $defaultSeries = $this->billingSeriesForDocuments($documentIds);
             $series = isset($overrides['series']) && $overrides['series'] !== ''
                 ? $overrides['series'] : $defaultSeries;
@@ -511,10 +540,8 @@ class FacturacionService
                 if (!$document || (int) $document->status !== 1 || $document->deleted_at !== null) {
                     throw new InvalidArgumentException('La venta ' . $documentId . ' ya no está activa.');
                 }
-                if ((int) $document->id_fase === 6 && strtoupper((string) $document->uuid) === $validated['uuid']) {
-                    continue;
-                }
-                if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== 5) {
+                $sameInvoice = (int) $document->id_fase === 6 && strtoupper((string) $document->uuid) === $validated['uuid'];
+                if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== 5 && !$sameInvoice) {
                     throw new InvalidArgumentException('La venta ' . $documentId . ' dejó de estar en fase 5.');
                 }
                 if (!in_array((int) $document->id_tipo, [2, 6], true)
@@ -566,6 +593,7 @@ class FacturacionService
                 'updated_by' => (int) $userId,
                 'updated_at' => date('Y-m-d H:i:s'),
             ]);
+            RefacturacionService::markFiscalCompleted($documentIds);
             DB::commit();
         } catch (Throwable $e) {
             DB::rollBack();
@@ -690,13 +718,13 @@ class FacturacionService
             ->whereIn('d.id_tipo', [2, 6])
             ->where('d.status', 1)
             ->whereNull('d.deleted_at')
-            ->select('d.id', 'd.id_tipo', 'd.id_fase', 'd.fulfillment', 'd.total', 'd.uuid', 'mk.marketplace')
+            ->select('d.id', 'd.id_tipo', 'd.id_fase', 'd.fulfillment', 'd.total', 'd.uuid', 'd.factura_serie', 'd.factura_folio', 'mk.marketplace')
             ->first();
 
         if (!$document) {
             throw new InvalidArgumentException('No se encontró la venta activa ' . (int) $documentId . '.');
         }
-        if ((int) $document->id_tipo === 2 && (int) $document->id_fase !== 5) {
+        if ((int) $document->id_tipo === 2 && !in_array((int) $document->id_fase, [5, 6], true)) {
             throw new InvalidArgumentException('La venta ' . $document->id . ' no está en fase 5 pendiente de factura.');
         }
 
@@ -932,6 +960,7 @@ class FacturacionService
     private function pendingDocumentItems($documents)
     {
         $requestMap = $this->latestRequestsForDocuments($documents->pluck('id')->toArray());
+        $fiscalBlocks = RefacturacionService::fiscalBlocks($documents->pluck('id')->toArray());
         $items = [];
         foreach ($documents as $document) {
             $alreadyInvoiced = $this->hasExistingInvoice($document);
@@ -945,7 +974,9 @@ class FacturacionService
                     $seriesError = $e->getMessage();
                 }
             }
-            if ($alreadyInvoiced) {
+            if (isset($fiscalBlocks[$document->id])) {
+                $preview = ['valid' => false, 'blockers' => [$fiscalBlocks[$document->id]]];
+            } elseif ($alreadyInvoiced) {
                 $preview = [
                     'valid' => false,
                     'blockers' => ['La venta ya está facturada con UUID ' . strtoupper((string) $document->uuid) . '.'],
@@ -1116,10 +1147,22 @@ class FacturacionService
             return false;
         }
 
-        $count = DB::table('documento')
-            ->whereIn('id', $documentIds)
-            ->where('id_fase', 6)
-            ->where('uuid', strtoupper((string) $request->fiscal_uuid))
+        $count = DB::table('documento as d')
+            ->whereIn('d.id', $documentIds)
+            ->where('d.id_fase', 6)
+            ->where('d.uuid', strtoupper((string) $request->fiscal_uuid))
+            ->when(trim((string) ($request->serie ?? '')) !== '', function ($query) {
+                $query->whereRaw("UPPER(TRIM(COALESCE(d.factura_serie, ''))) NOT IN ('', 'N/A')");
+            })
+            ->when(trim((string) ($request->folio ?? '')) !== '', function ($query) {
+                $query->whereRaw("UPPER(TRIM(COALESCE(d.factura_folio, ''))) NOT IN ('', 'N/A')");
+            })
+            ->whereExists(function ($query) {
+                $query->select(DB::raw(1))->from('documento_factura as df')
+                    ->whereColumn('df.id_documento', 'd.id')
+                    ->whereRaw("TRIM(COALESCE(df.xml, '')) <> ''")
+                    ->whereRaw("TRIM(COALESCE(df.pdf, '')) <> ''");
+            })
             ->count();
 
         return $count === count($documentIds);

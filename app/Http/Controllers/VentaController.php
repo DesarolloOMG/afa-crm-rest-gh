@@ -1087,7 +1087,15 @@ class VentaController extends Controller
             $data = json_decode($request->input('data'));
             $auth = json_decode($request->auth);
 
-            $documento = DB::table("documento")->where("id", $data->documento->documento)->first();
+            $documento = DB::table("documento")->where("id", $data->documento->documento)->lockForUpdate()->first();
+
+            if ($documento && in_array((int) $documento->id_fase, [5, 6], true)
+                && ((int) $data->documento->uso_venta !== (int) $documento->id_cfdi
+                    || ($data->cliente->rfc !== 'XAXX010101000' && (int) $data->cliente->select !== (int) $documento->id_entidad))) {
+                DB::rollBack();
+                return response()->json(['code' => 422,
+                    'message' => 'Actualiza el cliente fiscal desde el detalle de la venta: Editar cliente fiscal si está pendiente, o Refacturar si ya está timbrada.'], 422);
+            }
 
             if ($data->cliente->rfc != 'XAXX010101000') {
                 $id_entidad = $data->cliente->select;

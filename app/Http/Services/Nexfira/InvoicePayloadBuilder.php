@@ -3,6 +3,7 @@
 namespace App\Http\Services\Nexfira;
 
 use Carbon\Carbon;
+use App\Http\Services\RefacturacionService;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -135,7 +136,11 @@ class InvoicePayloadBuilder
         if ($method !== 'PUE') {
             throw new InvalidArgumentException('Nexfira exige PUE para las notas de crédito. Revisa el método seleccionado.');
         }
-        $relationship = (string) ($overrides['relationshipCode'] ?? '03');
+        $isRefacturation = RefacturacionService::isRefacturationCreditNote((int) $document->id);
+        $relationship = (string) ($overrides['relationshipCode'] ?? ($isRefacturation ? '01' : '03'));
+        if ($isRefacturation && $relationship !== '01') {
+            throw new InvalidArgumentException('Una NC de refacturación usa relación 01; no representa devolución de mercancía.');
+        }
         if (!in_array($relationship, ['01', '03'], true)) {
             throw new InvalidArgumentException('Selecciona relación 01 (descuento/bonificación) o 03 (devolución).');
         }
@@ -239,7 +244,9 @@ class InvoicePayloadBuilder
 
     private function receiver($document)
     {
-        if ((int) $document->publico === 1) {
+        if ((int) $document->publico === 1
+            && !RefacturacionService::isReplacementSale((int) $document->id)
+            && !RefacturacionService::hasExplicitRecipient((int) $document->id)) {
             return $this->publicReceiver();
         }
 
