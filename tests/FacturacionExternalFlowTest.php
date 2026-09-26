@@ -1153,6 +1153,52 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('pending_approval', json_decode($response->getContent(), true)['request']['status']);
     }
 
+    public function testIndividualEndpointPassesSelectedSatPeriodWithoutLosingPaymentOverrides()
+    {
+        DB::table('subnivel')->insert(['id' => 36, 'subnivel' => 'FACTURACION Y TIMBRADO', 'status' => 1]);
+        DB::table('subnivel_nivel')->insert(['id' => 75, 'id_nivel' => 11, 'id_subnivel' => 36]);
+        DB::table('usuario_subnivel_nivel')->insert(['id_usuario' => 9, 'id_subnivel_nivel' => 75]);
+        $period = ['periodicity' => '04', 'months' => '08', 'year' => 2026];
+        $service = Mockery::mock(FacturacionService::class);
+        $service->shouldReceive('createIndividual')->once()->with(37802, 9, [
+            'paymentMethod' => 'PUE', 'paymentForm' => '03', 'globalInformation' => $period,
+        ])->andReturn(['status' => 'pending_approval', 'series' => 'FML', 'folio' => '40001']);
+        $request = Request::create('/venta/venta/facturacion/individual/37802', 'POST', [
+            'paymentMethod' => 'PUE', 'paymentForm' => '03', 'informacionGlobal' => $period,
+        ]);
+        $request->auth = (object) ['id' => 9];
+        $this->assertSame(202, (new FacturacionController($service))->individual($request, 37802)->getStatusCode());
+    }
+
+    public function testPendingFlagAndIndividualPayloadUseEntityNotMarketplace()
+    {
+        $id = $this->insertNumberingSale('ASSURANT');
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'ASS180119A20', 'razon_social' => 'Assurant S.A de C.V', 'regimen_id' => '601',
+        ]);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('createDocumentRequest')->once()->withArgs(function ($payload, $key) {
+            return $payload['content']['receiver']['rfc'] === 'ASS180119A20'
+                && !isset($payload['content']['globalInformation']);
+        })->andReturn(['requestId' => 'nominal-entity', 'status' => 'queued']);
+        $service = $this->creditNoteService($client);
+        $pending = $service->pendingDocuments(false);
+        $this->assertFalse($pending['documents'][0]['publico']);
+        $this->assertSame(1, (int) DB::table('marketplace_area')->value('publico'));
+        $this->assertSame('queued', $service->createIndividual($id, 9)['status']);
+    }
+
+    public function testExternalCreditNoteUsesOriginalEntityWhenMarketplaceIsPublic()
+    {
+        $sale = $this->insertDocument('ASSURANT', 116, 0);
+        $uuid = '923E4567-E89B-42D3-A456-426614174000';
+        DB::table('documento')->where('id', $sale)->update(['uuid' => $uuid, 'id_fase' => 6]);
+        DB::table('documento_entidad')->where('id', 1)->update(['rfc' => 'ASS180119A20', 'razon_social' => 'Assurant']);
+        $note = $this->insertCreditNote($sale, 116);
+        $context = (new App\Http\Services\Nexfira\CreditNoteContext())->resolve($note);
+        $this->assertSame('ASS180119A20', $context['receiver_rfc']);
+    }
+
     public function testScheduledCommandSynchronizesOnlyActiveNexfiraRequestsWithPhaseFiveSales()
     {
         $pendingDocument = $this->insertDocument('DROP-AUTO-PENDING', 116.00, 0);

@@ -43,6 +43,81 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('200.00', $payload['content']['expectedTotals']['subtotal']);
         $this->assertSame('32.00', $payload['content']['expectedTotals']['transfers']);
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('01', $payload['content']['globalInformation']['periodicity']);
+    }
+
+    /** @dataProvider fiscalReceiverModes */
+    public function testEntityOverridesPublicMarketplaceInEveryInvoiceMode($mode)
+    {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'ASS180119A20', 'razon_social' => 'Assurant S.A de C.V',
+            'regimen_id' => '601', 'codigo_postal_fiscal' => '11520',
+        ]);
+        $first = $this->insertDocument('ASSURANT-1', 116, 1);
+        $second = $this->insertDocument('ASSURANT-2', 116, 1);
+        $this->insertMovement($first, 1, 116);
+        $this->insertMovement($second, 1, 116);
+        $builder = new InvoicePayloadBuilder();
+        $payload = $mode === 'individual' ? $builder->buildIndividual($first, 'receptor-entidad')
+            : $builder->buildGlobal([$first, $second], 'receptor-entidad', $mode);
+        $this->assertSame('ASS180119A20', $payload['content']['receiver']['rfc']);
+        $this->assertSame('Assurant S.A de C.V', $payload['content']['receiver']['name']);
+        $this->assertSame('601', $payload['content']['receiver']['fiscalRegime']);
+        $this->assertSame('11520', $payload['content']['receiver']['postalCode']);
+        $this->assertArrayNotHasKey('globalInformation', $payload['content']);
+    }
+
+    public function fiscalReceiverModes()
+    {
+        return [['individual'], ['ventas'], ['productos']];
+    }
+
+    public function testPublicEntityRequiresPeriodEvenWhenMarketplaceIsNotPublic()
+    {
+        $id = $this->insertDocument('PUBLICO', 116, 0);
+        $this->insertMovement($id, 1, 116);
+        $period = ['periodicity' => '04', 'months' => '08', 'year' => 2026];
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($id, 'publico-periodo', [
+            'globalInformation' => $period, 'paymentMethod' => 'PUE', 'paymentForm' => '03',
+        ]);
+        $this->assertSame('XAXX010101000', $payload['content']['receiver']['rfc']);
+        $this->assertSame($period, $payload['content']['globalInformation']);
+    }
+
+    public function testInvalidPublicIndividualPeriodFailsBeforeSubmission()
+    {
+        $id = $this->insertDocument('PUBLICO', 116, 1);
+        $this->insertMovement($id, 1, 116);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('bimestre SAT');
+        (new InvoicePayloadBuilder())->buildIndividual($id, 'publico-invalido', [
+            'globalInformation' => ['periodicity' => '05', 'months' => '09', 'year' => 2026],
+        ]);
+    }
+
+    public function testIncompleteNamedEntityNeverFallsBackToPublicGeneral()
+    {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'ASS180119A20', 'razon_social' => 'Assurant S.A de C.V', 'codigo_postal_fiscal' => '',
+        ]);
+        $id = $this->insertDocument('ASSURANT-INCOMPLETO', 116, 1);
+        $this->insertMovement($id, 1, 116);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('código postal fiscal');
+        (new InvoicePayloadBuilder())->buildIndividual($id, 'no-sustituir');
+    }
+
+    public function testGroupingBySalesCannotSilentlyReplaceMixedEntitiesWithPublicGeneral()
+    {
+        $first = $this->insertDocument('PUBLICO', 116, 1);
+        $second = $this->insertDocument('ASSURANT', 116, 1);
+        DB::table('documento_entidad')->insert(['id' => 2, 'rfc' => 'ASS180119A20',
+            'razon_social' => 'Assurant', 'regimen_id' => '601', 'codigo_postal_fiscal' => '11520']);
+        DB::table('documento')->where('id', $second)->update(['id_entidad' => 2]);
+        $this->insertMovement($first, 1, 116); $this->insertMovement($second, 1, 116);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('mismo receptor fiscal');
+        (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'no-mezclar', 'ventas');
     }
 
     public function testBuildsGlobalInvoiceUsingPublicSaleContract()

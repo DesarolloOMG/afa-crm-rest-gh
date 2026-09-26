@@ -18,7 +18,7 @@ class CreditNoteContext
             ->join('moneda as mn', 'mn.id', '=', 'd.id_moneda')
             ->where('d.id_tipo', 2)->whereNull('d.deleted_at')
             ->whereRaw('TRIM(d.nota) = ?', [(string) (int) $creditNoteId])
-            ->select('d.*', 'ma.publico', 'de.rfc', 'mn.moneda as currency')->get();
+            ->select('d.*', 'de.rfc', 'mn.moneda as currency')->get();
         if (!$note || $sources->count() !== 1) {
             throw new InvalidArgumentException('La NC ' . (int) $creditNoteId . ' debe tener una venta origen identificada en documento.nota.');
         }
@@ -55,8 +55,7 @@ class CreditNoteContext
             'source_id' => (int) $source->id,
             'source_uuid' => $uuid,
             'currency' => $source->currency,
-            'receiver_rfc' => $payload['content']['receiver']['rfc'] ?? ((int) $source->publico === 1
-                ? config('nexfira.global.receiver_rfc', 'XAXX010101000') : strtoupper(trim($source->rfc))),
+            'receiver_rfc' => $payload['content']['receiver']['rfc'] ?? strtoupper(trim($source->rfc)),
             'request_id' => $request ? $request->remote_request_id : null,
             'source_payload' => $payload,
         ];

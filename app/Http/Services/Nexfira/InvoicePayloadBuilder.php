@@ -23,13 +23,21 @@ class InvoicePayloadBuilder
         $totals = $this->totalsFromItems($items);
         $this->assertStoredTotal($document, $totals['total']);
 
-        return $this->basePayload($document, $externalReference, [
+        $content = [
             'paymentMethod' => $this->paymentMethod($document, $overrides),
             'paymentForm' => $this->paymentForm($document, $overrides),
             'receiver' => $this->receiver($document),
             'items' => $items,
             'expectedTotals' => $totals,
-        ]);
+        ];
+        if ($content['receiver']['rfc'] === 'XAXX010101000') {
+            $period = $overrides['globalInformation'] ?? [];
+            if (!is_array($period)) {
+                throw new InvalidArgumentException('La información global debe contener periodicidad, mes y año.');
+            }
+            $content['globalInformation'] = $this->validatedGlobalInformation($period);
+        }
+        return $this->basePayload($document, $externalReference, $content);
     }
 
     public function buildGlobal(
@@ -63,8 +71,9 @@ class InvoicePayloadBuilder
             }
         }
 
+        // Agrupar partidas no cambia al cliente: manda documento_entidad en ambos modos.
+        $receiver = $this->sharedReceiver($documents);
         if ($grouping === self::GLOBAL_GROUP_PRODUCTS) {
-            $receiver = $this->sharedReceiver($documents);
             $items = [];
             foreach ($documents as $document) {
                 $documentItems = $this->buildProductItems($document, true);
@@ -72,7 +81,6 @@ class InvoicePayloadBuilder
                 $items = array_merge($items, $documentItems);
             }
         } else {
-            $receiver = $this->publicReceiver();
             $items = $this->buildGlobalSaleItems($documents);
         }
 
@@ -223,7 +231,7 @@ class InvoicePayloadBuilder
             ->whereNull('d.deleted_at')
             ->select([
                 'd.id', 'd.id_tipo', 'd.id_fase', 'd.id_periodo', 'd.id_entidad', 'd.fulfillment', 'd.no_venta', 'd.total',
-                'd.id_marketplace_area', 'ma.publico', 'mk.marketplace', 'mn.moneda as currency',
+                'd.id_marketplace_area', 'mk.marketplace', 'mn.moneda as currency',
                 'uc.codigo as cfdi_use', 'de.rfc', 'de.razon_social', 'de.regimen_id',
                 'de.regimen', 'de.regimen_letra', 'de.codigo_postal_fiscal',
             ])
@@ -244,9 +252,8 @@ class InvoicePayloadBuilder
 
     private function receiver($document)
     {
-        if ((int) $document->publico === 1
-            && !RefacturacionService::isReplacementSale((int) $document->id)
-            && !RefacturacionService::hasExplicitRecipient((int) $document->id)) {
+        // El RFC de la entidad del documento, nunca el flag del marketplace, define al receptor.
+        if (strtoupper(trim((string) $document->rfc)) === 'XAXX010101000') {
             return $this->publicReceiver();
         }
 
@@ -294,7 +301,7 @@ class InvoicePayloadBuilder
         }
 
         $receiver = [
-            'rfc' => strtoupper(trim((string) config('nexfira.global.receiver_rfc', 'XAXX010101000'))),
+            'rfc' => 'XAXX010101000',
             'name' => trim((string) config('nexfira.global.receiver_name', 'PUBLICO EN GENERAL')),
             'fiscalRegime' => trim((string) config('nexfira.global.receiver_fiscal_regime', '616')),
             'postalCode' => $postalCode,
@@ -315,7 +322,7 @@ class InvoicePayloadBuilder
             $candidateKey = json_encode($candidate, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             if ($candidateKey !== $receiverKey) {
                 throw new InvalidArgumentException(
-                    'La global por productos sólo puede incluir ventas del mismo receptor fiscal.'
+                    'Una factura agrupada sólo puede incluir ventas del mismo receptor fiscal, ya sea por ventas o por productos.'
                 );
             }
         }

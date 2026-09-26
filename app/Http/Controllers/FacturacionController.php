@@ -78,10 +78,17 @@ class FacturacionController extends Controller
         return $this->handle(function () use ($request, $documento) {
             $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
+            $overrides = $this->invoiceOverrides($data);
+            if (array_key_exists('informacionGlobal', $data)) {
+                if (!is_array($data['informacionGlobal'])) {
+                    throw new InvalidArgumentException('La información global debe ser un objeto con periodicidad, mes y año.');
+                }
+                $overrides['globalInformation'] = $data['informacionGlobal'];
+            }
             $result = $this->service->createIndividual(
                 (int) $documento,
                 $userId,
-                $this->invoiceOverrides($data)
+                $overrides
             );
 
             return [

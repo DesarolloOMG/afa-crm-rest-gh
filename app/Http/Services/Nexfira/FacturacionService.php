@@ -976,7 +976,7 @@ class FacturacionService
     {
         return [
             'd.id', 'd.id_tipo', 'd.no_venta', 'd.fulfillment', 'd.total', 'd.created_at', 'd.uuid',
-            'mk.marketplace', 'ma.publico', 'de.razon_social', 'de.rfc',
+            'mk.marketplace', 'de.razon_social', 'de.rfc',
         ];
     }
 
@@ -1079,7 +1079,7 @@ class FacturacionService
                 'created_at' => $document->created_at,
                 'cliente' => $document->razon_social,
                 'rfc' => $document->rfc,
-                'publico' => (int) $document->publico === 1,
+                'publico' => strtoupper(trim((string) $document->rfc)) === 'XAXX010101000',
                 'already_invoiced' => $alreadyInvoiced,
                 'requires_external' => $requiresExternal,
                 'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
