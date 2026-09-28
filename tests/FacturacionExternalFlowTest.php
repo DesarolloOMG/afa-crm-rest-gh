@@ -1369,6 +1369,367 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame(40001, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
     }
 
+    public function testDevResetArchivesRejectedAttemptAndNextSubmissionUsesCurrentEntityAndNewKey()
+    {
+        $id = $this->insertNumberingSale('RESET');
+        $requestId = $this->seedResetRequest([$id]);
+        $beforeDocument = (array) DB::table('documento')->where('id', $id)->first();
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('getDocumentRequest');
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $review = $service->inspect($id);
+        $this->assertTrue($review['can_reset']);
+        $service->reset($id, $requestId, $review['confirmation_token'], 'Corregimos el nombre fiscal', 9);
+        $archived = DB::table('facturacion_solicitud')->where('id', $requestId)->first();
+        $this->assertSame('reset_local', $archived->status);
+        $audit = json_decode($archived->response_payload, true)['localReset'];
+        $this->assertSame('rejected', $audit['previousRequest']['status']);
+        $this->assertSame(9, $audit['userId']);
+        $this->assertSame($beforeDocument, (array) DB::table('documento')->where('id', $id)->first());
+        $this->assertSame(1, DB::table('facturacion_solicitud_documento')->count());
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+        DB::table('documento_entidad')->where('id', 1)->update(['rfc' => 'ASS180119A20', 'razon_social' => 'ASSURANT', 'regimen_id' => '601']);
+        $client->shouldReceive('createDocumentRequest')->once()->withArgs(function ($payload, $key) use ($id) {
+            return $key === 'afa-individual-' . $id . '-v2'
+                && $payload['content']['receiver']['name'] === 'ASSURANT'
+                && $payload['externalReference'] === 'afa-' . $id . '-v2';
+        })->andReturn(['requestId' => 'new-attempt', 'status' => 'queued']);
+        $billing = $this->creditNoteService($client);
+        $this->assertSame('reset_local', $billing->sync($requestId, 9)['status']);
+        $pending = $billing->pendingDocuments(false)['documents'][0];
+        $this->assertEmpty($pending['request']);
+        $this->assertSame('queued', $billing->createIndividual($id, 9)['status']);
+        $this->assertSame(2, DB::table('facturacion_solicitud')->count());
+    }
+
+    public function testDevResetRequiresDefinitiveRemoteRejectionEvenForProvider400()
+    {
+        $id = $this->insertNumberingSale('UNCERTAIN');
+        $requestId = $this->seedResetRequest([$id], ['status' => 'uncertain', 'remote_request_id' => 'remote-238']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldReceive('getDocumentRequest')->twice()->with('remote-238')->andReturn([
+            'requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'uncertain',
+            'processingErrorCode' => 'provider_http_400', 'processingErrorDetails' => ['message' => 'Nombre no coincide con RFC'],
+        ]);
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $before = (array) DB::table('facturacion_solicitud')->first();
+        $review = $service->inspect($id);
+        $this->assertFalse($review['can_reset']);
+        $this->assertSame('Nombre no coincide con RFC', $review['provider_error']);
+        try {
+            $service->reset($id, $requestId, $review['confirmation_token'], 'Cambio de razón social', 9);
+            $this->fail('Liberó un intento incierto.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('confirmar rejected', $e->getMessage());
+        }
+        $this->assertSame($before, (array) DB::table('facturacion_solicitud')->first());
+    }
+
+    public function testDevResetRechecksRemoteStatusBeforeWriting()
+    {
+        $id = $this->insertNumberingSale('REMOTE-CHANGE');
+        $requestId = $this->seedResetRequest([$id], ['remote_request_id' => 'remote-238']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('getDocumentRequest')->twice()->andReturn(
+            ['requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'rejected'],
+            ['requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'queued']
+        );
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $review = $service->inspect($id);
+        $this->assertTrue($review['can_reset']);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('queued');
+        $service->reset($id, $requestId, $review['confirmation_token'], 'Cambio de razón social', 9);
+    }
+
+    public function testDevResetDoesNotOverrideFiscalEvidenceOrRemoteReplacements()
+    {
+        $id = $this->insertNumberingSale('REMOTE-REPLACEMENT');
+        $requestId = $this->seedResetRequest([$id], ['remote_request_id' => 'remote-238']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldReceive('getDocumentRequest')->once()->andReturn([
+            'requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'rejected', 'correctedRequestId' => 'successor',
+        ]);
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $this->assertFalse($service->inspect($id)['can_reset']);
+        DB::table('facturacion_solicitud')->where('id', $requestId)->update(['status' => 'stamped', 'fiscal_uuid' => 'some-uuid']);
+        $this->assertFalse($service->inspect($id)['can_reset']);
+    }
+
+    public function testDevResetWithoutRemoteIdDoesNotTreatTimeoutAsRejection()
+    {
+        $id = $this->insertNumberingSale('TIMEOUT');
+        $this->seedResetRequest([$id], ['status' => 'uncertain', 'error_code' => 'nexfira_unavailable']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldNotReceive('getDocumentRequest');
+        $this->assertFalse((new App\Http\Services\Nexfira\NexfiraLocalResetService($client))->inspect($id)['can_reset']);
+    }
+
+    public function testDevResetGlobalPreservesEveryLinkAndRejectsStaleConfirmation()
+    {
+        $first = $this->insertNumberingSale('GROUP-1');
+        $second = $this->insertNumberingSale('GROUP-2');
+        $requestId = $this->seedResetRequest([$first, $second]);
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService(Mockery::mock(NexfiraClient::class));
+        $review = $service->inspect($first);
+        $this->assertSame([$first, $second], $review['document_ids']);
+        try {
+            $service->reset($first, $requestId, 'stale-token', 'Datos fiscales corregidos', 9);
+            $this->fail('Aceptó una confirmación inválida.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertSame('rejected', DB::table('facturacion_solicitud')->value('status'));
+        }
+        $service->reset($first, $requestId, $review['confirmation_token'], 'Datos fiscales corregidos', 9);
+        $this->assertSame(2, DB::table('facturacion_solicitud_documento')->count());
+        foreach ($this->creditNoteService()->pendingDocuments(false)['documents'] as $document) {
+            $this->assertEmpty($document['request']);
+        }
+    }
+
+    public function testDevResetAuthorizationIsNotGrantedByAccountingPermission()
+    {
+        DB::table('subnivel')->insert(['id' => 36, 'subnivel' => 'FACTURACION Y TIMBRADO', 'status' => 1]);
+        DB::table('subnivel_nivel')->insert(['id' => 75, 'id_nivel' => 11, 'id_subnivel' => 36]);
+        DB::table('usuario_subnivel_nivel')->insert(['id_usuario' => 9, 'id_subnivel_nivel' => 75]);
+        $service = Mockery::mock(App\Http\Services\Nexfira\NexfiraLocalResetService::class);
+        $service->shouldNotReceive('inspect');
+        $service->shouldNotReceive('reset');
+        $controller = new App\Http\Controllers\DeveloperNexfiraController($service);
+        $request = Request::create('/developer/nexfira/37802', 'GET');
+        $request->auth = (object) ['id' => 9];
+        $this->assertSame(403, $controller->inspect($request, 37802)->getStatusCode());
+        $this->assertSame(403, $controller->reset($request, 37802)->getStatusCode());
+    }
+
+    public function testDevResetEndpointRequiresDevPermissionAndPassesConfirmation()
+    {
+        DB::table('subnivel')->insert(['id' => 1, 'subnivel' => 'ADMIN', 'status' => 1]);
+        DB::table('subnivel_nivel')->insert(['id' => 5, 'id_nivel' => 6, 'id_subnivel' => 1]);
+        DB::table('usuario_subnivel_nivel')->insert(['id_usuario' => 9, 'id_subnivel_nivel' => 5]);
+        $service = Mockery::mock(App\Http\Services\Nexfira\NexfiraLocalResetService::class);
+        $service->shouldReceive('inspect')->once()->with(37802)->andReturn(['can_reset' => true]);
+        $service->shouldReceive('reset')->once()->with(37802, 238, 'token', 'Nombre fiscal corregido', 9, [])->andReturn(['status' => 'reset_local']);
+        $controller = new App\Http\Controllers\DeveloperNexfiraController($service);
+        $request = Request::create('/developer/nexfira/37802/liberar', 'POST', [
+            'request_id' => 238, 'confirmation_token' => 'token', 'reason' => 'Nombre fiscal corregido',
+        ]);
+        $request->auth = (object) ['id' => 9];
+        $this->assertSame(200, $controller->inspect($request, 37802)->getStatusCode());
+        $this->assertSame(200, $controller->reset($request, 37802)->getStatusCode());
+    }
+
+    public function testManualResetOfUncertainRequestRequiresAllAcknowledgementsAndPreservesAudit()
+    {
+        $id = $this->insertNumberingSale('MANUAL-RESET');
+        $requestId = $this->seedResetRequest([$id], ['status' => 'uncertain', 'remote_request_id' => 'remote-238']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldReceive('getDocumentRequest')->andReturn([
+            'requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'uncertain', 'originalStatus' => 'uncertain',
+        ]);
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $review = $service->inspect($id);
+        $this->assertFalse($review['can_reset']);
+        $this->assertTrue($review['can_manual_reset']);
+        $confirmation = ['rejected_confirmed' => true, 'duplicate_risk_accepted' => true, 'document_confirmation' => 'LIBERAR ' . $id];
+        foreach ([[], array_merge($confirmation, ['rejected_confirmed' => false]),
+            array_merge($confirmation, ['duplicate_risk_accepted' => 'true']),
+            array_merge($confirmation, ['document_confirmation' => 'LIBERAR 999999'])] as $invalid) {
+            try {
+                $service->reset($id, $requestId, $review['confirmation_token'], 'Nexfira confirmó el rechazo por nombre', 9, $invalid);
+                $this->fail('Aceptó confirmación manual incompleta.');
+            } catch (InvalidArgumentException $e) {
+                $this->assertSame('uncertain', DB::table('facturacion_solicitud')->value('status'));
+            }
+        }
+        $service->reset($id, $requestId, $review['confirmation_token'], 'Nexfira confirmó el rechazo por nombre', 9, $confirmation);
+        $row = DB::table('facturacion_solicitud')->first();
+        $audit = json_decode($row->response_payload, true)['localReset'];
+        $this->assertSame('reset_local', $row->status);
+        $this->assertSame('manual_rejection_confirmation', $audit['mode']);
+        $this->assertSame($confirmation, $audit['manualConfirmation']);
+        $this->assertSame('uncertain', $audit['remoteVerification']['status']);
+        $this->assertSame('uncertain', $audit['previousRequest']['status']);
+        $this->assertSame(9, $audit['userId']);
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function testManualOverrideCannotReleaseAnInvoiceThatHasSinceBeenStampedOrReplaced()
+    {
+        $id = $this->insertNumberingSale('MANUAL-STAMPED');
+        $requestId = $this->seedResetRequest([$id], ['status' => 'uncertain', 'remote_request_id' => 'remote-238']);
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldReceive('getDocumentRequest')->twice()->andReturn(
+            ['requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'uncertain'],
+            ['requestId' => 'remote-238', 'externalReference' => 'afa-reset-test', 'status' => 'stamped',
+                'fiscalUuid' => '10c715ea-9fe6-4c3f-ae25-d90d9dbeddde', 'replacementRequestId' => 'replacement', 'folio' => '40062']
+        );
+        $service = new App\Http\Services\Nexfira\NexfiraLocalResetService($client);
+        $review = $service->inspect($id);
+        $this->assertTrue($review['can_manual_reset']);
+        try {
+            $service->reset($id, $requestId, $review['confirmation_token'], 'El equipo confirmó rechazo antes', 9,
+                ['rejected_confirmed' => true, 'duplicate_risk_accepted' => true, 'document_confirmation' => 'LIBERAR ' . $id]);
+            $this->fail('Ignoró un CFDI timbrado.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('stamped', $e->getMessage());
+        }
+        $this->assertSame('uncertain', DB::table('facturacion_solicitud')->value('status'));
+    }
+
+    public function testReplacementReconciliationKeepsOriginalAttemptAndIsIdempotent()
+    {
+        $f = $this->replacementFixture();
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldReceive('getDocumentRequest')->with($f['source_id'])->twice()->andReturn($f['original']);
+        $client->shouldReceive('getDocumentRequest')->with($f['target_id'])->once()->andReturn($f['target']);
+        $client->shouldReceive('downloadDocument')->with($f['target_id'], 'xml')->once()->andReturn($f['xml']);
+        $client->shouldReceive('downloadDocument')->with($f['target_id'], 'pdf')->once()->andReturn($f['pdf']);
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->twice()->andReturn(['id' => 'id:replacement']);
+        $service = $this->creditNoteService($client, $dropbox);
+        $result = $service->sync($f['request'], 9);
+        $this->assertSame('stamped', $result['status']);
+        $this->assertSame('40062', $result['folio']);
+        $row = DB::table('facturacion_solicitud')->where('id', $f['request'])->first();
+        $this->assertSame($f['payload'], $row->request_payload);
+        $this->assertSame($f['source_id'], $row->remote_request_id);
+        $this->assertSame($f['original']['externalReference'], $row->external_reference);
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(40063, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+        $audit = json_decode($row->response_payload, true)['afa_reconciliation'];
+        $this->assertSame('40056', $audit['original_local']['folio']);
+        $this->assertSame('Assurant S.A de C.V', json_decode($audit['original_local']['request_payload'], true)['content']['receiver']['name']);
+        $this->assertSame('ASSURANT', $audit['xml']['receiver']['name']);
+        $doc = DB::table('documento')->where('id', $f['document'])->first();
+        $this->assertSame('40062', $doc->factura_folio);
+        $this->assertSame('FML', $doc->factura_serie);
+        $this->assertSame(6, (int) $doc->id_fase);
+        $this->assertSame(strtoupper($f['target']['fiscalUuid']), $doc->uuid);
+        $this->assertSame('MP-REPLACEMENT', $doc->no_venta);
+        $service->sync($f['request'], 9);
+        $this->assertSame(1, DB::table('documento_factura')->count());
+        $this->assertSame(1, DB::table('seguimiento')->count());
+        $this->assertSame($audit, json_decode(DB::table('facturacion_solicitud')->value('response_payload'), true)['afa_reconciliation']);
+        $note = $this->insertCreditNote($f['document'], 116);
+        $context = (new App\Http\Services\Nexfira\CreditNoteContext())->resolve($note, true);
+        $this->assertSame($f['target_id'], $context['request_id']);
+        $this->assertSame('ASSURANT', $context['source_payload']['content']['receiver']['name']);
+        $this->assertSame('40062', $context['source_payload']['content']['folio']);
+        $reserve = new ReflectionMethod($service, 'reserveInvoiceFolio'); $reserve->setAccessible(true);
+        try {
+            $reserve->invoke($service, 'FML', 'individual', '40056');
+            $this->fail('Se reutilizó el folio original de una conciliación.');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('ya están reservados', $e->getMessage());
+        }
+    }
+
+    /** @dataProvider invalidReplacementCases */
+    public function testReplacementCannotBypassIdentityValidation($case)
+    {
+        $f = $this->replacementFixture();
+        if ($case === 'missing_link') { unset($f['original']['replacementRequestId']); }
+        if ($case === 'wrong_original') { $f['original']['requestId'] = 'wrong-request'; }
+        if ($case === 'wrong_family') {
+            $f['target']['externalReference'] = $f['original']['replacementExternalReference'] = 'afa-999999-v6';
+        }
+        if ($case === 'wrong_target') { $f['target']['requestId'] = 'wrong-request'; }
+        if ($case === 'not_stamped') { $f['target']['status'] = 'uncertain'; }
+        if ($case === 'different_hash') { $f['target']['xmlSha256'] = str_repeat('a', 64); }
+        if ($case === 'no_hash') { unset($f['original']['pdfSha256']); }
+        if ($case === 'different_uuid') { $f['target']['fiscalUuid'] = '923e4567-e89b-42d3-a456-426614174000'; }
+        if ($case === 'wrong_issuer') { $f['target']['issuerId'] = 'wrong-issuer'; }
+        if ($case === 'different_receiver') { $f['xml'] = str_replace('ASS180119A20', 'AAA010101AAA', $f['xml']); }
+        if ($case === 'different_currency') { $f['xml'] = str_replace('Moneda="MXN"', 'Moneda="USD"', $f['xml']); }
+        if ($case === 'different_xml_issuer') { $f['xml'] = str_replace('AIN210708MR3', 'AAA010101AAA', $f['xml']); }
+        if ($case === 'different_xml_folio') { $f['xml'] = str_replace('Folio="40062"', 'Folio="49999"', $f['xml']); }
+        if ($case === 'different_total') { $f['xml'] = str_replace('Total="116.00"', 'Total="999.00"', $f['xml']); }
+        if ($case === 'invalid_pdf') {
+            $f['pdf'] = 'Not a PDF';
+            $f['original']['pdfSha256'] = $f['target']['pdfSha256'] = hash('sha256', $f['pdf']);
+        }
+        if (in_array($case, ['different_receiver', 'different_currency', 'different_xml_issuer', 'different_xml_folio', 'different_total'], true)) {
+            $f['original']['xmlSha256'] = $f['target']['xmlSha256'] = hash('sha256', $f['xml']);
+        }
+        $client = Mockery::mock(NexfiraClient::class);
+        $client->shouldNotReceive('createDocumentRequest');
+        $client->shouldReceive('getDocumentRequest')->with($f['source_id'])->andReturn($f['original']);
+        $client->shouldReceive('getDocumentRequest')->with($f['target_id'])->andReturn($f['target']);
+        $client->shouldReceive('downloadDocument')->withArgs(function ($id, $format) { return $format === 'xml'; })->andReturn($f['xml']);
+        $client->shouldReceive('downloadDocument')->withArgs(function ($id, $format) { return $format === 'pdf'; })->andReturn($f['pdf']);
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldNotReceive('uploadFile');
+        try {
+            $this->creditNoteService($client, $dropbox)->sync($f['request'], 9);
+            $this->fail('Se aceptó un reemplazo no verificado: ' . $case);
+        } catch (NexfiraApiException $e) {
+            $this->assertSame(503, $e->getHttpStatus());
+        }
+        $this->assertSame(5, (int) DB::table('documento')->where('id', $f['document'])->value('id_fase'));
+        $this->assertSame(0, DB::table('documento_factura')->count());
+        $this->assertSame('uncertain', DB::table('facturacion_solicitud')->value('status'));
+        $this->assertSame('40056', DB::table('facturacion_solicitud')->value('folio'));
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
+    }
+
+    public function invalidReplacementCases()
+    {
+        return array_map(function ($case) { return [$case]; }, [
+            'missing_link', 'wrong_original', 'wrong_family', 'wrong_target', 'not_stamped', 'different_hash', 'no_hash',
+            'different_uuid', 'wrong_issuer', 'different_receiver', 'different_currency', 'different_xml_issuer', 'different_xml_folio',
+            'different_total', 'invalid_pdf',
+        ]);
+    }
+
+    private function replacementFixture()
+    {
+        $document = $this->insertDocument('MP-REPLACEMENT', 116, 0);
+        DB::table('documento_entidad')->where('id', 1)->update(['razon_social' => 'ASSURANT', 'rfc' => 'ASS180119A20']);
+        $source = 'ec490ce5-8a0e-4a7f-a906-e314e7595fca';
+        $target = '89af8111-9cf9-4e11-9a9f-a5f8b935a12e';
+        $uuid = '10c715ea-9fe6-4c3f-ae25-d90d9dbeddde';
+        $payload = json_encode(['issuerId' => config('nexfira.issuer_id'), 'kind' => 'CFDI_I', 'subtype' => 'sale', 'content' => [
+            'series' => 'FML', 'folio' => '40056', 'currency' => 'MXN', 'expectedTotals' => ['total' => '116.00'],
+            'receiver' => ['rfc' => 'ASS180119A20', 'name' => 'Assurant S.A de C.V', 'fiscalRegime' => '601', 'postalCode' => '01090', 'cfdiUse' => 'G03'],
+        ]]);
+        $request = $this->seedResetRequest([$document], ['folio' => '40056', 'remote_request_id' => $source,
+            'external_reference' => 'afa-' . $document . '-v3', 'status' => 'uncertain', 'request_payload' => $payload]);
+        $xml = '<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" Version="4.0" TipoDeComprobante="I" Serie="FML" Folio="40062" Total="116.00" Moneda="MXN" MetodoPago="PUE" FormaPago="03">'
+            . '<cfdi:Emisor Rfc="AIN210708MR3" Nombre="AFA INNOVATIONS" RegimenFiscal="601"/>'
+            . '<cfdi:Receptor Rfc="ASS180119A20" Nombre="ASSURANT" RegimenFiscalReceptor="601" DomicilioFiscalReceptor="01090" UsoCFDI="G03"/>'
+            . '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" UUID="' . $uuid . '"/></cfdi:Complemento></cfdi:Comprobante>';
+        $pdf = '%PDF-1.4 replacement';
+        $original = ['requestId' => $source, 'externalReference' => 'afa-' . $document . '-v3',
+            'status' => 'stamped', 'documentsStatus' => 'retrieved', 'version' => 4, 'series' => 'FML', 'folio' => '40062',
+            'fiscalUuid' => $uuid, 'xmlSha256' => hash('sha256', $xml), 'pdfSha256' => hash('sha256', $pdf),
+            'issuerId' => config('nexfira.issuer_id'), 'issuerRfc' => 'AIN210708MR3', 'kind' => 'CFDI_I', 'subtype' => 'sale',
+            'replacementRequestId' => $target, 'replacementExternalReference' => 'afa-' . $document . '-v6'];
+        $replacement = array_merge($original, ['requestId' => $target, 'externalReference' => $original['replacementExternalReference'],
+            'replacementRequestId' => null, 'replacementExternalReference' => null]);
+        return ['document' => $document, 'request' => $request, 'payload' => $payload, 'original' => $original,
+            'target' => $replacement, 'source_id' => $source, 'target_id' => $target, 'xml' => $xml, 'pdf' => $pdf];
+    }
+
+    private function seedResetRequest(array $documentIds, array $overrides = [])
+    {
+        $id = DB::table('facturacion_solicitud')->insertGetId(array_merge([
+            'proveedor' => 'nexfira', 'modo' => count($documentIds) > 1 ? 'global_ventas' : 'individual',
+            'serie' => 'FML', 'folio' => '39999', 'idempotency_key' => 'reset-test', 'external_reference' => 'afa-reset-test',
+            'status' => 'rejected', 'error_code' => 'validation_failed', 'version' => 1, 'updated_by' => 9,
+            'request_payload' => json_encode(['content' => ['receiver' => ['name' => 'Assurant S.A de C.V', 'rfc' => 'ASS180119A20']]]),
+            'created_at' => date('Y-m-d H:i:s'), 'updated_at' => date('Y-m-d H:i:s'),
+        ], $overrides));
+        foreach ($documentIds as $documentId) {
+            DB::table('facturacion_solicitud_documento')->insert(['id_solicitud' => $id, 'id_documento' => $documentId]);
+        }
+        return $id;
+    }
+
     private function insertNumberingSale($folio)
     {
         $document = $this->insertDocument($folio, 116, 0);

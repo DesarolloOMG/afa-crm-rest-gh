@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.afainnova.crm.WorkflowTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-09-28T17:58:44.114Z" hostname="ADRIAN-PC" time="0.054">
+  <properties/>
+  <testcase name="invalidFiscalPreflightCannotCreateSecondRequest" classname="com.afainnova.crm.WorkflowTest" time="0.031"/>
+  <testcase name="billingTypeChangeDropsCrossTypeSelection" classname="com.afainnova.crm.WorkflowTest" time="0.003"/>
+  <testcase name="authorizationFailureNeverCallsSaleDeletion" classname="com.afainnova.crm.WorkflowTest" time="0.004"/>
+  <testcase name="aSlowReadCanBeClosedWithoutWaitingForNetwork" classname="com.afainnova.crm.WorkflowTest" time="0.006"/>
+  <testcase name="expiredSessionReturnsToLoginAndDropsNavigation" classname="com.afainnova.crm.WorkflowTest" time="0.003"/>
+  <testcase name="doubleTapDoesNotSubmitTwoTickets" classname="com.afainnova.crm.WorkflowTest" time="0.004"/>
+  <testcase name="aSearchErrorLeavesTheScreenRetryable" classname="com.afainnova.crm.WorkflowTest" time="0.003"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

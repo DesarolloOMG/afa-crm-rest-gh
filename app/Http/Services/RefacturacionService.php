@@ -409,13 +409,13 @@ class RefacturacionService
         if (!$original) {
             throw new InvalidArgumentException('No se encontró la entidad fiscal de la factura original.');
         }
-        $payload = DB::table('facturacion_solicitud as fs')
+        $fiscalRequest = DB::table('facturacion_solicitud as fs')
             ->join('facturacion_solicitud_documento as link', 'link.id_solicitud', '=', 'fs.id')
             ->where('link.id_documento', $source->id)->where('fs.status', 'stamped')
             ->whereRaw('UPPER(fs.fiscal_uuid) = ?', [strtoupper((string) $source->uuid)])
             ->orderBy('fs.id', 'desc')
-            ->value('fs.request_payload');
-        $stored = $payload ? json_decode($payload, true) : null;
+            ->select('fs.*')->first();
+        $stored = \App\Http\Services\Nexfira\NexfiraReplacementResolver::fiscalPayload($fiscalRequest);
         $invoiceRfc = strtoupper(trim((string) ($stored['content']['receiver']['rfc'] ?? '')));
         if ($invoiceRfc === '') {
             $publico = DB::table('marketplace_area')->where('id', $source->id_marketplace_area)->value('publico');
@@ -450,12 +450,12 @@ class RefacturacionService
 
     private function originalInvoiceReceiver($source, $entity)
     {
-        $payload = DB::table('facturacion_solicitud as fs')
+        $fiscalRequest = DB::table('facturacion_solicitud as fs')
             ->join('facturacion_solicitud_documento as link', 'link.id_solicitud', '=', 'fs.id')
             ->where('link.id_documento', $source->id)->where('fs.status', 'stamped')
             ->whereRaw('UPPER(fs.fiscal_uuid) = ?', [strtoupper((string) $source->uuid)])
-            ->orderBy('fs.id', 'desc')->value('fs.request_payload');
-        $stored = $payload ? json_decode($payload, true) : null;
+            ->orderBy('fs.id', 'desc')->select('fs.*')->first();
+        $stored = \App\Http\Services\Nexfira\NexfiraReplacementResolver::fiscalPayload($fiscalRequest);
         $receiver = $stored['content']['receiver'] ?? null;
         if (is_array($receiver) && isset($receiver['rfc'])) {
             return ['rfc' => $receiver['rfc'], 'nombre' => $receiver['name'] ?? '', 'verificado' => true];

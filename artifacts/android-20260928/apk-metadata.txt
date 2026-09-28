@@ -1,0 +1,4 @@
+package: name='com.afainnova.crm.debug' versionCode='1' versionName='0.1.0-debug' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+sdkVersion:'26'
+targetSdkVersion:'36'
+application-debuggable

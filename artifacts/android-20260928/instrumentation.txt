@@ -1,0 +1,8 @@
+
+com.afainnova.crm.MobileFlowTest:.........
+
+Time: 30.635
+
+OK (9 tests)
+
+

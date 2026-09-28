@@ -32,7 +32,7 @@ class CreditNoteContext
             ->where('fsd.id_documento', $source->id)->where('fs.proveedor', 'nexfira')
             ->where('fs.status', 'stamped')->whereRaw('UPPER(fs.fiscal_uuid) = ?', [$uuid])
             ->orderBy('fs.id', 'desc')->select('fs.*')->first();
-        $payload = $request ? json_decode((string) $request->request_payload, true) : null;
+        $payload = NexfiraReplacementResolver::fiscalPayload($request);
         $sameEntity = (int) $note->id_entidad === (int) $source->id_entidad;
         if (!$sameEntity && isset($note->es_refactura) && (int) $note->es_refactura === 1) {
             $noteRfc = DB::table('documento_entidad')->where('id', $note->id_entidad)->value('rfc');
@@ -56,7 +56,7 @@ class CreditNoteContext
             'source_uuid' => $uuid,
             'currency' => $source->currency,
             'receiver_rfc' => $payload['content']['receiver']['rfc'] ?? strtoupper(trim($source->rfc)),
-            'request_id' => $request ? $request->remote_request_id : null,
+            'request_id' => NexfiraReplacementResolver::fiscalRequestId($request),
             'source_payload' => $payload,
         ];
     }

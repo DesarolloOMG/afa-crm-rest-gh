@@ -1203,6 +1203,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'developer'], function () use ($router) {
+        $router->get('nexfira/{documento}', 'DeveloperNexfiraController@inspect');
+        $router->post('nexfira/{documento}/liberar', 'DeveloperNexfiraController@reset');
         $router->post('recalculaCosto', 'DeveloperController@recalcularCosto');
         $router->post('aplicarCosto', 'DeveloperController@aplicarCosto');
         $router->post('recalcularInventario', 'DeveloperController@getInventarioPorAlmacen');

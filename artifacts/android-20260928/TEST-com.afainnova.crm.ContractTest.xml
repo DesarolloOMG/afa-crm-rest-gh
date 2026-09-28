@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="com.afainnova.crm.ContractTest" tests="32" skipped="0" failures="0" errors="0" timestamp="2026-09-28T17:58:43.567Z" hostname="ADRIAN-PC" time="0.541">
+  <properties/>
+  <testcase name="editUsesRequestedDocumentNotJoinedAddressId" classname="com.afainnova.crm.ContractTest" time="0.105"/>
+  <testcase name="searchSeparatesSaleAndCreditEvenWhenTheirIdsMatch" classname="com.afainnova.crm.ContractTest" time="0.158"/>
+  <testcase name="creditNoteCannotUseDeferredPayment" classname="com.afainnova.crm.ContractTest" time="0.007"/>
+  <testcase name="invalidSeriesCannotReachProvider" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="canceledMarketplaceOrderCannotBeImported" classname="com.afainnova.crm.ContractTest" time="0.002"/>
+  <testcase name="closedTicketLimitIsNotShownAsSuccess" classname="com.afainnova.crm.ContractTest" time="0.005"/>
+  <testcase name="unsafeBaseAndCallCannotLeakSession" classname="com.afainnova.crm.ContractTest" time="0.165"/>
+  <testcase name="productEditRetainsExistingImagesAndPriceData" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="loginNeverUsesExpiredSession" classname="com.afainnova.crm.ContractTest" time="0.006"/>
+  <testcase name="cfdiExtractionPreservesFiscalIdentity" classname="com.afainnova.crm.ContractTest" time="0.032"/>
+  <testcase name="attachmentReadIsBoundedEvenWithoutKnownSize" classname="com.afainnova.crm.ContractTest" time="0.0"/>
+  <testcase name="invalidQuantityNeverMutatesBackend" classname="com.afainnova.crm.ContractTest" time="0.004"/>
+  <testcase name="userRelationsBecomePermissionIdsNotModelIds" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="marketplaceWithoutApiCanBeConfiguredWithoutTryingToUnlockNonexistentSecret" classname="com.afainnova.crm.ContractTest" time="0.0"/>
+  <testcase name="invalidBimonthlyPeriodIsRejected" classname="com.afainnova.crm.ContractTest" time="0.0"/>
+  <testcase name="falselyNamedPdfIsRejected" classname="com.afainnova.crm.ContractTest" time="0.0"/>
+  <testcase name="allDocumentCriteriaAreAvailable" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="dataEncodingKeepsLegacyEnvelopeAndQueryAuthentication" classname="com.afainnova.crm.ContractTest" time="0.004"/>
+  <testcase name="pendingOrderIsIdentifiedByPhase" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="userSavePreservesLegacyAreaAndWarehouseArrays" classname="com.afainnova.crm.ContractTest" time="0.003"/>
+  <testcase name="ticketResolutionMergesOnlyAssignedStates" classname="com.afainnova.crm.ContractTest" time="0.002"/>
+  <testcase name="lowMarginRequiresAuthorizationAndDoesNotOverwriteMarketplaceTotal" classname="com.afainnova.crm.ContractTest" time="0.007"/>
+  <testcase name="excludedCarrierModuleIsNotInNavigation" classname="com.afainnova.crm.ContractTest" time="0.0"/>
+  <testcase name="adminDoesNotBypassStrictBillingPermission" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="publicCfdiUsesBackendEnglishGlobalKeys" classname="com.afainnova.crm.ContractTest" time="0.002"/>
+  <testcase name="dateAndFilesAreNotRequiredInDormantPaymentBlock" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="xmlExternalEntitiesAreRejected" classname="com.afainnova.crm.ContractTest" time="0.01"/>
+  <testcase name="uncertainInvoiceMustBeReconciled" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="aggregateStockBlocksDuplicateSkuLines" classname="com.afainnova.crm.ContractTest" time="0.007"/>
+  <testcase name="ticketStateUsesRawFieldNotJsonString" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <testcase name="importingMarketplaceKeepsItsTotalAndRequiresManualLineReview" classname="com.afainnova.crm.ContractTest" time="0.002"/>
+  <testcase name="fiscalCodeCannotReplaceSessionAuthentication" classname="com.afainnova.crm.ContractTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[[Fatal Error] :1:10: DOCTYPE no está permitido cuando la función "http://apache.org/xml/features/disallow-doctype-decl" se ha definido en true.
+]]></system-err>
+</testsuite>

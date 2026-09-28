@@ -1,0 +1,23 @@
+{
+  "created_at": "2026-09-28T12:00:29.8482774-06:00",
+  "package": "com.afainnova.crm.debug",
+  "version": "0.1.0-debug",
+  "version_code": 1,
+  "min_sdk": 26,
+  "target_sdk": 36,
+  "apk": "afa-movil-0.1.0-debug.apk",
+  "bytes": 20458687,
+  "sha256": "c27851252e8bc7a44d0f262a15358d1cc496ff5c8d4866b0890cfae723a10eef",
+  "build": "passed",
+  "lint": "passed",
+  "unit_tests": 39,
+  "unit_failures": 0,
+  "android_ui_tests": 9,
+  "android_ui_failures": 0,
+  "device": "CodexManualPixel35 emulator Android 15",
+  "transport": "FixtureTransport; no production calls",
+  "physical_device_tested": false,
+  "production_login_tested": false,
+  "production_stamping_tested": false,
+  "distribution": "Local debug APK; not published"
+}

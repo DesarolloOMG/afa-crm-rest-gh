@@ -277,6 +277,9 @@ class FacturacionService
         if (!$request) {
             throw new InvalidArgumentException('No se encontró la solicitud de facturación.');
         }
+        if ($request->status === 'reset_local') {
+            return $this->publicRequest($request);
+        }
         if ($request->proveedor !== 'nexfira') {
             if ($request->proveedor === 'external' && !$this->alreadyFinalized($request)) {
                 $ids = $this->linkedDocumentIds($request->id);
@@ -303,26 +306,46 @@ class FacturacionService
 
         try {
             $remote = $this->client->getDocumentRequest($request->remote_request_id);
+            if (($remote['requestId'] ?? '') !== $request->remote_request_id) {
+                throw new NexfiraApiException('Nexfira respondió con una solicitud distinta de la consultada.', 503, 'remote_identity_mismatch');
+            }
+            $originalRequest = clone $request;
             $this->updateFromRemote($request->id, $remote, $userId);
             $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
 
             if ($request->status === 'stamped' && $request->documents_status === 'retrieved') {
                 if (!$this->alreadyFinalized($request)) {
-                    $xml = $this->client->downloadDocument($request->remote_request_id, 'xml');
-                    $pdf = $this->client->downloadDocument($request->remote_request_id, 'pdf');
+                    $resolver = new NexfiraReplacementResolver($this->client);
+                    $replacement = $resolver->resolve($originalRequest, $remote);
+                    $downloadId = $replacement ? $replacement['replacement_response']['requestId'] : $request->remote_request_id;
+                    $xml = $this->client->downloadDocument($downloadId, 'xml');
+                    $pdf = $this->client->downloadDocument($downloadId, 'pdf');
                     $this->assertRemoteHash($xml, $request->xml_sha256, 'XML');
                     $this->assertRemoteHash($pdf, $request->pdf_sha256, 'PDF');
 
                     $payload = json_decode((string) $request->request_payload, true);
                     $expectedTotal = $payload['content']['expectedTotals']['total'] ?? null;
-                    $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
+                    try {
+                        $validated = $this->validator->validate($pdf, $xml, $request->fiscal_uuid, $expectedTotal);
+                    } catch (InvalidArgumentException $e) {
+                        if (!$replacement) { throw $e; }
+                        throw new NexfiraApiException($e->getMessage(), 503, 'replacement_attachments_invalid');
+                    }
                     if (($payload['kind'] ?? null) === 'CFDI_E') {
                         $this->assertCreditNoteAttachments($this->linkedDocumentIds($request->id), $validated);
                     } elseif ($validated['type'] !== '' && $validated['type'] !== 'I') {
                         throw new InvalidArgumentException('Se esperaba un CFDI de ingreso para las ventas.');
                     }
-                    $this->assertRequestedFiscalIdentity($request, $validated);
-                    $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId);
+                    if ($replacement) {
+                        $resolver->validateXml($request, $replacement, $validated);
+                        $replacement['original_local'] = (array) $originalRequest;
+                        $replacement['xml'] = $validated;
+                        $replacement['user_id'] = (int) $userId;
+                        $replacement['reconciled_at'] = date('c');
+                    } else {
+                        $this->assertRequestedFiscalIdentity($request, $validated);
+                    }
+                    $this->finalizeDocuments($request, $pdf, $xml, $validated, $userId, $replacement);
                     $request = DB::table('facturacion_solicitud')->where('id', $request->id)->first();
                 }
             }
@@ -525,6 +548,12 @@ class FacturacionService
             throw new NexfiraApiException('Nexfira no devolvió requestId y status.', 502, 'invalid_response');
         }
 
+        // Keep our reconciliation evidence separate from the Hub's response across later polls.
+        $previous = json_decode((string) DB::table('facturacion_solicitud')->where('id', (int) $requestId)->value('response_payload'), true) ?: [];
+        unset($remote['afa_reconciliation']);
+        if (isset($previous['afa_reconciliation'])) {
+            $remote['afa_reconciliation'] = $previous['afa_reconciliation'];
+        }
         DB::table('facturacion_solicitud')->where('id', (int) $requestId)->update([
             'remote_request_id' => $remote['requestId'],
             'status' => $remote['status'],
@@ -543,7 +572,7 @@ class FacturacionService
         ]);
     }
 
-    private function finalizeDocuments($request, $pdf, $xml, array $validated, $userId)
+    private function finalizeDocuments($request, $pdf, $xml, array $validated, $userId, array $replacement = null)
     {
         $documentIds = $this->linkedDocumentIds($request->id);
         $documentSeries = $this->documentInvoiceSeries($request->proveedor, $documentIds, $validated);
@@ -560,6 +589,9 @@ class FacturacionService
 
         DB::beginTransaction();
         try {
+            if ($replacement) {
+                $this->reserveReconciledIdentity($request, $validated, $replacement);
+            }
             foreach ($documentIds as $documentId) {
                 $document = DB::table('documento')->where('id', $documentId)->lockForUpdate()->first();
                 if (!$document || (int) $document->status !== 1 || $document->deleted_at !== null) {
@@ -608,7 +640,10 @@ class FacturacionService
                         . ' UUID: ' . $validated['uuid'] . '. Serie: ' . $documentSeries[$documentId]
                         . '; folio XML: ' . ($validated['folio'] !== '' ? $validated['folio'] : '(sin folio)') . '.'
                         . ($request->proveedor === 'external' && $validated['serie'] === ''
-                            ? ' Serie de referencia tomada del marketplace; el XML original no contiene Serie y se conserva sin cambios.' : ''),
+                            ? ' Serie de referencia tomada del marketplace; el XML original no contiene Serie y se conserva sin cambios.' : '')
+                        . ($replacement ? ' Reemplazo confirmado por Nexfira: ' . $request->external_reference . ' -> '
+                            . $replacement['replacement_response']['externalReference'] . '. Identidad solicitada: '
+                            . $replacement['original_local']['serie'] . '-' . $replacement['original_local']['folio'] . '.' : ''),
                 ]);
             }
 
@@ -630,6 +665,14 @@ class FacturacionService
                     'series_source' => $validated['serie'] === '' ? 'marketplace' : 'xml',
                     'document_series' => $documentSeries,
                 ], JSON_UNESCAPED_UNICODE);
+            } elseif ($replacement) {
+                $response = json_decode((string) $request->response_payload, true) ?: [];
+                // Do not nest previous audit snapshots on an attachment repair.
+                if (isset($response['afa_reconciliation'])) {
+                    $replacement['original_local'] = $response['afa_reconciliation']['original_local'];
+                }
+                $response['afa_reconciliation'] = $replacement;
+                $requestData['response_payload'] = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             DB::table('facturacion_solicitud')->where('id', $request->id)->update($requestData);
             RefacturacionService::markFiscalCompleted($documentIds);
@@ -684,9 +727,13 @@ class FacturacionService
             ->select('fsd.id_documento', 'fs.*')
             ->get();
         $map = [];
+        $seen = [];
         foreach ($rows as $row) {
-            if (!isset($map[$row->id_documento])) {
-                $map[$row->id_documento] = $this->publicRequest($row);
+            if (!isset($seen[$row->id_documento])) {
+                $seen[$row->id_documento] = true;
+                if ($row->status !== 'reset_local') {
+                    $map[$row->id_documento] = $this->publicRequest($row);
+                }
             }
         }
 
@@ -732,6 +779,12 @@ class FacturacionService
                 'correlationId' => $exception->getCorrelationId(),
                 'errors' => $errors,
             ];
+        }
+
+        $previous = json_decode((string) DB::table('facturacion_solicitud')->where('id', (int) $requestId)->value('response_payload'), true) ?: [];
+        unset($response['afa_reconciliation']);
+        if (isset($previous['afa_reconciliation'])) {
+            $response['afa_reconciliation'] = $previous['afa_reconciliation'];
         }
 
         DB::table('facturacion_solicitud')->where('id', (int) $requestId)->update([
@@ -890,11 +943,46 @@ class FacturacionService
 
     private function fiscalIdentityExists($series, $folio, $mode)
     {
-        return DB::table('facturacion_solicitud')
+        $query = DB::table('facturacion_solicitud')
+            ->where('modo', $mode === 'nota_credito' ? '=' : '<>', 'nota_credito');
+        if ((clone $query)
             ->whereRaw('UPPER(serie) = ?', [strtoupper($series)])
             ->whereRaw('UPPER(folio) = ?', [strtoupper($folio)])
-            ->where('modo', $mode === 'nota_credito' ? '=' : '<>', 'nota_credito')
-            ->exists();
+            ->exists()) { return true; }
+        // Reconciliation updates effective identity; the originally reserved identity stays consumed.
+        foreach ($query->where('response_payload', 'like', '%"afa_reconciliation"%')->get(['request_payload']) as $row) {
+            $payload = json_decode((string) $row->request_payload, true) ?: [];
+            if (strcasecmp((string) ($payload['content']['series'] ?? ''), $series) === 0
+                && strcasecmp((string) ($payload['content']['folio'] ?? ''), $folio) === 0) { return true; }
+        }
+        return false;
+    }
+
+    private function reserveReconciledIdentity($request, array $xml, array $replacement)
+    {
+        $key = (string) config('nexfira.folio.sequence_key', 'nexfira_cfdi_ingreso');
+        $sequence = DB::table('facturacion_folio_consecutivo')->where('clave', $key)->lockForUpdate()->first();
+        if (!$sequence) { throw new InvalidArgumentException('No está inicializado el consecutivo fiscal.'); }
+        $conflict = DB::table('facturacion_solicitud')->where('id', '<>', $request->id)
+            ->where(function ($q) use ($request, $xml, $replacement) {
+                $q->whereRaw('UPPER(fiscal_uuid) = ?', [strtoupper($xml['uuid'])])
+                    ->orWhere('remote_request_id', $replacement['replacement_response']['requestId'])
+                    ->orWhere(function ($identity) use ($request, $xml) {
+                        $identity->whereRaw('UPPER(serie) = ?', [strtoupper($xml['serie'])])
+                            ->whereRaw('UPPER(folio) = ?', [strtoupper($xml['folio'])])
+                            ->where('modo', $request->modo === 'nota_credito' ? '=' : '<>', 'nota_credito');
+                    });
+            })->exists();
+        if ($conflict) {
+            throw new NexfiraApiException('El UUID, reemplazo o folio ya pertenece a otra solicitud local; requiere conciliación manual.', 503, 'replacement_identity_conflict');
+        }
+        $number = ctype_digit($xml['folio']) ? filter_var(ltrim($xml['folio'], '0') ?: '0', FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 0, 'max_range' => PHP_INT_MAX - 1]]) : false;
+        if ($number !== false && $number >= (int) $sequence->siguiente_folio) {
+            DB::table('facturacion_folio_consecutivo')->where('clave', $key)->update([
+                'siguiente_folio' => $number + 1, 'updated_at' => date('Y-m-d H:i:s'),
+            ]);
+        }
     }
 
     private function assertRequestedFiscalIdentity($request, array $validated)
