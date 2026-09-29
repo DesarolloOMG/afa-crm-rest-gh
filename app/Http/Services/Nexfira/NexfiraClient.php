@@ -54,6 +54,29 @@ class NexfiraClient
             . rawurlencode($requestId) . ($fiscal ? '/payment-fiscal-balance' : '/payment-balance'), [], [200]);
     }
 
+    public function createCancellation($requestId, array $payload, $key)
+    {
+        $path = $this->cancellationPath('create_path', $requestId);
+        return $this->jsonRequest('POST', $path, [
+            'headers' => ['Idempotency-Key' => $key], 'json' => $payload,
+        ], [200, 201, 202]);
+    }
+
+    public function getCancellation($requestId)
+    {
+        return $this->jsonRequest('GET', $this->cancellationPath('status_path', $requestId), [], [200]);
+    }
+
+    private function cancellationPath($name, $requestId)
+    {
+        $template = trim((string) config('nexfira.cancellation.' . $name));
+        if ($template === '' || strpos($template, '/') !== 0 || strpos($template, '://') !== false
+            || strpos($template, '{requestId}') === false) {
+            throw new NexfiraApiException('Falta configurar el contrato de cancelación confirmado por Nexfira.', 503, 'cancellation_not_configured');
+        }
+        return str_replace('{requestId}', rawurlencode($requestId), $template);
+    }
+
     private function jsonRequest($method, $path, array $options, array $successStatuses)
     {
         $response = $this->request($method, $path, $options, $successStatuses);

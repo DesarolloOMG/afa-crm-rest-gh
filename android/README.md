@@ -14,11 +14,21 @@ $env:Path="$env:JAVA_HOME\bin;$env:Path"
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`. Android 8.0 o posterior. Versión inicial `0.1.0-debug`, paquete `com.afainnova.crm.debug`. Está firmado con la clave de depuración del entorno; **es una entrega de pruebas**, no una publicación en Play Store. Para distribución estable se debe configurar una clave de firma propia de AFA; no reutilizar claves de otras aplicaciones.
+APK: `app/build/outputs/apk/debug/app-debug.apk`. Android 8.0 o posterior. Versión actual `0.2.0-debug` (código 2), paquete `com.afainnova.crm.debug`. Está firmado con la clave de depuración del entorno; **es una entrega de pruebas**, no una publicación en Play Store. Para distribución estable se debe configurar una clave de firma propia de AFA; no reutilizar claves de otras aplicaciones.
 
 El servidor se define en `app/build.gradle.kts`: `https://rest.afainnova.com/`. El APK operativo inicia en login y no incorpora cuentas de prueba, contraseñas, credenciales de Dropbox ni del proveedor fiscal. Las respuestas ficticias están exclusivamente en `src/androidTest` y `src/test`.
 
 ## Funcionalidad implementada
+
+### Diseño móvil 0.2.0
+
+* Navegación azul oscuro, títulos en negrita y secciones con marcador azul. Inicio agrupado en operación, inventario y configuración; cada módulo tiene icono y acento de color.
+* Acciones principales sólidas en azul; acciones secundarias con fondo azul claro y flecha; acciones destructivas en rojo. Guardar/cancelar permanecen en una barra fija, también con el teclado abierto.
+* Campos blancos con borde visible, etiquetas destacadas y estado de enfoque azul. Selectores y fechas tienen una zona de icono propia; interruptores se presentan dentro de una fila delimitada.
+* Acordeones con cabecera azul oscuro al abrirse, control +/− y texto «Ver/Ocultar información». El contenido se muestra sobre blanco con etiquetas y valores diferenciados. El estado de apertura se conserva al recrear la pantalla y se anuncia a accesibilidad.
+* Tarjetas de resultados con tipo de registro, identidad, estado cuando existe, importe destacado y acceso «Ver detalle». Ventas tienen pasos numerados y total en un bloque de alto contraste; facturación mantiene visibles el receptor y la acción principal.
+
+El rediseño conserva los contratos, permisos y alcance funcional de la versión inicial. No añade funciones pendientes del front.
 
 | Sección | Flujos nativos |
 |---|---|
@@ -70,7 +80,7 @@ adb -s emulator-5556 install -r app/build/outputs/apk/androidTest/debug/app-debu
 adb -s emulator-5556 shell am instrument -w com.afainnova.crm.debug.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-Entrega, reportes y capturas: `../artifacts/android-20260928/`. Las capturas muestran datos ficticios identificados como prueba.
+Entrega inicial: `../artifacts/android-20260928/`. APK, código fuente, reportes y capturas del rediseño 0.2.0: `../artifacts/android-ui-20260929/`. Las capturas muestran datos ficticios identificados como prueba.
 
 **Límite de la evidencia:** compilación, lint, contratos y recorridos simulados no demuestran autenticación con una cuenta real, compatibilidad con todas las respuestas de producción, timbrado efectivo, recepción de notificaciones ni comportamiento en un teléfono físico. No se desplegaron cambios al servidor ni se ejecutaron ventas, cancelaciones o timbrados reales durante esta implementación.
 

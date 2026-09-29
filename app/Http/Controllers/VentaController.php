@@ -1089,9 +1089,10 @@ class VentaController extends Controller
 
             $documento = DB::table("documento")->where("id", $data->documento->documento)->lockForUpdate()->first();
 
-            if ($documento && in_array((int) $documento->id_fase, [5, 6], true)
+            if ($documento && (int) $documento->id_fase === 6
                 && ((int) $data->documento->uso_venta !== (int) $documento->id_cfdi
-                    || ($data->cliente->rfc !== 'XAXX010101000' && (int) $data->cliente->select !== (int) $documento->id_entidad))) {
+                    || ((int) ($data->cliente->select ?? 0) > 0
+                        && (int) $data->cliente->select !== (int) $documento->id_entidad))) {
                 DB::rollBack();
                 return response()->json(['code' => 422,
                     'message' => 'Actualiza el cliente fiscal desde el detalle de la venta: Editar cliente fiscal si está pendiente, o Refacturar si ya está timbrada.'], 422);
@@ -1112,7 +1113,52 @@ class VentaController extends Controller
                     ]);
                 }
             } else {
-                $id_entidad = $documento->id_entidad;
+                $publicId = (int) ($data->cliente->select ?? 0);
+                $id_entidad = $publicId && DB::table('documento_entidad')
+                    ->where('id', $publicId)->where('tipo', 1)
+                    ->where('rfc', 'XAXX010101000')->exists()
+                    ? $publicId : $documento->id_entidad;
+            }
+
+            if ($documento && (int) $documento->id_fase === 5 && (int) $id_entidad !== (int) $documento->id_entidad) {
+                $activeFiscalRequest = DB::table('facturacion_solicitud_documento as link')
+                    ->join('facturacion_solicitud as fs', 'fs.id', '=', 'link.id_solicitud')
+                    ->where('link.id_documento', $documento->id)
+                    ->whereNotIn('fs.status', ['rejected', 'cancelled'])->exists();
+                if ($activeFiscalRequest || preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i', trim((string) $documento->uuid))) {
+                    DB::rollBack();
+                    return response()->json(['code' => 422,
+                        'message' => 'La venta tiene una solicitud fiscal activa o ya timbrada. Actualiza su estado antes de cambiar el cliente.'], 422);
+                }
+                $applications = DB::table('movimiento_contable_documento')
+                    ->where('id_documento', $documento->id)->where('status', 1)->lockForUpdate()->get();
+                $newClient = DB::table('documento_entidad')->where('id', $id_entidad)->first();
+                foreach ($applications as $application) {
+                    $income = DB::table('movimiento_contable')->where('id', $application->id_movimiento_contable)
+                        ->lockForUpdate()->first();
+                    $shared = DB::table('movimiento_contable_documento')
+                        ->where('id_movimiento_contable', $application->id_movimiento_contable)
+                        ->where('status', 1)->where('id_documento', '<>', $documento->id)->exists();
+                    if (!$income || (int) $income->status !== 1 || (int) $income->origen_tipo !== 1
+                        || (int) $income->id_tipo_afectacion !== 1
+                        || (int) $income->entidad_origen !== (int) $documento->id_entidad
+                        || (int) $income->id_moneda !== (int) $documento->id_moneda
+                        || (int) $application->moneda !== (int) $documento->id_moneda || $shared) {
+                        DB::rollBack();
+                        return response()->json(['code' => 422,
+                            'message' => 'La venta tiene ingresos compartidos o inconsistentes. Cambia el cliente desde Editar cliente fiscal para revisión contable.'], 422);
+                    }
+                    DB::table('movimiento_contable')->where('id', $income->id)->update([
+                        'entidad_origen' => $id_entidad,
+                        'nombre_entidad_origen' => $newClient->razon_social,
+                        'updated_at' => date('Y-m-d H:i:s'),
+                    ]);
+                }
+                DB::table('seguimiento')->insert([
+                    'id_documento' => $documento->id, 'id_usuario' => $auth->id,
+                    'seguimiento' => 'Cliente del pedido fase 5 actualizado: entidad ' . $documento->id_entidad
+                        . ' -> ' . $id_entidad . '. Sin solicitud fiscal activa.',
+                ]);
             }
 
             $documento_data = $documento;
@@ -1166,6 +1212,7 @@ class VentaController extends Controller
             }
 
             DB::table('documento')->where(['id' => $data->documento->documento])->update([
+                'id_entidad' => $id_entidad,
                 'id_almacen_principal_empresa' => $data->documento->almacen,
                 'series_factura' => $data->documento->series_factura,
                 'id_moneda' => $data->documento->moneda,

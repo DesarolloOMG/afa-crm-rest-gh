@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
@@ -16,8 +19,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,17 +38,29 @@ import com.google.zxing.MultiFormatWriter
 @Composable fun AfaApp(vm:CrmViewModel,onFile:(String)->Unit){AfaTheme{
     val state by vm.state.collectAsStateWithLifecycle()
     val p=state.page
+    val navigationTitle=if(p.kind==PageKind.HOME)"AFA Móvil" else if(p.kind==PageKind.DETAIL&&p.section==Section.DOCUMENTS)"Detalle del documento" else p.title
     val activity=androidx.activity.compose.LocalActivity.current
+    SideEffect{activity?.window?.let{androidx.core.view.WindowCompat.getInsetsController(it,it.decorView).isAppearanceLightStatusBars=state.user==null}}
     DisposableEffect(state.user==null,state.unlocked){if(state.user==null||state.unlocked)activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE) else activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE);onDispose{activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)}}
     BackHandler(enabled=state.user!=null&&p.kind!=PageKind.HOME){vm.back()}
     val snack=remember{SnackbarHostState()}
     LaunchedEffect(state.notice){state.notice?.let{snack.showSnackbar(plain(it));vm.clearNotice()}}
     Scaffold(
-        topBar={if(state.user!=null)TopAppBar(title={Column{Text(if(p.kind==PageKind.HOME)"AFA" else p.title,maxLines=2,style=MaterialTheme.typography.titleLarge);if(p.kind==PageKind.HOME)Text("CRM móvil",style=MaterialTheme.typography.labelMedium,color=Teal)}},navigationIcon={if(p.kind!=PageKind.HOME)IconButton(onClick=vm::back,enabled=!state.saving){Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Volver")}},actions={if(p.kind==PageKind.HOME)IconButton(onClick=vm::logout){Icon(Icons.AutoMirrored.Rounded.Logout,"Cerrar sesión")};if(p.kind==PageKind.LIST)IconButton(onClick=vm::refresh,enabled=!state.busy){Icon(Icons.Rounded.Refresh,"Actualizar")}})},
+        topBar={if(state.user!=null)TopAppBar(
+            colors=TopAppBarDefaults.topAppBarColors(containerColor=Ink,titleContentColor=Color.White,navigationIconContentColor=Color.White,actionIconContentColor=Color.White),
+            title={Column{Text(navigationTitle,maxLines=1,overflow=androidx.compose.ui.text.style.TextOverflow.Ellipsis,style=MaterialTheme.typography.titleLarge);if(p.kind==PageKind.HOME)Text("TU CENTRO DE OPERACIONES",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBECEEA))}},
+            navigationIcon={if(p.kind!=PageKind.HOME)IconButton(onClick=vm::back,enabled=!state.saving){Icon(Icons.AutoMirrored.Rounded.ArrowBack,"Volver")}},
+            actions={if(p.kind==PageKind.HOME)IconButton(onClick=vm::logout){Icon(Icons.AutoMirrored.Rounded.Logout,"Cerrar sesión")};if(p.kind==PageKind.LIST)IconButton(onClick=vm::refresh,enabled=!state.busy){Icon(Icons.Rounded.Refresh,"Actualizar")}})},
         snackbarHost={SnackbarHost(snack)},
         bottomBar={if(state.user!=null)when(p.kind){
-            PageKind.FORM,PageKind.ACTION,PageKind.BILL->Surface(shadowElevation=5.dp){Row(Modifier.navigationBarsPadding().imePadding().padding(12.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(vm::back,Modifier.weight(1f),enabled=!state.busy){Text("Cancelar")};Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->vm.saveAction()}},Modifier.weight(1.3f),enabled=!state.busy){Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else "Solicitar timbrado" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";else->"Guardar"}else "Guardar")}}}
-            PageKind.SALE->Surface(shadowElevation=5.dp){Row(Modifier.navigationBarsPadding().imePadding().padding(12.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(onClick={if(p.step==0)vm.back() else vm.saleStep(p.step-1)},Modifier.weight(1f),enabled=!state.busy){Text(if(p.step==0)"Cancelar" else "Anterior")};Button(onClick={if(p.step==5)vm.saveSale() else vm.saleStep(p.step+1)},Modifier.weight(1f),enabled=!state.busy){Text(if(p.step==5)"Guardar venta" else "Continuar")}}}
+            PageKind.FORM,PageKind.ACTION,PageKind.BILL->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
+                OutlinedButton(vm::back,Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text("Cancelar")}
+                Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->vm.saveAction()}},Modifier.weight(1.6f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp),colors=ButtonDefaults.buttonColors(containerColor=if(p.action=="cancel-sale")MaterialTheme.colorScheme.error else Blue),enabled=!state.busy){
+                    Icon(if(p.kind==PageKind.BILL)Icons.Rounded.ReceiptLong else if(p.action=="cancel-sale")Icons.Rounded.DeleteOutline else Icons.Rounded.Check,null,Modifier.size(19.dp));Spacer(Modifier.width(8.dp))
+                    Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else "Solicitar timbrado" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";else->"Guardar"}else "Guardar")
+                }
+            }}
+            PageKind.SALE->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(onClick={if(p.step==0)vm.back() else vm.saleStep(p.step-1)},Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==0)"Cancelar" else "Anterior")};Button(onClick={if(p.step==5)vm.saveSale() else vm.saleStep(p.step+1)},Modifier.weight(1.3f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==5)"Guardar venta" else "Continuar");Spacer(Modifier.width(8.dp));Icon(if(p.step==5)Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,null,Modifier.size(18.dp))}}}
             else->Unit
         }}
     ){padding->Column(Modifier.fillMaxSize().padding(padding)){
@@ -78,25 +98,60 @@ import com.google.zxing.MultiFormatWriter
             }
         }
         if(mfa.flag("mfa_setup")||mfa.flag("mfa_required"))FormField(Field("code","Código de autenticación",FieldKind.NUMBER,true),data){k,v->data=data.changed(k,v)}
-        Button(onClick={vm.signIn(data.s("email"),data.s("password"),data.s("code"))},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(top=20.dp).heightIn(min=52.dp)){Text(if(state.busy)"Validando…" else "Iniciar sesión")}
+        Button(onClick={vm.signIn(data.s("email"),data.s("password"),data.s("code"))},shape=MaterialTheme.shapes.medium,enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(top=20.dp).heightIn(min=54.dp)){Text(if(state.busy)"Validando…" else "Iniciar sesión");Spacer(Modifier.width(10.dp));Icon(Icons.AutoMirrored.Rounded.ArrowForward,null)}
         TextButton(onClick={vm.resetPassword(data.s("email"),data.s("code"))},enabled=data.s("email").isNotBlank()&&!state.busy,modifier=Modifier.align(Alignment.CenterHorizontally)){Text("Recuperar contraseña")}
     }
 }
 
 fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Icons.Rounded.Description;Section.TICKETS->Icons.Rounded.SupportAgent;Section.SERIES->Icons.Rounded.QrCode;Section.STOCK->Icons.Rounded.Inventory2;Section.PRODUCTS->Icons.Rounded.Category;Section.CUSTOMERS->Icons.Rounded.People;Section.SUPPLIERS->Icons.Rounded.LocalShipping;Section.SALES->Icons.Rounded.ShoppingBag;Section.BILLING->Icons.Rounded.ReceiptLong;Section.USERS->Icons.Rounded.ManageAccounts;Section.MARKETPLACES->Icons.Rounded.Storefront;Section.WAREHOUSES->Icons.Rounded.Warehouse}
-@Composable private fun Home(user:User,vm:CrmViewModel){LazyVerticalGrid(GridCells.Adaptive(160.dp),Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
-    item(span={GridItemSpan(maxLineSpan)}){Column(Modifier.padding(vertical=16.dp)){Text("Hola, ${user.name.substringBefore(' ')}",style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text("¿Qué necesitas hacer hoy?",Modifier.padding(top=8.dp),color=MaterialTheme.colorScheme.onSurfaceVariant)}}
-    items(Section.entries.filter{user.visible(it)}){section->Card(onClick={vm.open(section)},colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surface)){Column(Modifier.fillMaxWidth().heightIn(min=156.dp).padding(18.dp)){Icon(sectionIcon(section),null,tint=Teal,modifier=Modifier.size(28.dp));Spacer(Modifier.height(18.dp));Text(section.title,style=MaterialTheme.typography.titleMedium,fontWeight=FontWeight.SemiBold);Text(section.subtitle,Modifier.padding(top=6.dp),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}}}
-}}
+@Composable private fun Home(user:User,vm:CrmViewModel){
+    val groups=listOf("Tu operación" to listOf(Section.DOCUMENTS,Section.SALES,Section.TICKETS,Section.BILLING),"Inventario y catálogo" to listOf(Section.SERIES,Section.STOCK,Section.PRODUCTS,Section.WAREHOUSES),"Personas y configuración" to listOf(Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES))
+    LazyVerticalGrid(GridCells.Adaptive(155.dp),Modifier.fillMaxSize(),contentPadding=PaddingValues(18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+        item(span={GridItemSpan(maxLineSpan)}){
+            Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Ink,Color(0xFF294F83))),RoundedCornerShape(22.dp))){
+                Column(Modifier.padding(22.dp)){
+                    Text("ESPACIO DE TRABAJO",style=MaterialTheme.typography.labelSmall,color=Color(0xFFB7CDF2))
+                    Text("Hola, ${user.name.substringBefore(' ')}",Modifier.padding(top=10.dp),style=MaterialTheme.typography.headlineMedium,color=Color.White)
+                    Text("Todo listo para tu día.\nElige un módulo para comenzar.",Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodyMedium,color=Color(0xFFD7E5FB))
+                }
+            }
+        }
+        groups.forEach{(title,sections)->
+            val visible=sections.filter{user.visible(it)}
+            if(visible.isNotEmpty()){
+                item(span={GridItemSpan(maxLineSpan)}){Text(title,Modifier.padding(top=10.dp,bottom=2.dp),style=MaterialTheme.typography.titleMedium)}
+                items(visible){section->
+                    val accent=sectionColor(section)
+                    Card(onClick={vm.open(section)},shape=MaterialTheme.shapes.large,border=BorderStroke(1.dp,Line),elevation=CardDefaults.cardElevation(1.dp),colors=CardDefaults.cardColors(containerColor=Color.White)){
+                        Column(Modifier.fillMaxWidth().heightIn(min=174.dp).padding(16.dp)){
+                            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){
+                                Surface(color=accent.copy(alpha=.11f),shape=RoundedCornerShape(12.dp)){Icon(sectionIcon(section),null,tint=accent,modifier=Modifier.padding(10.dp).size(25.dp))}
+                                Icon(Icons.Rounded.ChevronRight,null,tint=Muted,modifier=Modifier.size(20.dp))
+                            }
+                            Text(section.title,Modifier.padding(top=14.dp),style=MaterialTheme.typography.titleMedium)
+                            Text(section.subtitle,Modifier.padding(top=4.dp),style=MaterialTheme.typography.bodySmall,color=Muted)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable private fun Listing(state:UiState,vm:CrmViewModel){val p=state.page;var ids by remember{mutableStateOf("")};var saleId by remember{mutableStateOf("")}
+    val focus=LocalFocusManager.current
+    val keyboard=LocalSoftwareKeyboardController.current
+    val search:()->Unit={focus.clearFocus();keyboard?.hide();vm.filter("page",1);vm.search()}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp)){
         item{
-            if(p.section in setOf(Section.TICKETS,Section.PRODUCTS,Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES,Section.WAREHOUSES,Section.SALES))Button(onClick={vm.edit()},enabled=!state.busy,modifier=Modifier.fillMaxWidth().heightIn(min=48.dp)){Icon(Icons.Rounded.Add,null);Text(if(p.section==Section.TICKETS)"Crear ticket" else if(p.section==Section.SALES)"Crear venta" else "Crear nuevo",Modifier.padding(start=8.dp))}
+            PageIntro(if(p.section==Section.DOCUMENTS)"Buscar documentos" else p.section.title,p.section.subtitle,sectionIcon(p.section))
+            if(p.section in setOf(Section.TICKETS,Section.PRODUCTS,Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES,Section.WAREHOUSES,Section.SALES))Button(onClick={vm.edit()},shape=MaterialTheme.shapes.medium,enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(bottom=12.dp).heightIn(min=54.dp)){Icon(Icons.Rounded.Add,null);Text(if(p.section==Section.TICKETS)"Crear ticket" else if(p.section==Section.SALES)"Crear venta" else "Crear nuevo",Modifier.padding(start=8.dp))}
             if(p.section==Section.SALES){
-                Row(Modifier.fillMaxWidth().padding(top=12.dp),verticalAlignment=Alignment.CenterVertically){OutlinedTextField(saleId,{saleId=it},Modifier.weight(1f),label={Text("Pedido a editar")},singleLine=true);IconButton(onClick={vm.findSale(saleId)},enabled=!state.busy){Icon(Icons.Rounded.Edit,"Editar venta")}}
+                Row(Modifier.fillMaxWidth().padding(bottom=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(saleId,{saleId=it},Modifier.weight(1f),colors=inputColors(),label={Text("Pedido a editar")},singleLine=true);FilledIconButton(onClick={vm.findSale(saleId)},shape=MaterialTheme.shapes.medium,modifier=Modifier.size(52.dp),enabled=!state.busy){Icon(Icons.Rounded.Edit,"Editar venta")}}
                 ActionButton("Eliminar venta",Icons.Rounded.DeleteOutline,!state.busy,vm::cancelSale);SectionLabel("Pedidos pendientes")
             }
+            Surface(color=Color.White,shape=MaterialTheme.shapes.large,border=BorderStroke(1.dp,Line),modifier=Modifier.fillMaxWidth()){
+            Column(Modifier.padding(16.dp)){
             if(p.section==Section.DOCUMENTS)FormField(Field("campo","Buscar por",FieldKind.SELECT,choices=documentCriteria.map{Choice(it.first,it.second)}),p.filters,vm::filter)
             if(p.section==Section.TICKETS){
                 val options=choices("" to "Mis tickets / historial","resuelto" to "Resueltos","cerrado" to "Cerrados")+if(state.user?.admin==true)choices("nuevo" to "Pendientes de asignación","resolucion" to "Pendientes de resolución")else emptyList()
@@ -111,12 +166,13 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             if(p.section==Section.BILLING){
                 FormField(Field("document_type","Tipo de documento",FieldKind.SELECT,choices=choices("2" to "Ventas","6" to "Notas de crédito")),p.filters){k,v->vm.filter(k,v);vm.filter("page",1);vm.search()}
                 if(p.catalog.has("configured")&&!p.catalog.flag("configured"))Notice("El timbrado aún no está configurado en el servidor.")
-                DetailGroup("Selección por números de pedido"){OutlinedTextField(ids,{ids=it},Modifier.fillMaxWidth(),label={Text("Ej. 37802, 37803")});TextButton({vm.billingIds(ids)},enabled=!state.busy){Text("Agregar a selección")}}
+                DetailGroup("Selección por números de pedido"){OutlinedTextField(ids,{ids=it},Modifier.fillMaxWidth(),colors=inputColors(),label={Text("Ej. 37802, 37803")});ActionButton("Agregar a selección",Icons.Rounded.Add,!state.busy){vm.billingIds(ids)}}
                 if(p.selected.isNotEmpty()){Notice("${p.selected.size} documentos seleccionados");FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)){if(p.filters.n("document_type")!=6)Button({vm.billingForm("global")},enabled=!state.busy){Text("Factura global")};OutlinedButton({vm.billingForm("external")},enabled=!state.busy){Text("CFDI externo")}}}
             }
-            if(p.section!=Section.TICKETS){OutlinedTextField(p.filters.s("criterio"),{vm.filter("criterio",it)},Modifier.fillMaxWidth().padding(top=8.dp),label={Text(if(p.section==Section.SERIES)"Número de serie" else "Buscar")},singleLine=true,leadingIcon={Icon(Icons.Rounded.Search,null)});Button({vm.filter("page",1);vm.search()},enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(top=10.dp)){Text("Buscar")}}
+            if(p.section!=Section.TICKETS){OutlinedTextField(p.filters.s("criterio"),{vm.filter("criterio",it)},Modifier.fillMaxWidth().padding(top=8.dp),colors=inputColors(),label={Text(if(p.section==Section.SERIES)"Número de serie" else "Buscar",style=MaterialTheme.typography.labelLarge)},placeholder={Text(if(p.section==Section.SERIES)"Escribe la serie" else "Escribe tu búsqueda")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={if(!state.busy)search()}),leadingIcon={Icon(Icons.Rounded.Search,null)});Button(search,shape=MaterialTheme.shapes.medium,enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(top=14.dp).heightIn(min=52.dp)){Icon(Icons.Rounded.Search,null,Modifier.size(20.dp));Spacer(Modifier.width(8.dp));Text("Buscar")}}
+            }}
             if(p.section==Section.STOCK&&p.rows.isNotEmpty())ActionButton("Exportar existencias a Excel",Icons.Rounded.Download,!state.busy,vm::exportStock)
-            if(p.loaded)Text("${if(p.section==Section.BILLING)p.catalog.s("pagination.total") else p.rows.size} resultados",Modifier.padding(top=22.dp,bottom=10.dp),style=MaterialTheme.typography.labelLarge)
+            if(p.loaded)SectionLabel("${if(p.section==Section.BILLING)p.catalog.s("pagination.total") else p.rows.size} resultados")
         }
         if(p.rows.isEmpty()&&!state.busy)item{EmptyState(if(p.loaded)"Sin resultados" else "Comienza una búsqueda",if(p.loaded)"Prueba con otro criterio o filtro." else "Los resultados aparecerán aquí.")}
         items(p.rows){row->RecordCard(p.section,row,{if(p.section==Section.WAREHOUSES)vm.edit(row)else vm.show(row)},p.selected.any{it.s("id")==row.s("id")},if(p.section==Section.BILLING){{vm.selectBilling(row)}}else null){
@@ -129,8 +185,18 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 @Composable private fun Detail(state:UiState,vm:CrmViewModel){val p=state.page;val d=p.data
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
         if(p.section==Section.DOCUMENTS){
-            Text("${if(d.s("_kind")=="credit")"Nota de crédito" else "Pedido"} #${d.s("id")}",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold)
-            Text(d.label("cliente","razon_social"),Modifier.padding(vertical=10.dp),color=Teal)
+            Surface(color=Color.White,shape=MaterialTheme.shapes.large,border=BorderStroke(1.dp,Line),modifier=Modifier.fillMaxWidth()){
+                Column(Modifier.padding(20.dp)){
+                    Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Icon(Icons.Rounded.Description,null,Modifier.size(20.dp),tint=Blue);Text("DOCUMENTO DE VENTA",style=MaterialTheme.typography.labelSmall,color=Blue)}
+                    Text("${if(d.s("_kind")=="credit")"Nota de crédito" else "Pedido"} #${d.s("id")}",Modifier.padding(top=12.dp),style=MaterialTheme.typography.headlineSmall)
+                    Text(d.label("cliente","razon_social"),Modifier.padding(top=8.dp),style=MaterialTheme.typography.bodyMedium,color=Muted)
+                    if(d.s("total").isNotBlank()){
+                        HorizontalDivider(Modifier.padding(vertical=14.dp),color=Line)
+                        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("Importe total",Modifier.weight(1f),style=MaterialTheme.typography.labelLarge,color=Muted);Text(amount(d.s("total")),style=MaterialTheme.typography.titleLarge,color=Teal)}
+                    }
+                }
+            }
+            SectionLabel("Acciones disponibles")
             if(d.s("_kind")=="credit")ActionButton("Descargar nota de crédito",Icons.Rounded.Download,!state.busy){vm.download("general/busqueda/venta/descargarNota/${segment(d.s("id"))}")}
             else {
                 ActionButton("Agregar seguimiento o archivo",Icons.Rounded.EditNote,!state.busy,vm::followup)
@@ -142,7 +208,7 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             }
         }
         if(p.section==Section.TICKETS){
-            Text(d.s("titulo"),style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);AssistChip({},label={Text(d.s("estado").replace('_',' '))})
+            PageIntro(d.s("titulo"),"Ticket de soporte",Icons.Rounded.SupportAgent);StatusBadge(d.s("estado"));SectionLabel("Acciones disponibles")
             if(state.user?.admin==true&&d.s("estado")=="nuevo")ActionButton("Asignar técnico",Icons.Rounded.PersonAdd,!state.busy,vm::ticketAssign)
             if(d.n("asignado_a")==state.user?.id&&d.s("estado")=="asignado")ActionButton("Iniciar revisión",Icons.Rounded.PlayArrow,!state.busy,vm::startTicket)
             if(d.n("asignado_a")==state.user?.id&&d.s("estado")=="en_revision")ActionButton("Resolver ticket",Icons.Rounded.CheckCircle,!state.busy,vm::ticketResolve)
@@ -158,13 +224,14 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 
 @Composable private fun EntityForm(state:UiState,vm:CrmViewModel,onFile:(String)->Unit){val p=state.page
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)){
+        PageIntro(if(p.draft.n("id")>0)"Editar información" else "Nuevo registro","Los campos con * son obligatorios.",sectionIcon(p.section))
         if(p.section==Section.MARKETPLACES&&p.draft.n("api.id")>0&&!state.unlocked)ActionButton("Autorizar acceso a credenciales",Icons.Rounded.Lock,!state.busy,vm::unlockMarketplace)
         FormFields(entityFields(p.section,p.catalog,p.draft,state.unlocked),p.draft,vm::change)
         if(p.section==Section.PRODUCTS){
             ActionButton("Buscar clave SAT",Icons.Rounded.Search,!state.busy){vm.lookup("sat")}
             SectionLabel("Proveedores")
             val providers=p.draft.list("proveedores").ifEmpty{p.catalog.list("proveedores")}
-            providers.forEach{provider->OutlinedCard(onClick={vm.productProvider(provider)},Modifier.fillMaxWidth().padding(vertical=4.dp)){Column(Modifier.padding(14.dp)){Text(provider.label("razon_social","nombre"));Text(if(provider.s("producto").isBlank())"Sin producto vinculado" else "Producto vinculado: ${provider.s("producto")}",style=MaterialTheme.typography.bodySmall)}}}
+            providers.forEach{provider->Card(onClick={vm.productProvider(provider)},Modifier.fillMaxWidth().padding(vertical=5.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=BorderStroke(1.dp,Line)){Row(Modifier.padding(16.dp),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(provider.label("razon_social","nombre"),style=MaterialTheme.typography.titleSmall);Text(if(provider.s("producto").isBlank())"Sin producto vinculado" else "Producto vinculado: ${provider.s("producto")}",Modifier.padding(top=5.dp),style=MaterialTheme.typography.bodySmall,color=Muted)};Icon(Icons.Rounded.ChevronRight,null,tint=Blue)}}}
             SectionLabel("Precios por archivo")
             ActionButton("Cargar Excel de códigos y precios",Icons.Rounded.UploadFile,!state.busy){onFile("prices")}
             p.draft.list("precio.productos").forEach{Text("${it.s("codigo")} · ${amount(it.s("precio"))}",Modifier.padding(vertical=5.dp))}
@@ -174,7 +241,7 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             ActionButton("Agregar imagen",Icons.Rounded.AddPhotoAlternate,!state.busy){onFile("image")}
         }
         if(p.section==Section.TICKETS){SectionLabel("Adjuntos");LocalAttachments(p.draft,"archivos",vm);ActionButton("Adjuntar archivo",Icons.Rounded.AttachFile,!state.busy){onFile("")}}
-        if(p.draft.n("id")>0&&p.section in setOf(Section.USERS,Section.WAREHOUSES))TextButton(vm::deleteEntity,enabled=!state.busy){Icon(Icons.Rounded.DeleteOutline,null);Text(if(p.section==Section.USERS)"Desactivar usuario" else "Eliminar almacén")}
+        if(p.draft.n("id")>0&&p.section in setOf(Section.USERS,Section.WAREHOUSES))ActionButton(if(p.section==Section.USERS)"Desactivar usuario" else "Eliminar almacén",Icons.Rounded.DeleteOutline,!state.busy,vm::deleteEntity)
         Spacer(Modifier.height(24.dp))
     }
 }
@@ -193,9 +260,10 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 
 @Composable private fun SaleForm(state:UiState,vm:CrmViewModel,onFile:(String)->Unit){val p=state.page;val steps=listOf("Pedido","Cliente","Productos","Envío","Condiciones","Revisión")
     Column(Modifier.fillMaxSize()){
-        ScrollableTabRow(p.step,edgePadding=8.dp){steps.forEachIndexed{i,title->Tab(p.step==i,{vm.saleStep(i)},text={Text(title)})}}
+        ScrollableTabRow(p.step,edgePadding=8.dp,containerColor=Color.White,contentColor=Blue){steps.forEachIndexed{i,title->Tab(p.step==i,{vm.saleStep(i)},selectedContentColor=Blue,unselectedContentColor=Muted,text={Text(title,style=MaterialTheme.typography.labelLarge)},icon={Surface(color=if(p.step==i)Blue else Canvas,shape=RoundedCornerShape(10.dp)){Box(Modifier.size(30.dp),contentAlignment=Alignment.Center){Text("${i+1}",color=if(p.step==i)Color.White else Muted,style=MaterialTheme.typography.labelLarge)}}})}}
         key(p.step){Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).imePadding().padding(16.dp)){
-            Text("${p.step+1} de 6 · ${steps[p.step]}",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.SemiBold)
+            Text("PASO ${p.step+1} DE 6",style=MaterialTheme.typography.labelSmall,color=Blue)
+            Text(steps[p.step],Modifier.padding(top=4.dp,bottom=12.dp),style=MaterialTheme.typography.headlineSmall)
             if(p.step==1&&(p.draft.n("documento.documento")==0||p.draft.n("documento.id_fase")<5))ActionButton("Buscar cliente",Icons.Rounded.PersonSearch,!state.busy){vm.lookup("client")}
             FormFields(saleFields(p.step,p.catalog,p.draft),p.draft,vm::change)
             when(p.step){
@@ -203,9 +271,10 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
                 2->{
                     val editable=p.draft.n("documento.documento")==0||p.draft.flag("documento.editar_productos")
                     if(editable)ActionButton("Agregar producto",Icons.Rounded.Add,!state.busy){vm.lookup("product")}
-                    p.draft.list("documento.productos").forEachIndexed{i,line->Card(Modifier.fillMaxWidth().padding(vertical=6.dp)){Column(Modifier.padding(16.dp)){Text(line.s("descripcion"),fontWeight=FontWeight.SemiBold);Text(line.s("codigo"),color=Teal);Text("${line.s("cantidad")} × ${amount(line.s("precio"))}");if(editable)Row{TextButton({vm.editLine(i)}){Text("Editar")};TextButton({vm.removeLine(i)}){Text("Quitar")}}}}}
+                    p.draft.list("documento.productos").forEachIndexed{i,line->Card(Modifier.fillMaxWidth().padding(vertical=6.dp),colors=CardDefaults.cardColors(containerColor=Color.White),border=BorderStroke(1.dp,Line)){Column(Modifier.padding(16.dp)){Text(line.s("codigo"),style=MaterialTheme.typography.labelMedium,color=Blue);Text(line.s("descripcion"),Modifier.padding(top=6.dp),style=MaterialTheme.typography.titleMedium);Text("${line.s("cantidad")} × ${amount(line.s("precio"))}",Modifier.padding(top=8.dp),color=Muted);if(editable)Row(horizontalArrangement=Arrangement.spacedBy(10.dp),modifier=Modifier.padding(top=10.dp)){FilledTonalButton({vm.editLine(i)},shape=MaterialTheme.shapes.small){Icon(Icons.Rounded.Edit,null,Modifier.size(18.dp));Spacer(Modifier.width(8.dp));Text("Editar")};OutlinedButton({vm.removeLine(i)},shape=MaterialTheme.shapes.small,colors=ButtonDefaults.outlinedButtonColors(contentColor=MaterialTheme.colorScheme.error)){Text("Quitar")}}}}}
                     p.catalog.list("promociones").forEach{promotion->ActionButton("Agregar promoción · ${promotion.label("nombre","descripcion")}",enabled=!state.busy){vm.addPromotion(promotion)}}
-                    val total=p.draft.list("documento.productos").fold(java.math.BigDecimal.ZERO){s,l->s+l.money("cantidad")*l.money("precio")};Text("Total: ${amount(total.toPlainString())}",style=MaterialTheme.typography.titleLarge,modifier=Modifier.padding(vertical=16.dp))
+                    val total=p.draft.list("documento.productos").fold(java.math.BigDecimal.ZERO){s,l->s+l.money("cantidad")*l.money("precio")}
+                    Surface(color=Ink,shape=MaterialTheme.shapes.large,modifier=Modifier.fillMaxWidth().padding(vertical=16.dp)){Column(Modifier.padding(20.dp)){Text("TOTAL DE LA VENTA",style=MaterialTheme.typography.labelSmall,color=Color(0xFFBECEEA));Text(amount(total.toPlainString()),Modifier.padding(top=6.dp),style=MaterialTheme.typography.headlineMedium,color=Color.White)}}
                 }
                 3->{ActionButton("Consultar código postal",Icons.Rounded.LocationOn,!state.busy,vm::postal);if(p.draft.n("documento.documento")>0&&p.draft.flag("documento.editar_envio"))ActionButton("Cotizar envío",Icons.Rounded.LocalShipping,!state.busy,vm::quoteShipping)}
                 5->{
@@ -229,8 +298,7 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 
 @Composable private fun BillingForm(state:UiState,vm:CrmViewModel,onFile:(String)->Unit){val p=state.page;val credit=p.data.n("document_type")==6
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)){
-        Text("${p.selected.size} ${if(credit)if(p.selected.size==1)"nota de crédito" else "notas de crédito" else if(p.selected.size==1)"venta" else "ventas"}",style=MaterialTheme.typography.headlineSmall)
-        Text(p.selected.joinToString{"#${it.s("id")}"},Modifier.padding(vertical=8.dp),color=Teal)
+        PageIntro("${p.selected.size} ${if(credit)if(p.selected.size==1)"nota de crédito" else "notas de crédito" else if(p.selected.size==1)"venta" else "ventas"}",p.selected.joinToString{"#${it.s("id")}"},Icons.Rounded.ReceiptLong)
         if(p.action=="external"){
             Notice("Selecciona el XML timbrado y su PDF. El UUID se obtiene del XML y el servidor valida la relación con los documentos.")
             listOf("xml","pdf").forEach{type->ActionButton("${if(p.draft.s(type).isBlank())"Adjuntar" else "Cambiar"} ${type.uppercase()}",Icons.Rounded.AttachFile,!state.busy){onFile(type)};if(p.draft.s("_${type}Name").isNotBlank())Text(p.draft.s("_${type}Name"),Modifier.padding(8.dp))}
@@ -247,8 +315,11 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 }
 
 @Composable private fun Lookup(state:UiState,vm:CrmViewModel){val p=state.page
+    val focus=LocalFocusManager.current
+    val keyboard=LocalSoftwareKeyboardController.current
+    val search:()->Unit={focus.clearFocus();keyboard?.hide();vm.searchLookup()}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(16.dp)){
-        item{OutlinedTextField(p.filters.s("criterio"),{vm.filter("criterio",it)},Modifier.fillMaxWidth(),label={Text("Buscar")},singleLine=true);Button(vm::searchLookup,enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(vertical=10.dp)){Text("Buscar")}}
+        item{OutlinedTextField(p.filters.s("criterio"),{vm.filter("criterio",it)},Modifier.fillMaxWidth(),colors=inputColors(),leadingIcon={Icon(Icons.Rounded.Search,null)},label={Text("Buscar")},singleLine=true,keyboardOptions=KeyboardOptions(imeAction=ImeAction.Search),keyboardActions=KeyboardActions(onSearch={if(!state.busy)search()}));Button(search,shape=MaterialTheme.shapes.medium,enabled=!state.busy,modifier=Modifier.fillMaxWidth().padding(vertical=12.dp).heightIn(min=52.dp)){Text("Buscar")}}
         items(p.rows){row->RecordCard(if(p.action=="client")Section.CUSTOMERS else Section.PRODUCTS,row,{vm.show(row)})}
         if(p.loaded&&p.rows.isEmpty())item{EmptyState("Sin resultados","Prueba otro código o descripción.")}
     }

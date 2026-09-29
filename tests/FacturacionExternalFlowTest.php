@@ -996,6 +996,26 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame(200, $response->getStatusCode());
     }
 
+    public function testCancellationDoesNotContactNexfiraWithoutAuthenticatorCode()
+    {
+        DB::table('subnivel')->insert(['id' => 36, 'subnivel' => 'FACTURACION Y TIMBRADO', 'status' => 1]);
+        DB::table('subnivel_nivel')->insert(['id' => 75, 'id_nivel' => 11, 'id_subnivel' => 36]);
+        DB::table('usuario_subnivel_nivel')->insert(['id_usuario' => 9, 'id_subnivel_nivel' => 75]);
+        $service = Mockery::mock(FacturacionService::class);
+        $cancellation = Mockery::mock(App\Http\Services\Nexfira\CancelacionFacturaService::class);
+        $cancellation->shouldNotReceive('request');
+        $controller = new FacturacionController($service, $cancellation);
+        $request = Request::create('/venta/venta/facturacion/cancelacion', 'POST', [
+            'folio' => '40062', 'serie' => 'FML', 'motivo' => '02',
+        ]);
+        $request->auth = (object) ['id' => 9];
+
+        $response = $controller->cancelar($request);
+
+        $this->assertSame(422, $response->getStatusCode());
+        $this->assertStringContainsString('aplicación autenticadora', json_decode($response->getContent(), true)['message']);
+    }
+
     public function testBillingEndpointPassesProductGroupingToService()
     {
         DB::table('subnivel')->insert([

@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\Nexfira\FacturacionService;
+use App\Http\Services\Nexfira\CancelacionFacturaService;
+use App\Http\Services\WhatsAppService;
 use App\Http\Services\Nexfira\NexfiraApiException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\JsonResponse;
@@ -18,10 +20,48 @@ class FacturacionController extends Controller
     private const BILLING_SUBLEVEL_ID = 36;
 
     private $service;
+    private $cancellation;
 
-    public function __construct(FacturacionService $service)
+    public function __construct(FacturacionService $service, CancelacionFacturaService $cancellation = null)
     {
         $this->service = $service;
+        $this->cancellation = $cancellation ?: app(CancelacionFacturaService::class);
+    }
+
+    public function previsualizarCancelacion(Request $request): JsonResponse
+    {
+        return $this->handle(function () use ($request) {
+            $this->authorizedUserId($request);
+            return ['code' => 200, 'data' => $this->cancellation->preview($request->input('folio'), $request->input('serie', ''))];
+        });
+    }
+
+    public function cancelar(Request $request): JsonResponse
+    {
+        return $this->handle(function () use ($request) {
+            $userId = $this->authorizedUserId($request);
+            $data = $this->payload($request);
+            $code = trim((string) ($data['auth_code'] ?? ''));
+            if (!preg_match('/^[0-9]{6}$/D', $code)) {
+                throw new InvalidArgumentException('Ingresa el código de seis dígitos de tu aplicación autenticadora.');
+            }
+            $verification = WhatsAppService::validateCode($userId, $code);
+            if ($verification->error) {
+                throw new AuthorizationException(strip_tags($verification->mensaje));
+            }
+            return ['code' => 202, 'message' => 'Cancelación solicitada. Las ventas permanecen facturadas hasta su aprobación.',
+                'data' => $this->cancellation->request($data['folio'] ?? '', $data['serie'] ?? '',
+                    $data['motivo'] ?? '', $data['uuid_sustitucion'] ?? '', $userId)];
+        });
+    }
+
+    public function actualizarCancelacion(Request $request): JsonResponse
+    {
+        return $this->handle(function () use ($request) {
+            $userId = $this->authorizedUserId($request);
+            $data = $this->payload($request);
+            return ['code' => 200, 'data' => $this->cancellation->refresh($data['folio'] ?? '', $data['serie'] ?? '', $userId)];
+        });
     }
 
     public function pendientes(Request $request): JsonResponse

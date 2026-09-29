@@ -8,6 +8,10 @@ return [
     'fiscal_timezone' => env('NEXFIRA_FISCAL_TIMEZONE', 'America/Mexico_City'),
     'tax_rate' => env('NEXFIRA_TAX_RATE', '0.160000'),
     'request_timeout' => (int) env('NEXFIRA_REQUEST_TIMEOUT', 30),
+    'cancellation' => [
+        'create_path' => '/api/v1/integration/document-requests/{requestId}/cancellation',
+        'status_path' => '/api/v1/integration/document-requests/{requestId}/cancellation',
+    ],
     'polling' => [
         'enabled' => filter_var(env('NEXFIRA_POLLING_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         'batch_size' => max(1, (int) env('NEXFIRA_POLLING_BATCH_SIZE', 25)),

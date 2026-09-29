@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Services\Nexfira\NexfiraLocalResetService;
+use App\Http\Services\Nexfira\CancelacionFacturaService;
 use App\Http\Services\Nexfira\NexfiraApiException;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\Request;
@@ -14,10 +15,35 @@ use Throwable;
 class DeveloperNexfiraController extends Controller
 {
     private $service;
+    private $cancellation;
 
-    public function __construct(NexfiraLocalResetService $service)
+    public function __construct(NexfiraLocalResetService $service, CancelacionFacturaService $cancellation = null)
     {
         $this->service = $service;
+        $this->cancellation = $cancellation ?: app(CancelacionFacturaService::class);
+    }
+
+    public function simulateCancellation(Request $request)
+    {
+        try {
+            $auth = is_string($request->auth) ? json_decode($request->auth) : $request->auth;
+            $id = (int) ($auth->id ?? 0);
+            $allowed = $id && DB::table('usuario_subnivel_nivel as u')
+                ->join('subnivel_nivel as n', 'n.id', '=', 'u.id_subnivel_nivel')
+                ->join('subnivel as s', 's.id', '=', 'n.id_subnivel')
+                ->where('u.id_usuario', $id)->where('n.id_nivel', 6)->where('n.id_subnivel', 1)
+                ->where('s.status', 1)->exists();
+            if (!$allowed) { throw new AuthorizationException('Necesitas permiso DEV.'); }
+            return response()->json(['code' => 200, 'data' => $this->cancellation->simulate(
+                $request->input('folio'), $request->input('serie', ''), $id)]);
+        } catch (AuthorizationException $e) {
+            return response()->json(['message' => $e->getMessage()], 403);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (Throwable $e) {
+            Log::error('Simulación de cancelación fallida', ['exception' => $e]);
+            return response()->json(['message' => 'No se completó la simulación.'], 500);
+        }
     }
 
     public function inspect(Request $request, $documento)

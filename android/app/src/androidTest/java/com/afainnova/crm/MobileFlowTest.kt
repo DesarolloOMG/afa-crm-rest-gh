@@ -67,6 +67,11 @@ class MobileFlowTest {
         screenshot("document-search")
         rule.onNodeWithText("Pedido #9001").performScrollTo().performClick();idle()
         screenshot("document-detail")
+        rule.onNodeWithText("Resumen").performScrollTo();screenshot("document-sections")
+        rule.onNodeWithText("Resumen").performClick()
+        rule.onNodeWithText("Resumen").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Contraído"))
+        rule.onNodeWithText("Resumen").performClick()
+        rule.onNodeWithText("Resumen").assert(androidx.compose.ui.test.SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription,"Expandido"))
         rule.onNodeWithContentDescription("Volver").assertIsDisplayed()
         rule.runOnUiThread{rule.activity.requestedOrientation=android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE}
         rule.waitUntil(10000){rule.activity.resources.configuration.orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE};rule.waitForIdle();screenshot("document-landscape")
@@ -78,13 +83,16 @@ class MobileFlowTest {
     }
     @Test fun creditNoteHasIndependentDetailsAndPdfAction(){
         open(Section.DOCUMENTS);rule.runOnUiThread{vm().filter("campo","nota");vm().filter("criterio","9100");vm().search()};idle()
-        rule.onNodeWithText("Nota de crédito #9100").performScrollTo().performClick();idle()
+        rule.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Nota de crédito #9100"))
+        rule.onNodeWithText("Nota de crédito #9100").performClick();idle()
         rule.onNodeWithText("Descargar nota de crédito").assertIsDisplayed();rule.onNodeWithText("Agregar seguimiento o archivo").assertDoesNotExist()
     }
     @Test fun createTicketSubmitsOnlyAfterConfirmation(){
         open(Section.TICKETS);rule.onNodeWithText("Crear ticket").performClick();idle()
         rule.onNodeWithText("Título *").performTextInput("Problema de prueba")
         rule.onNodeWithText("Describe el problema *").performTextInput("No funciona la impresora")
+        rule.onNodeWithText("Guardar").assertIsDisplayed();screenshot("ticket-keyboard")
+        rule.activityRule.scenario.onActivity{androidx.core.view.WindowCompat.getInsetsController(it.window,it.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())};rule.waitForIdle();screenshot("ticket-form")
         rule.onNodeWithText("Guardar").performClick();rule.onNodeWithText("Guardar cambios").assertIsDisplayed()
         Assert.assertFalse(transport.calls.any{it.path=="ticket/crear"})
         rule.onNodeWithText("Confirmar").performClick();idle()
@@ -97,7 +105,7 @@ class MobileFlowTest {
     }
     @Test fun managementSectionsOpenNativeForms(){
         for(section in listOf(Section.PRODUCTS,Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES)){
-            open(section);rule.runOnUiThread{vm().edit()};idle();rule.onNodeWithText("Guardar").assertIsDisplayed();rule.onNodeWithText("Cancelar").performClick();idle();rule.onNodeWithContentDescription("Volver").performClick();idle()
+            open(section);rule.runOnUiThread{vm().edit()};idle();rule.onNodeWithText("Guardar").assertIsDisplayed();if(section==Section.PRODUCTS)screenshot("product-form");rule.onNodeWithText("Cancelar").performClick();idle();rule.onNodeWithContentDescription("Volver").performClick();idle()
         }
     }
     @Test fun warehouseHasDeleteButNoFakeEditSave(){open(Section.WAREHOUSES);rule.onNodeWithText("Concentro").performClick();rule.onNodeWithText("Eliminar almacén").assertIsDisplayed();rule.onNodeWithText("Guardar").assertDoesNotExist()}
@@ -110,7 +118,7 @@ class MobileFlowTest {
         rule.activityRule.scenario.recreate();rule.waitForIdle();Assert.assertEquals("REF-DEMO",vm().state.value.page.draft.s("documento.referencia"));Assert.assertEquals(2,vm().state.value.page.step);rule.onNodeWithText("Continuar").assertIsDisplayed()
     }
     @Test fun billingShowsPendingRatherThanFalseSuccess(){
-        open(Section.BILLING);rule.runOnUiThread{vm().show(vm().state.value.page.rows.first())};idle();screenshot("billing-preview")
+        open(Section.BILLING);rule.runOnUiThread{vm().show(vm().state.value.page.rows.first())};idle();rule.onNodeWithText("Solicitar timbrado").assertIsDisplayed();screenshot("billing-preview")
         rule.onNodeWithText("Solicitar timbrado").performClick();rule.onNodeWithText("Confirmar").performClick();idle()
         rule.onNodeWithText("Estado de facturación").assertExists();Assert.assertEquals("pending",vm().state.value.page.data.s("request.status"));Assert.assertEquals(1,transport.calls.count{it.path=="venta/venta/facturacion/individual/9001"})
     }

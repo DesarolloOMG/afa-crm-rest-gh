@@ -499,6 +499,9 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
             $router->get('descargar-pdf-xml/{type}/{document}', 'VentaController@venta_venta_descargar_pdf_xml');
 
             $router->group(['prefix' => 'facturacion'], function () use ($router) {
+                $router->get('cancelacion', 'FacturacionController@previsualizarCancelacion');
+                $router->post('cancelacion', 'FacturacionController@cancelar');
+                $router->post('cancelacion/actualizar', 'FacturacionController@actualizarCancelacion');
                 $router->get('pendientes', 'FacturacionController@pendientes');
                 $router->post('seleccion', 'FacturacionController@seleccion');
                 $router->get('previsualizar/{documento}', 'FacturacionController@previsualizar');
@@ -1203,6 +1206,7 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'developer'], function () use ($router) {
+        $router->post('nexfira/cancelacion/simular', 'DeveloperNexfiraController@simulateCancellation');
         $router->get('nexfira/{documento}', 'DeveloperNexfiraController@inspect');
         $router->post('nexfira/{documento}/liberar', 'DeveloperNexfiraController@reset');
         $router->post('recalculaCosto', 'DeveloperController@recalcularCosto');
