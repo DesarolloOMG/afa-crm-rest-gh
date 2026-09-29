@@ -45,6 +45,7 @@ enum class Section(val title: String, val subtitle: String, val levels: Set<Int>
     SUPPLIERS("Proveedores", "Contactos y datos fiscales", setOf(16), 29),
     SALES("Ventas", "Crear, editar, eliminar y pendientes", setOf(8)),
     BILLING("Facturación", "Timbrado, globales y CFDI externos", setOf(11), 36),
+    CANCELLATION("Cancelar facturas", "Nexfira y aprobación SAT", setOf(11), 36),
     USERS("Usuarios", "Accesos y permisos", setOf(6), 1),
     MARKETPLACES("Marketplaces", "Áreas, series y configuración", setOf(6), 1),
     WAREHOUSES("Almacenes", "Gestionar almacenes", setOf(6), 1)
@@ -56,7 +57,7 @@ data class User(val token: String, val profile: JsonObject, val expires: Long) {
     val levels get() = profile.at("niveles").arrayOrEmpty().mapNotNull { it.text().toIntOrNull() }.toSet()
     fun permission(level: Int, sub: Int): Boolean = profile.o("subniveles")[level.toString()].arrayOrEmpty().any { it.text() == sub.toString() }
     fun visible(section: Section): Boolean = when (section) {
-        Section.BILLING -> permission(11,36)
+        Section.BILLING, Section.CANCELLATION -> permission(11,36)
         Section.SERIES, Section.STOCK -> 13 !in levels
         else -> admin || section.levels.isEmpty() || section.levels.any { it in levels && (section.sublevel==0 || permission(it,section.sublevel)) }
     }

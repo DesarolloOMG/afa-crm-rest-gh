@@ -55,9 +55,9 @@ import com.google.zxing.MultiFormatWriter
         bottomBar={if(state.user!=null)when(p.kind){
             PageKind.FORM,PageKind.ACTION,PageKind.BILL->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
                 OutlinedButton(vm::back,Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text("Cancelar")}
-                Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->vm.saveAction()}},Modifier.weight(1.6f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp),colors=ButtonDefaults.buttonColors(containerColor=if(p.action=="cancel-sale")MaterialTheme.colorScheme.error else Blue),enabled=!state.busy){
+                Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->if(p.action=="invoice-cancel")vm.submitInvoiceCancellation() else vm.saveAction()}},Modifier.weight(1.6f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp),colors=ButtonDefaults.buttonColors(containerColor=if(p.action=="cancel-sale"||p.action=="invoice-cancel")MaterialTheme.colorScheme.error else Blue),enabled=!state.busy&&(p.action!="invoice-cancel"||p.data.s("factura.status")=="stamped")){
                     Icon(if(p.kind==PageKind.BILL)Icons.Rounded.ReceiptLong else if(p.action=="cancel-sale")Icons.Rounded.DeleteOutline else Icons.Rounded.Check,null,Modifier.size(19.dp));Spacer(Modifier.width(8.dp))
-                    Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else "Solicitar timbrado" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";else->"Guardar"}else "Guardar")
+                    Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else if(p.step==0)"Ver factura" else "Enviar a Nexfira" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";"invoice-cancel"->"Solicitar cancelación";else->"Guardar"}else "Guardar")
                 }
             }}
             PageKind.SALE->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(onClick={if(p.step==0)vm.back() else vm.saleStep(p.step-1)},Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==0)"Cancelar" else "Anterior")};Button(onClick={if(p.step==5)vm.saveSale() else vm.saleStep(p.step+1)},Modifier.weight(1.3f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==5)"Guardar venta" else "Continuar");Spacer(Modifier.width(8.dp));Icon(if(p.step==5)Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,null,Modifier.size(18.dp))}}}
@@ -103,9 +103,9 @@ import com.google.zxing.MultiFormatWriter
     }
 }
 
-fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Icons.Rounded.Description;Section.TICKETS->Icons.Rounded.SupportAgent;Section.SERIES->Icons.Rounded.QrCode;Section.STOCK->Icons.Rounded.Inventory2;Section.PRODUCTS->Icons.Rounded.Category;Section.CUSTOMERS->Icons.Rounded.People;Section.SUPPLIERS->Icons.Rounded.LocalShipping;Section.SALES->Icons.Rounded.ShoppingBag;Section.BILLING->Icons.Rounded.ReceiptLong;Section.USERS->Icons.Rounded.ManageAccounts;Section.MARKETPLACES->Icons.Rounded.Storefront;Section.WAREHOUSES->Icons.Rounded.Warehouse}
+fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Icons.Rounded.Description;Section.TICKETS->Icons.Rounded.SupportAgent;Section.SERIES->Icons.Rounded.QrCode;Section.STOCK->Icons.Rounded.Inventory2;Section.PRODUCTS->Icons.Rounded.Category;Section.CUSTOMERS->Icons.Rounded.People;Section.SUPPLIERS->Icons.Rounded.LocalShipping;Section.SALES->Icons.Rounded.ShoppingBag;Section.BILLING->Icons.Rounded.ReceiptLong;Section.CANCELLATION->Icons.Rounded.Cancel;Section.USERS->Icons.Rounded.ManageAccounts;Section.MARKETPLACES->Icons.Rounded.Storefront;Section.WAREHOUSES->Icons.Rounded.Warehouse}
 @Composable private fun Home(user:User,vm:CrmViewModel){
-    val groups=listOf("Tu operación" to listOf(Section.DOCUMENTS,Section.SALES,Section.TICKETS,Section.BILLING),"Inventario y catálogo" to listOf(Section.SERIES,Section.STOCK,Section.PRODUCTS,Section.WAREHOUSES),"Personas y configuración" to listOf(Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES))
+    val groups=listOf("Tu operación" to listOf(Section.DOCUMENTS,Section.SALES,Section.TICKETS,Section.BILLING,Section.CANCELLATION),"Inventario y catálogo" to listOf(Section.SERIES,Section.STOCK,Section.PRODUCTS,Section.WAREHOUSES),"Personas y configuración" to listOf(Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES))
     LazyVerticalGrid(GridCells.Adaptive(155.dp),Modifier.fillMaxSize(),contentPadding=PaddingValues(18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         item(span={GridItemSpan(maxLineSpan)}){
             Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Ink,Color(0xFF294F83))),RoundedCornerShape(22.dp))){
@@ -164,6 +164,7 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             }
             if(p.section in setOf(Section.SALES,Section.BILLING))FormField(Field("fulfillment","Operación",FieldKind.SELECT,choices=(if(p.section==Section.SALES)listOf(Choice("","Todas"))else emptyList())+choices("0" to "Drop","1" to "Full")),p.filters){k,v->vm.filter(k,v);vm.filter("page",1);vm.search()}
             if(p.section==Section.BILLING){
+                ActionButton("Cancelar factura Nexfira",Icons.Rounded.Cancel,!state.busy,vm::invoiceCancellation)
                 FormField(Field("document_type","Tipo de documento",FieldKind.SELECT,choices=choices("2" to "Ventas","6" to "Notas de crédito")),p.filters){k,v->vm.filter(k,v);vm.filter("page",1);vm.search()}
                 if(p.catalog.has("configured")&&!p.catalog.flag("configured"))Notice("El timbrado aún no está configurado en el servidor.")
                 DetailGroup("Selección por números de pedido"){OutlinedTextField(ids,{ids=it},Modifier.fillMaxWidth(),colors=inputColors(),label={Text("Ej. 37802, 37803")});ActionButton("Agregar a selección",Icons.Rounded.Add,!state.busy){vm.billingIds(ids)}}
@@ -252,6 +253,15 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
         if(p.action=="unlock-marketplace"||(p.action=="refacturacion"&&p.fields.any{it.key=="token"}))ActionButton("Solicitar código de autorización",Icons.Rounded.Lock,!state.busy,vm::prepareCode)
         if(p.action=="refacturacion"){Notice("Revisa el receptor fiscal. La refacturación genera documentos vinculados que se timbran desde Facturación.");DataDetails(p.data)}
         FormFields(p.fields,p.draft,vm::change)
+        if(p.action=="invoice-cancel"){
+            ActionButton("Buscar y ver factura",Icons.Rounded.Search,!state.busy,vm::previewInvoiceCancellation)
+            if(p.data.has("factura")){
+                DetailGroup("Factura",true){DataDetails(p.data.o("factura"))}
+                p.data.list("ventas").forEach{sale->DetailGroup("Pedido #${sale.s("id")}",true){DataDetails(sale.deepCopy().apply{remove("pdf");remove("xml")})}}
+                if(p.data.has("cancelacion")&&p.data.at("cancelacion")?.isJsonNull==false){DetailGroup("Cancelación",true){DataDetails(p.data.o("cancelacion"))};ActionButton("Actualizar aprobación",Icons.Rounded.Refresh,!state.busy,vm::refreshInvoiceCancellation)
+                    if(state.user?.permission(6,1)==true&&p.data.s("cancelacion.status")=="pending_approval")ActionButton("DEV · Simular aprobación",Icons.Rounded.Check,!state.busy,vm::simulateInvoiceCancellation)}
+            }
+        }
         if(p.action=="cancel-sale")ActionButton("Solicitar autorización",Icons.Rounded.Lock,!state.busy,vm::prepareCancel)
         if(p.action=="provider")ActionButton("Buscar productos del proveedor",Icons.Rounded.Search,!state.busy,vm::searchProvider)
         if(p.action=="followup"){LocalAttachments(p.draft,"archivos",vm);ActionButton("Adjuntar archivo",Icons.Rounded.AttachFile,!state.busy){onFile("")}}
@@ -309,6 +319,26 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             p.data.at("blockers").arrayOrEmpty().forEach{Notice(if(it.isJsonObject)it.asJsonObject.label("message","description","code")else it.text(),true)}
             if(p.action=="global")FormField(Field("agrupacion","Agrupar conceptos por",FieldKind.SELECT,choices=choices("ventas" to "Ventas","productos" to "Productos")),p.draft,vm::change)
             FormFields(billingFields(p.draft,p.data.s("payload.content.receiver.rfc").uppercase()=="XAXX010101000",credit),p.draft,vm::change)
+            if(p.step==1){
+                val content=p.data.o("payload.content")
+                SectionLabel("Vista previa de factura")
+                Notice("Serie ${p.draft.s("series")} · Folio ${p.draft.s("folio").ifBlank{"automático"}} · Pago ${content.s("paymentMethod")} / ${content.s("paymentForm")}")
+                DetailGroup("Comprobante",true){DataDetails(obj("emisor" to p.data.s("payload.issuerId"),"emision" to content.s("issuedAtLocal"),"moneda" to content.s("currency"),"codigo_postal_expedicion" to content.s("expeditionPostalCode"),"uso_cfdi" to content.s("receiver.cfdiUse"),"regimen_receptor" to content.s("receiver.fiscalRegime")))}
+                if(content.has("globalInformation"))DetailGroup("Periodo global",true){DataDetails(content.o("globalInformation"))}
+                content.list("items").forEach{item->DetailGroup(item.s("description"),true){DataDetails(item)}}
+                DetailGroup("Totales",true){DataDetails(content.o("expectedTotals"))}
+                if(!credit)Notice("Precio y descuento incluyen IVA. Guardar actualiza el pedido; después vuelve a revisar la factura.")
+                (if(credit)emptyList() else p.data.list("editable_lines")).forEach{line->
+                    DetailGroup("Pedido #${line.s("id_documento")} · ${line.s("descripcion")}",true){
+                        Text("Cantidad ${line.s("cantidad")}")
+                        FormField(Field("lineEdits.${line.s("id")}.precio","Precio",FieldKind.NUMBER),p.draft,vm::change)
+                        FormField(Field("lineEdits.${line.s("id")}.descuento","Descuento",FieldKind.NUMBER),p.draft,vm::change)
+                        ActionButton("Guardar importe",Icons.Rounded.Check,!state.busy){vm.saveBillingLine(line)}
+                        TextButton({vm.sale(line.s("id_documento"))},enabled=!state.busy){Text("Editar cliente y otros datos del pedido")}
+                    }
+                }
+                ActionButton("Actualizar vista previa",Icons.Rounded.Refresh,!state.busy,vm::reviewBilling)
+            }
             Notice("La solicitud permanece pendiente hasta que el servidor recupere el UUID, XML y PDF.")
         }
     }

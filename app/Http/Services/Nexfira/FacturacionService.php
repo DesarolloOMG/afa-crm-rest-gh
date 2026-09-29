@@ -152,6 +152,90 @@ class FacturacionService
         return $state + $this->builder->preview($documentId);
     }
 
+    public function reviewIndividual($documentId, array $overrides = [])
+    {
+        $state = $this->preview($documentId);
+        if (!$state['valid']) { return $state; }
+        $payload = $this->builder->buildIndividual($documentId, 'review-' . (int) $documentId, $overrides);
+        return array_merge($state, ['payload' => $payload, 'review_hash' => $this->reviewHash($payload, $overrides),
+            'editable_lines' => $this->editableLines([(int) $documentId])]);
+    }
+
+    public function reviewGlobal(array $documentIds, $grouping, array $globalInformation, array $overrides = [])
+    {
+        $documentIds = $this->normalizeDocumentIds($documentIds, 2);
+        RefacturacionService::assertFiscalReady($documentIds, true);
+        foreach ($documentIds as $documentId) {
+            $summary = $this->saleSummary($documentId);
+            $this->assertNotAlreadyInvoiced($summary);
+            if ($this->isMeliFull($summary)) { throw new InvalidArgumentException('La selección contiene una venta FULL de Mercado Libre.'); }
+            if ($this->activeRequestForDocuments([(int) $documentId])) { throw new InvalidArgumentException('La venta ' . $documentId . ' tiene una solicitud fiscal activa.'); }
+        }
+        $payload = $this->builder->buildGlobal($documentIds, 'review-global', $grouping, $globalInformation, $overrides);
+        return ['valid' => true, 'blockers' => [], 'payload' => $payload,
+            'review_hash' => $this->reviewHash($payload, $overrides), 'editable_lines' => $this->editableLines($documentIds)];
+    }
+
+    private function reviewHash(array $payload, array $overrides = [])
+    {
+        unset($payload['externalReference']);
+        unset($payload['content']['issuedAtLocal']);
+        $payload['reviewSeries'] = (string) ($overrides['series'] ?? '');
+        $payload['reviewFolio'] = (string) ($overrides['folio'] ?? '');
+        return hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function assertReviewHash(array $payload, array $overrides)
+    {
+        if (isset($overrides['reviewHash']) && !hash_equals($this->reviewHash($payload, $overrides), (string) $overrides['reviewHash'])) {
+            throw new InvalidArgumentException('La factura cambió desde la vista previa. Actualiza y revísala antes de enviarla.');
+        }
+    }
+
+    private function editableLines(array $documentIds)
+    {
+        return DB::table('movimiento as m')->join('modelo as md', 'md.id', '=', 'm.id_modelo')
+            ->whereIn('m.id_documento', $documentIds)->orderBy('m.id_documento')->orderBy('m.id')
+            ->get(['m.id', 'm.id_documento', 'm.cantidad', 'm.precio', 'm.descuento', 'md.descripcion'])->toArray();
+    }
+
+    public function updateDraftLine($documentId, $lineId, $price, $discount, $userId)
+    {
+        if (!preg_match('/^[0-9]{1,10}(?:\.[0-9]{1,2})?$/D', (string) $price)
+            || !preg_match('/^[0-9]{1,10}(?:\.[0-9]{1,2})?$/D', (string) $discount)) {
+            throw new InvalidArgumentException('Precio y descuento deben ser importes no negativos con máximo dos decimales.');
+        }
+        return DB::transaction(function () use ($documentId, $lineId, $price, $discount, $userId) {
+            $document = DB::table('documento')->where('id', (int) $documentId)->lockForUpdate()->first();
+            if (!$document || (int) $document->id_tipo !== 2 || (int) $document->id_fase !== 5 || trim((string) $document->uuid) !== '') {
+                throw new InvalidArgumentException('Sólo puedes editar importes de una venta en fase 5 sin CFDI.');
+            }
+            if ($this->activeRequestForDocuments([(int) $documentId])) {
+                throw new InvalidArgumentException('La venta tiene una solicitud fiscal activa.');
+            }
+            $line = DB::table('movimiento')->where('id', (int) $lineId)
+                ->where('id_documento', (int) $documentId)->lockForUpdate()->first();
+            if (!$line) { throw new InvalidArgumentException('La partida no pertenece al pedido.'); }
+            if ((float) $discount > (float) $price * (float) $line->cantidad) {
+                throw new InvalidArgumentException('El descuento excede el importe de la partida.');
+            }
+            $oldTotal = (float) $document->total;
+            $oldSaldo = (float) $document->saldo;
+            $newTotal = round($oldTotal - (float) $line->precio * (float) $line->cantidad + (float) $line->descuento
+                + (float) $price * (float) $line->cantidad - (float) $discount, 2);
+            $newSaldo = round($oldSaldo + $newTotal - $oldTotal, 2);
+            if ($newTotal <= 0 || $newSaldo < 0) {
+                throw new InvalidArgumentException('El nuevo total no puede ser cero ni quedar por debajo de los pagos aplicados.');
+            }
+            DB::table('movimiento')->where('id', $line->id)->update(['precio' => round((float) $price, 2), 'descuento' => round((float) $discount, 2)]);
+            DB::table('documento')->where('id', $document->id)->update(['total' => $newTotal, 'saldo' => $newSaldo, 'pagado' => $newSaldo > 0 ? 0 : $document->pagado]);
+            DB::table('seguimiento')->insert(['id_documento' => $document->id, 'id_usuario' => $userId,
+                'seguimiento' => 'Partida ' . $line->id . ' editada antes del CFDI: precio ' . $line->precio . ' -> ' . round((float) $price, 2)
+                    . ', descuento ' . $line->descuento . ' -> ' . round((float) $discount, 2) . ', total ' . $oldTotal . ' -> ' . $newTotal . '.']);
+            return ['documento' => (int) $document->id, 'total' => $newTotal, 'saldo' => $newSaldo];
+        });
+    }
+
     public function createIndividual($documentId, $userId, array $overrides = [])
     {
         RefacturacionService::assertFiscalReady([(int) $documentId]);
@@ -182,6 +266,7 @@ class FacturacionService
         $externalReference = 'afa-' . (int) $documentId . '-v' . $attempt;
         $idempotencyKey = 'afa-individual-' . (int) $documentId . '-v' . $attempt;
         $payload = $this->builder->buildIndividual($documentId, $externalReference, $overrides);
+        $this->assertReviewHash($payload, $overrides);
         if ((int) $summary->id_tipo === 6) {
             try {
                 $payload = (new CreditNoteBalanceAllocator($this->client))->apply($documentId, $payload);
@@ -250,6 +335,7 @@ class FacturacionService
             $globalInformation,
             $overrides
         );
+        $this->assertReviewHash($payload, $overrides);
         $requestMode = $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS
             ? 'global_productos'
             : 'global_ventas';

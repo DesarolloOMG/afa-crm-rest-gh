@@ -67,6 +67,7 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
     fun open(section:Section) {
         if(state.value.busy)return
         if(state.value.user?.visible(section)!=true)return
+        if(section==Section.CANCELLATION){invoiceCancellation();return}
         push(Page(PageKind.LIST,section,section.title,defaultFilters(section)))
         work {
             val c=repo.catalog(section)
@@ -90,7 +91,7 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
             if(key=="precio.empresa")next.put("precio.precio",next.list("precios_empresa").find {it.s("id_empresa")==value.toString()}?.money("precio")?:BigDecimal.ZERO)
             if(key=="informacionGlobal.periodicity")next.put("informacionGlobal.months",if(value.toString()=="05")"13" else "01")
             if(p.section==Section.CUSTOMERS&&key=="regimen")next.put("fiscal",p.catalog.list("regimenes").find{it.s("codigo")==value.toString()}.objectOrEmpty().label("regimen","descripcion"))
-            p.copy(draft=next,dirty=true)
+            p.copy(draft=next,dirty=true,step=if(p.kind==PageKind.BILL&&p.step==1&&!key.startsWith("lineEdits."))0 else p.step)
         }
     }
     fun search(){work{loadResults()}}
@@ -235,7 +236,26 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
         val values=obj("series" to documents.first().s("billing_series"),"folio" to "","paymentMethod" to content.s("paymentMethod").ifBlank{"PUE"},"paymentForm" to content.s("paymentForm").ifBlank{"03"},"relationshipCode" to "03","agrupacion" to "ventas","informacionGlobal" to content.o("globalInformation").takeIf{it.size()>0}.let{it?:obj("periodicity" to "04","months" to java.time.LocalDate.now().monthValue.toString().padStart(2,'0'),"year" to java.time.LocalDate.now().year)})
         push(Page(PageKind.BILL,Section.BILLING,when(mode){"global"->"Factura global";"external"->"Registrar CFDI externo";else->"Timbrado individual"},catalog=current.catalog,data=preview.changed("document_type",current.filters.n("document_type")),draft=values,selected=documents,action=mode))
     }}
+    fun reviewBilling(){val p=current;work{
+        require(p.step!=1||!p.dirty){"Guarda los importes editados antes de actualizar la vista previa."}
+        val payload=p.draft.deepCopy()
+        validateBilling(payload,p.data,p.data.n("document_type")==6)
+        if(p.data.s("payload.content.receiver.rfc").uppercase()!="XAXX010101000"||p.data.n("document_type")==6)payload.remove("informacionGlobal")
+        payload.put("modo",p.action);payload.put("documentos",p.selected.map{it.n("id")})
+        val review=repo.post("venta/venta/facturacion/revisar",payload,Encoding.JSON).objectOrEmpty().o("data")
+        require(review.flag("valid")){review.at("blockers").arrayOrEmpty().joinToString{it.text()}.ifBlank{"No se pudo preparar la factura."}}
+        val edits=obj();review.list("editable_lines").forEach{line->edits.put("${line.s("id")}.precio",line.s("precio"));edits.put("${line.s("id")}.descuento",line.s("descuento"))}
+        page{it.copy(data=review.changed("document_type",p.data.n("document_type")),draft=it.draft.changed("lineEdits",edits),step=1,dirty=false)}
+    }}
+    fun saveBillingLine(line:JsonObject){val p=current;work(mutation=true){
+        val id=line.s("id");val price=p.draft.s("lineEdits.$id.precio");val discount=p.draft.s("lineEdits.$id.descuento")
+        repo.post("venta/venta/facturacion/pedido/${segment(line.s("id_documento"))}/partida/${segment(id)}",obj("precio" to price,"descuento" to discount),Encoding.JSON)
+        page{it.copy(step=0,data=p.data.changed("review_hash",""),dirty=false)}
+        mutable.update{it.copy(notice="Importe guardado en el pedido. Vuelve a revisar la factura.")}
+    }}
     fun sendBilling(){val p=current;try {
+        if(p.action!="external"&&p.step==0){reviewBilling();return}
+        require(p.action=="external"||!p.dirty){"Guarda los importes editados y vuelve a revisar la factura."}
         val payload=p.draft.deepCopy();payload.entrySet().filter{it.key.startsWith("_")}.map{it.key}.forEach(payload::remove)
         if(p.action=="external"){
             require(payload.s("pdf").isNotBlank()&&payload.s("xml").isNotBlank()){ "Adjunta el PDF y XML del CFDI." }
@@ -246,6 +266,8 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
             if(p.data.s("payload.content.receiver.rfc").uppercase()!="XAXX010101000"||p.data.n("document_type")==6)payload.remove("informacionGlobal")
         }
         payload.put("documentos",p.selected.map{it.n("id")})
+        if(p.action!="external")payload.put("review_hash",p.data.s("review_hash"))
+        payload.remove("lineEdits")
         confirm("Confirmar facturación","Documentos: ${p.selected.joinToString{it.s("id")}}. ${if(p.action=="external")"Se vincularán el UUID, XML y PDF seleccionados." else "Se enviará la solicitud con serie ${payload.s("series")} y folio ${payload.s("folio").ifBlank{"automático"}}."}"){work(mutation=true){
             val fresh=repo.post("venta/venta/facturacion/seleccion",obj("documentos" to p.selected.map{it.n("id")},"document_type" to p.data.n("document_type")),Encoding.JSON).objectOrEmpty().o("data").list("documents")
             require(fresh.size==p.selected.size&&fresh.none{it.flag("already_invoiced")||it.flag("request.is_active")||it.s("request.status")=="uncertain"}){ "La selección cambió o tiene una solicitud pendiente. Actualiza su estado antes de continuar." }
@@ -260,6 +282,31 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
         val c=repo.billing(f)
         push(Page(PageKind.LIST,Section.BILLING,"Facturación",filters=f,catalog=c,rows=c.list("documents"),loaded=true))
     }}
+    fun invoiceCancellation(){push(Page(PageKind.ACTION,Section.BILLING,"Cancelar factura Nexfira",action="invoice-cancel",
+        fields=listOf(Field("folio","Folio",required=true),Field("serie","Serie si se repite"),Field("motivo","Motivo SAT",FieldKind.SELECT,true,choices("02" to "02 · Sin relación","01" to "01 · Sustitución","03" to "03 · No se llevó a cabo","04" to "04 · Operación nominativa")),Field("uuid_sustitucion","UUID sustituto si motivo 01"),Field("auth_code","Código autenticador",FieldKind.PASSWORD,true)),
+        draft=obj("folio" to "","serie" to "","motivo" to "02","uuid_sustitucion" to "","auth_code" to "")))}
+    fun previewInvoiceCancellation(){val p=current;work{
+        require(p.draft.s("folio").isNotBlank()){ "Escribe el folio de la factura." }
+        val detail=repo.get("venta/venta/facturacion/cancelacion?folio=${segment(p.draft.s("folio"))}&serie=${segment(p.draft.s("serie"))}").objectOrEmpty().o("data")
+        page{it.copy(data=detail)}
+    }}
+    fun submitInvoiceCancellation(){val p=current;try{
+        require(p.data.s("factura.folio")==p.draft.s("folio") && (p.draft.s("serie").isBlank()||p.data.s("factura.serie")==p.draft.s("serie"))){"Primero consulta y revisa la factura."}
+        require(Regex("^[0-9]{6}$").matches(p.draft.s("auth_code"))){"Escribe los seis dígitos del autenticador."}
+        confirm("Cancelar factura","Se solicitará la cancelación de ${p.draft.s("serie")}-${p.draft.s("folio")}. Las ventas seguirán facturadas hasta la aprobación."){work(mutation=true){
+            val r=repo.post("venta/venta/facturacion/cancelacion",p.draft,Encoding.JSON)
+            val detail=repo.get("venta/venta/facturacion/cancelacion?folio=${segment(p.draft.s("folio"))}&serie=${segment(p.draft.s("serie"))}").objectOrEmpty().o("data")
+            page{it.copy(data=detail,draft=it.draft.changed("auth_code",""))};result(r)
+        }}
+    }catch(e:Exception){error(e.message?:"Revisa la factura.")}}
+    fun refreshInvoiceCancellation(){val p=current;work(mutation=true){
+        val r=repo.post("venta/venta/facturacion/cancelacion/actualizar",obj("folio" to p.draft.s("folio"),"serie" to p.draft.s("serie")),Encoding.JSON)
+        page{it.copy(data=r.objectOrEmpty().o("data"))};result(r)
+    }}
+    fun simulateInvoiceCancellation(){val p=current;confirm("Simular aprobación","Se liberarán las ventas de la factura ${p.draft.s("folio")} para volver a timbrar."){work(mutation=true){
+        val r=repo.post("developer/nexfira/cancelacion/simular",obj("folio" to p.draft.s("folio"),"serie" to p.draft.s("serie")),Encoding.JSON)
+        page{it.copy(data=r.objectOrEmpty().o("data"))};result(r)
+    }}}
     fun sale(id:String=""){work{
         val c=repo.catalog(Section.SALES)
         val draft=if(id.isBlank())newSale() else repo.loadSale(id)

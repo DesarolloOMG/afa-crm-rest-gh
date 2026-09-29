@@ -1,11 +1,31 @@
 <?php
 
 use App\Http\Services\Nexfira\InvoicePayloadBuilder;
+use App\Http\Services\Nexfira\FacturacionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class NexfiraInvoicePayloadBuilderTest extends TestCase
 {
+    public function testReviewHashRejectsChangedInvoiceButIgnoresGeneratedReferenceAndTime()
+    {
+        $reflection = new ReflectionClass(FacturacionService::class);
+        $service = $reflection->newInstanceWithoutConstructor();
+        $method = $reflection->getMethod('reviewHash');
+        $method->setAccessible(true);
+        $payload = ['externalReference' => 'review-1', 'content' => [
+            'issuedAtLocal' => '2026-09-29T10:00:00', 'receiver' => ['rfc' => 'XAXX010101000'],
+            'items' => [['unitPrice' => '100.00']],
+        ]];
+        $hash = $method->invoke($service, $payload, ['series' => 'FML', 'folio' => '40012']);
+        $payload['externalReference'] = 'afa-1-v2';
+        $payload['content']['issuedAtLocal'] = '2026-09-29T10:01:00';
+        $this->assertSame($hash, $method->invoke($service, $payload, ['series' => 'FML', 'folio' => '40012']));
+        $payload['content']['items'][0]['unitPrice'] = '101.00';
+        $this->assertNotSame($hash, $method->invoke($service, $payload, ['series' => 'FML', 'folio' => '40012']));
+        $payload['content']['items'][0]['unitPrice'] = '100.00';
+        $this->assertNotSame($hash, $method->invoke($service, $payload, ['series' => 'FML', 'folio' => '40013']));
+    }
     public function setUp()
     {
         parent::setUp();

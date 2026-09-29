@@ -113,12 +113,41 @@ class FacturacionController extends Controller
         });
     }
 
+    public function revisar(Request $request): JsonResponse
+    {
+        return $this->handle(function () use ($request) {
+            $this->authorizedUserId($request);
+            $data = $this->payload($request);
+            $overrides = $this->invoiceOverrides($data);
+            if (isset($data['informacionGlobal'])) {
+                if (!is_array($data['informacionGlobal'])) { throw new InvalidArgumentException('La información global debe ser un objeto.'); }
+                $overrides['globalInformation'] = $data['informacionGlobal'];
+            }
+            $ids = isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [];
+            $review = ($data['modo'] ?? '') === 'global'
+                ? $this->service->reviewGlobal($ids, $data['agrupacion'] ?? 'ventas', $data['informacionGlobal'] ?? [], $overrides)
+                : $this->service->reviewIndividual((int) ($ids[0] ?? 0), $overrides);
+            return ['code' => 200, 'data' => $review];
+        });
+    }
+
+    public function editarImporte(Request $request, $documento, $partida): JsonResponse
+    {
+        return $this->handle(function () use ($request, $documento, $partida) {
+            $userId = $this->authorizedUserId($request);
+            $data = $this->payload($request);
+            return ['code' => 200, 'data' => $this->service->updateDraftLine((int) $documento, (int) $partida,
+                $data['precio'] ?? null, $data['descuento'] ?? null, $userId)];
+        });
+    }
+
     public function individual(Request $request, $documento): JsonResponse
     {
         return $this->handle(function () use ($request, $documento) {
             $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
             $overrides = $this->invoiceOverrides($data);
+            if (isset($data['review_hash'])) { $overrides['reviewHash'] = $data['review_hash']; }
             if (array_key_exists('informacionGlobal', $data)) {
                 if (!is_array($data['informacionGlobal'])) {
                     throw new InvalidArgumentException('La información global debe ser un objeto con periodicidad, mes y año.');
@@ -146,6 +175,8 @@ class FacturacionController extends Controller
         return $this->handle(function () use ($request) {
             $userId = $this->authorizedUserId($request);
             $data = $this->payload($request);
+            $overrides = $this->invoiceOverrides($data);
+            if (isset($data['review_hash'])) { $overrides['reviewHash'] = $data['review_hash']; }
             $result = $this->service->createGlobal(
                 isset($data['documentos']) && is_array($data['documentos']) ? $data['documentos'] : [],
                 $userId,
@@ -153,7 +184,7 @@ class FacturacionController extends Controller
                 isset($data['informacionGlobal']) && is_array($data['informacionGlobal'])
                     ? $data['informacionGlobal']
                     : [],
-                $this->invoiceOverrides($data)
+                $overrides
             );
 
             return [

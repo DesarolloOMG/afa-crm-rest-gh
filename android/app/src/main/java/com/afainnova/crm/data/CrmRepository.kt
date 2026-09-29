@@ -49,7 +49,7 @@ class CrmRepository(val transport: Transport, val sessions: Sessions) {
                 if(value.isJsonObject)value.asJsonObject.changed("_sku",sku) else obj("codigo" to sku,"existencias" to value)
             }
         }
-        Section.BILLING -> emptyList()
+        Section.BILLING,Section.CANCELLATION -> emptyList()
     }
     suspend fun tickets(state: String): List<JsonObject> = post("ticket/informacion-por-estado",obj("data" to state),Encoding.FIELDS).objects()
     suspend fun save(section: Section, data: JsonObject): JsonElement = when(section) {
