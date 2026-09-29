@@ -1208,6 +1208,9 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
     });
 
     $router->group(['prefix' => 'developer'], function () use ($router) {
+        $router->get('conciliar/{kind}/buscar', 'DeveloperMergeController@search');
+        $router->post('conciliar/{kind}/revisar', 'DeveloperMergeController@inspect');
+        $router->post('conciliar/{kind}/aplicar', 'DeveloperMergeController@merge');
         $router->post('nexfira/cancelacion/simular', 'DeveloperNexfiraController@simulateCancellation');
         $router->get('nexfira/{documento}', 'DeveloperNexfiraController@inspect');
         $router->post('nexfira/{documento}/liberar', 'DeveloperNexfiraController@reset');

@@ -10,7 +10,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import java.math.BigDecimal
 
-enum class PageKind { HOME, LIST, DETAIL, FORM, SALE, BILL, ACTION, LOOKUP, INFO }
+enum class PageKind { HOME, LIST, DETAIL, FORM, SALE, BILL, ACTION, LOOKUP, INFO, MERGE }
 data class Page(val kind:PageKind=PageKind.HOME,val section:Section=Section.DOCUMENTS,val title:String="",val filters:JsonObject=obj(),val catalog:JsonObject=obj(),val rows:List<JsonObject> = emptyList(),val data:JsonObject=obj(),val draft:JsonObject=obj(),val fields:List<Field> = emptyList(),val action:String="",val step:Int=0,val selected:List<JsonObject> = emptyList(),val dirty:Boolean=false,val loaded:Boolean=false)
 data class Confirmation(val title:String,val message:String)
 data class UiState(val user:User?=null,val page:Page=Page(),val busy:Boolean=false,val saving:Boolean=false,val error:String?=null,val notice:String?=null,val confirmation:Confirmation?=null,val mfa:JsonObject=obj(),val unlocked:Boolean=false)
@@ -68,6 +68,7 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
         if(state.value.busy)return
         if(state.value.user?.visible(section)!=true)return
         if(section==Section.CANCELLATION){invoiceCancellation();return}
+        if(section==Section.DEV){push(Page(PageKind.INFO,Section.DEV,section.title,action="dev-home"));return}
         push(Page(PageKind.LIST,section,section.title,defaultFilters(section)))
         work {
             val c=repo.catalog(section)
@@ -75,8 +76,69 @@ class CrmViewModel(val repo:CrmRepository):ViewModel() {
             if(section in setOf(Section.USERS,Section.MARKETPLACES,Section.WAREHOUSES,Section.TICKETS,Section.SALES,Section.BILLING))loadResults()
         }
     }
+    fun openMerge(kind:String) {
+        if(state.value.user?.permission(6,1)!=true)return
+        push(Page(PageKind.MERGE,Section.DEV,if(kind=="entidades")"Conciliar entidades" else "Conciliar productos",
+            draft=obj("kind" to kind,"keepQuery" to "","removeQuery" to "","keepId" to 0,"removeId" to 0,"confirmation" to "")))
+    }
+    fun mergeSearch(slot:String){val p=current;val kind=p.draft.s("kind");val query=p.draft.s("${slot}Query").trim()
+        if(query.length<2){error("Escribe al menos dos caracteres para buscar.");return}
+        work{val rows=repo.get("developer/conciliar/$kind/buscar?query=${segment(query)}").objectOrEmpty().list("data")
+            page{it.copy(catalog=it.catalog.changed("${slot}Results",rows),data=obj(),fields=emptyList(),draft=it.draft.changed("confirmation",""))}
+        }
+    }
+    fun mergeSelect(slot:String,id:Int){page{it.copy(draft=it.draft.changed("${slot}Id",id).changed("confirmation",""),data=obj(),fields=emptyList())}}
+    fun mergeInspect(){val p=current;val keep=p.draft.n("keepId");val remove=p.draft.n("removeId")
+        if(keep<1||remove<1||keep==remove){error("Selecciona dos registros diferentes.");return}
+        work{val review=repo.post("developer/conciliar/${p.draft.s("kind")}/revisar",obj("keep_id" to keep,"remove_id" to remove),Encoding.JSON).objectOrEmpty().o("data")
+            val labels=mapOf("razon_social" to "Razón social","rfc" to "RFC","descripcion" to "Descripción","sku" to "SKU","telefono" to "Teléfono","correo" to "Correo","codigo_postal_fiscal" to "Código postal fiscal","info_extra" to "Información adicional JSON")
+            val fields=review.at("fields").arrayOrEmpty().map { it.text() }.filter(String::isNotBlank).map {Field("edit.$it",labels[it]?:it,if(it=="info_extra"||it=="descripcion")FieldKind.LONG else FieldKind.TEXT) }
+            val draft=p.draft.deepCopy();review.o("keep").entrySet().forEach{(key,value)->if(review.at("fields").arrayOrEmpty().any{it.text()==key})draft.put("edit.$key",value.text())}
+            page{it.copy(data=review,fields=fields,draft=draft)}
+        }
+    }
+    fun mergeApply(){val p=current;val review=p.data
+        if(review.s("confirmation_token").isBlank()){error("Revisa primero los registros.");return}
+        if(review.list("blockers").isNotEmpty()){error("Hay conflictos pendientes en la revisión.");return}
+        val remove=review.n("remove.id")
+        if(p.draft.s("confirmation")!="CONCILIAR $remove"){error("Escribe CONCILIAR $remove para confirmar.");return}
+        confirm("Conciliar ${p.draft.s("kind")}","Se conservará #${review.n("keep.id")} y se eliminará #$remove después de mover sus referencias."){
+            work(mutation=true){val edited=obj();p.fields.forEach{field->edited.put(field.key.removePrefix("edit."),p.draft.s(field.key))}
+                val response=repo.post("developer/conciliar/${p.draft.s("kind")}/aplicar",obj("keep_id" to review.n("keep.id"),"remove_id" to remove,
+                    "confirmation_token" to review.s("confirmation_token"),"confirmation_text" to p.draft.s("confirmation"),"fields" to edited),Encoding.JSON)
+                pop();result(response.objectOrEmpty().o("data"))
+            }
+        }
+    }
+    fun devNexfira(){action("Liberar intento Nexfira","dev-nexfira",listOf(Field("documento","ID del documento",FieldKind.NUMBER,true),
+        Field("reason","Motivo (mínimo 10 caracteres)",FieldKind.LONG,true)),obj("documento" to "","reason" to "","confirmation" to ""))}
+    fun inspectDevNexfira(){val id=current.draft.n("documento");if(id<1){error("Escribe el ID del documento.");return}
+        work{val review=repo.get("developer/nexfira/$id").objectOrEmpty().o("data");page{it.copy(data=review,draft=it.draft.changed("confirmation",""))}}
+    }
+    fun resetDevNexfira(){val p=current;val review=p.data;val id=p.draft.n("documento")
+        val automatic=review.flag("can_reset")
+        val manual=review.flag("can_manual_reset")&&p.draft.flag("rejected_confirmed")&&p.draft.flag("duplicate_risk_accepted")
+            &&p.draft.s("manual_confirmation")=="LIBERAR $id"
+        if(!automatic&&!manual){error("Revisa los bloqueos y completa las confirmaciones requeridas.");return}
+        if(p.draft.s("reason").trim().length<10||p.draft.s("confirmation")!="LIBERAR $id"){error("Escribe un motivo y LIBERAR $id para confirmar.");return}
+        confirm("Liberar intento","Se archivará el intento local #${review.s("request_id")}. Revisa los documentos vinculados."){
+            work(mutation=true){val payload=obj("request_id" to review.n("request_id"),
+                "confirmation_token" to review.s("confirmation_token"),"reason" to p.draft.s("reason"))
+                if(!automatic&&manual)payload.put("manual_confirmation",obj("rejected_confirmed" to true,
+                    "duplicate_risk_accepted" to true,"document_confirmation" to p.draft.s("manual_confirmation")))
+                val response=repo.post("developer/nexfira/$id/liberar",payload,Encoding.JSON)
+                pop();result(response.objectOrEmpty().o("data"))
+            }
+        }
+    }
     fun filter(key:String,value:Any?){page{it.copy(filters=it.filters.changed(key,value),selected=if(key in setOf("fulfillment","document_type"))emptyList() else it.selected)}}
     fun change(key:String,value:Any?) {
+        if(current.kind==PageKind.MERGE&&key in setOf("keepQuery","removeQuery")){
+            val slot=key.removeSuffix("Query")
+            page{it.copy(draft=it.draft.changed(key,value).changed("${slot}Id",0).changed("confirmation",""),
+                data=obj(),fields=emptyList(),catalog=it.catalog.changed("${slot}Results",emptyList<Any>()))}
+            return
+        }
         page { p->
             val next=p.draft.changed(key,value)
             if(p.kind==PageKind.SALE)when(key){

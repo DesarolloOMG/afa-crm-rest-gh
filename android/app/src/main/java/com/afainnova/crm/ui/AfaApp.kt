@@ -55,9 +55,9 @@ import com.google.zxing.MultiFormatWriter
         bottomBar={if(state.user!=null)when(p.kind){
             PageKind.FORM,PageKind.ACTION,PageKind.BILL->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
                 OutlinedButton(vm::back,Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text("Cancelar")}
-                Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->if(p.action=="invoice-cancel")vm.submitInvoiceCancellation() else vm.saveAction()}},Modifier.weight(1.6f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp),colors=ButtonDefaults.buttonColors(containerColor=if(p.action=="cancel-sale"||p.action=="invoice-cancel")MaterialTheme.colorScheme.error else Blue),enabled=!state.busy&&(p.action!="invoice-cancel"||p.data.s("factura.status")=="stamped")){
+                Button(onClick={when(p.kind){PageKind.FORM->vm.saveEntity();PageKind.BILL->vm.sendBilling();else->if(p.action=="invoice-cancel")vm.submitInvoiceCancellation() else if(p.action=="dev-nexfira")vm.resetDevNexfira() else vm.saveAction()}},Modifier.weight(1.6f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=12.dp,vertical=12.dp),colors=ButtonDefaults.buttonColors(containerColor=if(p.action=="cancel-sale"||p.action=="invoice-cancel")MaterialTheme.colorScheme.error else Blue),enabled=!state.busy&&(p.action!="invoice-cancel"||p.data.s("factura.status")=="stamped")&&(p.action!="dev-nexfira"||p.data.flag("can_reset")||p.data.flag("can_manual_reset"))){
                     Icon(if(p.kind==PageKind.BILL)Icons.Rounded.ReceiptLong else if(p.action=="cancel-sale")Icons.Rounded.DeleteOutline else Icons.Rounded.Check,null,Modifier.size(19.dp));Spacer(Modifier.width(8.dp))
-                    Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else if(p.step==0)"Ver factura" else "Enviar a Nexfira" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";"invoice-cancel"->"Solicitar cancelación";else->"Guardar"}else "Guardar")
+                    Text(if(p.kind==PageKind.BILL)if(p.action=="external")"Registrar CFDI" else if(p.step==0)"Ver factura" else "Enviar a Nexfira" else if(p.kind==PageKind.ACTION)when(p.action){"kardex"->"Consultar";"print-series"->"Imprimir";"line"->"Aplicar";"provider"->"Vincular";"unlock-marketplace"->"Validar";"cancel-sale"->"Eliminar";"invoice-cancel"->"Solicitar cancelación";"dev-nexfira"->"Liberar intento";else->"Guardar"}else "Guardar")
                 }
             }}
             PageKind.SALE->Surface(shadowElevation=8.dp,color=Color.White){Row(Modifier.navigationBarsPadding().imePadding().padding(16.dp).fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){OutlinedButton(onClick={if(p.step==0)vm.back() else vm.saleStep(p.step-1)},Modifier.weight(1f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==0)"Cancelar" else "Anterior")};Button(onClick={if(p.step==5)vm.saveSale() else vm.saleStep(p.step+1)},Modifier.weight(1.3f).heightIn(min=54.dp),shape=MaterialTheme.shapes.medium,contentPadding=PaddingValues(horizontal=10.dp,vertical=12.dp),enabled=!state.busy){Text(if(p.step==5)"Guardar venta" else "Continuar");Spacer(Modifier.width(8.dp));Icon(if(p.step==5)Icons.Rounded.Check else Icons.AutoMirrored.Rounded.ArrowForward,null,Modifier.size(18.dp))}}}
@@ -75,6 +75,7 @@ import com.google.zxing.MultiFormatWriter
             PageKind.BILL->BillingForm(state,vm,onFile)
             PageKind.LOOKUP->Lookup(state,vm)
             PageKind.INFO->InfoScreen(state,vm)
+            PageKind.MERGE->MergeScreen(state,vm)
         }}
     }}
     state.error?.let{AlertDialog(onDismissRequest=vm::clearError,title={Text("Revisa la operación")},text={Text(plain(it))},confirmButton={TextButton(vm::clearError){Text("Entendido")}})}
@@ -103,9 +104,9 @@ import com.google.zxing.MultiFormatWriter
     }
 }
 
-fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Icons.Rounded.Description;Section.TICKETS->Icons.Rounded.SupportAgent;Section.SERIES->Icons.Rounded.QrCode;Section.STOCK->Icons.Rounded.Inventory2;Section.PRODUCTS->Icons.Rounded.Category;Section.CUSTOMERS->Icons.Rounded.People;Section.SUPPLIERS->Icons.Rounded.LocalShipping;Section.SALES->Icons.Rounded.ShoppingBag;Section.BILLING->Icons.Rounded.ReceiptLong;Section.CANCELLATION->Icons.Rounded.Cancel;Section.USERS->Icons.Rounded.ManageAccounts;Section.MARKETPLACES->Icons.Rounded.Storefront;Section.WAREHOUSES->Icons.Rounded.Warehouse}
+fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Icons.Rounded.Description;Section.TICKETS->Icons.Rounded.SupportAgent;Section.SERIES->Icons.Rounded.QrCode;Section.STOCK->Icons.Rounded.Inventory2;Section.PRODUCTS->Icons.Rounded.Category;Section.CUSTOMERS->Icons.Rounded.People;Section.SUPPLIERS->Icons.Rounded.LocalShipping;Section.SALES->Icons.Rounded.ShoppingBag;Section.BILLING->Icons.Rounded.ReceiptLong;Section.CANCELLATION->Icons.Rounded.Cancel;Section.USERS->Icons.Rounded.ManageAccounts;Section.MARKETPLACES->Icons.Rounded.Storefront;Section.WAREHOUSES->Icons.Rounded.Warehouse;Section.DEV->Icons.Rounded.Build}
 @Composable private fun Home(user:User,vm:CrmViewModel){
-    val groups=listOf("Tu operación" to listOf(Section.DOCUMENTS,Section.SALES,Section.TICKETS,Section.BILLING,Section.CANCELLATION),"Inventario y catálogo" to listOf(Section.SERIES,Section.STOCK,Section.PRODUCTS,Section.WAREHOUSES),"Personas y configuración" to listOf(Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES))
+    val groups=listOf("Tu operación" to listOf(Section.DOCUMENTS,Section.SALES,Section.TICKETS,Section.BILLING,Section.CANCELLATION),"Inventario y catálogo" to listOf(Section.SERIES,Section.STOCK,Section.PRODUCTS,Section.WAREHOUSES),"Personas y configuración" to listOf(Section.CUSTOMERS,Section.SUPPLIERS,Section.USERS,Section.MARKETPLACES,Section.DEV))
     LazyVerticalGrid(GridCells.Adaptive(155.dp),Modifier.fillMaxSize(),contentPadding=PaddingValues(18.dp),horizontalArrangement=Arrangement.spacedBy(12.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
         item(span={GridItemSpan(maxLineSpan)}){
             Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Ink,Color(0xFF294F83))),RoundedCornerShape(22.dp))){
@@ -262,6 +263,19 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
                     if(state.user?.permission(6,1)==true&&p.data.s("cancelacion.status")=="pending_approval")ActionButton("DEV · Simular aprobación",Icons.Rounded.Check,!state.busy,vm::simulateInvoiceCancellation)}
             }
         }
+        if(p.action=="dev-nexfira"){
+            ActionButton("Revisar intento",Icons.Rounded.Search,!state.busy,vm::inspectDevNexfira)
+            if(p.data.has("request_id")){
+                DetailGroup("Intento local",true){DataDetails(p.data)}
+                if(p.data.flag("can_manual_reset")){
+                    Notice("Nexfira aún no confirma el rechazo. Un nuevo envío podría duplicar la factura.")
+                    FormField(Field("rejected_confirmed","Nexfira confirmó que el intento fue rechazado",FieldKind.BOOL),p.draft,vm::change)
+                    FormField(Field("duplicate_risk_accepted","Acepto el riesgo de duplicidad",FieldKind.BOOL),p.draft,vm::change)
+                    FormField(Field("manual_confirmation","Escribe LIBERAR ${p.draft.s("documento")}"),p.draft,vm::change)
+                } else if(!p.data.flag("can_reset"))Notice("Este intento no puede liberarse. Revisa sus bloqueos y el estado en Nexfira.")
+                if(p.data.flag("can_reset")||p.data.flag("can_manual_reset"))FormField(Field("confirmation","Escribe LIBERAR ${p.draft.s("documento")}"),p.draft,vm::change)
+            }
+        }
         if(p.action=="cancel-sale")ActionButton("Solicitar autorización",Icons.Rounded.Lock,!state.busy,vm::prepareCancel)
         if(p.action=="provider")ActionButton("Buscar productos del proveedor",Icons.Rounded.Search,!state.busy,vm::searchProvider)
         if(p.action=="followup"){LocalAttachments(p.draft,"archivos",vm);ActionButton("Adjuntar archivo",Icons.Rounded.AttachFile,!state.busy){onFile("")}}
@@ -356,9 +370,16 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
 }
 @Composable private fun InfoScreen(state:UiState,vm:CrmViewModel){val p=state.page
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)){
+        if(p.action=="dev-home"){
+            PageIntro("Herramientas Dev","Acciones para administradores",Icons.Rounded.Build)
+            ActionButton("Conciliar entidades",Icons.Rounded.People,!state.busy){vm.openMerge("entidades")}
+            ActionButton("Conciliar productos",Icons.Rounded.Category,!state.busy){vm.openMerge("productos")}
+            ActionButton("Liberar intento Nexfira",Icons.Rounded.LockOpen,!state.busy,vm::devNexfira)
+            ActionButton("Simular aprobación Nexfira",Icons.Rounded.CheckCircle,!state.busy,vm::invoiceCancellation)
+        }
         if(p.action=="import-marketplace")p.data.list("venta").forEach{order->DetailGroup("Venta ${order.s("id")}",true){DataDetails(order);ActionButton("Usar esta venta",Icons.Rounded.Check,!state.busy){vm.importMarketplace(order)}}}
         if(p.action=="shipping-quotes"){if(p.rows.isEmpty())EmptyState("Sin cotizaciones","No hay servicios disponibles para este envío.");p.rows.forEach{rate->OutlinedCard(onClick={vm.chooseShipping(rate)},Modifier.fillMaxWidth().padding(vertical=6.dp)){Column(Modifier.padding(16.dp)){Text(rate.s("paqueteria"),style=MaterialTheme.typography.titleMedium);DataDetails(rate);Text("Seleccionar servicio",color=Teal)}}}}
-        if(p.action!="import-marketplace")DataDetails(p.data)
+        if(p.action!="import-marketplace"&&p.action!="dev-home")DataDetails(p.data)
         if(p.data.s("request.id").isNotBlank())ActionButton("Actualizar estado de timbrado",Icons.Rounded.Refresh,!state.busy){vm.syncRequest(p.data.s("request.id"))}
         val refact=if(p.data.has("resultado"))p.data.o("resultado")else p.data
         if(state.user?.permission(11,36)==true){
@@ -366,6 +387,40 @@ fun sectionIcon(section:Section):ImageVector=when(section){Section.DOCUMENTS->Ic
             if(refact.n("documento_nuevo")>0)ActionButton("Facturación del nuevo pedido #${refact.s("documento_nuevo")}",enabled=!state.busy){vm.billingChild(refact.s("documento_nuevo"),2)}
         }
         if(p.action=="recalc")ActionButton("Aplicar costo calculado",Icons.Rounded.Check,!state.busy){vm.recalcCost(true)}
+    }
+}
+@Composable private fun MergeScreen(state:UiState,vm:CrmViewModel){val p=state.page;val draft=p.draft;val review=p.data
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).imePadding().padding(16.dp)){
+        Notice("Selecciona el registro que se conserva y el duplicado que se elimina. Revisa sus referencias antes de aplicar.")
+        listOf("keep" to "Se conserva","remove" to "Se elimina").forEach{(slot,label)->
+            SectionLabel(label)
+            FormField(Field("${slot}Query","ID, nombre, RFC o SKU"),draft,vm::change)
+            ActionButton("Buscar $label",Icons.Rounded.Search,!state.busy){vm.mergeSearch(slot)}
+            p.catalog.list("${slot}Results").forEach{row->
+                val selected=draft.n("${slot}Id")==row.n("id")
+                OutlinedCard(onClick={vm.mergeSelect(slot,row.n("id"))},Modifier.fillMaxWidth().padding(vertical=5.dp),
+                    border=BorderStroke(if(selected)2.dp else 1.dp,if(selected)Blue else Line)){
+                    Column(Modifier.padding(14.dp)){Text("#${row.s("id")} · ${row.label("razon_social","descripcion")}",style=MaterialTheme.typography.titleSmall)
+                        Text(row.label("rfc","sku"),color=Muted)}
+                }
+            }
+        }
+        ActionButton("Revisar referencias",Icons.Rounded.FactCheck,!state.busy,vm::mergeInspect)
+        if(review.has("confirmation_token")){
+            SectionLabel("Conservar #${review.s("keep.id")} · eliminar #${review.s("remove.id")}")
+            if(draft.s("kind")=="entidades")Notice("El registro final será cliente y proveedor.")
+            else Notice("Se reasignarán movimientos y series al modelo conservado. Los SKU anteriores quedarán como sinónimos.")
+            review.list("blockers").forEach{Notice(it.text())}
+            review.list("warnings").forEach{Notice(it.text())}
+            DetailGroup("Referencias del duplicado",true){review.list("references").filter{it.n("count")>0}.forEach{ref->Text("${ref.s("table")}.${ref.s("column")}: ${ref.s("count")}")}}
+            SectionLabel("Datos finales")
+            FormFields(p.fields,draft,vm::change)
+            if(review.list("blockers").isEmpty()){
+                Notice("Escribe CONCILIAR ${review.s("remove.id")} para confirmar la eliminación del duplicado.")
+                FormField(Field("confirmation","Confirmación"),draft,vm::change)
+                ActionButton("Aplicar conciliación",Icons.Rounded.Check,!state.busy,vm::mergeApply)
+            }
+        }
     }
 }
 @Composable fun AttachmentList(files:List<JsonObject>,vm:CrmViewModel,canDelete:Boolean=false){if(files.isNotEmpty()){SectionLabel("Archivos");files.forEach{file->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){TextButton({vm.openAttachment(file)},Modifier.weight(1f)){Icon(Icons.Rounded.AttachFile,null);Text(file.label("nombre","archivo","tipo"),Modifier.padding(start=8.dp))};if(canDelete)IconButton({vm.removeAttachment(file)}){Icon(Icons.Rounded.DeleteOutline,"Eliminar archivo")}}}}}
