@@ -44,8 +44,8 @@ class CreditNoteContext
         }
         if ($requireHub && (!$request || !$request->remote_request_id
             || ($payload['kind'] ?? null) !== 'CFDI_I' || empty($payload['content']['receiver']))) {
-            throw new InvalidArgumentException('Nexfira sólo acepta NC sobre una factura origen timbrada en el Hub. La venta '
-                . $source->id . ' no tiene ese antecedente; usa Fuera del Hub para una NC emitida externamente.');
+            throw new InvalidArgumentException('Esta opción del CRM requiere que la factura origen tenga una solicitud timbrada en Nexfira. La venta '
+                . $source->id . ' tiene un CFDI externo: Nexfira permite importarlo desde su portal para preparar una NC, pero esa importación no figura en el contrato publicado para el token de integración del CRM.');
         }
         if ($requireHub && ($payload['content']['currency'] ?? null) !== $source->currency) {
             throw new InvalidArgumentException('La moneda de la factura origen no coincide con la NC.');
