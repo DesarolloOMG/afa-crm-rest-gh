@@ -187,7 +187,8 @@ class FacturacionExternalFlowTest extends TestCase
         DB::table('documento')->where('id', $sale)->update(['uuid' => '123E4567-E89B-42D3-A456-426614174000']);
         $preview = $this->creditNoteService()->preview($note);
         $this->assertFalse($preview['valid']);
-        $this->assertStringContainsString('Fuera del Hub', $preview['blockers'][0]);
+        $this->assertStringContainsString('tiene un CFDI externo', $preview['blockers'][0]);
+        $this->assertStringContainsString('token de integración del CRM', $preview['blockers'][0]);
         $this->storeCreditNoteAntecedent($sale);
         try {
             $this->creditNoteService()->createIndividual($note, 9, ['paymentMethod' => 'PPD']);

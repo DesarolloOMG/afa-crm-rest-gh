@@ -73,18 +73,21 @@ class InvoicePayloadBuilder
 
         // Agrupar partidas no cambia al cliente: manda documento_entidad en ambos modos.
         $receiver = $this->sharedReceiver($documents);
+        $moneyScale = $receiver['rfc'] === 'MLG100224TC1' ? 2 : 6;
         if ($grouping === self::GLOBAL_GROUP_PRODUCTS) {
             $items = [];
             foreach ($documents as $document) {
-                $documentItems = $this->buildProductItems($document, true);
-                $this->assertStoredTotal($document, $this->totalsFromItems($documentItems)['total']);
+                // Validar el pedido original antes de recalcular los centavos del CFDI.
+                $movements = $this->movements($document->id);
+                $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
+                $documentItems = $this->buildProductItems($document, true, $moneyScale, $movements);
                 $items = array_merge($items, $documentItems);
             }
         } else {
-            $items = $this->buildGlobalSaleItems($documents);
+            $items = $this->buildGlobalSaleItems($documents, $moneyScale);
         }
 
-        $totals = $this->totalsFromItems($items);
+        $totals = $this->totalsFromItems($items, $moneyScale === 2);
         $first = $documents[0];
 
         $content = [
@@ -349,34 +352,38 @@ class InvoicePayloadBuilder
         }
     }
 
-    private function buildGlobalSaleItems(array $documents)
+    private function buildGlobalSaleItems(array $documents, $moneyScale = 6)
     {
         $items = [];
         foreach ($documents as $document) {
-            $totals = $this->calculateDocumentTotals($document);
+            $movements = $this->movements($document->id);
+            $totals = $this->calculateDocumentTotals($document, 6, $movements);
             $this->assertStoredTotal($document, $totals['total']);
+            if ($moneyScale === 2) {
+                $totals = $this->calculateDocumentTotals($document, $moneyScale, $movements);
+            }
 
-            $base = round((float) $totals['subtotal'] - (float) $totals['discount'], 6);
-            $tax = round($base * $this->taxRate(), 6);
+            $base = round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
+            $tax = round($base * $this->taxRate(), $moneyScale);
             $items[] = [
                 'lineId' => (string) $document->id,
                 'productCode' => (string) config('nexfira.global.product_code', '01010101'),
                 'unitCode' => (string) config('nexfira.global.unit_code', 'ACT'),
                 'description' => 'Venta',
                 'quantity' => '1',
-                'unitPrice' => $this->decimal($base, 6, true),
+                'unitPrice' => $this->decimal($base, $moneyScale, $moneyScale !== 2),
                 'discount' => '0.00',
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($base, $tax)],
+                'taxes' => [$this->transferTax($base, $tax, $moneyScale)],
             ];
         }
 
         return $items;
     }
 
-    private function buildProductItems($document, $includeDocumentInLineId = false)
+    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 6, $movements = null)
     {
-        $movements = $this->movements($document->id);
+        $movements = $movements ?? $this->movements($document->id);
         $items = [];
         foreach ($movements as $movement) {
             if ((int) $movement->retencion === 1) {
@@ -392,7 +399,7 @@ class InvoicePayloadBuilder
                 throw new InvalidArgumentException('La partida ' . $movement->id . ' no tiene descripción de producto.');
             }
 
-            $amounts = $this->movementAmounts($movement);
+            $amounts = $this->movementAmounts($movement, $moneyScale);
             $lineId = $includeDocumentInLineId
                 ? 'pedido-' . $document->id . '-partida-' . $movement->id
                 : 'movimiento-' . $movement->id;
@@ -403,10 +410,10 @@ class InvoicePayloadBuilder
                 'unitCode' => trim((string) $movement->clave_unidad),
                 'description' => mb_substr(trim((string) $movement->descripcion), 0, 1000, 'UTF-8'),
                 'quantity' => $this->decimal($amounts['quantity'], 6, true),
-                'unitPrice' => $this->decimal($amounts['unitPrice'], 6, true),
-                'discount' => $this->itemDiscount($amounts['discount']),
+                'unitPrice' => $this->decimal($amounts['unitPrice'], $moneyScale, $moneyScale !== 2),
+                'discount' => $this->itemDiscount($amounts['discount'], $moneyScale),
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'])],
+                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'], $moneyScale)],
             ];
         }
 
@@ -432,26 +439,26 @@ class InvoicePayloadBuilder
         return $movements;
     }
 
-    private function calculateDocumentTotals($document)
+    private function calculateDocumentTotals($document, $moneyScale = 6, $movements = null)
     {
         $items = [];
-        foreach ($this->movements($document->id) as $movement) {
+        foreach ($movements ?? $this->movements($document->id) as $movement) {
             if ((int) $movement->retencion === 1) {
                 throw new InvalidArgumentException('La venta ' . $document->id . ' tiene retenciones sin mapeo definido para Nexfira.');
             }
-            $amounts = $this->movementAmounts($movement);
+            $amounts = $this->movementAmounts($movement, $moneyScale);
             $items[] = [
                 'quantity' => $this->decimal($amounts['quantity'], 6, true),
-                'unitPrice' => $this->decimal($amounts['unitPrice'], 6, true),
-                'discount' => $this->itemDiscount($amounts['discount']),
-                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'])],
+                'unitPrice' => $this->decimal($amounts['unitPrice'], $moneyScale, $moneyScale !== 2),
+                'discount' => $this->itemDiscount($amounts['discount'], $moneyScale),
+                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'], $moneyScale)],
             ];
         }
 
-        return $this->totalsFromItems($items);
+        return $this->totalsFromItems($items, $moneyScale === 2);
     }
 
-    private function movementAmounts($movement)
+    private function movementAmounts($movement, $moneyScale = 6)
     {
         $quantity = (float) $movement->cantidad;
         $grossUnitPrice = (float) $movement->precio;
@@ -459,11 +466,15 @@ class InvoicePayloadBuilder
         if ($quantity <= 0 || $grossUnitPrice < 0 || $grossDiscount < 0) {
             throw new InvalidArgumentException('La partida ' . $movement->id . ' tiene cantidades o importes inválidos.');
         }
+        if ($moneyScale === 2) {
+            $grossUnitPrice = round($grossUnitPrice, 2);
+            $grossDiscount = round($grossDiscount, 2);
+        }
 
         $divisor = 1 + $this->taxRate();
-        $unitPrice = round($grossUnitPrice / $divisor, 6);
-        $discount = round($grossDiscount / $divisor, 6);
-        $base = round(($quantity * $unitPrice) - $discount, 6);
+        $unitPrice = round($grossUnitPrice / $divisor, $moneyScale);
+        $discount = round($grossDiscount / $divisor, $moneyScale);
+        $base = round(($quantity * $unitPrice) - $discount, $moneyScale);
         if ($base < 0) {
             throw new InvalidArgumentException('El descuento de la partida ' . $movement->id . ' excede su importe.');
         }
@@ -473,17 +484,18 @@ class InvoicePayloadBuilder
             'unitPrice' => $unitPrice,
             'discount' => $discount,
             'base' => $base,
-            'tax' => round($base * $this->taxRate(), 6),
+            'tax' => round($base * $this->taxRate(), $moneyScale),
         ];
     }
 
-    private function totalsFromItems(array $items)
+    private function totalsFromItems(array $items, $roundLineAmounts = false)
     {
         $subtotal = 0.0;
         $discount = 0.0;
         $transfers = 0.0;
         foreach ($items as $item) {
-            $subtotal += (float) $item['quantity'] * (float) $item['unitPrice'];
+            $lineSubtotal = (float) $item['quantity'] * (float) $item['unitPrice'];
+            $subtotal += $roundLineAmounts ? round($lineSubtotal, 2) : $lineSubtotal;
             $discount += isset($item['discount']) ? (float) $item['discount'] : 0.0;
             foreach ($item['taxes'] as $tax) {
                 if ($tax['direction'] === 'transfer') {
@@ -506,23 +518,23 @@ class InvoicePayloadBuilder
         ];
     }
 
-    private function transferTax($base, $amount)
+    private function transferTax($base, $amount, $moneyScale = 6)
     {
         return [
             'direction' => 'transfer',
             'taxCode' => '002',
             'factor' => 'Tasa',
-            'base' => $this->decimal($base, 6, true),
+            'base' => $this->decimal($base, $moneyScale, $moneyScale !== 2),
             'rateOrQuota' => $this->decimal($this->taxRate(), 6),
-            'amount' => $this->decimal($amount, 6, true),
+            'amount' => $this->decimal($amount, $moneyScale, $moneyScale !== 2),
         ];
     }
 
-    private function itemDiscount($value)
+    private function itemDiscount($value, $moneyScale = 6)
     {
         return abs((float) $value) < 0.0000005
             ? '0.00'
-            : $this->decimal($value, 6, true);
+            : $this->decimal($value, $moneyScale, $moneyScale !== 2);
     }
 
     private function validatedGlobalGrouping($value)

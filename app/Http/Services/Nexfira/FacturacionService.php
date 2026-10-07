@@ -173,7 +173,20 @@ class FacturacionService
         }
         $payload = $this->builder->buildGlobal($documentIds, 'review-global', $grouping, $globalInformation, $overrides);
         return ['valid' => true, 'blockers' => [], 'payload' => $payload,
-            'review_hash' => $this->reviewHash($payload, $overrides), 'editable_lines' => $this->editableLines($documentIds)];
+            'review_hash' => $this->reviewHash($payload, $overrides), 'editable_lines' => $this->editableLines($documentIds),
+            'rounding' => $this->globalRoundingSummary($documentIds, $payload)];
+    }
+
+    private function globalRoundingSummary(array $documentIds, array $payload)
+    {
+        if (($payload['content']['receiver']['rfc'] ?? '') !== 'MLG100224TC1') {
+            return null;
+        }
+        $sourceTotal = round((float) DB::table('documento')->whereIn('id', $documentIds)->sum('total'), 2);
+        $invoiceTotal = (float) $payload['content']['expectedTotals']['total'];
+        return ['decimals' => 2, 'source_total' => number_format($sourceTotal, 2, '.', ''),
+            'invoice_total' => number_format($invoiceTotal, 2, '.', ''),
+            'difference' => number_format(round($invoiceTotal - $sourceTotal, 2), 2, '.', '')];
     }
 
     private function reviewHash(array $payload, array $overrides = [])
