@@ -1236,7 +1236,7 @@ class VentaController extends Controller
 
             $direccionData = [
                 'id_documento' => $data->documento->documento,
-                'id_direccion_pro' => $data->documento->direccion_envio->colonia,
+                'id_direccion_pro' => $data->documento->direccion_envio->colonia ?? '0',
                 'calle' => $data->documento->direccion_envio->calle,
                 'numero' => $data->documento->direccion_envio->numero,
                 'numero_int' => $data->documento->direccion_envio->numero_int,

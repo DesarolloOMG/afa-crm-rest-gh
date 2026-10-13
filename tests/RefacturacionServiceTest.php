@@ -71,6 +71,18 @@ class RefacturacionServiceTest extends TestCase
         $this->assertSame($result['id'], $again['id']);
         $this->assertSame(3, DB::table('documento')->count());
         $this->assertSame(2, DB::table('movimiento_contable')->count());
+        $logs = DB::table('seguimiento')->orderBy('id')->get();
+        $this->assertCount(3, $logs);
+        foreach ($logs as $log) {
+            $this->assertSame(9, (int) $log->id_usuario);
+            $this->assertStringContainsString('original #' . $ids['sale'], $log->seguimiento);
+            $this->assertStringContainsString('NC #' . $result['nota_credito'], $log->seguimiento);
+            $this->assertStringContainsString('nuevo #' . $result['documento_nuevo'], $log->seguimiento);
+            $this->assertStringContainsString('ingreso #' . $ids['income'], $log->seguimiento);
+            $this->assertStringContainsString('timbrado pendiente, sin UUID', $log->seguimiento);
+        }
+        $this->assertSame([], $service->recordAccountingFollowUp($result['id'], 9)['seguimientos_creados']);
+        $this->assertSame(3, DB::table('seguimiento')->count());
     }
 
     public function testSharedIncomeCannotBeRenamedAndTransactionLeavesAllRowsUntouched()
@@ -95,6 +107,7 @@ class RefacturacionServiceTest extends TestCase
         $this->assertSame(0, (int) DB::table('documento')->where('id', $ids['sale'])->value('refacturado'));
         $this->assertSame((int) $ids['entity'], (int) DB::table('movimiento_contable')->where('id', $ids['income'])->value('entidad_origen'));
         $this->assertSame(1, (int) DB::table('movimiento_contable_documento')->where('id', $ids['allocation'])->value('status'));
+        $this->assertSame(0, DB::table('seguimiento')->count());
     }
 
     public function testSaleWithoutIncomeIsSettledByCreditNoteAndReplacementRemainsUnpaid()
@@ -141,6 +154,36 @@ class RefacturacionServiceTest extends TestCase
         $this->assertTrue($again['contabilidad']['sin_ingresos']);
         $this->assertSame(3, DB::table('documento')->count());
         $this->assertSame(1, DB::table('movimiento_contable')->count());
+        $logs = DB::table('seguimiento')->get();
+        $this->assertCount(3, $logs);
+        foreach ($logs as $log) {
+            $this->assertStringContainsString('No había ingresos aplicados que trasladar', $log->seguimiento);
+            $this->assertStringContainsString('Saldo del pedido nuevo al registrar este seguimiento: $116.00 MXN', $log->seguimiento);
+        }
+    }
+
+    public function testMissingFollowUpCanBeBackfilledWithoutDuplicatingExistingEntriesOrChangingAccounting()
+    {
+        $ids = $this->seedSale();
+        $service = new RefacturacionService();
+        $result = $service->create($ids['sale'], $this->recipient(), 9, function () {});
+        $beforeDocuments = DB::table('documento')->orderBy('id')->get()->toJson();
+        $beforeApplications = DB::table('movimiento_contable_documento')->orderBy('id')->get()->toJson();
+        // Reproduce el caso histórico: sólo hay seguimiento genérico de timbrado.
+        DB::table('seguimiento')->where('id_documento', $result['nota_credito'])->delete();
+        DB::table('seguimiento')->where('id_documento', $result['documento_nuevo'])->delete();
+        DB::table('seguimiento')->insert(['id_documento' => $result['documento_nuevo'], 'id_usuario' => 9,
+            'seguimiento' => 'Venta facturada. UUID original conservado.']);
+        $repair = $service->recordAccountingFollowUp($result['id'], 51);
+        $this->assertCount(2, $repair['seguimientos_creados']);
+        $this->assertSame(4, DB::table('seguimiento')->count());
+        $this->assertSame($beforeDocuments, DB::table('documento')->orderBy('id')->get()->toJson());
+        $this->assertSame($beforeApplications, DB::table('movimiento_contable_documento')->orderBy('id')->get()->toJson());
+        $this->assertSame([], $service->recordAccountingFollowUp($result['id'], 51)['seguimientos_creados']);
+        $context = RefacturacionService::fiscalFollowUpContext($result['documento_nuevo']);
+        $this->assertStringContainsString('venta original #' . $ids['sale'], $context);
+        $this->assertStringContainsString('NC #' . $result['nota_credito'], $context);
+        $this->assertStringContainsString('pedido nuevo #' . $result['documento_nuevo'], $context);
     }
 
     /** @dataProvider incompletePayments */

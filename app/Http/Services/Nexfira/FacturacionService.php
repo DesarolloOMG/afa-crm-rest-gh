@@ -738,6 +738,7 @@ class FacturacionService
                     'seguimiento' => ((int) $document->id_tipo === 6 ? 'Nota de crédito timbrada.' : 'Venta facturada.')
                         . ' UUID: ' . $validated['uuid'] . '. Serie: ' . $documentSeries[$documentId]
                         . '; folio XML: ' . ($validated['folio'] !== '' ? $validated['folio'] : '(sin folio)') . '.'
+                        . RefacturacionService::fiscalFollowUpContext($documentId)
                         . ($request->proveedor === 'external' && $validated['serie'] === ''
                             ? ' Serie de referencia tomada del marketplace; el XML original no contiene Serie y se conserva sin cambios.' : '')
                         . ($replacement ? ' Reemplazo confirmado por Nexfira: ' . $request->external_reference . ' -> '

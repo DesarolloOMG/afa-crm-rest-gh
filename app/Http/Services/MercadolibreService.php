@@ -836,17 +836,7 @@ class MercadolibreService
 
     public static function actualizarDelivered_com($existe_pack)
     {
-        if (!self::documentoTieneMovimientos($existe_pack->id)) {
-            self::sincronizarMovimientosDesdeValidacion($existe_pack->id);
-        }
-
-        if (!self::documentoTieneMovimientos($existe_pack->id)) {
-            return;
-        }
-
-        DB::table('documento')->where(['id' => $existe_pack->id])->update([
-            'id_fase' => 5
-        ]);
+        self::actualizarDeliveredSinRetroceso(['id' => $existe_pack->id]);
     }
 
     public static function log_meli_error(string $mensaje, string $publicacion_id)
@@ -901,25 +891,7 @@ class MercadolibreService
 
     public static function actualizarDelivered_doc_o($venta)
     {
-        $documentos = DB::table('documento')
-            ->select('id')
-            ->where('no_venta', $venta)
-            ->where('status', 1)
-            ->get();
-
-        foreach ($documentos as $documento) {
-            if (!self::documentoTieneMovimientos($documento->id)) {
-                self::sincronizarMovimientosDesdeValidacion($documento->id);
-            }
-
-            if (!self::documentoTieneMovimientos($documento->id)) {
-                continue;
-            }
-
-            DB::table('documento')->where('id', $documento->id)->update([
-                'id_fase' => 5,
-            ]);
-        }
+        self::actualizarDeliveredSinRetroceso(['no_venta' => $venta]);
     }
 
     public static function actualizarRTS_doc_o($venta)
@@ -1153,24 +1125,35 @@ class MercadolibreService
 
     public static function actualizarDelivered_doc($venta)
     {
-        $documentos = DB::table('documento')
-            ->select('id')
-            ->where('no_venta', $venta)
-            ->where('status', 1)
-            ->get();
+        self::actualizarDeliveredSinRetroceso(['no_venta' => $venta]);
+    }
+
+    private static function documentosPendientesDelivered(array $criterios)
+    {
+        return DB::table('documento')->where($criterios)
+            ->where('status', 1)->whereNull('deleted_at')->where('id_tipo', 2)
+            ->whereIn('id_fase', [1, 2, 3, 4, 5, 7])
+            ->whereRaw("UPPER(TRIM(COALESCE(uuid, ''))) IN ('', 'N/A', 'NA', 'N.A.', 'NO APLICA')");
+    }
+
+    private static function actualizarDeliveredSinRetroceso(array $criterios)
+    {
+        $documentos = self::documentosPendientesDelivered($criterios)->get(['id']);
 
         foreach ($documentos as $documento) {
-            if (!self::documentoTieneMovimientos($documento->id)) {
-                self::sincronizarMovimientosDesdeValidacion($documento->id);
-            }
-
-            if (!self::documentoTieneMovimientos($documento->id)) {
-                continue;
-            }
-
-            DB::table('documento')->where('id', $documento->id)->update([
-                'id_fase' => 5,
-            ]);
+            DB::transaction(function () use ($documento) {
+                // Releer bajo bloqueo: el timbrado puede finalizar durante la importación.
+                $criterios = ['id' => $documento->id];
+                if (!self::documentosPendientesDelivered($criterios)->lockForUpdate()->first()) {
+                    return;
+                }
+                if (!self::documentoTieneMovimientos($documento->id)) {
+                    self::sincronizarMovimientosDesdeValidacion($documento->id);
+                }
+                if (self::documentoTieneMovimientos($documento->id)) {
+                    self::documentosPendientesDelivered($criterios)->update(['id_fase' => 5]);
+                }
+            });
         }
     }
 

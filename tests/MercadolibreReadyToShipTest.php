@@ -27,6 +27,9 @@ class MercadolibreReadyToShipTest extends TestCase
             $table->integer('status');
             $table->integer('id_fase');
             $table->integer('packing_by')->nullable();
+            $table->integer('id_tipo')->default(2);
+            $table->string('uuid')->nullable();
+            $table->timestamp('deleted_at')->nullable();
         });
 
         Schema::create('movimiento', function ($table) {
@@ -87,6 +90,52 @@ class MercadolibreReadyToShipTest extends TestCase
 
         $this->assertSame(3, $this->faseDocumento($activo));
         $this->assertSame(1, $this->faseDocumento($cancelado));
+    }
+
+    public function deliveredHandlers()
+    {
+        return [['actualizarDelivered_com'], ['actualizarDelivered_doc'], ['actualizarDelivered_doc_o']];
+    }
+
+    /** @dataProvider deliveredHandlers */
+    public function testDeliveredPreservesFiscalAndInactiveDocuments($handler)
+    {
+        foreach ([
+            [6, 1, null, null, 2],
+            [5, 1, '548DB0B3-F6AD-473C-B7DD-704B8F3A0439', null, 2],
+            [3, 1, '548DB0B3-F6AD-473C-B7DD-704B8F3A0439', null, 2],
+            [3, 0, null, null, 2],
+            [3, 1, null, '2026-10-01 00:00:00', 2],
+            [100, 1, null, null, 2],
+            [3, 1, null, null, 6],
+        ] as $case) {
+            $id = $this->insertDocumento('delivered-protected', $case[0], null, $case[1]);
+            DB::table('documento')->where('id', $id)->update([
+                'uuid' => $case[2], 'deleted_at' => $case[3], 'id_tipo' => $case[4],
+            ]);
+            $before = DB::table('documento')->where('id', $id)->first();
+            // Sin movimientos: también debe evitar reconstruir productos de una venta protegida.
+            MercadolibreService::$handler($handler === 'actualizarDelivered_com'
+                ? (object) ['id' => $id] : 'delivered-protected');
+            $this->assertEquals($before, DB::table('documento')->where('id', $id)->first());
+        }
+        $this->assertSame(0, DB::table('movimiento')->count());
+    }
+
+    /** @dataProvider deliveredHandlers */
+    public function testDeliveredPromotesPendingSalesAndIsIdempotent($handler)
+    {
+        foreach ([1, 2, 3, 4, 5, 7] as $phase) {
+            $id = $this->insertDocumento('delivered-pending', $phase, null);
+            DB::table('documento')->where('id', $id)->update(['uuid' => 'N/A']);
+            DB::table('movimiento')->insert(['id_documento' => $id]);
+            $arg = $handler === 'actualizarDelivered_com' ? (object) ['id' => $id] : 'delivered-pending';
+            MercadolibreService::$handler($arg);
+            MercadolibreService::$handler($arg);
+            $this->assertSame(5, $this->faseDocumento($id));
+            $this->assertSame('N/A', DB::table('documento')->where('id', $id)->value('uuid'));
+        }
+        $this->assertSame(6, DB::table('movimiento')->count());
     }
 
     private function insertDocumento($venta, $fase, $packingBy, $status = 1)

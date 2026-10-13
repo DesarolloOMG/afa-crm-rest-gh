@@ -63,6 +63,7 @@ class RefacturacionService
                 if ($existing->request_hash !== $hash) {
                     throw new InvalidArgumentException('La venta ya fue refacturada con otros datos. Consulta su pedido nuevo; no se creó otra operación.');
                 }
+                $this->recordAccountingFollowUp((int) $existing->id, $userId);
                 return $this->result($existing, true);
             }
             $this->eligible($source);
@@ -166,8 +167,102 @@ class RefacturacionService
                     'aplicaciones' => $transfers], JSON_UNESCAPED_UNICODE),
                 'created_at' => $now, 'updated_at' => $now,
             ]);
+            $this->recordAccountingFollowUp((int) $id, $userId);
             return $this->result(DB::table(self::TABLE)->where('id', $id)->first(), false);
         }, 3);
+    }
+
+    /** Registra la relación en los tres documentos, una sola vez y dentro de la operación. */
+    public function recordAccountingFollowUp($operationId, $userId)
+    {
+        $this->requireSchema();
+        if ((int) $userId <= 0) {
+            throw new InvalidArgumentException('Indica el usuario que registra el seguimiento.');
+        }
+        return DB::transaction(function () use ($operationId, $userId) {
+            $operation = DB::table(self::TABLE)->where('id', (int) $operationId)->first();
+            if (!$operation) {
+                throw new InvalidArgumentException('No se encontró la refacturación contable.');
+            }
+            $ids = [(int) $operation->id_documento_original, (int) $operation->id_nota_credito,
+                (int) $operation->id_documento_nuevo];
+            $documents = DB::table('documento')->whereIn('id', $ids)->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            if ($documents->count() !== 3) {
+                throw new InvalidArgumentException('La refacturación debe conservar sus tres documentos.');
+            }
+            $source = $documents->get($ids[0]);
+            $note = $documents->get($ids[1]);
+            $new = $documents->get($ids[2]);
+            $audit = json_decode((string) $operation->auditoria, true);
+            if (!is_array($audit) || !isset($audit['total'], $audit['aplicaciones'])) {
+                throw new InvalidArgumentException('Falta la auditoría de las aplicaciones de esta refacturación.');
+            }
+            $currency = DB::table('moneda')->where('id', $source->id_moneda)->value('moneda');
+            $amount = '$' . number_format((float) $audit['total'], 2, '.', ',') . ' ' . $currency;
+            $payments = [];
+            foreach ($audit['aplicaciones'] as $application) {
+                $payments[] = 'ingreso #' . (int) $application['ingreso'] . ' por $'
+                    . number_format((float) $application['monto'], 2, '.', ',') . ' ' . $currency
+                    . ' (aplicación #' . (int) $application['anterior'] . ' -> #' . (int) $application['nueva'] . ')';
+            }
+            $transfer = $payments
+                ? 'Se trasladaron del documento original al nuevo ' . implode('; ', $payments) . '.'
+                : 'No había ingresos aplicados que trasladar; el pedido nuevo se creó con cuenta por cobrar.';
+            $balance = 'Saldo del pedido nuevo al registrar este seguimiento: $'
+                . number_format((float) $new->saldo, 2, '.', ',') . ' ' . $currency . '.';
+            $fiscal = 'Estado fiscal al registrar este seguimiento: NC #' . $note->id . ': '
+                . $this->fiscalLabel($note) . '; nueva venta #' . $new->id . ': ' . $this->fiscalLabel($new)
+                . '. La compensación contable no sustituye el timbrado de la NC.';
+            $marker = '[REFACTURACION CONTABLE #' . (int) $operation->id . ']';
+            $header = $marker . ' Operación realizada el ' . $operation->created_at . '. ';
+            $sourceName = 'venta/factura original #' . $source->id . ' (' . $this->fiscalLabel($source) . ')';
+            $newName = 'pedido/factura nuevo #' . $new->id;
+            $messages = [
+                $source->id => 'Esta ' . $sourceName . ' se saldó contablemente por ' . $amount
+                    . ' con la NC #' . $note->id . ' (movimiento contable #' . $operation->id_movimiento_nota
+                    . '). Se generó el ' . $newName . ' por refacturación. ',
+                $note->id => 'Esta NC #' . $note->id . ' por ' . $amount . ' se creó para saldar contablemente la '
+                    . $sourceName . ' mediante compensación (movimiento contable #' . $operation->id_movimiento_nota
+                    . '). El documento sustituto es el ' . $newName . '. No representa devolución física. ',
+                $new->id => 'Este ' . $newName . ' se generó por refacturación de la ' . $sourceName
+                    . '. La NC #' . $note->id . ' por ' . $amount . ' saldó contablemente el documento original. ',
+            ];
+            $inserted = [];
+            foreach ($messages as $documentId => $message) {
+                if (DB::table('seguimiento')->where('id_documento', $documentId)
+                    ->where('seguimiento', 'like', $marker . '%')->exists()) {
+                    continue;
+                }
+                $inserted[$documentId] = DB::table('seguimiento')->insertGetId([
+                    'id_documento' => $documentId, 'id_usuario' => (int) $userId,
+                    'seguimiento' => htmlspecialchars($header . $message . $transfer . ' ' . $balance . ' ' . $fiscal,
+                        ENT_QUOTES, 'UTF-8'),
+                ]);
+            }
+            return ['operacion' => (int) $operation->id, 'seguimientos_creados' => $inserted];
+        });
+    }
+
+    private function fiscalLabel($document)
+    {
+        if (!preg_match('/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i', trim((string) $document->uuid))) {
+            return 'timbrado pendiente, sin UUID';
+        }
+        return 'folio XML ' . trim((string) $document->factura_serie) . trim((string) $document->factura_folio)
+            . ', UUID ' . strtoupper((string) $document->uuid);
+    }
+
+    public static function fiscalFollowUpContext($documentId)
+    {
+        if (!Schema::hasTable(self::TABLE)) { return ''; }
+        $operation = DB::table(self::TABLE)->where(function ($query) use ($documentId) {
+            $query->where('id_documento_nuevo', (int) $documentId)
+                ->orWhere('id_nota_credito', (int) $documentId);
+        })->first();
+        if (!$operation) { return ''; }
+        return ' Refacturación contable #' . (int) $operation->id . ': venta original #'
+            . (int) $operation->id_documento_original . ', NC #' . (int) $operation->id_nota_credito
+            . ' y pedido nuevo #' . (int) $operation->id_documento_nuevo . '.';
     }
 
     public function previewClient($documentId)
