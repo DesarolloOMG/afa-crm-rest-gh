@@ -134,6 +134,7 @@ class InvoicePayloadBuilder
     private function buildCreditNote($document, $externalReference, array $overrides)
     {
         $context = (new CreditNoteContext())->resolve($document->id, true);
+        $isRefacturation = RefacturacionService::isRefacturationCreditNote((int) $document->id);
         // Una global por ventas ya consolidó el pedido a centavos. Reutilizar
         // el cálculo monetario compartido, también en la vista previa de su NC.
         $moneyScale = 6;
@@ -143,7 +144,9 @@ class InvoicePayloadBuilder
                 break;
             }
         }
-        $items = $this->buildProductItems($document, false, $moneyScale);
+        $items = $isRefacturation
+            ? (new CreditNoteContext())->refacturationItems($context)
+            : $this->buildProductItems($document, false, $moneyScale, null, 6);
         $totals = $this->totalsFromItems($items, $moneyScale === 2);
         if ((float) $totals['total'] <= 0) {
             throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');
@@ -156,7 +159,6 @@ class InvoicePayloadBuilder
         if ($method !== 'PUE') {
             throw new InvalidArgumentException('Nexfira exige PUE para las notas de crédito. Revisa el método seleccionado.');
         }
-        $isRefacturation = RefacturacionService::isRefacturationCreditNote((int) $document->id);
         $relationship = (string) ($overrides['relationshipCode'] ?? ($isRefacturation ? '01' : '03'));
         if ($isRefacturation && $relationship !== '01') {
             throw new InvalidArgumentException('Una NC de refacturación usa relación 01; no representa devolución de mercancía.');
@@ -403,8 +405,9 @@ class InvoicePayloadBuilder
         return $items;
     }
 
-    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 6, $movements = null)
+    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 6, $movements = null, $taxScale = null)
     {
+        $taxScale = $taxScale === null ? $moneyScale : $taxScale;
         $movements = $movements ?? $this->movements($document->id);
         $items = [];
         foreach ($movements as $movement) {
@@ -421,7 +424,7 @@ class InvoicePayloadBuilder
                 throw new InvalidArgumentException('La partida ' . $movement->id . ' no tiene descripción de producto.');
             }
 
-            $amounts = $this->movementAmounts($movement, $moneyScale);
+            $amounts = $this->movementAmounts($movement, $moneyScale, $taxScale);
             $lineId = $includeDocumentInLineId
                 ? 'pedido-' . $document->id . '-partida-' . $movement->id
                 : 'movimiento-' . $movement->id;
@@ -435,7 +438,7 @@ class InvoicePayloadBuilder
                 'unitPrice' => $this->decimal($amounts['unitPrice'], $moneyScale, $moneyScale !== 2),
                 'discount' => $this->itemDiscount($amounts['discount'], $moneyScale),
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'], $moneyScale)],
+                'taxes' => [$this->transferTax($amounts['base'], $amounts['tax'], $taxScale)],
             ];
         }
 
@@ -480,7 +483,7 @@ class InvoicePayloadBuilder
         return $this->totalsFromItems($items, $moneyScale === 2);
     }
 
-    private function movementAmounts($movement, $moneyScale = 6)
+    private function movementAmounts($movement, $moneyScale = 6, $taxScale = null)
     {
         $quantity = (float) $movement->cantidad;
         $grossUnitPrice = (float) $movement->precio;
@@ -506,7 +509,7 @@ class InvoicePayloadBuilder
             'unitPrice' => $unitPrice,
             'discount' => $discount,
             'base' => $base,
-            'tax' => round($base * $this->taxRate(), $moneyScale),
+            'tax' => round($base * $this->taxRate(), $taxScale === null ? $moneyScale : $taxScale),
         ];
     }
 

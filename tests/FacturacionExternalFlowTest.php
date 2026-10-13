@@ -283,25 +283,36 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('queued', $result['status']);
     }
 
-    public function testGlobalSaleCreditNoteRoundsBeforeAllocatingAndDoesNotUseOtherSalesBalance()
+    public function testRefacturationCopiesOriginalFiscalSaleAndDoesNotUseOtherSalesBalance()
     {
         $sale = $this->insertDocument('GLOBAL-38443', 232, 0);
         $note = $this->insertCreditNote($sale, 11699.10);
         DB::table('movimiento')->insert(['id_documento' => $note, 'id_modelo' => 1,
             'cantidad' => 1, 'precio' => 1299.90, 'descuento' => 0, 'retencion' => 0]);
         $source = $this->storeCreditNoteAntecedent($sale, 'PPD');
+        Schema::create('documento_refacturacion', function ($table) {
+            $table->integer('id_nota_credito');
+        });
+        DB::table('documento_refacturacion')->insert(['id_nota_credito' => $note]);
         $request = DB::table('facturacion_solicitud')->where('remote_request_id', $source['request_id'])->first();
         $original = json_decode($request->request_payload, true);
         $original['content']['items'][0]['lineId'] = (string) $sale;
         $original['content']['items'][0]['quantity'] = '1';
         $original['content']['items'][0]['unitPrice'] = '11206.03';
+        $original['content']['items'][0]['taxes'][0]['base'] = '11206.03';
+        $original['content']['items'][0]['taxes'][0]['amount'] = '1792.9648';
         $original['content']['items'][] = array_merge($original['content']['items'][0], ['lineId' => 'other-sale']);
         DB::table('facturacion_solicitud')->where('id', $request->id)->update(['request_payload' => json_encode($original)]);
         $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'rounding-preview');
-        $this->assertSame('10085.43', $payload['content']['items'][0]['unitPrice']);
-        $this->assertSame('1120.60', $payload['content']['items'][1]['unitPrice']);
+        $this->assertSame([$original['content']['items'][0]], $payload['content']['items']);
         $this->assertSame('11206.03', $payload['content']['expectedTotals']['subtotal']);
-        $this->assertSame('12999.00', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('1792.9648', $payload['content']['items'][0]['taxes'][0]['amount']);
+        foreach ($payload['content']['items'] as $item) {
+            $tax = $item['taxes'][0];
+            $this->assertSame(round((float) $tax['base'] * (float) $tax['rateOrQuota'], 6), (float) $tax['amount']);
+        }
+        $this->assertSame('1792.96', $payload['content']['expectedTotals']['transfers']);
+        $this->assertSame('12998.99', $payload['content']['expectedTotals']['total']);
         $client = Mockery::mock(NexfiraClient::class);
         $client->shouldReceive('getPaymentBalance')->with($source['request_id'])->andReturn([
             'antecedentId' => $source['request_id'], 'currency' => 'MXN', 'version' => 1,
@@ -315,12 +326,50 @@ class FacturacionExternalFlowTest extends TestCase
         $client->shouldReceive('getPaymentBalance')->with($source['request_id'], true)->andReturn($fiscal, $short);
         $allocator = new \App\Http\Services\Nexfira\CreditNoteBalanceAllocator($client);
         $result = $allocator->apply($note, $payload);
+        $this->assertSame('12998.99', $result['content']['balanceAdjustments'][0]['amount']);
         $lines = $result['content']['balanceAdjustments'][0]['lineAdjustments'];
-        $this->assertSame(['10085.430000', '1120.600000'], array_column($lines, 'netAmount'));
-        $this->assertSame([(string) $sale, (string) $sale], array_column($lines, 'antecedentLineId'));
+        $this->assertSame(['11206.030000'], array_column($lines, 'netAmount'));
+        $this->assertSame([(string) $sale], array_column($lines, 'antecedentLineId'));
         $this->assertSame('11699.100000', number_format(DB::table('movimiento')->where('id_documento', $note)->orderBy('id')->value('precio'), 6, '.', ''));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('No se pudo relacionar el saldo fiscal');
+        $allocator->apply($note, $payload);
+    }
+
+    public function testRefacturationPreservesIndividualAndGlobalProductLinesAndRejectsAlterations()
+    {
+        $sale = $this->insertDocument('ORIGEN-COPIA', 232, 0);
+        $note = $this->insertCreditNote($sale, 232);
+        $source = $this->storeCreditNoteAntecedent($sale, 'PPD');
+        Schema::create('documento_refacturacion', function ($table) {
+            $table->integer('id_nota_credito');
+        });
+        DB::table('documento_refacturacion')->insert(['id_nota_credito' => $note]);
+        $request = DB::table('facturacion_solicitud')->where('remote_request_id', $source['request_id'])->first();
+        $original = json_decode($request->request_payload, true);
+        $movement = DB::table('movimiento')->where('id_documento', $sale)->value('id');
+        foreach (['movimiento-' . $movement, 'pedido-' . $sale . '-partida-' . $movement] as $lineId) {
+            $original['content']['items'][0]['lineId'] = $lineId;
+            $original['content']['items'][1] = array_merge($original['content']['items'][0], ['lineId' => 'pedido-999-partida-999']);
+            DB::table('facturacion_solicitud')->where('id', $request->id)->update(['request_payload' => json_encode($original)]);
+            $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'copy-original');
+            $this->assertSame([$original['content']['items'][0]], $payload['content']['items']);
+            $client = Mockery::mock(NexfiraClient::class);
+            $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'])->andReturn([
+                'antecedentId' => $source['request_id'], 'currency' => 'MXN', 'version' => 1,
+                'availableBalance' => '232.00', 'reservedAmount' => '0.00',
+            ]);
+            $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'], true)->andReturn([
+                'antecedentId' => $source['request_id'], 'version' => 1,
+                'components' => [['lineId' => $lineId, 'netAmount' => '200.000000']],
+            ]);
+            $allocator = new \App\Http\Services\Nexfira\CreditNoteBalanceAllocator($client);
+            $allocated = $allocator->apply($note, $payload);
+            $this->assertSame($lineId, $allocated['content']['balanceAdjustments'][0]['lineAdjustments'][0]['antecedentLineId']);
+        }
+        $payload['content']['items'][0]['taxes'][0]['amount'] = '31.99';
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('debe conservar las partidas fiscales originales');
         $allocator->apply($note, $payload);
     }
 
