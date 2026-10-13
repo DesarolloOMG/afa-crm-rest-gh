@@ -134,8 +134,17 @@ class InvoicePayloadBuilder
     private function buildCreditNote($document, $externalReference, array $overrides)
     {
         $context = (new CreditNoteContext())->resolve($document->id, true);
-        $items = $this->buildProductItems($document);
-        $totals = $this->totalsFromItems($items);
+        // Una global por ventas ya consolidó el pedido a centavos. Reutilizar
+        // el cálculo monetario compartido, también en la vista previa de su NC.
+        $moneyScale = 6;
+        foreach ($context['source_payload']['content']['items'] as $sourceItem) {
+            if ((string) $sourceItem['lineId'] === (string) $context['source_id']) {
+                $moneyScale = 2;
+                break;
+            }
+        }
+        $items = $this->buildProductItems($document, false, $moneyScale);
+        $totals = $this->totalsFromItems($items, $moneyScale === 2);
         if ((float) $totals['total'] <= 0) {
             throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');
         }
