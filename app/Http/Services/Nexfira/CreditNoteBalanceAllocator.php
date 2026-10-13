@@ -18,13 +18,6 @@ class CreditNoteBalanceAllocator
     public function apply($documentId, array $payload)
     {
         $context = (new CreditNoteContext())->resolve($documentId, true);
-        $refacturationItems = null;
-        if (\App\Http\Services\RefacturacionService::isRefacturationCreditNote((int) $documentId)) {
-            $refacturationItems = (new CreditNoteContext())->refacturationItems($context);
-            if ($payload['content']['items'] !== $refacturationItems) {
-                throw new InvalidArgumentException('La NC de refacturación debe conservar las partidas fiscales originales. Actualiza la vista previa.');
-            }
-        }
         try {
             $balance = $this->client->getPaymentBalance($context['request_id']);
         } catch (NexfiraApiException $exception) {
@@ -64,9 +57,7 @@ class CreditNoteBalanceAllocator
             $creditId = (int) str_replace('movimiento-', '', $creditItem['lineId']);
             $movement = $creditMovements->get($creditId);
             $candidates = [];
-            if ($refacturationItems !== null) {
-                $candidates[] = $creditItem['lineId'];
-            } elseif (isset($sourceItems[(string) $context['source_id']])) {
+            if (isset($sourceItems[(string) $context['source_id']])) {
                 // Factura global por ventas: el antecedente es una sola partida por pedido.
                 $candidates[] = (string) $context['source_id'];
             } elseif ($movement) {

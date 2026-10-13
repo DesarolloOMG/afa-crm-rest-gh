@@ -144,9 +144,8 @@ class InvoicePayloadBuilder
                 break;
             }
         }
-        $items = $isRefacturation
-            ? (new CreditNoteContext())->refacturationItems($context)
-            : $this->buildProductItems($document, false, $moneyScale, null, 6);
+        // Reconstruir la NC desde sus productos, con impuestos a seis decimales.
+        $items = $this->buildProductItems($document, false, $moneyScale, null, 6);
         $totals = $this->totalsFromItems($items, $moneyScale === 2);
         if ((float) $totals['total'] <= 0) {
             throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');

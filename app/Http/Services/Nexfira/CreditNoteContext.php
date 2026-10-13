@@ -8,27 +8,6 @@ use InvalidArgumentException;
 /** Resuelve el vínculo CRM venta.nota -> documento NC, sin modificar la venta. */
 class CreditNoteContext
 {
-    /** Partidas fiscales de esta venta; nunca incluir otras ventas de la global. */
-    public function refacturationItems(array $context)
-    {
-        $allowed = [(string) $context['source_id'] => true];
-        foreach (DB::table('movimiento')->where('id_documento', $context['source_id'])->pluck('id') as $id) {
-            $allowed['movimiento-' . $id] = true;
-            $allowed['pedido-' . $context['source_id'] . '-partida-' . $id] = true;
-        }
-        $items = [];
-        foreach ($context['source_payload']['content']['items'] as $item) {
-            if (isset($allowed[(string) $item['lineId']])) {
-                $items[] = $item;
-            }
-        }
-        if (!$items) {
-            throw new InvalidArgumentException('No se identificaron las partidas fiscales originales de la venta '
-                . $context['source_id'] . '. Revisa el antecedente de la refacturación.');
-        }
-        return $items;
-    }
-
     public function resolve($creditNoteId, $requireHub = false)
     {
         $note = DB::table('documento')->where('id', (int) $creditNoteId)

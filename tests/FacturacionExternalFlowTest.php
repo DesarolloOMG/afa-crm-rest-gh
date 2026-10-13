@@ -283,7 +283,7 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('queued', $result['status']);
     }
 
-    public function testRefacturationCopiesOriginalFiscalSaleAndDoesNotUseOtherSalesBalance()
+    public function testRefacturationBuildsProductsWithSixDecimalTaxesAndDoesNotUseOtherSalesBalance()
     {
         $sale = $this->insertDocument('GLOBAL-38443', 232, 0);
         $note = $this->insertCreditNote($sale, 11699.10);
@@ -304,9 +304,12 @@ class FacturacionExternalFlowTest extends TestCase
         $original['content']['items'][] = array_merge($original['content']['items'][0], ['lineId' => 'other-sale']);
         DB::table('facturacion_solicitud')->where('id', $request->id)->update(['request_payload' => json_encode($original)]);
         $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'rounding-preview');
-        $this->assertSame([$original['content']['items'][0]], $payload['content']['items']);
+        $this->assertCount(2, $payload['content']['items']);
+        $this->assertSame('10085.43', $payload['content']['items'][0]['unitPrice']);
+        $this->assertSame('1120.60', $payload['content']['items'][1]['unitPrice']);
         $this->assertSame('11206.03', $payload['content']['expectedTotals']['subtotal']);
-        $this->assertSame('1792.9648', $payload['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('1613.6688', $payload['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('179.296', $payload['content']['items'][1]['taxes'][0]['amount']);
         foreach ($payload['content']['items'] as $item) {
             $tax = $item['taxes'][0];
             $this->assertSame(round((float) $tax['base'] * (float) $tax['rateOrQuota'], 6), (float) $tax['amount']);
@@ -328,18 +331,20 @@ class FacturacionExternalFlowTest extends TestCase
         $result = $allocator->apply($note, $payload);
         $this->assertSame('12998.99', $result['content']['balanceAdjustments'][0]['amount']);
         $lines = $result['content']['balanceAdjustments'][0]['lineAdjustments'];
-        $this->assertSame(['11206.030000'], array_column($lines, 'netAmount'));
-        $this->assertSame([(string) $sale], array_column($lines, 'antecedentLineId'));
+        $this->assertSame(['10085.430000', '1120.600000'], array_column($lines, 'netAmount'));
+        $this->assertSame([(string) $sale, (string) $sale], array_column($lines, 'antecedentLineId'));
         $this->assertSame('11699.100000', number_format(DB::table('movimiento')->where('id_documento', $note)->orderBy('id')->value('precio'), 6, '.', ''));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('No se pudo relacionar el saldo fiscal');
         $allocator->apply($note, $payload);
     }
 
-    public function testRefacturationPreservesIndividualAndGlobalProductLinesAndRejectsAlterations()
+    public function testRefacturationMapsItsOwnProductsToIndividualAndGlobalAntecedents()
     {
         $sale = $this->insertDocument('ORIGEN-COPIA', 232, 0);
-        $note = $this->insertCreditNote($sale, 232);
+        $note = $this->insertCreditNote($sale, 116);
+        DB::table('movimiento')->where('id_documento', $note)->update(['cantidad' => 2]);
+        $creditMovement = DB::table('movimiento')->where('id_documento', $note)->value('id');
         $source = $this->storeCreditNoteAntecedent($sale, 'PPD');
         Schema::create('documento_refacturacion', function ($table) {
             $table->integer('id_nota_credito');
@@ -353,7 +358,8 @@ class FacturacionExternalFlowTest extends TestCase
             $original['content']['items'][1] = array_merge($original['content']['items'][0], ['lineId' => 'pedido-999-partida-999']);
             DB::table('facturacion_solicitud')->where('id', $request->id)->update(['request_payload' => json_encode($original)]);
             $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'copy-original');
-            $this->assertSame([$original['content']['items'][0]], $payload['content']['items']);
+            $this->assertCount(1, $payload['content']['items']);
+            $this->assertSame('movimiento-' . $creditMovement, $payload['content']['items'][0]['lineId']);
             $client = Mockery::mock(NexfiraClient::class);
             $client->shouldReceive('getPaymentBalance')->once()->with($source['request_id'])->andReturn([
                 'antecedentId' => $source['request_id'], 'currency' => 'MXN', 'version' => 1,
@@ -367,10 +373,6 @@ class FacturacionExternalFlowTest extends TestCase
             $allocated = $allocator->apply($note, $payload);
             $this->assertSame($lineId, $allocated['content']['balanceAdjustments'][0]['lineAdjustments'][0]['antecedentLineId']);
         }
-        $payload['content']['items'][0]['taxes'][0]['amount'] = '31.99';
-        $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('debe conservar las partidas fiscales originales');
-        $allocator->apply($note, $payload);
     }
 
     public function testSchedulerRetrievesCreditNoteArtifactsEvenWhenItsOperationalPhaseIsSix()
