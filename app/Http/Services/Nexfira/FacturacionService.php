@@ -124,6 +124,8 @@ class FacturacionService
         $requests = $this->latestRequestsForDocuments([(int) $documentId]);
         $files = DB::table('documento_factura')->where('id_documento', $documentId)->first();
         $state = [
+            'is_refacturation_credit_note' => (int) $summary->id_tipo === 6
+                && RefacturacionService::isRefacturationCreditNote($documentId),
             'request' => $requests[$documentId] ?? null,
             'completed' => $this->hasExistingInvoice($summary) && $files && !empty($files->xml) && !empty($files->pdf),
             'uuid' => $summary->uuid,

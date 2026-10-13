@@ -167,6 +167,19 @@ class InvoicePayloadBuilder
         ]);
         $payload['kind'] = 'CFDI_E';
         $payload['subtype'] = $relationship === '03' ? 'return_credit' : 'discount_credit';
+        if ($receiver['rfc'] === 'XAXX010101000' && $isRefacturation) {
+            // Sólo la NC de refacturación usa automáticamente el periodo de emisión.
+            $payload['content']['globalInformation'] = $this->validatedGlobalInformation([
+                'periodicity' => '01',
+                'months' => substr($payload['content']['issuedAtLocal'], 5, 2),
+                'year' => (int) substr($payload['content']['issuedAtLocal'], 0, 4),
+            ]);
+        } elseif ($receiver['rfc'] === 'XAXX010101000' && isset($overrides['globalInformation'])) {
+            if (!is_array($overrides['globalInformation'])) {
+                throw new InvalidArgumentException('La información global debe contener periodicidad, mes y año.');
+            }
+            $payload['content']['globalInformation'] = $this->validatedGlobalInformation($overrides['globalInformation']);
+        }
         $payload['content']['relations'] = [[
             'antecedentId' => $context['request_id'],
             'relationshipCode' => $relationship,

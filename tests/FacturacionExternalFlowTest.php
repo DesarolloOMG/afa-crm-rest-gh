@@ -199,6 +199,64 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
     }
 
+    public function testPublicCreditNoteDefaultsToCurrentFiscalPeriodInsteadOfOriginalPeriod()
+    {
+        config(['nexfira.fiscal_timezone' => 'America/Mexico_City']);
+        try {
+            \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2025-09-15 12:00:00', 'UTC'));
+            $sale = $this->insertDocument('ORIGEN-PERIODO', 232, 0);
+            $note = $this->insertCreditNote($sale, 116);
+            $source = $this->storeCreditNoteAntecedent($sale);
+            Schema::create('documento_refacturacion', function ($table) {
+                $table->integer('id_nota_credito');
+            });
+            DB::table('documento_refacturacion')->insert(['id_nota_credito' => $note]);
+            foreach ([
+                ['2026-10-13 18:00:00', '10', 2026],
+                ['2027-01-01 02:00:00', '12', 2026],
+                ['2027-01-01 07:00:00', '01', 2027],
+            ] as $case) {
+                \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse($case[0], 'UTC'));
+                $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'nc-periodo', [
+                    'paymentForm' => '17',
+                    'globalInformation' => ['periodicity' => '04', 'months' => '09', 'year' => 2025],
+                ]);
+                $this->assertSame(['periodicity' => '01', 'months' => $case[1], 'year' => $case[2]], $payload['content']['globalInformation']);
+                $this->assertSame('CFDI_E', $payload['kind']);
+                $this->assertSame('G02', $payload['content']['receiver']['cfdiUse']);
+                $this->assertSame('17', $payload['content']['paymentForm']);
+                $this->assertSame($source['request_id'], $payload['content']['relations'][0]['antecedentId']);
+            }
+        } finally {
+            \Carbon\Carbon::setTestNow();
+        }
+    }
+
+    public function testNamedReceiverCreditNoteDoesNotAddGlobalInformation()
+    {
+        DB::table('documento_entidad')->where('id', 1)->update([
+            'rfc' => 'CNU010101AB1', 'razon_social' => 'CLIENTE NUEVO', 'regimen_id' => '601',
+        ]);
+        $sale = $this->insertDocument('ORIGEN-NOMINATIVO', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $this->storeCreditNoteAntecedent($sale);
+        $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'nc-nominativa');
+        $this->assertArrayNotHasKey('globalInformation', $payload['content']);
+    }
+
+    public function testOrdinaryPublicCreditNotePreservesExplicitPeriodWithoutAutomaticDefault()
+    {
+        $sale = $this->insertDocument('ORIGEN-NC-NORMAL', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $this->storeCreditNoteAntecedent($sale);
+        $builder = new InvoicePayloadBuilder();
+        $payload = $builder->buildIndividual($note, 'nc-normal');
+        $this->assertArrayNotHasKey('globalInformation', $payload['content']);
+        $period = ['periodicity' => '04', 'months' => '09', 'year' => 2025];
+        $payload = $builder->buildIndividual($note, 'nc-normal-periodo', ['globalInformation' => $period]);
+        $this->assertSame($period, $payload['content']['globalInformation']);
+    }
+
     public function testCreditNoteUsesFreshBalanceVersionAndOriginalTaxedLine()
     {
         $sale = $this->insertDocument('ORIGEN-PPD', 232, 0);
