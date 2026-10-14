@@ -12,6 +12,25 @@ class RefacturacionService
 {
     const TABLE = 'documento_refacturacion';
 
+    public static function notasCreditoFiscales($originalId)
+    {
+        if (!Schema::hasTable(self::TABLE)) { return []; }
+        $notes = DB::table(self::TABLE . ' as r')
+            ->join('documento as nc', 'nc.id', '=', 'r.id_nota_credito')
+            ->where('r.id_documento_original', (int) $originalId)
+            ->where('nc.id_tipo', 6)->orderBy('r.id')
+            ->get(['nc.id', 'nc.uuid', 'nc.factura_serie', 'nc.factura_folio']);
+        return $notes->map(function ($note) {
+            $files = DB::table('documento_factura')->where('id_documento', $note->id)
+                ->select('xml', 'pdf')->first();
+            $validUuid = preg_match('/^[0-9A-F]{8}-[0-9A-F]{4}-[1-5][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i', trim((string) $note->uuid)) === 1;
+            return ['id' => (int) $note->id, 'uuid' => $validUuid ? $note->uuid : null,
+                'factura_serie' => $note->factura_serie, 'factura_folio' => $note->factura_folio,
+                'xml_disponible' => $validUuid && $files && !empty($files->xml),
+                'pdf_disponible' => $validUuid && $files && !empty($files->pdf)];
+        })->all();
+    }
+
     public function preview($documentId)
     {
         $this->requireSchema();

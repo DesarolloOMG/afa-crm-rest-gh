@@ -80,7 +80,8 @@ class InvoicePayloadBuilder
                 // Validar el pedido original antes de recalcular los centavos del CFDI.
                 $movements = $this->movements($document->id);
                 $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
-                $documentItems = $this->buildProductItems($document, true, $moneyScale, $movements);
+                // El IVA debe conservar base * tasa antes de redondear el total fiscal.
+                $documentItems = $this->buildProductItems($document, true, $moneyScale, $movements, 6);
                 $items = array_merge($items, $documentItems);
             }
         } else {
@@ -387,7 +388,7 @@ class InvoicePayloadBuilder
             }
 
             $base = round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
-            $tax = round($base * $this->taxRate(), $moneyScale);
+            $tax = round($base * $this->taxRate(), 6);
             $items[] = [
                 'lineId' => (string) $document->id,
                 'productCode' => (string) config('nexfira.global.product_code', '01010101'),
@@ -397,7 +398,7 @@ class InvoicePayloadBuilder
                 'unitPrice' => $this->decimal($base, $moneyScale, $moneyScale !== 2),
                 'discount' => '0.00',
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($base, $tax, $moneyScale)],
+                'taxes' => [$this->transferTax($base, $tax, 6)],
             ];
         }
 

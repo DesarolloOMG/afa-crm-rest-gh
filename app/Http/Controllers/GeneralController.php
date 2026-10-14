@@ -1441,6 +1441,7 @@ class GeneralController extends Controller
                 && $venta->archivos_factura
                 && !empty($venta->archivos_factura->xml)
                 && !empty($venta->archivos_factura->pdf);
+            $venta->notas_credito_refacturacion = \App\Http\Services\RefacturacionService::notasCreditoFiscales($venta->id);
         }
 
         return response()->json([

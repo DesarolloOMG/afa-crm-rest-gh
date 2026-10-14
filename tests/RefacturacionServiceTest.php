@@ -310,6 +310,33 @@ class RefacturacionServiceTest extends TestCase
         $this->assertSame([], RefacturacionService::fiscalBlocks([$result['documento_nuevo'], $result['nota_credito']]));
     }
 
+    public function testOriginalSaleExposesOnlyItsRefacturationCreditNoteFiscalData()
+    {
+        $ids = $this->seedSale();
+        $service = new RefacturacionService();
+        $this->assertSame([], $service->notasCreditoFiscales($ids['sale']));
+        $result = $service->create($ids['sale'], $this->recipient(), 9, function () {});
+        $pending = $service->notasCreditoFiscales($ids['sale']);
+        $this->assertSame($result['nota_credito'], $pending[0]['id']);
+        $this->assertNull($pending[0]['uuid']);
+        $this->assertFalse($pending[0]['xml_disponible']);
+        $this->assertFalse($pending[0]['pdf_disponible']);
+        DB::table('documento')->where('id', $result['nota_credito'])->update([
+            'uuid' => 'A23E4567-E89B-42D3-A456-426614174000', 'factura_serie' => 'NC', 'factura_folio' => '123',
+        ]);
+        DB::table('documento_factura')->insert(['id_documento' => $result['nota_credito'], 'xml' => 'xml-nc', 'pdf' => '']);
+        $fiscal = $service->notasCreditoFiscales($ids['sale'])[0];
+        $this->assertSame('A23E4567-E89B-42D3-A456-426614174000', $fiscal['uuid']);
+        $this->assertSame('NC', $fiscal['factura_serie']);
+        $this->assertSame('123', $fiscal['factura_folio']);
+        $this->assertTrue($fiscal['xml_disponible']);
+        $this->assertFalse($fiscal['pdf_disponible']);
+        DB::table('documento_factura')->where('id_documento', $result['nota_credito'])->update(['pdf' => 'pdf-nc']);
+        $this->assertTrue($service->notasCreditoFiscales($ids['sale'])[0]['pdf_disponible']);
+        $this->assertSame([], $service->notasCreditoFiscales($result['documento_nuevo']));
+        $this->assertSame('923e4567-e89b-42d3-a456-426614174000', DB::table('documento')->where('id', $ids['sale'])->value('uuid'));
+    }
+
     private function recipient()
     {
         return ['rfc' => 'CNU010101AB1', 'razon_social' => 'Cliente Nuevo SA de CV',

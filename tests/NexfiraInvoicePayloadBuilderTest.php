@@ -249,7 +249,7 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertArrayNotHasKey('globalInformation', $payload['content']);
     }
 
-    public function testMlgGlobalRecalculatesEveryMonetaryFieldInCentsIncluding1990Monitor()
+    public function testMlgGlobalKeepsPricesInCentsAndTaxPrecisionIncluding1990Monitor()
     {
         $this->useMlgReceiver();
         $monitor = $this->insertDocument('MLG-1990', 1990, 0);
@@ -262,15 +262,15 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $item = $payload['content']['items'][0];
         $this->assertSame('1715.52', $item['unitPrice']);
         $this->assertSame('1715.52', $item['taxes'][0]['base']);
-        $this->assertSame('274.48', $item['taxes'][0]['amount']);
+        $this->assertSame('274.4832', $item['taxes'][0]['amount']);
         $this->assertSame('7589.02', $payload['content']['expectedTotals']['total']);
         foreach ($payload['content']['items'] as $item) {
-            foreach ([$item['unitPrice'], $item['discount'], $item['taxes'][0]['base'], $item['taxes'][0]['amount']] as $amount) {
+            foreach ([$item['unitPrice'], $item['discount'], $item['taxes'][0]['base']] as $amount) {
                 $this->assertRegExp('/^[0-9]+\.[0-9]{2}$/', $amount);
             }
             $this->assertSame('0.160000', $item['taxes'][0]['rateOrQuota']);
             $this->assertEquals(round((float) $item['quantity'] * (float) $item['unitPrice'] - (float) $item['discount'], 2), (float) $item['taxes'][0]['base']);
-            $this->assertEquals(round((float) $item['taxes'][0]['base'] * .16, 2), (float) $item['taxes'][0]['amount']);
+            $this->assertEquals(round((float) $item['taxes'][0]['base'] * .16, 6), (float) $item['taxes'][0]['amount']);
         }
         $this->assertSame(2799.505, (float) DB::table('movimiento')->where('id_documento', $fractional)->value('precio'));
         $this->assertSame(5599.01, (float) DB::table('documento')->where('id', $fractional)->value('total'));
@@ -286,11 +286,11 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         DB::table('movimiento')->where('id_documento', $first)->update(['descuento' => 7]);
         $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'mlg-sales-cents');
         $this->assertSame('93.97', $payload['content']['items'][0]['unitPrice']);
-        $this->assertSame('15.04', $payload['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('15.0352', $payload['content']['items'][0]['taxes'][0]['amount']);
         $this->assertSame('2099.01', $payload['content']['expectedTotals']['total']);
     }
 
-    public function testMlgGlobalDoesNotAccumulateFractionsOverManyLines()
+    public function testMlgGlobalRoundsTaxAfterSummingManyLines()
     {
         $this->useMlgReceiver();
         $ids = [];
@@ -300,8 +300,8 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         }
         $payload = (new InvoicePayloadBuilder())->buildGlobal($ids, 'mlg-batch-cents', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
         $this->assertCount(1000, $payload['content']['items']);
-        // El total suma los conceptos y su IVA ya redondeados, no las fracciones originales.
-        $this->assertSame('1716320.00', $payload['content']['expectedTotals']['total']);
+        // Redondear cada IVA a centavos antes de sumarlo perdería 4.40 en este lote.
+        $this->assertSame('1716324.40', $payload['content']['expectedTotals']['total']);
     }
 
     public function testMlgFractionalQuantitiesSumRoundedConceptAmounts()
@@ -337,6 +337,23 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $payload = (new InvoicePayloadBuilder())->buildIndividual($first, 'mlg-individual');
         $this->assertSame('1715.517241', $payload['content']['items'][0]['unitPrice']);
         $this->assertSame('1990.00', $payload['content']['expectedTotals']['total']);
+    }
+
+    public function testMlgRejected38588TaxAmountIsExactInBothGlobalGroupings()
+    {
+        $this->useMlgReceiver();
+        $first = $this->insertDocument('MLG-38588', 1699, 0);
+        $second = $this->insertDocument('MLG-SEGUNDO', 116, 0);
+        $this->insertMovement($first, 1, 1699);
+        $this->insertMovement($second, 1, 116);
+        foreach ([InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS, InvoicePayloadBuilder::GLOBAL_GROUP_SALES] as $grouping) {
+            $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'mlg-rejected-tax', $grouping);
+            $tax = $payload['content']['items'][0]['taxes'][0];
+            $this->assertSame('1464.66', $tax['base']);
+            $this->assertSame('234.3456', $tax['amount']);
+            $this->assertSame('250.35', $payload['content']['expectedTotals']['transfers']);
+            $this->assertSame('1815.01', $payload['content']['expectedTotals']['total']);
+        }
     }
 
     private function useMlgReceiver()
