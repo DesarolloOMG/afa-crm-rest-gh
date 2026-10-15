@@ -1708,6 +1708,7 @@ class VentaController extends Controller
                                             documento.id_marketplace_area,
                                             documento.created_at,
                                             empresa.bd,
+                                            empresa.id AS empresa_id,
                                             empresa.empresa,
                                             empresa.logo,
                                             documento_uso_cfdi.codigo
@@ -1727,6 +1728,7 @@ class VentaController extends Controller
         $existe_documento = $existe_documento[0];
 
         $empresa_externa = DB::select("SELECT
+                                        empresa.id AS empresa_id,
                                         empresa.empresa,
                                         empresa.logo
                                     FROM marketplace_area_empresa
@@ -1791,6 +1793,7 @@ class VentaController extends Controller
         # Informacion de la empresa
         $empresa_nombre = empty($empresa_externa) ? $existe_documento->empresa : $empresa_externa[0]->empresa;
         $empresa_logo = empty($empresa_externa) ? $existe_documento->logo : $empresa_externa[0]->logo;
+        $empresa_id = empty($empresa_externa) ? $existe_documento->empresa_id : $empresa_externa[0]->empresa_id;
 
         # Logo de la empresa
         if ($empresa_logo != 'N/A') {
@@ -1800,7 +1803,13 @@ class VentaController extends Controller
         $pdf->Ln(30);
         $pdf->Cell(20, 10, $empresa_nombre);
         $pdf->Ln(5);
-        $pdf->Cell(20, 10, 'Industria Vidriera #105, Fracc. Industrial Zapopan Norte');
+        if ((int) $empresa_id === 1) {
+            $pdf->Cell(20, 10, 'Av. Vallarta #6503, Int. M-4, Col. Ciudad Granja');
+            $pdf->Ln(5);
+            $pdf->Cell(20, 10, 'Zapopan, Jalisco, C.P. 45010');
+        } else {
+            $pdf->Cell(20, 10, 'Industria Vidriera #105, Fracc. Industrial Zapopan Norte');
+        }
         $pdf->Ln(5);
         $pdf->Cell(20, 10, $cliente->nombre);
         $pdf->Ln(5);

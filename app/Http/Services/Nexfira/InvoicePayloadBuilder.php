@@ -219,7 +219,7 @@ class InvoicePayloadBuilder
 
         $payloadContent = [
             'cfdiVersion' => '4.0',
-            'issuedAtLocal' => Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'))->format('Y-m-d\TH:i:s'),
+            'issuedAtLocal' => FiscalClock::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'))->format('Y-m-d\TH:i:s'),
             'fiscalTimeZone' => (string) config('nexfira.fiscal_timezone', 'America/Mexico_City'),
             'expeditionPostalCode' => $expeditionPostalCode,
             'currency' => $document->currency,
@@ -574,7 +574,7 @@ class InvoicePayloadBuilder
 
     private function validatedGlobalInformation(array $value)
     {
-        $now = Carbon::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'));
+        $now = FiscalClock::now((string) config('nexfira.fiscal_timezone', 'America/Mexico_City'));
         $periodicity = str_pad(trim((string) ($value['periodicity'] ?? '01')), 2, '0', STR_PAD_LEFT);
         $months = str_pad(trim((string) ($value['months'] ?? $now->format('m'))), 2, '0', STR_PAD_LEFT);
         $year = isset($value['year']) ? (int) $value['year'] : (int) $now->format('Y');

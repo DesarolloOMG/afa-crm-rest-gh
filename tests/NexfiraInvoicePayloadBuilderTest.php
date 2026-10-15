@@ -50,6 +50,21 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->seedCatalogs();
     }
 
+    public function testPayloadUsesCurrentMexicoFiscalTimeWithLegacyTimezoneDatabase()
+    {
+        $previous = \Carbon\Carbon::getTestNow();
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-10-14 22:30:00', 'UTC'));
+        try {
+            $document = $this->insertDocument('RELOJ-FISCAL', 116, 1);
+            $this->insertMovement($document, 1, 116);
+            $payload = (new InvoicePayloadBuilder())->buildIndividual($document, 'fiscal-clock');
+            $this->assertSame('2026-10-14T16:30:00', $payload['content']['issuedAtLocal']);
+            $this->assertSame('America/Mexico_City', $payload['content']['fiscalTimeZone']);
+        } finally {
+            \Carbon\Carbon::setTestNow($previous);
+        }
+    }
+
     public function testBuildsIndividualCfdiFromTaxIncludedMovementPrice()
     {
         $document = $this->insertDocument('VENTA-100', 232.00, 1);
