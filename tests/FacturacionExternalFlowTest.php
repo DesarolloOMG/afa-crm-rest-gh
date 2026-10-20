@@ -19,6 +19,50 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 class FacturacionExternalFlowTest extends TestCase
 {
+    public function testExternalMlgOrderRoundingPreservesSalesAndAuditsTheFiscalDifference()
+    {
+        DB::table('documento_entidad')->where('id', 1)->update(['rfc' => 'MLG100224TC1']);
+        $ids = [];
+        for ($i = 0; $i < 40; $i++) { $ids[] = $this->insertDocument('MLG-ROUND-' . $i, '2599.00', 0); }
+        $xml = file_get_contents(__DIR__ . '/fixtures/mlg-external-rounded.xml');
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('uploadFile')->once()->with(Mockery::pattern('/\.pdf$/'), '%PDF-1.4', false)->andReturn(['id' => 'id:rounded-pdf']);
+        $dropbox->shouldReceive('uploadFile')->once()->with(Mockery::pattern('/\.xml$/'), $xml, false)->andReturn(['id' => 'id:rounded-xml']);
+        $service = $this->creditNoteService(null, $dropbox);
+        $result = $service->attachExternal($ids, '123E4567-E89B-42D3-A456-426614174000', base64_encode('%PDF-1.4'), base64_encode($xml), 9);
+        $this->assertSame('stamped', $result['status']);
+        $this->assertSame('0.13', $result['rounding_reconciliation']['difference']);
+        $this->assertEquals(103960, DB::table('documento')->sum('total'));
+        $this->assertSame(40, DB::table('documento')->where('id_fase', 6)->count());
+        $audit = json_decode(DB::table('facturacion_solicitud')->where('id', $result['id'])->value('response_payload'), true);
+        $this->assertSame('103960.13', $audit['rounding_reconciliation']['fiscal_total']);
+        $this->assertSame(hash('sha256', $xml), DB::table('facturacion_solicitud')->value('xml_sha256'));
+        $again = $service->attachExternal($ids, '123E4567-E89B-42D3-A456-426614174000', base64_encode('%PDF-1.4'), base64_encode($xml), 9);
+        $this->assertSame($result['id'], $again['id']);
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+    }
+
+    public function testSyncPreservesLocalCorrectionHistoryAndIgnoresRemoteAuditInjection()
+    {
+        $audit = [['original_payload' => ['externalReference' => 'original-v1'], 'corrected_reference' => 'original-v2']];
+        $id = DB::table('facturacion_solicitud')->insertGetId([
+            'proveedor' => 'nexfira', 'modo' => 'nota_credito', 'status' => 'rejected', 'version' => 1,
+            'idempotency_key' => 'correction-audit', 'external_reference' => 'correction-audit',
+            'updated_by' => 9, 'response_payload' => json_encode(['afa_corrections' => $audit]),
+        ]);
+        $reflection = new ReflectionClass(FacturacionService::class);
+        $service = $reflection->newInstanceWithoutConstructor();
+        $method = $reflection->getMethod('updateFromRemote');$method->setAccessible(true);
+        $remote = ['requestId' => '723e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval', 'afa_corrections' => ['untrusted']];
+        $method->invoke($service, $id, $remote, 9);
+        $stored = json_decode(DB::table('facturacion_solicitud')->where('id', $id)->value('response_payload'), true);
+        $this->assertSame($audit, $stored['afa_corrections']);
+        DB::table('facturacion_solicitud')->where('id', $id)->update(['response_payload' => '{}']);
+        $method->invoke($service, $id, $remote, 9);
+        $stored = json_decode(DB::table('facturacion_solicitud')->where('id', $id)->value('response_payload'), true);
+        $this->assertArrayNotHasKey('afa_corrections', $stored);
+    }
+
     public function setUp()
     {
         parent::setUp();

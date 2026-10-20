@@ -231,7 +231,12 @@ class FacturacionController extends Controller
                 'code' => 200,
                 'message' => 'CFDI externo timbrado; serie ' . $result['series']
                     . ', folio ' . $result['folio']
-                    . ', UUID, XML y PDF guardados en los documentos seleccionados.',
+                    . ', UUID, XML y PDF guardados en los documentos seleccionados.'
+                    . (!empty($result['rounding_reconciliation'])
+                        ? ' Redondeo verificado: ventas $' . $result['rounding_reconciliation']['source_total']
+                            . ', CFDI $' . $result['rounding_reconciliation']['fiscal_total']
+                            . ', diferencia $' . $result['rounding_reconciliation']['difference']
+                            . '. Los importes y saldos de las ventas se conservan.' : ''),
                 'request' => $result,
             ];
         });

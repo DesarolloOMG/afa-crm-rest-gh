@@ -512,7 +512,19 @@ class FacturacionService
         $pdf = $this->validator->decodeDataUrl($pdfData, 'pdf');
         $xml = $this->validator->decodeDataUrl($xmlData, 'xml');
         $expectedTotal = $this->expectedTotalForDocuments($documentIds);
-        $validated = $this->validator->validate($pdf, $xml, $normalizedUuid, $expectedTotal);
+        $validated = $this->validator->validate($pdf, $xml, $normalizedUuid);
+        if (!$isCreditNote && abs((float) $validated['total'] - $expectedTotal) > 0.05) {
+            $documents = DB::table('documento as d')->join('documento_entidad as e', 'e.id', '=', 'd.id_entidad')
+                ->join('moneda as m', 'm.id', '=', 'd.id_moneda')->whereIn('d.id', $documentIds)
+                ->get(['d.id', 'd.id_tipo', 'd.total', 'e.rfc', 'm.moneda as currency'])->all();
+            $reconciliation = count($documents) === count($documentIds)
+                ? (new ExternalMlgRoundingReconciler())->reconcile($xml, $documents) : null;
+            if ($reconciliation) {
+                $validated['rounding_reconciliation'] = $reconciliation;
+                $expectedTotal = $reconciliation['fiscal_total'];
+            }
+        }
+        $this->validator->validate($pdf, $xml, $normalizedUuid, $expectedTotal);
         if ($isCreditNote) {
             $this->assertCreditNoteAttachments($documentIds, $validated);
         } elseif ($validated['type'] !== 'I') {
@@ -655,6 +667,10 @@ class FacturacionService
         if (isset($previous['afa_reconciliation'])) {
             $remote['afa_reconciliation'] = $previous['afa_reconciliation'];
         }
+        unset($remote['afa_corrections']);
+        if (isset($previous['afa_corrections'])) {
+            $remote['afa_corrections'] = $previous['afa_corrections'];
+        }
         DB::table('facturacion_solicitud')->where('id', (int) $requestId)->update([
             'remote_request_id' => $remote['requestId'],
             'status' => $remote['status'],
@@ -766,6 +782,7 @@ class FacturacionService
                     'xml_identity' => ['serie' => $validated['serie'], 'folio' => $validated['folio']],
                     'series_source' => $validated['serie'] === '' ? 'marketplace' : 'xml',
                     'document_series' => $documentSeries,
+                    'rounding_reconciliation' => $validated['rounding_reconciliation'] ?? null,
                 ], JSON_UNESCAPED_UNICODE);
             } elseif ($replacement) {
                 $response = json_decode((string) $request->response_payload, true) ?: [];
@@ -845,6 +862,8 @@ class FacturacionService
     private function publicRequest($request)
     {
         $activeStatuses = ['sending', 'uncertain', 'pending_approval', 'queued', 'processing', 'stamped'];
+        $remote = json_decode((string) ($request->response_payload ?? ''), true) ?: [];
+        $processingMessage = $remote['processingErrorDetails']['message'] ?? null;
 
         return [
             'id' => (int) $request->id,
@@ -858,8 +877,9 @@ class FacturacionService
             'is_active' => in_array($request->status, $activeStatuses, true),
             'fiscal_uuid' => $request->fiscal_uuid,
             'documents_status' => $request->documents_status,
-            'error_code' => $request->error_code,
-            'error_message' => $request->error_message,
+            'rounding_reconciliation' => $remote['rounding_reconciliation'] ?? null,
+            'error_code' => $request->error_code ?: ($remote['processingErrorCode'] ?? null),
+            'error_message' => $request->error_message ?: (is_string($processingMessage) ? $processingMessage : null),
             'correlation_id' => $request->correlation_id,
             'errors' => $this->decodeValidationErrors(
                 isset($request->validation_errors) ? $request->validation_errors : null

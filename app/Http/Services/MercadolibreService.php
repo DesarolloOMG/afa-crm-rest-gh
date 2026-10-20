@@ -511,7 +511,31 @@ class MercadolibreService
                 continue;
             }
 
-            $venta_principal = $pack->ventas[0];
+            try {
+                $pack->ventas = MercadolibrePackService::resolver($pack->id, $pack->ventas, $seller_id, function ($endpoint) use ($marketplaceData) {
+                    $data = self::callMlApiRaw($marketplaceData->id, $endpoint);
+                    if (($data['code'] ?? 0) === 403 && ($data['data']['error'] ?? '') === 'not_owned_order') {
+                        return (object) ['error' => 'not_owned_order'];
+                    }
+                    $decoded = isset($data['data']) ? json_decode(json_encode($data['data'])) : null;
+                    if (empty($data['ok']) || empty($decoded) || isset($decoded->error)) {
+                        throw new \RuntimeException('No se pudo consultar ' . $endpoint . ' en Mercado Libre');
+                    }
+                    return $decoded;
+                });
+                $importes = MercadolibrePackService::importes($pack->ventas);
+            } catch (\RuntimeException $e) {
+                $pack->error = 1;
+                $pack->mensaje = $e->getMessage();
+                self::log_meli_error($pack->mensaje, $publicacion_id);
+                continue;
+            }
+
+            // Clone: changing aggregate totals must not mutate the first source order.
+            $venta_principal = clone $pack->ventas[0];
+            $venta_principal->total_amount = $importes['total_amount'];
+            $venta_principal->paid_amount = $importes['paid_amount'];
+            $venta_principal->payments = $importes['payments'];
             $venta_principal->productos = [];
             $venta_principal->almacen = 1;
             $venta_principal->proveedor = 0;
@@ -903,14 +927,45 @@ class MercadolibreService
 
     public static function importarVenta($venta, $marketplace, $usuario): stdClass
     {
+        $lock = null;
+        try {
+            if (DB::connection()->getDriverName() === 'mysql') {
+                $name = 'afa_ml_import_' . sha1($marketplace . '|' . ($venta->pack ?? $venta->id));
+                $acquired = DB::select('SELECT GET_LOCK(?, 15) AS acquired', [$name]);
+                if ((int) ($acquired[0]->acquired ?? 0) !== 1) {
+                    return self::logResponse(1, 'El paquete ya esta siendo importado; reintente despues');
+                }
+                $lock = $name;
+            }
+            return DB::transaction(function () use ($venta, $marketplace, $usuario) {
+                return self::crearVentaImportada($venta, $marketplace, $usuario);
+            });
+        } catch (\Exception $e) {
+            return self::logResponse(1, $e->getMessage());
+        } finally {
+            if ($lock !== null) {
+                DB::select('SELECT RELEASE_LOCK(?) AS released', [$lock]);
+            }
+        }
+    }
+
+    private static function crearVentaImportada($venta, $marketplace, $usuario): stdClass
+    {
         set_time_limit(0);
 
         $response = new stdClass();
 
         $ventaExistente = DB::table('documento')
             ->select('id')
-            ->where('no_venta', $venta->id)
             ->where('status', 1)
+            ->where('id_tipo', 2)
+            ->where('id_marketplace_area', $marketplace)
+            ->where(function ($query) use ($venta) {
+                $query->where('no_venta', $venta->id);
+                if (!empty($venta->pack)) {
+                    $query->orWhere('comentario', $venta->pack);
+                }
+            })
             ->first();
 
         if ($ventaExistente) {
@@ -947,6 +1002,7 @@ class MercadolibreService
         $fulfillment = 0;
         $marketplace_fee = 0;
         $marketplace_coupon = 0;
+        $referencias_pago = [];
 
         if (property_exists($venta->shipping, 'logistic_type')) {
             if ($venta->shipping->logistic_type == 'fulfillment') {
@@ -972,8 +1028,32 @@ class MercadolibreService
             if ($payment->status === "approved") {
                 $marketplace_fee += (float)($payment->marketplace_fee ?? 0);
                 $marketplace_coupon += (float)($payment->coupon_amount ?? 0);
+                if (isset($payment->id)) {
+                    $referencias_pago[(string) $payment->id] = (string) $payment->id;
+                }
             }
-            $referencia = $payment->id ?? null;
+        }
+        $referencia = implode(' / ', $referencias_pago);
+        if (strlen($referencia) > 255) {
+            return self::logResponse(1, 'Las referencias de pago exceden la capacidad del ingreso; requiere revision');
+        }
+        foreach ($referencias_pago as $paymentId) {
+            $registrado = DB::table('movimiento_contable')
+                ->where('status', 1)
+                ->where('id_tipo_afectacion', 1)
+                ->where('referencia_pago', 'like', '%' . $paymentId . '%')
+                ->exists();
+            if ($registrado) {
+                return self::logResponse(1, 'El pago ' . $paymentId . ' ya tiene un ingreso registrado; requiere conciliacion');
+            }
+        }
+        $productosAgrupados = self::agruparProductos($venta->productos ?? []);
+        $importeProductos = array_sum(array_map(function ($producto) {
+            return $producto->cantidad * $producto->precio;
+        }, $productosAgrupados));
+        if (!$venta->error && $productosAgrupados
+            && abs(round($importeProductos * 100) - round($venta->total_amount * 100)) > 2) {
+            return self::logResponse(1, 'El importe de productos no coincide con el paquete de Mercado Libre; requiere revision');
         }
 
         $documentoId = DB::table('documento')->insertGetId([
@@ -1026,7 +1106,6 @@ class MercadolibreService
         }
 
         self::insertarDireccion($documentoId, $venta);
-        $productosAgrupados = self::agruparProductos($venta->productos ?? []);
 
         // 1. Calcula el total de pago sumando cada producto (por si no existe paid_amount)
         $total_pago = 0;
@@ -1060,10 +1139,7 @@ class MercadolibreService
             $cuenta_destino = DB::table('marketplace_cuenta')->where('id_marketplace_area', 1)->first();
 
             if(!$cuenta_destino){
-                // 7. Si no tienes cuenta configurada para el marketplace, arma la respuesta de error.
-                $response->error = 1;
-                $response->mensaje = "Venta {$venta->id}: No se encontró una cuenta al cual aplicar el ingreso.";
-                $response->documento = $documentoId;
+                throw new \RuntimeException("Venta {$venta->id}: No se encontró una cuenta al cual aplicar el ingreso.");
             } else {
                 // 8. Trae los datos de la cuenta bancaria/financiera destino.
                 $datos_cuenta = DB::table('cat_entidad_financiera')->where('id', $cuenta_destino->id_entidad_financiera)->first();
@@ -1090,7 +1166,7 @@ class MercadolibreService
                 ]);
 
                 // 10. Relaciona/aplica el ingreso al documento de venta importado
-                MovimientoContableService::aplicarADocumentos(
+                $aplicaciones = MovimientoContableService::aplicarADocumentos(
                     $id_ingreso,
                     [
                         [
@@ -1103,6 +1179,9 @@ class MercadolibreService
                     ],
                     3 // <-- Este es el $monedaMovimiento (probablemente 3 = MXN)
                 );
+                if (count($aplicaciones) !== 1 || ($aplicaciones[0]['status'] ?? '') !== 'success') {
+                    throw new \RuntimeException('No se pudo aplicar el ingreso completo al documento');
+                }
 
             }
         }
@@ -1447,7 +1526,10 @@ class MercadolibreService
             if (!isset($agrupados[$id])) {
                 $agrupados[$id] = clone $producto;
             } else {
+                $importe = $agrupados[$id]->cantidad * $agrupados[$id]->precio
+                    + $producto->cantidad * $producto->precio;
                 $agrupados[$id]->cantidad += $producto->cantidad;
+                $agrupados[$id]->precio = round($importe / $agrupados[$id]->cantidad, 6);
             }
         }
 

@@ -1254,8 +1254,8 @@ class AlmacenController extends Controller
                 $pdf = "";
 
                 if ($auth->id != 9999) {
-                    $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
-                    $impresion = @$impresion_raw;
+                    $impresion_raw = app(PrintController::class)->print($data->documento, $impresora->id, $request);
+                    $impresion = $impresion_raw->getData();
 
                     if (empty($impresion)) {
                         DB::table('seguimiento')->insert([
@@ -1376,8 +1376,8 @@ class AlmacenController extends Controller
             ->select("servidor", "id")
             ->where("id", $data->impresora)
             ->first();
-        $impresion_raw = (new PrintController)->print($data->documento, $impresora->id, $request);
-        $impresion = @$impresion_raw;
+        $impresion_raw = app(PrintController::class)->print($data->documento, $impresora->id, $request);
+        $impresion = $impresion_raw->getData();
 
         if (empty($impresion)) {
             return response()->json([

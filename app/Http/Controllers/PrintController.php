@@ -81,7 +81,40 @@ class PrintController extends Controller
 
     public function print($documento, $impresora, Request $request): JsonResponse
     {
-        return $this->forwardRequest('GET', "api/guias/print/" . $documento . "/" . $impresora, $request);
+        return self::validateGuideResponse(
+            $this->forwardRequest('GET', "api/guias/print/" . $documento . "/" . $impresora, $request)
+        );
+    }
+
+    public static function validateGuideResponse(JsonResponse $response): JsonResponse
+    {
+        $body = $response->getData();
+        $httpStatus = $response->getStatusCode();
+
+        // A successful HTTP request can still contain a printserver error.
+        if ($httpStatus === 200 && is_object($body) && isset($body->code) && (string)$body->code === '200') {
+            return $response;
+        }
+
+        $message = 'El servidor de impresión devolvió una respuesta inválida.';
+        if (is_object($body)) {
+            $details = isset($body->details) && is_object($body->details) ? $body->details : $body;
+            foreach ([$details->message ?? null, $details->error ?? null, $body->message ?? null, $body->error ?? null] as $candidate) {
+                if (is_string($candidate) && trim($candidate) !== '') {
+                    $message = $candidate;
+                    break;
+                }
+            }
+        }
+
+        // Connection exceptions may include the authenticated URL.
+        $message = preg_replace('/([?&]token=)[^&\s\"<>]+/i', '$1[REDACTED]', $message);
+        $code = is_object($body) && isset($body->code) && is_numeric($body->code) ? (int)$body->code : 0;
+        if ($code < 400 || $code > 599) {
+            $code = $httpStatus >= 400 && $httpStatus <= 599 ? $httpStatus : 502;
+        }
+
+        return new JsonResponse(['code' => $code, 'message' => $message], $code);
     }
 
     public function pickingDocumento($documento, $usuario, Request $request): JsonResponse

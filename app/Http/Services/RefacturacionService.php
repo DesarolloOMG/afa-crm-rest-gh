@@ -633,7 +633,8 @@ class RefacturacionService
         $audit = json_decode((string) $row->auditoria, true) ?: [];
         return ['id' => (int) $row->id, 'documento_original' => (int) $row->id_documento_original,
             'documento_nuevo' => (int) $row->id_documento_nuevo, 'nota_credito' => (int) $row->id_nota_credito,
-            'contabilidad' => ['sin_ingresos' => (bool) ($audit['sin_ingresos'] ?? false),
+            'contabilidad' => ['aplicaciones' => $audit['aplicaciones'] ?? [],
+                'sin_ingresos' => (bool) ($audit['sin_ingresos'] ?? false),
                 'saldo_nuevo' => $new ? $new->saldo : null, 'pagado' => $new ? (int) $new->pagado : null],
             'entidad_nueva' => (int) $row->id_entidad_nueva, 'estado_fiscal' => $row->estado_fiscal, 'reutilizada' => $reused];
     }
