@@ -32,6 +32,20 @@ class NexfiraClient
         );
     }
 
+    public function previewExternalInvoice($xml)
+    {
+        return $this->jsonRequest('POST', '/api/v1/integration/external-invoices/preview', [
+            'json' => ['issuerId' => config('nexfira.issuer_id'), 'xmlBase64' => base64_encode($xml)],
+        ], [200]);
+    }
+
+    public function importExternalInvoice($xml, array $opening)
+    {
+        return $this->jsonRequest('POST', '/api/v1/integration/external-invoices', [
+            'json' => ['issuerId' => config('nexfira.issuer_id'), 'xmlBase64' => base64_encode($xml), 'opening' => $opening],
+        ], [200]);
+    }
+
     public function downloadDocument($requestId, $format)
     {
         if (!in_array($format, ['xml', 'pdf'], true)) {

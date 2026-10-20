@@ -19,6 +19,174 @@ use Symfony\Component\Console\Tester\CommandTester;
 
 class FacturacionExternalFlowTest extends TestCase
 {
+    private function externalImportFixture()
+    {
+        $sale = $this->insertDocument('EXTERNAL-ORIGIN', 232, 0);
+        $note = $this->insertCreditNote($sale, 116);
+        $source = $this->storeCreditNoteAntecedent($sale);
+        $row = DB::table('facturacion_solicitud')->where('remote_request_id', $source['request_id'])->first();
+        $payload = json_decode($row->request_payload, true);
+        $payload['content']['items'][0]['lineId'] = 'xml-line-1';
+        DB::table('facturacion_solicitud')->where('id', $row->id)->update([
+            'proveedor' => 'external', 'remote_request_id' => null, 'response_payload' => '{}',
+        ]);
+        DB::table('documento_factura')->insert(['id_documento' => $sale, 'xml' => 'id:source-xml', 'pdf' => 'id:source-pdf', 'updated_by' => 9]);
+        $preview = ['fiscalUuid' => $source['uuid'], 'payload' => $payload, 'environment' => 'production',
+            'originalAmount' => '232.00', 'lines' => [['lineId' => 'xml-line-1', 'netAmount' => '200.000000', 'description' => 'Producto']]];
+        $opening = ['confirmedValid' => true, 'nextInstallment' => 1, 'note' => 'Saldo verificado contra auxiliar y notas previas',
+            'remainingLines' => [['lineId' => 'xml-line-1', 'netAmount' => '200.000000']]];
+        $import = ['requestId' => $source['request_id'], 'fiscalUuid' => $source['uuid'],
+            'issuerId' => config('nexfira.issuer_id'), 'origin' => 'external_xml', 'environment' => 'production',
+            'payload' => $payload, 'opening' => $opening, 'balance' => ['version' => 1, 'availableBalance' => '232.00']];
+        $xml = '<original>immutable</original>';
+        $dropbox = Mockery::mock(DropboxService::class);
+        $dropbox->shouldReceive('downloadFile')->with('id:source-xml')->andReturn($xml);
+        $validator = Mockery::mock(CfdiAttachmentValidator::class);
+        $validator->shouldReceive('validate')->with('%PDF-', $xml, $source['uuid'])->andReturn([
+            'type' => 'I', 'currency' => 'MXN', 'receiver_rfc' => 'XAXX010101000',
+        ]);
+        $client = Mockery::mock(NexfiraClient::class);
+        $service = new App\Http\Services\Nexfira\ExternalInvoiceImportService($client, $dropbox, $validator);
+        $input = ['review_token' => hash('sha256', $sale . ':' . $source['uuid'] . ':' . hash('sha256', $xml)),
+            'confirmedBalances' => true, 'opening' => $opening];
+        return compact('sale', 'note', 'source', 'row', 'preview', 'opening', 'import', 'xml', 'client', 'service', 'input');
+    }
+
+    public function testExternalOriginPreviewDoesNotImportOrChangeOriginalInvoice()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->with($f['xml'])->andReturn($f['preview']);
+        $preview = $f['service']->preview($f['note']);
+        $this->assertSame($f['input']['review_token'], $preview['review_token']);
+        $this->assertSame('{}', DB::table('facturacion_solicitud')->value('response_payload'));
+        $notes = $this->creditNoteService()->pendingDocuments(null, 1, 25, '', 6);
+        $this->assertTrue($notes['documents'][0]['needs_external_import']);
+        $this->assertFalse($notes['documents'][0]['can_hub']);
+    }
+
+    public function testExternalOriginRequiresExplicitValidityAndBalanceConfirmation()
+    {
+        $f = $this->externalImportFixture();
+        $f['input']['confirmedBalances'] = false;
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Confirma la vigencia');
+        $f['service']->confirm($f['note'], $f['input'], 9);
+    }
+
+    public function testExternalOriginRejectsStaleXmlAndDoesNotImport()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $f['input']['review_token'] = 'old-xml';
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('El XML cambió');
+        $f['service']->confirm($f['note'], $f['input'], 9);
+    }
+
+    public function testExternalOriginRejectsOverstatedOpeningBeforeImport()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $f['input']['opening']['remainingLines'][0]['netAmount'] = '200.000001';
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('supera el importe original');
+        $f['service']->confirm($f['note'], $f['input'], 9);
+    }
+
+    public function testExternalOriginRejectsMismatchedReceiverFromProviderPreview()
+    {
+        $f = $this->externalImportFixture();
+        $f['preview']['payload']['content']['receiver']['rfc'] = 'MLG100224TC1';
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('no coincide con la factura origen');
+        $f['service']->preview($f['note']);
+    }
+
+    public function testExternalOriginRejectsDuplicateOpeningLines()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $f['input']['opening']['remainingLines'][] = $f['input']['opening']['remainingLines'][0];
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('saldo neto por concepto no es válido');
+        $f['service']->confirm($f['note'], $f['input'], 9);
+    }
+
+    public function testExternalOriginDoesNotLinkImportOfAnotherFiscalUuid()
+    {
+        $f = $this->externalImportFixture();
+        $f['import']['fiscalUuid'] = '923E4567-E89B-42D3-A456-426614174000';
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $f['client']->shouldReceive('importExternalInvoice')->once()->andReturn($f['import']);
+        try { $f['service']->confirm($f['note'], $f['input'], 9); $this->fail('Se aceptó otro UUID.'); }
+        catch (InvalidArgumentException $e) { $this->assertStringContainsString('no confirmó la identidad', $e->getMessage()); }
+        $this->assertSame('{}', DB::table('facturacion_solicitud')->value('response_payload'));
+        $this->assertSame($f['source']['uuid'], DB::table('documento')->where('id', $f['sale'])->value('uuid'));
+    }
+
+    public function testExternalInvoiceClientUsesDocumentedIntegrationRoutesAndBearerWithoutTenantOverride()
+    {
+        $history = [];
+        $stack = HandlerStack::create(new MockHandler([new Response(200, [], '{"lines":[]}'), new Response(200, [], '{"requestId":"import-id"}')]));
+        $stack->push(\GuzzleHttp\Middleware::history($history));
+        $client = new NexfiraClient(new Client(['handler' => $stack]));
+        $opening = ['confirmedValid' => true, 'nextInstallment' => 1, 'note' => 'Confirmado', 'remainingLines' => []];
+        $client->previewExternalInvoice('<original/>');
+        $client->importExternalInvoice('<original/>', $opening);
+        $this->assertSame('/api/v1/integration/external-invoices/preview', $history[0]['request']->getUri()->getPath());
+        $this->assertSame('/api/v1/integration/external-invoices', $history[1]['request']->getUri()->getPath());
+        foreach ($history as $entry) {
+            $this->assertSame('Bearer hub_int_test.secret', $entry['request']->getHeaderLine('Authorization'));
+            $this->assertFalse($entry['request']->hasHeader('X-Tenant-Id'));
+            $this->assertFalse($entry['request']->hasHeader('Cookie'));
+            $body = json_decode((string) $entry['request']->getBody(), true);
+            $this->assertSame(base64_encode('<original/>'), $body['xmlBase64']);
+        }
+        $this->assertSame($opening, json_decode((string) $history[1]['request']->getBody(), true)['opening']);
+    }
+
+    public function testExternalOriginPropagatesProviderXmlRejectionWithoutCreatingFiscalRequest()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andThrow(
+            new NexfiraApiException('XML rechazado', 422, 'invalid_fiscal_xml', 'provider-correlation'));
+        try { $f['service']->preview($f['note']); $this->fail('Se ignoró el rechazo del proveedor.'); }
+        catch (NexfiraApiException $e) { $this->assertSame('invalid_fiscal_xml', $e->getApiCode()); }
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame('{}', DB::table('facturacion_solicitud')->value('response_payload'));
+    }
+
+    public function testConfirmedExternalOriginEnablesCreditNoteAndUsesImportedFiscalLines()
+    {
+        $f = $this->externalImportFixture();
+        $f['client']->shouldReceive('previewExternalInvoice')->once()->andReturn($f['preview']);
+        $f['client']->shouldReceive('importExternalInvoice')->once()->with($f['xml'], $f['opening'])->andReturn($f['import']);
+        $result = $f['service']->confirm($f['note'], $f['input'], 9);
+        $this->assertTrue($result['imported']);
+        $context = (new App\Http\Services\Nexfira\CreditNoteContext())->resolve($f['note'], true);
+        $this->assertTrue($context['external_origin']);
+        $this->assertSame($f['source']['request_id'], $context['request_id']);
+        $this->assertSame('external', DB::table('facturacion_solicitud')->value('proveedor'));
+        $this->assertNull(DB::table('facturacion_solicitud')->value('remote_request_id'));
+        $this->assertSame($f['source']['uuid'], DB::table('documento')->where('id', $f['sale'])->value('uuid'));
+        $f['client']->shouldReceive('getPaymentBalance')->with($f['source']['request_id'])->andReturn([
+            'antecedentId' => $f['source']['request_id'], 'currency' => 'MXN', 'version' => 1,
+            'availableBalance' => '232.00', 'reservedAmount' => '0.00',
+        ]);
+        $f['client']->shouldReceive('getPaymentBalance')->with($f['source']['request_id'], true)->andReturn([
+            'antecedentId' => $f['source']['request_id'], 'version' => 1,
+            'components' => [['lineId' => 'xml-line-1', 'netAmount' => '200.000000']],
+        ]);
+        $f['client']->shouldReceive('createDocumentRequest')->once()->with(Mockery::on(function ($payload) use ($f) {
+            return $payload['content']['relations'][0]['antecedentId'] === $f['source']['request_id']
+                && $payload['content']['balanceAdjustments'][0]['lineAdjustments'][0]['antecedentLineId'] === 'xml-line-1';
+        }), Mockery::type('string'))->andReturn(['requestId' => '823e4567-e89b-42d3-a456-426614174000', 'status' => 'pending_approval']);
+        $sent = $this->creditNoteService($f['client'])->createIndividual($f['note'], 9);
+        $this->assertSame('pending_approval', $sent['status']);
+        $this->assertSame($f['source']['uuid'], DB::table('documento')->where('id', $f['sale'])->value('uuid'));
+    }
+
     public function testExternalMlgOrderRoundingPreservesSalesAndAuditsTheFiscalDifference()
     {
         DB::table('documento_entidad')->where('id', 1)->update(['rfc' => 'MLG100224TC1']);
@@ -232,7 +400,7 @@ class FacturacionExternalFlowTest extends TestCase
         $preview = $this->creditNoteService()->preview($note);
         $this->assertFalse($preview['valid']);
         $this->assertStringContainsString('tiene un CFDI externo', $preview['blockers'][0]);
-        $this->assertStringContainsString('token de integración del CRM', $preview['blockers'][0]);
+        $this->assertStringContainsString('confirma los saldos por concepto en AFA', $preview['blockers'][0]);
         $this->storeCreditNoteAntecedent($sale);
         try {
             $this->creditNoteService()->createIndividual($note, 9, ['paymentMethod' => 'PPD']);

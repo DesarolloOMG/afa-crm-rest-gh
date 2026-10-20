@@ -505,6 +505,8 @@ $router->group(['prefix' => '', 'middleware' => 'jwt.auth'], function () use ($r
                 $router->get('pendientes', 'FacturacionController@pendientes');
                 $router->post('seleccion', 'FacturacionController@seleccion');
                 $router->get('previsualizar/{documento}', 'FacturacionController@previsualizar');
+                $router->post('nc/{documento}/origen-externo/revisar', 'FacturacionController@previsualizarOrigenExterno');
+                $router->post('nc/{documento}/origen-externo/importar', 'FacturacionController@importarOrigenExterno');
                 $router->post('revisar', 'FacturacionController@revisar');
                 $router->post('pedido/{documento}/partida/{partida}', 'FacturacionController@editarImporte');
                 $router->post('individual/{documento}', 'FacturacionController@individual');

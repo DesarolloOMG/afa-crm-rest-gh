@@ -1275,9 +1275,11 @@ class FacturacionService
                 $preview = $this->builder->preview($document->id);
             }
             $externalBlockers = $alreadyInvoiced ? ['El documento ya tiene un CFDI registrado.'] : [];
+            $needsExternalImport = false;
             if ((int) $document->id_tipo === 6 && !$alreadyInvoiced) {
                 try {
-                    (new CreditNoteContext())->resolve($document->id);
+                    $creditContext = (new CreditNoteContext())->resolve($document->id);
+                    $needsExternalImport = !$creditContext['request_id'];
                 } catch (InvalidArgumentException $exception) {
                     $externalBlockers[] = $exception->getMessage();
                 }
@@ -1301,6 +1303,7 @@ class FacturacionService
                 'requires_external' => $requiresExternal,
                 'can_hub' => !$alreadyInvoiced && !$requiresExternal && $preview['valid'],
                 'can_external' => empty($externalBlockers),
+                'needs_external_import' => $needsExternalImport && !$alreadyInvoiced,
                 'external_blockers' => $externalBlockers,
                 'blockers' => $preview['blockers'],
                 'request' => isset($requestMap[$document->id]) ? $requestMap[$document->id] : null,

@@ -23,6 +23,7 @@ class CreditNoteBalanceAllocator
         } catch (NexfiraApiException $exception) {
             // El Hub no administra saldo para ciertos antecedentes PUE históricos.
             if ($exception->getHttpStatus() === 404
+                && empty($context['external_origin'])
                 && ($context['source_payload']['content']['paymentMethod'] ?? '') === 'PUE') {
                 return $payload;
             }
@@ -73,6 +74,20 @@ class CreditNoteBalanceAllocator
                     }
                 }
             }
+            if (!empty($context['external_origin'])) {
+                // Los IDs del XML no son IDs de movimiento del CRM. Sólo usar conceptos
+                // verificables por descripción, clave SAT, unidad y precio; nunca por posición.
+                foreach ($sourceItems as $lineId => $sourceItem) {
+                    if (trim($sourceItem['description'] ?? '') === trim($creditItem['description'])
+                        && ($sourceItem['productCode'] ?? '') === $creditItem['productCode']
+                        && ($sourceItem['unitCode'] ?? '') === $creditItem['unitCode']
+                        && count($sourceItem['taxes'] ?? []) === count($creditItem['taxes'])
+                        && abs((float) ($sourceItem['unitPrice'] ?? -1) - (float) $creditItem['unitPrice']) <= 0.000001) {
+                        $candidates[] = (string) $lineId;
+                    }
+                }
+            }
+            $candidates = array_values(array_unique($candidates));
             $pending = round((float) $creditItem['quantity'] * (float) $creditItem['unitPrice'] - (float) $creditItem['discount'], 6);
             foreach ($candidates as $lineId) {
                 // No atribuir IVA de la NC a una partida con un tratamiento fiscal distinto.

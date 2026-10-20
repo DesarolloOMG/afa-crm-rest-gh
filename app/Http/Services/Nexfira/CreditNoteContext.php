@@ -33,6 +33,25 @@ class CreditNoteContext
             ->where('fs.status', 'stamped')->whereRaw('UPPER(fs.fiscal_uuid) = ?', [$uuid])
             ->orderBy('fs.id', 'desc')->select('fs.*')->first();
         $payload = NexfiraReplacementResolver::fiscalPayload($request);
+        $requestId = NexfiraReplacementResolver::fiscalRequestId($request);
+        $externalOrigin = false;
+        if (!$request) {
+            $external = DB::table('facturacion_solicitud as fs')
+                ->join('facturacion_solicitud_documento as fsd', 'fsd.id_solicitud', '=', 'fs.id')
+                ->where('fsd.id_documento', $source->id)->where('fs.proveedor', 'external')
+                ->where('fs.status', 'stamped')->whereRaw('UPPER(fs.fiscal_uuid) = ?', [$uuid])
+                ->orderBy('fs.id', 'desc')->select('fs.*')->first();
+            $response = $external ? json_decode((string) $external->response_payload, true) : [];
+            $import = $response['afa_external_import'] ?? [];
+            if (($import['origin'] ?? '') === 'external_xml'
+                && strtoupper($import['fiscalUuid'] ?? '') === $uuid
+                && ($import['issuerId'] ?? '') === config('nexfira.issuer_id')
+                && !empty($import['requestId']) && !empty($import['confirmed_by'])) {
+                $payload = $import['payload'] ?? null;
+                $requestId = $import['requestId'];
+                $externalOrigin = true;
+            }
+        }
         $sameEntity = (int) $note->id_entidad === (int) $source->id_entidad;
         if (!$sameEntity && isset($note->es_refactura) && (int) $note->es_refactura === 1) {
             $noteRfc = DB::table('documento_entidad')->where('id', $note->id_entidad)->value('rfc');
@@ -42,10 +61,10 @@ class CreditNoteContext
         if (!$sameEntity || (int) $note->id_moneda !== (int) $source->id_moneda) {
             throw new InvalidArgumentException('La NC debe corresponder al receptor y moneda de la factura origen.');
         }
-        if ($requireHub && (!$request || !$request->remote_request_id
+        if ($requireHub && (!$requestId
             || ($payload['kind'] ?? null) !== 'CFDI_I' || empty($payload['content']['receiver']))) {
-            throw new InvalidArgumentException('Esta opción del CRM requiere que la factura origen tenga una solicitud timbrada en Nexfira. La venta '
-                . $source->id . ' tiene un CFDI externo: Nexfira permite importarlo desde su portal para preparar una NC, pero esa importación no figura en el contrato publicado para el token de integración del CRM.');
+            throw new InvalidArgumentException('La venta ' . $source->id
+                . ' tiene un CFDI externo. Prepara su XML y confirma los saldos por concepto en AFA antes de timbrar la NC.');
         }
         if ($requireHub && ($payload['content']['currency'] ?? null) !== $source->currency) {
             throw new InvalidArgumentException('La moneda de la factura origen no coincide con la NC.');
@@ -56,7 +75,8 @@ class CreditNoteContext
             'source_uuid' => $uuid,
             'currency' => $source->currency,
             'receiver_rfc' => $payload['content']['receiver']['rfc'] ?? strtoupper(trim($source->rfc)),
-            'request_id' => NexfiraReplacementResolver::fiscalRequestId($request),
+            'request_id' => $requestId,
+            'external_origin' => $externalOrigin,
             'source_payload' => $payload,
         ];
     }

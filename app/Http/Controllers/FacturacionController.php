@@ -82,6 +82,23 @@ class FacturacionController extends Controller
         });
     }
 
+    public function previsualizarOrigenExterno(Request $request, $documento): JsonResponse
+    {
+        return $this->handle(function () use ($request, $documento) {
+            $this->authorizedUserId($request);
+            return ['code' => 200, 'data' => app(\App\Http\Services\Nexfira\ExternalInvoiceImportService::class)->preview((int) $documento)];
+        });
+    }
+
+    public function importarOrigenExterno(Request $request, $documento): JsonResponse
+    {
+        return $this->handle(function () use ($request, $documento) {
+            $userId = $this->authorizedUserId($request);
+            return ['code' => 200, 'data' => app(\App\Http\Services\Nexfira\ExternalInvoiceImportService::class)
+                ->confirm((int) $documento, $this->payload($request), $userId)];
+        });
+    }
+
     public function seleccion(Request $request): JsonResponse
     {
         return $this->handle(function () use ($request) {
