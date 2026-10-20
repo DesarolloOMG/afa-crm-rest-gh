@@ -73,7 +73,10 @@ class InvoicePayloadBuilder
 
         // Agrupar partidas no cambia al cliente: manda documento_entidad en ambos modos.
         $receiver = $this->sharedReceiver($documents);
-        $moneyScale = $receiver['rfc'] === 'MLG100224TC1' ? 2 : 6;
+        // Sólo el concepto agregado por venta redondea su base a centavos.
+        // Por productos se conserva precisión fiscal: redondear cada componente
+        // de un combo a centavos antes de sumarlo altera el total del pedido.
+        $moneyScale = $receiver['rfc'] === 'MLG100224TC1' && $grouping === self::GLOBAL_GROUP_SALES ? 2 : 6;
         if ($grouping === self::GLOBAL_GROUP_PRODUCTS) {
             $items = [];
             foreach ($documents as $document) {
