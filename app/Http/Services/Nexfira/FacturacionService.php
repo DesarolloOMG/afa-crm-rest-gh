@@ -176,17 +176,18 @@ class FacturacionService
         $payload = $this->builder->buildGlobal($documentIds, 'review-global', $grouping, $globalInformation, $overrides);
         return ['valid' => true, 'blockers' => [], 'payload' => $payload,
             'review_hash' => $this->reviewHash($payload, $overrides), 'editable_lines' => $this->editableLines($documentIds),
-            'rounding' => $this->globalRoundingSummary($documentIds, $payload)];
+            'rounding' => $this->globalRoundingSummary($documentIds, $payload, $grouping)];
     }
 
-    private function globalRoundingSummary(array $documentIds, array $payload)
+    private function globalRoundingSummary(array $documentIds, array $payload, $grouping)
     {
         if (($payload['content']['receiver']['rfc'] ?? '') !== 'MLG100224TC1') {
             return null;
         }
         $sourceTotal = round((float) DB::table('documento')->whereIn('id', $documentIds)->sum('total'), 2);
         $invoiceTotal = (float) $payload['content']['expectedTotals']['total'];
-        return ['decimals' => 2, 'source_total' => number_format($sourceTotal, 2, '.', ''),
+        return ['decimals' => 2, 'basis' => $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_SALES ? 'order_total' : 'product_lines',
+            'source_total' => number_format($sourceTotal, 2, '.', ''),
             'invoice_total' => number_format($invoiceTotal, 2, '.', ''),
             'difference' => number_format(round($invoiceTotal - $sourceTotal, 2), 2, '.', '')];
     }
@@ -222,8 +223,13 @@ class FacturacionService
         }
         return DB::transaction(function () use ($documentId, $lineId, $price, $discount, $userId) {
             $document = DB::table('documento')->where('id', (int) $documentId)->lockForUpdate()->first();
-            if (!$document || (int) $document->id_tipo !== 2 || (int) $document->id_fase !== 5 || trim((string) $document->uuid) !== '') {
-                throw new InvalidArgumentException('Sólo puedes editar importes de una venta en fase 5 sin CFDI.');
+            if (!$document || (int) $document->id_tipo !== 2 || (int) $document->id_fase !== 5
+                || (isset($document->status) && (int) $document->status !== 1) || !empty($document->deleted_at)) {
+                throw new InvalidArgumentException('El pedido #' . (int) $documentId . ' debe ser una venta activa en fase 5 para editar sus importes.');
+            }
+            if ($this->hasExistingInvoice($document) || DB::table('documento_factura')->where('id_documento', $documentId)
+                ->where(function ($query) { $query->where('xml', '<>', '')->orWhere('pdf', '<>', ''); })->exists()) {
+                throw new InvalidArgumentException('El pedido #' . (int) $documentId . ' ya tiene CFDI o archivos fiscales relacionados; no puedes editar sus importes.');
             }
             if ($this->activeRequestForDocuments([(int) $documentId])) {
                 throw new InvalidArgumentException('La venta tiene una solicitud fiscal activa.');

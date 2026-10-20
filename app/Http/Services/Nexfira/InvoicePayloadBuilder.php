@@ -383,11 +383,11 @@ class InvoicePayloadBuilder
             $movements = $this->movements($document->id);
             $totals = $this->calculateDocumentTotals($document, 6, $movements);
             $this->assertStoredTotal($document, $totals['total']);
-            if ($moneyScale === 2) {
-                $totals = $this->calculateDocumentTotals($document, $moneyScale, $movements);
-            }
-
-            $base = round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
+            // En modo ventas, MLG factura una base por pedido, no la suma de
+            // bases de sus componentes redondeadas por separado.
+            $base = $moneyScale === 2
+                ? round((float) $document->total / (1 + $this->taxRate()), 2)
+                : round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
             $tax = round($base * $this->taxRate(), 6);
             $items[] = [
                 'lineId' => (string) $document->id,

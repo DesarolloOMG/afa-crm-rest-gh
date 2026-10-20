@@ -305,6 +305,27 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('2099.01', $payload['content']['expectedTotals']['total']);
     }
 
+    public function testMlgSaleBaseIsRoundedOncePerOrderInsteadOfPerComboComponent()
+    {
+        $this->useMlgReceiver();
+        $ids = [];
+        for ($i = 0; $i < 2; $i++) {
+            $ids[] = $id = $this->insertDocument('MLG-COMBO-' . $i, 1999, 0);
+            $this->insertMovement($id, 1, 1599);
+            $this->insertMovement($id, 4, 100);
+        }
+        $builder = new InvoicePayloadBuilder();
+        $sales = $builder->buildGlobal($ids, 'mlg-combo-sales', InvoicePayloadBuilder::GLOBAL_GROUP_SALES);
+        $products = $builder->buildGlobal($ids, 'mlg-combo-products', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
+        $this->assertSame('1723.28', $sales['content']['items'][0]['unitPrice']);
+        $this->assertSame('275.7248', $sales['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('3446.56', $sales['content']['expectedTotals']['subtotal']);
+        $this->assertSame('551.45', $sales['content']['expectedTotals']['transfers']);
+        $this->assertSame('3998.01', $sales['content']['expectedTotals']['total']);
+        $this->assertSame('3998.03', $products['content']['expectedTotals']['total']);
+        $this->assertEquals(3998, DB::table('documento')->sum('total'));
+    }
+
     public function testMlgGlobalRoundsTaxAfterSummingManyLines()
     {
         $this->useMlgReceiver();

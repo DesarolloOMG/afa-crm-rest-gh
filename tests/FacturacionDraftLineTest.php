@@ -22,6 +22,9 @@ class FacturacionDraftLineTest extends TestCase
             $t->increments('id'); $t->integer('id_documento'); $t->decimal('cantidad', 20, 2);
             $t->decimal('precio', 20, 2); $t->decimal('descuento', 20, 2);
         });
+        Schema::create('documento_factura', function ($t) {
+            $t->integer('id_documento'); $t->string('xml')->nullable(); $t->string('pdf')->nullable();
+        });
         Schema::create('facturacion_solicitud', function ($t) {
             $t->increments('id'); $t->string('status');
         });
@@ -65,5 +68,34 @@ class FacturacionDraftLineTest extends TestCase
         }
         $this->assertEquals(116, DB::table('movimiento')->where('id', 7)->value('precio'));
         $this->assertEquals(232, DB::table('documento')->where('id', 1)->value('total'));
+    }
+
+    public function testPlaceholderUuidAllowsDraftEditButRealFiscalEvidenceBlocksIt()
+    {
+        DB::table('documento')->where('id', 1)->update(['uuid' => 'N/A']);
+        $this->service()->updateDraftLine(1, 7, '120.00', '4.00', 3);
+        $this->assertEquals(236, DB::table('documento')->value('total'));
+        DB::table('documento_factura')->insert(['id_documento' => 1, 'xml' => 'id:real-xml']);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('pedido #1 ya tiene CFDI');
+        $this->service()->updateDraftLine(1, 7, '125.00', '4.00', 3);
+    }
+
+    public function testRealUuidBlocksDraftEditEvenInPhaseFive()
+    {
+        DB::table('documento')->where('id', 1)->update(['uuid' => '123E4567-E89B-42D3-A456-426614174000']);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('pedido #1 ya tiene CFDI');
+        $this->service()->updateDraftLine(1, 7, '120.00', '4.00', 3);
+    }
+
+    public function testUncertainRequestStillBlocksPlaceholderUuid()
+    {
+        DB::table('documento')->where('id', 1)->update(['uuid' => 'N/A']);
+        $id = DB::table('facturacion_solicitud')->insertGetId(['status' => 'uncertain']);
+        DB::table('facturacion_solicitud_documento')->insert(['id_documento' => 1, 'id_solicitud' => $id]);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('solicitud fiscal activa');
+        $this->service()->updateDraftLine(1, 7, '120.00', '4.00', 3);
     }
 }
