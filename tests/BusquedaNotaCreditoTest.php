@@ -42,6 +42,11 @@ class BusquedaNotaCreditoTest extends TestCase
             $table->integer('id_marketplace');
             $table->integer('id_area');
         });
+        Schema::create('documento_factura', function ($table) {
+            $table->integer('id_documento');
+            $table->string('xml')->nullable();
+            $table->string('pdf')->nullable();
+        });
         Schema::create('movimiento', function ($table) {
             $table->integer('id')->primary();
             $table->integer('id_documento');
@@ -106,6 +111,56 @@ class BusquedaNotaCreditoTest extends TestCase
         $this->assertCount(1, $note->productos);
         $this->assertNull($note->productos[0]->sku);
         $this->assertEquals(232, $note->total);
+    }
+
+    public function testStampedReturnNoteExposesItsOwnFiscalFilesInDetailAndSaleSummary()
+    {
+        $uuid = 'A3AE288A-9290-4933-BC64-D472F85EABCA';
+        DB::table('documento')->where('id', 38195)->update(['uuid' => $uuid, 'factura_serie' => 'FML', 'factura_folio' => '40389']);
+        DB::table('documento_factura')->insert(['id_documento' => 38195, 'pdf' => 'id:note-pdf', 'xml' => 'id:note-xml']);
+        $service = new BusquedaNotaCreditoService();
+        foreach ([$service->detalle(38195), $service->resumen(38195)] as $note) {
+            $this->assertSame($uuid, $note->uuid);
+            $this->assertSame('40389', $note->factura_folio);
+            $this->assertTrue($note->timbrada);
+            $this->assertTrue($note->pdf_disponible);
+            $this->assertTrue($note->xml_disponible);
+            $this->assertFalse(isset($note->xml));
+            $this->assertFalse(isset($note->pdf));
+        }
+        $this->assertNull($service->resumen(35629));
+    }
+
+    public function testOriginalInvoicesFilesDoNotMakeTheNotesFilesAvailable()
+    {
+        DB::table('documento')->where('id', 38195)->update(['uuid' => 'A3AE288A-9290-4933-BC64-D472F85EABCA']);
+        DB::table('documento_factura')->insert(['id_documento' => 35629, 'pdf' => 'sale-pdf', 'xml' => 'sale-xml']);
+        $note = (new BusquedaNotaCreditoService())->resumen(38195);
+        $this->assertTrue($note->timbrada);
+        $this->assertFalse($note->pdf_disponible);
+        $this->assertFalse($note->xml_disponible);
+    }
+
+    public function testPartialRecoveryEnablesOnlyTheAvailableFiscalFile()
+    {
+        DB::table('documento')->where('id', 38195)->update(['uuid' => 'A3AE288A-9290-4933-BC64-D472F85EABCA']);
+        DB::table('documento_factura')->insert(['id_documento' => 38195, 'pdf' => null, 'xml' => 'id:note-xml']);
+        $note = (new BusquedaNotaCreditoService())->detalle(38195);
+        $this->assertTrue($note->timbrada);
+        $this->assertFalse($note->pdf_disponible);
+        $this->assertTrue($note->xml_disponible);
+    }
+
+    public function testUnstampedNotesKeepFiscalDownloadsDisabledEvenWithStaleFiles()
+    {
+        DB::table('documento_factura')->insert(['id_documento' => 38195, 'pdf' => 'stale-pdf', 'xml' => 'stale-xml']);
+        foreach ([null, '', 'N/A', 'invalid'] as $uuid) {
+            DB::table('documento')->where('id', 38195)->update(['uuid' => $uuid]);
+            $note = (new BusquedaNotaCreditoService())->resumen(38195);
+            $this->assertFalse($note->timbrada);
+            $this->assertFalse($note->pdf_disponible);
+            $this->assertFalse($note->xml_disponible);
+        }
     }
 
     public function testSalesAndUnknownIdsCannotBeOpenedAsCreditNotes()

@@ -1344,10 +1344,7 @@ class GeneralController extends Controller
             $venta->nota_de_credito = null;
             // FIX: Se añade la condición para ignorar explícitamente el texto 'N/A'
             if (!empty($venta->nota) && $venta->nota !== 'N/A' && is_numeric($venta->nota)) {
-                $venta->nota_de_credito = DB::table('documento')
-                    ->where('id', $venta->nota)
-                    ->select('id', 'created_at', 'observacion')
-                    ->first();
+                $venta->nota_de_credito = (new BusquedaNotaCreditoService())->resumen((int) $venta->nota);
             }
 
 

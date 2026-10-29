@@ -31,6 +31,24 @@ class BusquedaNotaCreditoService
             ->orderBy('nc.id')->get();
     }
 
+    public function resumen($id)
+    {
+        $nota = DB::table('documento')->where('id', $id)->where('id_tipo', 6)
+            ->first(['id', 'created_at', 'observacion', 'uuid', 'factura_serie', 'factura_folio']);
+        return $nota ? $this->archivosFiscales($nota) : null;
+    }
+
+    private function archivosFiscales($nota)
+    {
+        $nota->timbrada = preg_match('/^[0-9A-F]{8}-[0-9A-F]{4}-[1-5][0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$/i', trim((string) $nota->uuid)) === 1;
+        $archivos = $nota->timbrada
+            ? DB::table('documento_factura')->where('id_documento', $nota->id)->first(['xml', 'pdf'])
+            : null;
+        $nota->xml_disponible = $nota->timbrada && $archivos && !empty($archivos->xml);
+        $nota->pdf_disponible = $nota->timbrada && $archivos && !empty($archivos->pdf);
+        return $nota;
+    }
+
     public function detalle($id)
     {
         $nota = $this->documentos()->where('nc.id', $id)->first();
@@ -55,6 +73,6 @@ class BusquedaNotaCreditoService
         $nota->subtotal = round($total / 1.16, 2);
         $nota->iva = round($nota->total - $nota->subtotal, 2);
 
-        return $nota;
+        return $this->archivosFiscales($nota);
     }
 }
