@@ -14,6 +14,7 @@ use App\Http\Services\CostoService;
 use App\Http\Services\DocumentoService;
 use App\Http\Services\DropboxService;
 use App\Http\Services\InventarioService;
+use App\Http\Services\OdcReceptionValidator;
 use App\Models\DocumentoEntidad;
 use App\Models\DocumentoEntidadUpdates;
 use Crabbly\Fpdf\Fpdf;
@@ -2887,6 +2888,17 @@ class CompraController extends Controller
 
     public function compra_orden_recepcion_guardar(Request $request): JsonResponse
     {
+        try {
+            return (new OdcReceptionValidator())->run(function () use ($request) {
+                return $this->guardarRecepcionValidada($request);
+            });
+        } catch (\DomainException $e) {
+            return response()->json(['code' => 409, 'message' => $e->getMessage(), 'terminada' => 0]);
+        }
+    }
+
+    private function guardarRecepcionValidada(Request $request): JsonResponse
+    {
         $data = json_decode($request->input('data'));
         $auth = json_decode($request->auth);
         $terminada = 1;
@@ -2910,6 +2922,8 @@ class CompraController extends Controller
                 "message" => "La ODC ya fué recepcionada"
             ]);
         }
+
+        (new OdcReceptionValidator())->validate($data);
 
         DB::table("seguimiento")->insert([
             "id_documento" => $data->id,
@@ -2986,11 +3000,11 @@ class CompraController extends Controller
 
                 foreach ($producto->series as $serie) {
                     $movimiento = DB::table('movimiento')->where('id', $producto->id)->first();
-                    $serie->serie = str_replace(["'", '\\'], '', $serie->serie);
+                    $serie->serie = trim($serie->serie);
                     if ($serie->id == 0) $total_series++;
 
                     if ($serie->id == 0) {
-                        $existe_serie = DB::select("SELECT id, status FROM producto WHERE serie = '" . TRIM($serie->serie) . "'");
+                        $existe_serie = DB::select('SELECT id, status FROM producto WHERE serie = ?', [$serie->serie]);
 
                         if (!empty($existe_serie)) {
                             DB::table("producto")->where(["id" => $existe_serie[0]->id])->update([
@@ -3098,7 +3112,7 @@ class CompraController extends Controller
         $json = array();
 
         if (count($movimientos_recepcionados) > 0) {
-            $pdf = self::ordenes_recepcion_pdf($data->id, $simulacion_documento_erp, $auth->id);
+            $pdf = $this->ordenes_recepcion_pdf($data->id, $simulacion_documento_erp, $auth->id);
 
             $json["file"] = base64_encode($pdf->data);
             $json["name"] = $pdf->name;
@@ -3112,7 +3126,7 @@ class CompraController extends Controller
         return response()->json($json);
     }
 
-    private function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id): stdClass
+    protected function ordenes_recepcion_pdf($documento, $recepcion_erp, $user_id): stdClass
     {
         $info_compra = DB::select("SELECT
                                         documento.factura_folio,
