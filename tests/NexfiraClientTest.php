@@ -9,6 +9,19 @@ use GuzzleHttp\Psr7\Response;
 
 class NexfiraClientTest extends TestCase
 {
+    public function testInconsistentTotalsAreRejectedBeforeAnyHttpRequest()
+    {
+        $mock = new MockHandler([]);
+        $client = new NexfiraClient(new Client(['handler' => HandlerStack::create($mock)]));
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('total fiscal');
+        $client->createDocumentRequest(['kind' => 'CFDI_I', 'content' => [
+            'items' => [['quantity' => '1', 'unitPrice' => '100.00', 'discount' => '0.00', 'taxes' => []]],
+            'expectedTotals' => ['subtotal' => '100.00', 'discount' => '0.00', 'transfers' => '0.00',
+                'withholdings' => '0.00', 'total' => '100.01'],
+        ]], 'must-not-be-sent');
+    }
+
     public function testSendsOpaqueBearerAndIdempotencyKey()
     {
         config([

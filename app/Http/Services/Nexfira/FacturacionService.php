@@ -159,8 +159,12 @@ class FacturacionService
         $state = $this->preview($documentId);
         if (!$state['valid']) { return $state; }
         $payload = $this->builder->buildIndividual($documentId, 'review-' . (int) $documentId, $overrides);
+        if (($payload['kind'] ?? '') === 'CFDI_E') {
+            $payload = (new CreditNoteBalanceAllocator($this->client))->apply($documentId, $payload);
+        }
         return array_merge($state, ['payload' => $payload, 'review_hash' => $this->reviewHash($payload, $overrides),
-            'editable_lines' => $this->editableLines([(int) $documentId])]);
+            'editable_lines' => $this->editableLines([(int) $documentId]),
+            'rounding' => $this->globalRoundingSummary([(int) $documentId], $payload, InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS)]);
     }
 
     public function reviewGlobal(array $documentIds, $grouping, array $globalInformation, array $overrides = [])
@@ -181,12 +185,10 @@ class FacturacionService
 
     private function globalRoundingSummary(array $documentIds, array $payload, $grouping)
     {
-        if (($payload['content']['receiver']['rfc'] ?? '') !== 'MLG100224TC1') {
-            return null;
-        }
         $sourceTotal = round((float) DB::table('documento')->whereIn('id', $documentIds)->sum('total'), 2);
+        if ($sourceTotal <= 0) { return null; }
         $invoiceTotal = (float) $payload['content']['expectedTotals']['total'];
-        return ['decimals' => $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_SALES ? 2 : 6,
+        return ['decimals' => 2, 'tax_decimals' => 6,
             'basis' => $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_SALES ? 'order_total' : 'product_precision',
             'source_total' => number_format($sourceTotal, 2, '.', ''),
             'invoice_total' => number_format($invoiceTotal, 2, '.', ''),
@@ -288,7 +290,6 @@ class FacturacionService
         $externalReference = 'afa-' . (int) $documentId . '-v' . $attempt;
         $idempotencyKey = 'afa-individual-' . (int) $documentId . '-v' . $attempt;
         $payload = $this->builder->buildIndividual($documentId, $externalReference, $overrides);
-        $this->assertReviewHash($payload, $overrides);
         if ((int) $summary->id_tipo === 6) {
             try {
                 $payload = (new CreditNoteBalanceAllocator($this->client))->apply($documentId, $payload);
@@ -305,6 +306,7 @@ class FacturacionService
             }
         }
 
+        $this->assertReviewHash($payload, $overrides);
         return $this->submit((int) $summary->id_tipo === 6 ? 'nota_credito' : 'individual',
             [(int) $documentId], $payload, $externalReference, $idempotencyKey, $userId, $overrides, $recipientVersion);
     }
@@ -584,6 +586,8 @@ class FacturacionService
 
     private function submit($mode, array $documentIds, array $payload, $externalReference, $idempotencyKey, $userId, array $overrides = [], $recipientVersion = null)
     {
+        // Validar antes de reservar folio o persistir cualquier solicitud nueva.
+        FiscalArithmetic::assertPayload($payload);
         $now = date('Y-m-d H:i:s');
         $request = DB::transaction(function () use (
             $mode,

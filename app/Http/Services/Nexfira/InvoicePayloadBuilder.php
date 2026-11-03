@@ -19,9 +19,10 @@ class InvoicePayloadBuilder
         if ((int) $document->id_tipo === 6) {
             return $this->buildCreditNote($document, $externalReference, $overrides);
         }
-        $items = $this->buildProductItems($document);
+        $movements = $this->movements($document->id);
+        $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
+        $items = $this->buildProductItems($document, false, 2, $movements, 6);
         $totals = $this->totalsFromItems($items);
-        $this->assertStoredTotal($document, $totals['total']);
 
         $content = [
             'paymentMethod' => $this->paymentMethod($document, $overrides),
@@ -73,10 +74,8 @@ class InvoicePayloadBuilder
 
         // Agrupar partidas no cambia al cliente: manda documento_entidad en ambos modos.
         $receiver = $this->sharedReceiver($documents);
-        // Sólo el concepto agregado por venta redondea su base a centavos.
-        // Por productos se conserva precisión fiscal: redondear cada componente
-        // de un combo a centavos antes de sumarlo altera el total del pedido.
-        $moneyScale = $receiver['rfc'] === 'MLG100224TC1' && $grouping === self::GLOBAL_GROUP_SALES ? 2 : 6;
+        // Misma precisión fiscal en todos los receptores y agrupaciones.
+        $moneyScale = 2;
         if ($grouping === self::GLOBAL_GROUP_PRODUCTS) {
             $items = [];
             foreach ($documents as $document) {
@@ -91,7 +90,7 @@ class InvoicePayloadBuilder
             $items = $this->buildGlobalSaleItems($documents, $moneyScale);
         }
 
-        $totals = $this->totalsFromItems($items, $moneyScale === 2);
+        $totals = $this->totalsFromItems($items);
         $first = $documents[0];
 
         $content = [
@@ -139,24 +138,16 @@ class InvoicePayloadBuilder
     {
         $context = (new CreditNoteContext())->resolve($document->id, true);
         $isRefacturation = RefacturacionService::isRefacturationCreditNote((int) $document->id);
-        // Una global por ventas ya consolidó el pedido a centavos. Reutilizar
-        // el cálculo monetario compartido, también en la vista previa de su NC.
-        $moneyScale = 6;
-        foreach ($context['source_payload']['content']['items'] as $sourceItem) {
-            if ((string) $sourceItem['lineId'] === (string) $context['source_id']) {
-                $moneyScale = 2;
-                break;
-            }
+        $moneyScale = 2;
+        $movements = $this->movements($document->id);
+        if ($document->total !== null && (float) $document->total > 0) {
+            $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
         }
         // Reconstruir la NC desde sus productos, con impuestos a seis decimales.
-        $items = $this->buildProductItems($document, false, $moneyScale, null, 6);
-        $totals = $this->totalsFromItems($items, $moneyScale === 2);
+        $items = $this->buildProductItems($document, false, $moneyScale, $movements, 6);
+        $totals = $this->totalsFromItems($items);
         if ((float) $totals['total'] <= 0) {
             throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');
-        }
-        // Las NC históricas no guardaban documento.total; sus movimientos son el importe real.
-        if ($document->total !== null && (float) $document->total > 0) {
-            $this->assertStoredTotal($document, $totals['total']);
         }
         $method = $this->validatedPaymentMethod($overrides['paymentMethod'] ?? 'PUE');
         if ($method !== 'PUE') {
@@ -389,9 +380,9 @@ class InvoicePayloadBuilder
             // En modo ventas, MLG factura una base por pedido, no la suma de
             // bases de sus componentes redondeadas por separado.
             $base = $moneyScale === 2
-                ? round((float) $document->total / (1 + $this->taxRate()), 2)
+                ? FiscalArithmetic::divide($document->total, bcadd('1', (string) config('nexfira.tax_rate', '0.160000'), 6), 2)
                 : round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
-            $tax = round($base * $this->taxRate(), 6);
+            $tax = FiscalArithmetic::round(bcmul((string) $base, (string) config('nexfira.tax_rate', '0.160000'), 18), 6);
             $items[] = [
                 'lineId' => (string) $document->id,
                 'productCode' => (string) config('nexfira.global.product_code', '01010101'),
@@ -408,7 +399,7 @@ class InvoicePayloadBuilder
         return $items;
     }
 
-    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 6, $movements = null, $taxScale = null)
+    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 2, $movements = null, $taxScale = 6)
     {
         $taxScale = $taxScale === null ? $moneyScale : $taxScale;
         $movements = $movements ?? $this->movements($document->id);
@@ -483,67 +474,32 @@ class InvoicePayloadBuilder
             ];
         }
 
-        return $this->totalsFromItems($items, $moneyScale === 2);
+        return FiscalArithmetic::totals($items, $moneyScale === 2);
     }
 
     private function movementAmounts($movement, $moneyScale = 6, $taxScale = null)
     {
-        $quantity = (float) $movement->cantidad;
-        $grossUnitPrice = (float) $movement->precio;
-        $grossDiscount = (float) $movement->descuento;
-        if ($quantity <= 0 || $grossUnitPrice < 0 || $grossDiscount < 0) {
+        $quantity = FiscalArithmetic::round($movement->cantidad, 6);
+        $grossUnitPrice = (string) $movement->precio;
+        $grossDiscount = (string) $movement->descuento;
+        if (bccomp($quantity, '0', 6) <= 0 || bccomp($grossUnitPrice, '0', 6) < 0 || bccomp($grossDiscount, '0', 6) < 0) {
             throw new InvalidArgumentException('La partida ' . $movement->id . ' tiene cantidades o importes inválidos.');
         }
-        if ($moneyScale === 2) {
-            $grossUnitPrice = round($grossUnitPrice, 2);
-            $grossDiscount = round($grossDiscount, 2);
-        }
-
-        $divisor = 1 + $this->taxRate();
-        $unitPrice = round($grossUnitPrice / $divisor, $moneyScale);
-        $discount = round($grossDiscount / $divisor, $moneyScale);
-        $base = round(($quantity * $unitPrice) - $discount, $moneyScale);
-        if ($base < 0) {
+        $rate = (string) config('nexfira.tax_rate', '0.160000');
+        $divisor = bcadd('1', $rate, 6);
+        $unitPrice = FiscalArithmetic::divide($grossUnitPrice, $divisor, $moneyScale);
+        $discount = FiscalArithmetic::divide($grossDiscount, $divisor, $moneyScale);
+        $base = FiscalArithmetic::round(bcsub(bcmul($quantity, $unitPrice, 18), $discount, 18), $moneyScale);
+        if (bccomp($base, '0', 6) < 0) {
             throw new InvalidArgumentException('El descuento de la partida ' . $movement->id . ' excede su importe.');
         }
-
-        return [
-            'quantity' => $quantity,
-            'unitPrice' => $unitPrice,
-            'discount' => $discount,
-            'base' => $base,
-            'tax' => round($base * $this->taxRate(), $taxScale === null ? $moneyScale : $taxScale),
-        ];
+        return ['quantity' => $quantity, 'unitPrice' => $unitPrice, 'discount' => $discount,
+            'base' => $base, 'tax' => FiscalArithmetic::round(bcmul($base, $rate, 18), $taxScale === null ? $moneyScale : $taxScale)];
     }
 
-    private function totalsFromItems(array $items, $roundLineAmounts = false)
+    private function totalsFromItems(array $items)
     {
-        $subtotal = 0.0;
-        $discount = 0.0;
-        $transfers = 0.0;
-        foreach ($items as $item) {
-            $lineSubtotal = (float) $item['quantity'] * (float) $item['unitPrice'];
-            $subtotal += $roundLineAmounts ? round($lineSubtotal, 2) : $lineSubtotal;
-            $discount += isset($item['discount']) ? (float) $item['discount'] : 0.0;
-            foreach ($item['taxes'] as $tax) {
-                if ($tax['direction'] === 'transfer') {
-                    $transfers += (float) ($tax['amount'] ?? 0);
-                }
-            }
-        }
-
-        $subtotal = round($subtotal, 2);
-        $discount = round($discount, 2);
-        $transfers = round($transfers, 2);
-        $total = round($subtotal - $discount + $transfers, 2);
-
-        return [
-            'subtotal' => $this->decimal($subtotal, 2),
-            'discount' => $this->decimal($discount, 2),
-            'transfers' => $this->decimal($transfers, 2),
-            'withholdings' => '0.00',
-            'total' => $this->decimal($total, 2),
-        ];
+        return FiscalArithmetic::totals($items);
     }
 
     private function transferTax($base, $amount, $moneyScale = 6)
@@ -679,7 +635,7 @@ class InvoicePayloadBuilder
 
     private function decimal($value, $scale, $trim = false)
     {
-        $formatted = number_format((float) $value, $scale, '.', '');
+        $formatted = FiscalArithmetic::round($value, $scale);
         if ($trim && strpos($formatted, '.') !== false) {
             $formatted = rtrim(rtrim($formatted, '0'), '.');
         }

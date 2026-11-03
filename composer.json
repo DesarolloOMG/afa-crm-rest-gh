@@ -28,6 +28,7 @@
 		"nordsoftware/lumen-cors": "^3.5",
 		"http-interop/http-factory-guzzle": "^1.2",
 		"ext-json": "*",
+		"ext-bcmath": "*",
 		"guzzlehttp/guzzle": "6.5"
 	},
 	"require-dev": {

@@ -29,23 +29,22 @@ class CreditNoteBalanceAllocator
             }
             throw $exception;
         }
-        $total = $payload['content']['expectedTotals']['total'];
         if (($balance['antecedentId'] ?? '') !== $context['request_id']
             || ($balance['currency'] ?? '') !== $context['currency']
             || (int) ($balance['version'] ?? 0) < 1
             || !isset($balance['availableBalance'], $balance['reservedAmount'])
-            || (float) $balance['reservedAmount'] > 0
-            || (float) $total > (float) $balance['availableBalance'] + 0.005) {
+            || (float) $balance['reservedAmount'] > 0) {
             throw new InvalidArgumentException('La factura origen no tiene saldo disponible suficiente o tiene otra reserva activa en Nexfira.');
         }
         $fiscal = $this->client->getPaymentBalance($context['request_id'], true);
         if (($fiscal['antecedentId'] ?? '') !== $context['request_id']
-            || (int) ($fiscal['version'] ?? 0) !== (int) $balance['version']) {
+            || (int) ($fiscal['version'] ?? 0) !== (int) $balance['version']
+            || (isset($fiscal['currency']) && $fiscal['currency'] !== $context['currency'])) {
             throw new InvalidArgumentException('El saldo fiscal cambió; actualiza y vuelve a solicitar la nota de crédito.');
         }
         $remaining = [];
         foreach ($fiscal['components'] ?? [] as $component) {
-            $remaining[$component['lineId']] = (float) $component['netAmount'];
+            $remaining[$component['lineId']] = FiscalArithmetic::round($component['netAmount'], 6);
         }
         $sourceItems = [];
         foreach ($context['source_payload']['content']['items'] as $item) {
@@ -82,13 +81,14 @@ class CreditNoteBalanceAllocator
                         && ($sourceItem['productCode'] ?? '') === $creditItem['productCode']
                         && ($sourceItem['unitCode'] ?? '') === $creditItem['unitCode']
                         && count($sourceItem['taxes'] ?? []) === count($creditItem['taxes'])
-                        && abs((float) ($sourceItem['unitPrice'] ?? -1) - (float) $creditItem['unitPrice']) <= 0.000001) {
+                        && isset($sourceItem['unitPrice'])
+                        && bccomp(FiscalArithmetic::round($sourceItem['unitPrice']), $creditItem['unitPrice'], 6) === 0) {
                         $candidates[] = (string) $lineId;
                     }
                 }
             }
             $candidates = array_values(array_unique($candidates));
-            $pending = round((float) $creditItem['quantity'] * (float) $creditItem['unitPrice'] - (float) $creditItem['discount'], 6);
+            $pending = FiscalArithmetic::net($creditItem);
             foreach ($candidates as $lineId) {
                 // No atribuir IVA de la NC a una partida con un tratamiento fiscal distinto.
                 $sourceTax = $sourceItems[$lineId]['taxes'][0] ?? [];
@@ -99,17 +99,18 @@ class CreditNoteBalanceAllocator
                     || ($sourceTax['rateOrQuota'] ?? '') !== $creditTax['rateOrQuota']) {
                     continue;
                 }
-                $amount = min($pending, $remaining[$lineId] ?? 0);
+                $available = $remaining[$lineId] ?? '0';
+                $amount = bccomp($pending, $available, 6) < 0 ? $pending : $available;
                 if ($amount <= 0) {
                     continue;
                 }
                 $adjustments[] = [
                     'antecedentLineId' => $lineId,
                     'creditLineId' => $creditItem['lineId'],
-                    'netAmount' => number_format($amount, 6, '.', ''),
+                    'netAmount' => FiscalArithmetic::round($amount, 6),
                 ];
-                $remaining[$lineId] -= $amount;
-                $pending = round($pending - $amount, 6);
+                $remaining[$lineId] = bcsub($remaining[$lineId], $amount, 6);
+                $pending = bcsub($pending, $amount, 6);
                 if ($pending <= 0) {
                     break;
                 }
@@ -118,6 +119,12 @@ class CreditNoteBalanceAllocator
                 throw new InvalidArgumentException('No se pudo relacionar el saldo fiscal de la partida '
                     . $creditItem['lineId'] . ' con la factura origen. Revisa productos, precios y notas previas.');
             }
+        }
+        $payload['content']['items'] = FiscalArithmetic::creditItems($payload['content']['items'], $fiscal['components'] ?? [], $adjustments);
+        $payload['content']['expectedTotals'] = FiscalArithmetic::totals($payload['content']['items']);
+        $total = $payload['content']['expectedTotals']['total'];
+        if (bccomp($total, '0', 6) <= 0 || bccomp($total, $balance['availableBalance'], 6) > 0) {
+            throw new InvalidArgumentException('El total fiscal calculado supera el saldo disponible de la factura origen.');
         }
         $payload['content']['balanceAdjustments'] = [[
             'antecedentId' => $context['request_id'],

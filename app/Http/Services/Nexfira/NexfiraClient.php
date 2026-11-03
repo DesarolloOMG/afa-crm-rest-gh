@@ -16,6 +16,7 @@ class NexfiraClient
 
     public function createDocumentRequest(array $payload, $idempotencyKey)
     {
+        FiscalArithmetic::assertPayload($payload);
         return $this->jsonRequest('POST', '/api/v1/document-requests', [
             'headers' => ['Idempotency-Key' => $idempotencyKey],
             'json' => $payload,

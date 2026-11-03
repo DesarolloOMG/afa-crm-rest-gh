@@ -7,6 +7,33 @@ use Illuminate\Support\Facades\Schema;
 
 class NexfiraInvoicePayloadBuilderTest extends TestCase
 {
+    /** @dataProvider fiscalOutputModes */
+    public function testEveryModeAndReceiverUsesCentItemsAndGroupedSixDecimalTax($mode, $mlg)
+    {
+        if ($mlg) { $this->useMlgReceiver(); }
+        $first = $this->insertDocument('PRECISION-A', 19153.74, 0);
+        $second = $this->insertDocument('PRECISION-B', 19153.74, 0);
+        foreach ([$first, $second] as $id) {
+            $this->insertMovement($id, 1, 1915.374);
+            $this->insertMovement($id, 1, 17238.366);
+        }
+        $builder = new InvoicePayloadBuilder();
+        $payload = $mode === 'individual' ? $builder->buildIndividual($first, 'precision')
+            : $builder->buildGlobal([$first, $second], 'precision', $mode);
+        foreach ($payload['content']['items'] as $item) {
+            $this->assertRegExp('/^[0-9]+\.[0-9]{2}$/', $item['unitPrice']);
+            $this->assertSame(round((float) $item['quantity'] * (float) $item['unitPrice'] - (float) $item['discount'], 2), (float) $item['taxes'][0]['base']);
+            $this->assertSame(round((float) $item['taxes'][0]['base'] * .16, 6), (float) $item['taxes'][0]['amount']);
+        }
+        $this->assertSame($mode === 'individual' ? '19153.73' : '38307.47', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('1915.374000', number_format(DB::table('movimiento')->where('id_documento', $first)->orderBy('id')->value('precio'), 6, '.', ''));
+    }
+
+    public function fiscalOutputModes()
+    {
+        return [['individual', false], ['individual', true], ['ventas', false], ['ventas', true], ['productos', false], ['productos', true]];
+    }
+
     public function testReviewHashRejectsChangedInvoiceButIgnoresGeneratedReferenceAndTime()
     {
         $reflection = new ReflectionClass(FacturacionService::class);
@@ -74,7 +101,7 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
 
         $this->assertSame('CFDI_I', $payload['kind']);
         $this->assertSame('PUBLICO EN GENERAL', $payload['content']['receiver']['name']);
-        $this->assertSame('100', $payload['content']['items'][0]['unitPrice']);
+        $this->assertSame('100.00', $payload['content']['items'][0]['unitPrice']);
         $this->assertSame('200.00', $payload['content']['expectedTotals']['subtotal']);
         $this->assertSame('32.00', $payload['content']['expectedTotals']['transfers']);
         $this->assertSame('232.00', $payload['content']['expectedTotals']['total']);
@@ -258,13 +285,13 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertStringStartsWith('pedido-' . $second . '-partida-', $payload['content']['items'][1]['lineId']);
         $this->assertSame('43211503', $payload['content']['items'][0]['productCode']);
         $this->assertSame('43211503', $payload['content']['items'][1]['productCode']);
-        $this->assertSame('100', $payload['content']['items'][0]['unitPrice']);
-        $this->assertSame('200', $payload['content']['items'][1]['unitPrice']);
+        $this->assertSame('100.00', $payload['content']['items'][0]['unitPrice']);
+        $this->assertSame('200.00', $payload['content']['items'][1]['unitPrice']);
         $this->assertSame('348.00', $payload['content']['expectedTotals']['total']);
         $this->assertArrayNotHasKey('globalInformation', $payload['content']);
     }
 
-    public function testMlgProductsPreserveSixDecimalPricesAndOriginalGrossTotals()
+    public function testMlgProductsUseCentPricesAndSixDecimalTaxesWithoutChangingStoredPrices()
     {
         $this->useMlgReceiver();
         $monitor = $this->insertDocument('MLG-1990', 1990, 0);
@@ -275,10 +302,10 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
             'mlg-cents', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
 
         $item = $payload['content']['items'][0];
-        $this->assertSame('1715.517241', $item['unitPrice']);
-        $this->assertSame('1715.517241', $item['taxes'][0]['base']);
-        $this->assertSame('274.482759', $item['taxes'][0]['amount']);
-        $this->assertSame('7589.01', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('1715.52', $item['unitPrice']);
+        $this->assertSame('1715.52', $item['taxes'][0]['base']);
+        $this->assertSame('274.4832', $item['taxes'][0]['amount']);
+        $this->assertSame('7589.02', $payload['content']['expectedTotals']['total']);
         foreach ($payload['content']['items'] as $item) {
             foreach ([$item['unitPrice'], $item['discount'], $item['taxes'][0]['base']] as $amount) {
                 $this->assertRegExp('/^[0-9]+(?:\.[0-9]{1,6})?$/', $amount);
@@ -322,7 +349,7 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->assertSame('3446.56', $sales['content']['expectedTotals']['subtotal']);
         $this->assertSame('551.45', $sales['content']['expectedTotals']['transfers']);
         $this->assertSame('3998.01', $sales['content']['expectedTotals']['total']);
-        $this->assertSame('3998.00', $products['content']['expectedTotals']['total']);
+        $this->assertSame('3998.03', $products['content']['expectedTotals']['total']);
         $this->assertEquals(3998, DB::table('documento')->sum('total'));
     }
 
@@ -336,8 +363,8 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         }
         $payload = (new InvoicePayloadBuilder())->buildGlobal($ids, 'mlg-batch-cents', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
         $this->assertCount(1000, $payload['content']['items']);
-        // No redondear el precio bruto ni la base de cada producto a centavos.
-        $this->assertSame('1716333.30', $payload['content']['expectedTotals']['total']);
+        // Las partidas fiscales usan centavos; el pedido guardado conserva su precio original.
+        $this->assertSame('1716336.00', $payload['content']['expectedTotals']['total']);
     }
 
     public function testMlgFractionalQuantitiesSumRoundedConceptAmounts()
@@ -348,9 +375,9 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         $this->insertMovement($first, .5, 1.4286);
         $this->insertMovement($second, .5, 1.4286);
         $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'mlg-fractional-quantity', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
-        $this->assertSame('1.23', $payload['content']['expectedTotals']['subtotal']);
+        $this->assertSame('1.24', $payload['content']['expectedTotals']['subtotal']);
         $this->assertSame('0.20', $payload['content']['expectedTotals']['transfers']);
-        $this->assertSame('1.43', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('1.44', $payload['content']['expectedTotals']['total']);
     }
 
     public function testMlgRoundingStillRejectsAnIncorrectOriginalOrderTotal()
@@ -365,13 +392,13 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
         (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'mlg-wrong-total', InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS);
     }
 
-    public function testMlgIndividualKeepsExistingPrecision()
+    public function testMlgIndividualUsesTheSameCentAndTaxPrecisionAsGlobalInvoices()
     {
         $this->useMlgReceiver();
         $first = $this->insertDocument('MLG-INDIVIDUAL', 1990, 0);
         $this->insertMovement($first, 1, 1990);
         $payload = (new InvoicePayloadBuilder())->buildIndividual($first, 'mlg-individual');
-        $this->assertSame('1715.517241', $payload['content']['items'][0]['unitPrice']);
+        $this->assertSame('1715.52', $payload['content']['items'][0]['unitPrice']);
         $this->assertSame('1990.00', $payload['content']['expectedTotals']['total']);
     }
 
@@ -386,10 +413,10 @@ class NexfiraInvoicePayloadBuilderTest extends TestCase
             $payload = (new InvoicePayloadBuilder())->buildGlobal([$first, $second], 'mlg-rejected-tax', $grouping);
             $tax = $payload['content']['items'][0]['taxes'][0];
             $products = $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_PRODUCTS;
-            $this->assertSame($products ? '1464.655172' : '1464.66', $tax['base']);
-            $this->assertSame($products ? '234.344828' : '234.3456', $tax['amount']);
-            $this->assertSame($products ? '250.34' : '250.35', $payload['content']['expectedTotals']['transfers']);
-            $this->assertSame($products ? '1815.00' : '1815.01', $payload['content']['expectedTotals']['total']);
+            $this->assertSame('1464.66', $tax['base']);
+            $this->assertSame('234.3456', $tax['amount']);
+            $this->assertSame('250.35', $payload['content']['expectedTotals']['transfers']);
+            $this->assertSame('1815.01', $payload['content']['expectedTotals']['total']);
         }
     }
 
