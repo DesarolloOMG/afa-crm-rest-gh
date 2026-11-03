@@ -4,6 +4,30 @@ use App\Http\Services\Nexfira\FiscalArithmetic;
 
 class NexfiraFiscalArithmeticTest extends \PHPUnit\Framework\TestCase
 {
+    public function testSixDecimalIvaCannotAccidentallyEscapeTheOutboundGuard()
+    {
+        $items = [$this->item('a', '7390.96', '1182.5536')];
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('exactamente dos decimales');
+        FiscalArithmetic::assertPayload(['kind' => 'CFDI_I', 'content' => [
+            'items' => $items, 'expectedTotals' => FiscalArithmetic::totals($items),
+        ]]);
+    }
+
+    public function testCompatibleCreditOutputsOnlyTwoDecimalMoney()
+    {
+        $items = FiscalArithmetic::creditItems([$this->item('c', '50.00', '8.00')],
+            [$this->component('a', '100.00', '16.00')], [
+                ['antecedentLineId' => 'a', 'creditLineId' => 'c', 'netAmount' => '50.00'],
+            ]);
+        $this->assertSame('50.00', $items[0]['taxes'][0]['base']);
+        $this->assertSame('8.00', $items[0]['taxes'][0]['amount']);
+        FiscalArithmetic::assertPayload(['kind' => 'CFDI_E', 'content' => [
+            'items' => $items, 'expectedTotals' => FiscalArithmetic::totals($items),
+            'balanceAdjustments' => [['amount' => '58.00', 'lineAdjustments' => [['netAmount' => '50.00']]]],
+        ]]);
+    }
+
     private function item($id, $net, $tax)
     {
         return ['lineId' => $id, 'quantity' => '1', 'unitPrice' => $net, 'discount' => '0.00',
@@ -17,19 +41,16 @@ class NexfiraFiscalArithmeticTest extends \PHPUnit\Framework\TestCase
         return ['lineId' => $id, 'netAmount' => $net, 'taxObject' => '02', 'taxes' => $item['taxes']];
     }
 
-    public function testProviderFeedbackGroupsProportionalIvaBeforeRoundingTotal()
+    public function testProviderFeedbackMismatchIsNotSentAsARoundedCredit()
     {
         $items = [$this->item('credit-1', '1651.18', '264.19'), $this->item('credit-2', '14860.66', '2377.71')];
         $components = [$this->component('origin-1', '1651.184483', '264.189517'),
             $this->component('origin-2', '14860.660345', '2377.705655')];
         $lines = [['antecedentLineId' => 'origin-1', 'creditLineId' => 'credit-1', 'netAmount' => '1651.180000'],
             ['antecedentLineId' => 'origin-2', 'creditLineId' => 'credit-2', 'netAmount' => '14860.660000']];
-        $result = FiscalArithmetic::creditItems($items, $components, $lines);
-        $this->assertSame(['264.188800', '2377.705600'],
-            array_map(function ($item) { return $item['taxes'][0]['amount']; }, $result));
-        $this->assertSame(['subtotal' => '16511.84', 'discount' => '0.00', 'transfers' => '2641.89',
-            'withholdings' => '0.00', 'total' => '19153.73'], FiscalArithmetic::totals($result));
-        $this->assertSame('264.19', $items[0]['taxes'][0]['amount']);
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('antecedente calcula $19153.73');
+        FiscalArithmetic::creditItems($items, $components, $lines);
     }
 
     public function testHalfUpUsesDecimalStringsAtLargeValuesAndNegativeDifferences()
@@ -47,7 +68,7 @@ class NexfiraFiscalArithmeticTest extends \PHPUnit\Framework\TestCase
                 ['antecedentLineId' => 'a', 'creditLineId' => 'credit', 'netAmount' => '100.00'],
                 ['antecedentLineId' => 'b', 'creditLineId' => 'credit', 'netAmount' => '66.66'],
             ]);
-        $this->assertSame('26.665600', $result[0]['taxes'][0]['amount']);
+        $this->assertSame('26.67', $result[0]['taxes'][0]['amount']);
         $this->assertSame('193.33', FiscalArithmetic::totals($result)['total']);
     }
 
@@ -58,11 +79,11 @@ class NexfiraFiscalArithmeticTest extends \PHPUnit\Framework\TestCase
         $half = FiscalArithmetic::creditItems([$this->item('c', '50.00', '0')], [$source], [
             ['antecedentLineId' => 'a', 'creditLineId' => 'c', 'netAmount' => '50.00'],
         ]);
-        $this->assertSame('8.000000', $half[0]['taxes'][0]['amount']);
+        $this->assertSame('8.00', $half[0]['taxes'][0]['amount']);
         $full = FiscalArithmetic::creditItems([$this->item('c', '100.00', '0')], [$source], [
             ['antecedentLineId' => 'a', 'creditLineId' => 'c', 'netAmount' => '100.00'],
         ]);
-        $this->assertSame('15.990000', $full[0]['taxes'][0]['amount']);
+        $this->assertSame('15.99', $full[0]['taxes'][0]['amount']);
     }
 
     public function testEachTaxRateIsGroupedSeparatelyAndExemptTaxHasNoAmount()
@@ -86,10 +107,10 @@ class NexfiraFiscalArithmeticTest extends \PHPUnit\Framework\TestCase
 
     public function testBalanceAmountMustEqualTheSameCalculatedFiscalTotal()
     {
-        $items = [$this->item('a', '1651.18', '264.188800'), $this->item('b', '14860.66', '2377.705600')];
+        $items = [$this->item('a', '1651.18', '264.19'), $this->item('b', '14860.66', '2377.71')];
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('balanceAdjustments.amount');
         FiscalArithmetic::assertPayload(['kind' => 'CFDI_E', 'content' => ['items' => $items,
-            'expectedTotals' => FiscalArithmetic::totals($items), 'balanceAdjustments' => [['amount' => '19153.74']]]]);
+            'expectedTotals' => FiscalArithmetic::totals($items), 'balanceAdjustments' => [['amount' => '19153.73']]]]);
     }
 }

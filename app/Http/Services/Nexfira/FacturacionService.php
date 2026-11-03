@@ -188,7 +188,7 @@ class FacturacionService
         $sourceTotal = round((float) DB::table('documento')->whereIn('id', $documentIds)->sum('total'), 2);
         if ($sourceTotal <= 0) { return null; }
         $invoiceTotal = (float) $payload['content']['expectedTotals']['total'];
-        return ['decimals' => 2, 'tax_decimals' => 6,
+        return ['decimals' => 2, 'tax_decimals' => 2,
             'basis' => $grouping === InvoicePayloadBuilder::GLOBAL_GROUP_SALES ? 'order_total' : 'product_precision',
             'source_total' => number_format($sourceTotal, 2, '.', ''),
             'invoice_total' => number_format($invoiceTotal, 2, '.', ''),

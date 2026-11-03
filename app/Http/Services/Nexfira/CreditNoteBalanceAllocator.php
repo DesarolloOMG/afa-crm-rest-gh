@@ -101,13 +101,15 @@ class CreditNoteBalanceAllocator
                 }
                 $available = $remaining[$lineId] ?? '0';
                 $amount = bccomp($pending, $available, 6) < 0 ? $pending : $available;
+                // No consumir fracciones de centavo de un saldo histórico.
+                $amount = bcdiv($amount, '1', 2);
                 if ($amount <= 0) {
                     continue;
                 }
                 $adjustments[] = [
                     'antecedentLineId' => $lineId,
                     'creditLineId' => $creditItem['lineId'],
-                    'netAmount' => FiscalArithmetic::round($amount, 6),
+                    'netAmount' => FiscalArithmetic::round($amount, 2),
                 ];
                 $remaining[$lineId] = bcsub($remaining[$lineId], $amount, 6);
                 $pending = bcsub($pending, $amount, 6);

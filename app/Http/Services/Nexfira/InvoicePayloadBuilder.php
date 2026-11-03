@@ -21,7 +21,7 @@ class InvoicePayloadBuilder
         }
         $movements = $this->movements($document->id);
         $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
-        $items = $this->buildProductItems($document, false, 2, $movements, 6);
+        $items = $this->buildProductItems($document, false, 2, $movements, 2);
         $totals = $this->totalsFromItems($items);
 
         $content = [
@@ -82,8 +82,8 @@ class InvoicePayloadBuilder
                 // Validar el pedido original antes de recalcular los centavos del CFDI.
                 $movements = $this->movements($document->id);
                 $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
-                // El IVA debe conservar base * tasa antes de redondear el total fiscal.
-                $documentItems = $this->buildProductItems($document, true, $moneyScale, $movements, 6);
+                // Todos los importes enviados, incluido el IVA por partida, usan centavos.
+                $documentItems = $this->buildProductItems($document, true, $moneyScale, $movements, 2);
                 $items = array_merge($items, $documentItems);
             }
         } else {
@@ -143,8 +143,8 @@ class InvoicePayloadBuilder
         if ($document->total !== null && (float) $document->total > 0) {
             $this->assertStoredTotal($document, $this->calculateDocumentTotals($document, 6, $movements)['total']);
         }
-        // Reconstruir la NC desde sus productos, con impuestos a seis decimales.
-        $items = $this->buildProductItems($document, false, $moneyScale, $movements, 6);
+        // Reconstruir la NC desde sus productos, con bases e importes de impuestos a centavos.
+        $items = $this->buildProductItems($document, false, $moneyScale, $movements, 2);
         $totals = $this->totalsFromItems($items);
         if ((float) $totals['total'] <= 0) {
             throw new InvalidArgumentException('La nota de crédito debe tener un importe mayor que cero.');
@@ -382,7 +382,7 @@ class InvoicePayloadBuilder
             $base = $moneyScale === 2
                 ? FiscalArithmetic::divide($document->total, bcadd('1', (string) config('nexfira.tax_rate', '0.160000'), 6), 2)
                 : round((float) $totals['subtotal'] - (float) $totals['discount'], $moneyScale);
-            $tax = FiscalArithmetic::round(bcmul((string) $base, (string) config('nexfira.tax_rate', '0.160000'), 18), 6);
+            $tax = FiscalArithmetic::round(bcmul((string) $base, (string) config('nexfira.tax_rate', '0.160000'), 18), 2);
             $items[] = [
                 'lineId' => (string) $document->id,
                 'productCode' => (string) config('nexfira.global.product_code', '01010101'),
@@ -392,14 +392,14 @@ class InvoicePayloadBuilder
                 'unitPrice' => $this->decimal($base, $moneyScale, $moneyScale !== 2),
                 'discount' => '0.00',
                 'taxObject' => '02',
-                'taxes' => [$this->transferTax($base, $tax, 6)],
+                'taxes' => [$this->transferTax($base, $tax, 2)],
             ];
         }
 
         return $items;
     }
 
-    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 2, $movements = null, $taxScale = 6)
+    private function buildProductItems($document, $includeDocumentInLineId = false, $moneyScale = 2, $movements = null, $taxScale = 2)
     {
         $taxScale = $taxScale === null ? $moneyScale : $taxScale;
         $movements = $movements ?? $this->movements($document->id);

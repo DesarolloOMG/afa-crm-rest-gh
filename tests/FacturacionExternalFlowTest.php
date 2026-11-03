@@ -543,7 +543,7 @@ class FacturacionExternalFlowTest extends TestCase
             $adjustment = $payload['content']['balanceAdjustments'][0];
             return $adjustment['expectedBalanceVersion'] === 3 && $adjustment['amount'] === '116.00'
                 && $adjustment['lineAdjustments'][0]['antecedentLineId'] === $source['line_id']
-                && $adjustment['lineAdjustments'][0]['netAmount'] === '100.000000';
+                && $adjustment['lineAdjustments'][0]['netAmount'] === '100.00';
         }), Mockery::type('string'))->andReturn([
             'requestId' => '823e4567-e89b-42d3-a456-426614174000', 'status' => 'queued',
         ]);
@@ -551,7 +551,7 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('queued', $result['status']);
     }
 
-    public function testRefacturationBuildsProductsWithSixDecimalTaxesAndDoesNotUseOtherSalesBalance()
+    public function testRefacturationRejectsHistoricalRoundingConflictAndDoesNotUseOtherSalesBalance()
     {
         $sale = $this->insertDocument('GLOBAL-38443', 232, 0);
         $note = $this->insertCreditNote($sale, 11699.10);
@@ -576,14 +576,14 @@ class FacturacionExternalFlowTest extends TestCase
         $this->assertSame('10085.43', $payload['content']['items'][0]['unitPrice']);
         $this->assertSame('1120.60', $payload['content']['items'][1]['unitPrice']);
         $this->assertSame('11206.03', $payload['content']['expectedTotals']['subtotal']);
-        $this->assertSame('1613.6688', $payload['content']['items'][0]['taxes'][0]['amount']);
-        $this->assertSame('179.296', $payload['content']['items'][1]['taxes'][0]['amount']);
+        $this->assertSame('1613.67', $payload['content']['items'][0]['taxes'][0]['amount']);
+        $this->assertSame('179.30', $payload['content']['items'][1]['taxes'][0]['amount']);
         foreach ($payload['content']['items'] as $item) {
             $tax = $item['taxes'][0];
-            $this->assertSame(round((float) $tax['base'] * (float) $tax['rateOrQuota'], 6), (float) $tax['amount']);
+            $this->assertSame(round((float) $tax['base'] * (float) $tax['rateOrQuota'], 2), (float) $tax['amount']);
         }
-        $this->assertSame('1792.96', $payload['content']['expectedTotals']['transfers']);
-        $this->assertSame('12998.99', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('1792.97', $payload['content']['expectedTotals']['transfers']);
+        $this->assertSame('12999.00', $payload['content']['expectedTotals']['total']);
         $client = Mockery::mock(NexfiraClient::class);
         $client->shouldReceive('getPaymentBalance')->with($source['request_id'])->andReturn([
             'antecedentId' => $source['request_id'], 'currency' => 'MXN', 'version' => 1,
@@ -596,18 +596,19 @@ class FacturacionExternalFlowTest extends TestCase
         $short = $fiscal; $short['components'][0]['netAmount'] = '11206.02';
         $client->shouldReceive('getPaymentBalance')->with($source['request_id'], true)->andReturn($fiscal, $short);
         $allocator = new \App\Http\Services\Nexfira\CreditNoteBalanceAllocator($client);
-        $result = $allocator->apply($note, $payload);
-        $this->assertSame('12998.99', $result['content']['balanceAdjustments'][0]['amount']);
-        $lines = $result['content']['balanceAdjustments'][0]['lineAdjustments'];
-        $this->assertSame(['10085.430000', '1120.600000'], array_column($lines, 'netAmount'));
-        $this->assertSame([(string) $sale, (string) $sale], array_column($lines, 'antecedentLineId'));
+        try {
+            $allocator->apply($note, $payload);
+            $this->fail('The source balance and rounded outgoing total must agree.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('importes a dos decimales', $exception->getMessage());
+        }
         $this->assertSame('11699.100000', number_format(DB::table('movimiento')->where('id_documento', $note)->orderBy('id')->value('precio'), 6, '.', ''));
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('No se pudo relacionar el saldo fiscal');
         $allocator->apply($note, $payload);
     }
 
-    public function testPublicCreditNoteUsesProportionalTaxesAndTheSameCalculatedBalanceAmount()
+    public function testHistoricalCreditNoteRoundingConflictIsBlockedBeforeAnySubmission()
     {
         $sale = $this->insertDocument('ORIGEN-41311', 232, 0);
         $note = $this->insertCreditNote($sale, 1915.374);
@@ -637,9 +638,9 @@ class FacturacionExternalFlowTest extends TestCase
         DB::table('facturacion_solicitud')->where('id', $request->id)->update(['request_payload' => json_encode($original)]);
         $payload = (new InvoicePayloadBuilder())->buildIndividual($note, 'nc-41671', ['paymentForm' => '31']);
         $this->assertSame(['1651.18', '14860.66'], array_column($payload['content']['items'], 'unitPrice'));
-        $this->assertSame('19153.73', $payload['content']['expectedTotals']['total']);
+        $this->assertSame('19153.74', $payload['content']['expectedTotals']['total']);
         $this->assertSame('G02', $payload['content']['receiver']['cfdiUse']);
-        $this->assertSame(['264.1888', '2377.7056'], array_map(function ($item) {
+        $this->assertSame(['264.19', '2377.71'], array_map(function ($item) {
             return $item['taxes'][0]['amount'];
         }, $payload['content']['items']));
         $client = Mockery::mock(NexfiraClient::class);
@@ -653,11 +654,15 @@ class FacturacionExternalFlowTest extends TestCase
                 return ['lineId' => $item['lineId'], 'netAmount' => $item['unitPrice'], 'taxObject' => $item['taxObject'], 'taxes' => $item['taxes']];
             }, $original['content']['items']),
         ]);
-        $allocated = (new \App\Http\Services\Nexfira\CreditNoteBalanceAllocator($client))->apply($note, $payload);
-        $this->assertSame(['264.188800', '2377.705600'], array_map(function ($item) { return $item['taxes'][0]['amount']; }, $allocated['content']['items']));
-        $lines = $allocated['content']['balanceAdjustments'][0]['lineAdjustments'];
-        $this->assertSame(['1651.180000', '14860.660000'], array_column($lines, 'netAmount'));
-        $this->assertSame('19153.73', $allocated['content']['balanceAdjustments'][0]['amount']);
+        try {
+            $this->creditNoteService($client)->createIndividual($note, 9, ['paymentForm' => '31']);
+            $this->fail('An inconsistent historical balance must not be submitted.');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('$19153.73', $exception->getMessage());
+            $this->assertStringContainsString('$19153.74', $exception->getMessage());
+        }
+        $this->assertSame(1, DB::table('facturacion_solicitud')->count());
+        $this->assertSame(40000, (int) DB::table('facturacion_folio_consecutivo')->value('siguiente_folio'));
         $this->assertSame([1915.374, 17238.366], array_map('floatval', DB::table('movimiento')
             ->where('id_documento', $note)->orderBy('id')->pluck('precio')->all()));
     }

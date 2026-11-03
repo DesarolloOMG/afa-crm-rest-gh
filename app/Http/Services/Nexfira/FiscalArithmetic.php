@@ -4,7 +4,7 @@ namespace App\Http\Services\Nexfira;
 
 use InvalidArgumentException;
 
-/** Cálculos decimales compartidos: partidas a centavos, impuestos a seis decimales. */
+/** Importes enviados a centavos; precisión interna para conciliar saldos históricos. */
 class FiscalArithmetic
 {
     public static function round($value, $scale = 2)
@@ -111,6 +111,7 @@ class FiscalArithmetic
                 }
             }
         }
+        $preciseItems = [];
         foreach ($items as &$item) {
             $id = $item['lineId'];
             if (!isset($allocated[$id]) || bccomp(self::net($item), $allocated[$id], 6) !== 0) {
@@ -122,8 +123,23 @@ class FiscalArithmetic
                 throw new InvalidArgumentException('El tratamiento fiscal de la NC difiere del antecedente.');
             }
             $item['taxes'] = array_values($actual);
+            $preciseItems[] = $item;
+            foreach ($item['taxes'] as &$tax) {
+                $tax['base'] = self::round($tax['base']);
+                if (isset($tax['amount'])) { $tax['amount'] = self::round($tax['amount']); }
+            }
+            unset($tax);
         }
         unset($item);
+        // Nunca enviar un total que contradiga el consumo del antecedente:
+        // el redondeo de una NC histórica puede no ser representable a centavos.
+        $sourceTotals = self::totals($preciseItems);
+        $sentTotals = self::totals($items);
+        if ($sourceTotals !== $sentTotals) {
+            throw new InvalidArgumentException('El saldo fiscal del antecedente calcula $' . $sourceTotals['total']
+                . ', pero los importes a dos decimales calculan $' . $sentTotals['total']
+                . '. Revisa la composición fiscal en Nexfira antes de emitir la NC; no se reservó otro folio.');
+        }
         return $items;
     }
 
@@ -131,6 +147,16 @@ class FiscalArithmetic
     {
         if (!in_array($payload['kind'] ?? '', ['CFDI_I', 'CFDI_E'], true)) { return; }
         $content = $payload['content'];
+        foreach ($content['items'] as $item) {
+            foreach (['unitPrice', 'discount'] as $field) {
+                if (isset($item[$field])) { self::assertMoney($item[$field]); }
+            }
+            foreach ($item['taxes'] as $tax) {
+                self::assertMoney($tax['base']);
+                if (isset($tax['amount'])) { self::assertMoney($tax['amount']); }
+            }
+        }
+        foreach ($content['expectedTotals'] as $value) { self::assertMoney($value); }
         $totals = self::totals($content['items']);
         foreach ($totals as $field => $value) {
             if (!isset($content['expectedTotals'][$field])
@@ -140,7 +166,11 @@ class FiscalArithmetic
         }
         if (isset($content['balanceAdjustments'])) {
             $amount = '0';
-            foreach ($content['balanceAdjustments'] as $adjustment) { $amount = bcadd($amount, $adjustment['amount'], 6); }
+            foreach ($content['balanceAdjustments'] as $adjustment) {
+                self::assertMoney($adjustment['amount']);
+                foreach ($adjustment['lineAdjustments'] ?? [] as $line) { self::assertMoney($line['netAmount']); }
+                $amount = bcadd($amount, $adjustment['amount'], 6);
+            }
             if (bccomp($amount, $totals['total'], 6) !== 0) {
                 throw new InvalidArgumentException('balanceAdjustments.amount no coincide con el total fiscal calculado.');
             }
@@ -151,6 +181,13 @@ class FiscalArithmetic
     {
         return implode('|', [$tax['direction'], $tax['taxCode'], $tax['factor'],
             self::round($tax['rateOrQuota'] ?? '0', 6)]);
+    }
+
+    private static function assertMoney($value)
+    {
+        if (!is_string($value) || !preg_match('/^(?:0|[1-9][0-9]*)\.[0-9]{2}$/D', $value)) {
+            throw new InvalidArgumentException('Todos los importes monetarios enviados a Nexfira deben tener exactamente dos decimales.');
+        }
     }
 
     private static function externalCentTax(array $source, array $tax, $net)
